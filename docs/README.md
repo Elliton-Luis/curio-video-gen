@@ -30,6 +30,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   de roteiro do usuário vira regra oficial (loops pergunta-resposta); teste Lua.
 - `relatorios/20260928-183330_relatorio_imagens-duracao.md` — Openverse+Pexels,
   gate de relevância, `--duration` e `verify` por projeto.
+- `relatorios/20260928-185811_relatorio_teleprompter-real.md` — teleprompter
+  com próximo bloco visível + fase amarela de aviso de virada.
 
 ## Análises (estado, gaps, riscos)
 
