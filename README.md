@@ -51,7 +51,9 @@ video-gen generate --duration 30 "O que é um satélite?"
 
 # Gerar base para narrar você mesmo (silencioso + teleprompter)
 video-gen generate --narration human "De onde veio a palavra salário?"
-# ...grave sua voz assistindo ao teleprompter, depois:
+# abre a pasta do teleprompter + Audacity sozinho (desliga com --no-open
+# ou CURIO_AUTO_OPEN=0; binários em config.toml [teleprompter])
+# ...grave sua voz, depois:
 video-gen finalize de-onde-veio-a-palavra-salario --audio minha-voz.wav
 
 # Refazer tudo do zero (padrão: reaproveita artefatos existentes)

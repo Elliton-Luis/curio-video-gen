@@ -34,6 +34,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   com próximo bloco visível + fase amarela de aviso de virada.
 - `relatorios/20260928-191108_relatorio_imagens-ate-o-fim.md` — cortesia
   anti-429 + reuso da cena vizinha: imagens do início ao fim.
+- `relatorios/20260928-191547_relatorio_abrir-pasta-gravador.md` — Dolphin +
+  Audacity automáticos pós-teleprompter (configurável, nunca falha).
 
 ## Análises (estado, gaps, riscos)
 

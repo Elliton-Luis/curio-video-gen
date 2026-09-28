@@ -30,6 +30,9 @@ class CurioConfig:
     cache_dir: str = "cache"
     teleprompter_wpm: int = 150
     whisper_model: str = "base"
+    file_manager: str = "dolphin"  # pasta do teleprompter pós-geração
+    audio_recorder: str = "audacity"  # gravador aberto pós-teleprompter
+    auto_open: bool = True  # abre apps após teleprompter (só c/ sessão gráfica)
     # Chaves NVIDIA NÃO vivem aqui: lidas direto do ambiente
     # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
     # para nunca vazarem em logs, erros ou metadata.
@@ -83,6 +86,13 @@ class CurioConfig:
             cfg.teleprompter_wpm = int(os.environ["CURIO_WPM"])
         cfg.whisper_model = os.environ.get("CURIO_WHISPER_MODEL",
                                            cfg.whisper_model)
+        cfg.file_manager = os.environ.get("CURIO_FILE_MANAGER",
+                                          cfg.file_manager)
+        cfg.audio_recorder = os.environ.get("CURIO_AUDIO_RECORDER",
+                                            cfg.audio_recorder)
+        if os.environ.get("CURIO_AUTO_OPEN") is not None:
+            cfg.auto_open = os.environ["CURIO_AUTO_OPEN"].strip().lower() not in (
+                "0", "false", "no", "n")
         return cfg
 
     def as_dict(self) -> dict:

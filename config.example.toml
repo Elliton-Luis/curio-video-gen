@@ -35,6 +35,9 @@ providers = "wikimedia,openverse"  # csv; pexels entra se PEXELS_API_KEY existir
 
 [teleprompter]
 wpm = 150  # palavras/minuto estimadas p/ leitura (ajuste: 130/150/170)
+file_manager = "dolphin"  # aberto na pasta do teleprompter pós-geração
+audio_recorder = "audacity"  # gravador aberto junto
+auto_open = true  # false desliga; sem sessão gráfica nunca abre
 
 [transcribe]
 model = "base"  # faster-whisper local (tiny|base|small|medium)

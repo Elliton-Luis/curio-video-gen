@@ -60,7 +60,12 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     if narration == "human":
         print(f"\nSilencioso: {meta['artifacts']['silent']}")
         print(f"Teleprompter: {meta['artifacts']['teleprompter']}")
-        print(f"Grave sua voz assistindo ao teleprompter e rode:\n"
+        if not getattr(args, "no_open", False):
+            from .openers import open_after_teleprompter
+            for msg in open_after_teleprompter(
+                    cfg, os.path.dirname(meta['artifacts']['teleprompter'])):
+                print(msg)
+        print(f"Grave sua voz e rode:\n"
               f"  video-gen finalize {meta['slug']} --audio minha-voz.wav")
         return 0
     print(f"\nOutput: {meta['artifacts']['video']}")
@@ -218,6 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="duração aproximada em segundos (ex.: 30, 45, 60)")
     g.add_argument("--narration", default="ai", choices=["ai", "human"],
                    help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
+    g.add_argument("--no-open", action="store_true",
+                   help="não abrir pasta/gravador após o teleprompter")
     g.set_defaults(func=cmd_generate)
 
     fin = sub.add_parser("finalize", help="unir áudio humano ao vídeo silencioso")

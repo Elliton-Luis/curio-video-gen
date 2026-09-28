@@ -209,6 +209,13 @@ def _human_step1(c: dict[str, str], cfg: CurioConfig) -> str | None:
     print(f"  1. Assista e leia: {meta['artifacts']['teleprompter']}")
     print(f"  2. Grave sua voz (~{meta['duration_actual']}s) com qualquer gravador")
     print(f"  3. Volte aqui → opção 'Passo 2: finalizar com minha voz'")
+    from .openers import open_after_teleprompter
+    if _ask("\nAbrir a pasta do teleprompter + gravador agora? [S/n]: "
+            ).strip().lower() in ("", "s", "y", "sim"):
+        for msg in open_after_teleprompter(
+                cfg, os.path.dirname(meta['artifacts']['teleprompter']),
+                force=True):
+            print(f"  {msg}")
     return slug
 
 
