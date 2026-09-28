@@ -15,6 +15,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   roteiros via NVIDIA API (Nemotron 3 Ultra) + legendas refeitas (ASS com
   PlayRes real, base 68, blocos curtos); inclui correção do bug "roteiro com
   o prompt da IA".
+- `relatorios/20260928-134448_relatorio_voz-neural-masculina.md` — TTS padrão
+  vira edge-tts neural `pt-BR-AntonioNeural` (grátis, sem login) com fallback
+  espeak-ng avisado.
 
 ## Análises (estado, gaps, riscos)
 

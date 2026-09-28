@@ -28,6 +28,11 @@ else
   echo "VA-API: não encontrado — render vai usar CPU (libx264). OK para o MVP."
 fi
 
+python3 -c "import edge_tts" 2>/dev/null && echo "edge-tts: pacote Python OK (voz neural)" || {
+  echo "edge-tts: instalando pacote Python (voz neural gratuita, sem login)..."
+  python3 -m pip install --user edge-tts || echo "edge-tts: falhou (sem rede?) — TTS usará espeak-ng local."
+}
+
 python3 -m pip install --user -e . 2>/dev/null || {
   echo "pip install -e . falhou (sem rede?); sem problema:"
   echo "use ./scripts/run.sh, que roda com PYTHONPATH=src sem instalar."

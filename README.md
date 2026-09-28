@@ -21,7 +21,8 @@ IDEIA → ROTEIRO → NARRAÇÃO → LEGENDAS → MONTAGEM → VÍDEO FINAL
 
 - Linux, Python 3.11+
 - `ffmpeg` + `ffprobe` (renderização)
-- `espeak-ng` com voz `pt-br` (TTS local gratuito)
+- `espeak-ng` com voz `pt-br` (fallback local offline)
+- Internet (só para a voz neural padrão; sem rede, usa espeak-ng)
 - Opcional: GPU Intel com VA-API (ex.: Arc B580) — sem ela, usa CPU (libx264)
 
 ## Instalação
@@ -108,7 +109,7 @@ config, usa a 1ª; **rotação ainda não implementada**).
 | Etapa | Implementação MVP |
 |---|---|
 | Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave; sem chave: base curada + template |
-| Narração | `espeak-ng` pt-br, com 1 correção automática de ritmo |
+| Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline |
 | Legendas | SRT em frases curtas, fonte escalada pela altura, base inferior |
 | Montagem | FFmpeg: gradiente lavfi + título + legendas libass |
 | Render | auto-detecta VA-API → QSV → libx264; 1080×1920, 30 fps |

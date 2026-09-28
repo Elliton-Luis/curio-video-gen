@@ -122,7 +122,11 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("python >= 3.11", sys.version_info >= (3, 11), sys.version.split()[0])
     check("ffmpeg", shutil.which("ffmpeg") is not None)
     check("ffprobe", shutil.which("ffprobe") is not None)
-    check("espeak-ng (TTS pt-br)", shutil.which("espeak-ng") is not None)
+    check("espeak-ng (TTS local, fallback)", shutil.which("espeak-ng") is not None)
+    import importlib.util
+    has_edge = importlib.util.find_spec("edge_tts") is not None
+    check("edge-tts (voz neural PT-BR masculina)", has_edge,
+          "pt-BR-AntonioNeural" if has_edge else "pip install edge-tts (ou use espeak-ng)")
     check("filtro libass (legendas queimadas)",
           "libass" in (ff.run(["ffmpeg", "-hide_banner", "-h", "filter=subtitles"])
                        .stdout.lower()))

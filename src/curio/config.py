@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 class CurioConfig:
     duration_target: float = 45.0
     out_dir: str = "output"
-    tts_provider: str = "espeak-ng"
-    tts_voice: str = "pt-br"
+    tts_provider: str = "edge-tts"  # edge-tts (neural, grátis) | espeak-ng (local)
+    tts_voice: str = "pt-BR-AntonioNeural"  # masculina PT-BR (edge); espeak: "pt-br"
     tts_speed: int = 170
     render_backend: str = "auto"  # auto | vaapi | qsv | cpu
     width: int = 1080

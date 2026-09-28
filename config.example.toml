@@ -7,9 +7,9 @@ duration_target = 45.0
 out_dir = "output"
 
 [tts]
-provider = "espeak-ng"   # espeak-ng | piper | edge-tts
-voice = "pt-br"
-speed = 170              # palavras por minuto (espeak-ng)
+provider = "edge-tts"   # edge-tts (neural, grátis, sem login) | espeak-ng (local offline)
+voice = "pt-BR-AntonioNeural"  # masculina PT-BR; espeak-ng usa "pt-br"
+speed = 170              # palavras por minuto (só espeak-ng)
 
 [render]
 backend = "auto"         # auto | vaapi | qsv | cpu
