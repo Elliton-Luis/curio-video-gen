@@ -187,25 +187,44 @@ def _request(idea: str, key: str, model: str, base_url: str,
         key, model, base_url, timeout, max_tokens, 0.7)
 
 
+def _extract_json(text: str) -> dict:
+    """Extrai o JSON mesmo com cercas/preâmbulo/epílogo ao redor."""
+    cleaned = re.sub(r"```(?:json)?", "", text).strip().strip("`").strip()
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("sem objeto JSON na resposta")
+    return json.loads(cleaned[start:end + 1])
+
+
 def complete_json(system_prompt: str, user_prompt: str, model: str,
                   base_url: str, timeout: int) -> dict:
     """Uma completion que DEVE retornar JSON. Falhas levantam NvidiaError."""
     creds = NvidiaCredentials.from_env()
     key = creds.active_key
-    body = _post([{"role": "system", "content": system_prompt},
-                  {"role": "user", "content": user_prompt}],
-                 key, model, base_url, timeout, 2000, 0.3)
+    max_tokens, body = 2000, None
+    for _ in range(2):  # roteiros longos (60 s+) estouram 2000 tokens pensando
+        body = _post([{"role": "system", "content": system_prompt},
+                      {"role": "user", "content": user_prompt}],
+                     key, model, base_url, timeout, max_tokens, 0.3)
+        if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
+            break
+        max_tokens = 4000
     try:
-        text = body["choices"][0]["message"].get("content", "").strip()
+        choice = body["choices"][0]
+        text = choice["message"].get("content", "").strip()
     except (KeyError, IndexError, AttributeError) as exc:
         raise NvidiaError(
             "etapa NVIDIA: resposta inesperada da API (sem choices/message). "
             "Tente novamente."
         ) from exc
-    cleaned = re.sub(r"```(?:json)?", "", text).strip().strip("`")
+    if choice.get("finish_reason") == "length":
+        raise NvidiaError(
+            "etapa NVIDIA: JSON das cenas truncado mesmo com orçamento "
+            "estendido. Tente novamente."
+        )
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
+        return _extract_json(text)
+    except (ValueError, json.JSONDecodeError) as exc:
         raise NvidiaError(
             "etapa NVIDIA: API não retornou JSON válido para as cenas. "
             "Tente novamente."

@@ -36,6 +36,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   anti-429 + reuso da cena vizinha: imagens do início ao fim.
 - `relatorios/20260928-191547_relatorio_abrir-pasta-gravador.md` — Dolphin +
   Audacity automáticos pós-teleprompter (configurável, nunca falha).
+- `relatorios/20260928-195420_relatorio_json-cenas-smoke.md` — JSON de cenas
+  tolerante (extração + orçamento estendido) + `scripts/smoke.sh` (14 cheques).
 
 ## Análises (estado, gaps, riscos)
 
