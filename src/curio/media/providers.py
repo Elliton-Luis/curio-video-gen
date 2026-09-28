@@ -91,7 +91,9 @@ class WikimediaProvider(MediaProvider):
             headers={"User-Agent": USER_AGENT})
         data = None
         last: Exception | None = None
-        for attempt in range(3):
+        import time as _time
+        _time.sleep(1.5)  # cortesia: throttling progressivo derruba o fim da lista
+        for attempt in range(5):
             try:
                 with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                     import json
@@ -100,7 +102,7 @@ class WikimediaProvider(MediaProvider):
             except Exception as exc:
                 last = exc
                 import time
-                time.sleep(1.5 * (attempt + 1))
+                time.sleep(2 * (attempt + 1))
         if data is None:
             raise MediaError(f"wikimedia: busca falhou ({last})")
         assets = []
@@ -146,6 +148,8 @@ class OpenverseProvider(MediaProvider):
         req = urllib.request.Request(
             self.API + "?" + urllib.parse.urlencode(params),
             headers={"User-Agent": USER_AGENT})
+        import time as _time
+        _time.sleep(1.0)  # cortesia entre buscas
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 import json

@@ -32,6 +32,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   gate de relevância, `--duration` e `verify` por projeto.
 - `relatorios/20260928-185811_relatorio_teleprompter-real.md` — teleprompter
   com próximo bloco visível + fase amarela de aviso de virada.
+- `relatorios/20260928-191108_relatorio_imagens-ate-o-fim.md` — cortesia
+  anti-429 + reuso da cena vizinha: imagens do início ao fim.
 
 ## Análises (estado, gaps, riscos)
 

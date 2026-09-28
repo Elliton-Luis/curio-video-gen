@@ -111,6 +111,7 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
                  paths: VideoPaths) -> tuple[list[dict], list[str]]:
     """Busca e baixa um asset por cena. Falha vira fallback com aviso."""
     providers = get_providers(cfg)
+    search_memo: dict[tuple[str, str], list] = {}
     scenes, warnings = [], []
     for ch in chapters:
         # Candidatos de todas as consultas, ordenados por relevância
@@ -119,13 +120,15 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
         seen = set()
         for query in ch.visual_queries:
             for prov in providers:
-                try:
-                    candidates = prov.search(query)
-                except MediaError as exc:
-                    print(f"AVISO: {exc} — tentando próxima fonte.",
-                          file=sys.stderr)
-                    continue
-                for cand in candidates:
+                memo_key = (prov.name, query)
+                if memo_key not in search_memo:
+                    try:
+                        search_memo[memo_key] = prov.search(query)
+                    except MediaError as exc:
+                        print(f"AVISO: {exc} — tentando próxima fonte.",
+                              file=sys.stderr)
+                        search_memo[memo_key] = []
+                for cand in search_memo[memo_key]:
                     if cand.asset_id in seen:
                         continue
                     seen.add(cand.asset_id)
@@ -148,8 +151,29 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
             warnings.append(msg)
             print(f"AVISO: {msg}", file=sys.stderr)
         scenes.append({"chapter_id": ch.id,
-                       "asset": asset.to_dict() if asset else None})
+                       "asset": asset.to_dict() if asset else None,
+                       "reused_from": None})
+    _resolve_reuse(scenes)
     return scenes, warnings
+
+
+def _resolve_reuse(scenes: list[dict]) -> None:
+    """Garantia de imagem do início ao fim: cena sem asset reusa a imagem
+    relevante mais próxima (com outro movimento Ken Burns) antes de cair no
+    gradiente. Só o gradiente resta se NENHUMA cena tiver mídia."""
+    have = [s for s in scenes if s["asset"]]
+    if not have:
+        return
+    for s in scenes:
+        if s["asset"] is not None:
+            continue
+        cid = s["chapter_id"]
+        nearest = min(have, key=lambda h: (abs(h["chapter_id"] - cid),
+                                           0 if h["chapter_id"] < cid else 1))
+        s["asset"] = nearest["asset"]
+        s["reused_from"] = nearest["chapter_id"]
+        print(f"AVISO: cena {cid} reusa imagem da cena "
+              f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
 
 
 def _scene_segment(ch: Chapter, asset_dict: dict | None, idea: str,
