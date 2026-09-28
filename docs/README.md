@@ -18,6 +18,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260928-134448_relatorio_voz-neural-masculina.md` — TTS padrão
   vira edge-tts neural `pt-BR-AntonioNeural` (grátis, sem login) com fallback
   espeak-ng avisado.
+- `relatorios/20260928-135530_relatorio_benchmark-vozes.md` — Donato/Humberto/
+  Nicolau/Valerio não existem no Edge TTS; mesma frase renderizada nas 3
+  vozes PT-BR reais (`output/benchmark_vozes/`) para avaliação auditiva.
 
 ## Análises (estado, gaps, riscos)
 
