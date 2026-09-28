@@ -43,12 +43,16 @@ video-gen generate "De onde veio a palavra salário?"
 # Refazer tudo do zero (padrão: reaproveita artefatos existentes)
 video-gen generate --force "O mito dos capacetes com chifres dos vikings"
 
-# Interface interativa em terminal
+# Interface visual em terminal (abre a TUI)
 video-gen tui
+# Atalho: ./scripts/run.sh sem argumentos também abre a TUI
 
 # Listar vídeos e ver metadados
 video-gen list
 video-gen info --slug salario
+
+# Verificar um vídeo contra os critérios do MVP (PRD §19)
+video-gen verify --slug salario
 ```
 
 Progresso esperado:

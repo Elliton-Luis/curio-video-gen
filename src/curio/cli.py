@@ -10,6 +10,7 @@ import traceback
 
 from . import __version__
 from . import ffmpeg as ff
+from . import verify as verify_mod
 from .config import CurioConfig
 from .pipeline import run_pipeline, video_paths
 from .slug import slugify
@@ -86,6 +87,18 @@ def cmd_info(args, cfg: CurioConfig) -> int:
     return 0
 
 
+def cmd_verify(args, cfg: CurioConfig) -> int:
+    slug = args.slug
+    paths = video_paths(cfg.out_dir, slug)
+    if not os.path.isfile(paths.final_mp4):
+        print(f"Vídeo '{slug}' não encontrado em {cfg.out_dir}/.", file=sys.stderr)
+        return 1
+    rep = verify_mod.verify_video(paths.final_mp4, paths.subs_srt,
+                                  cfg.duration_target, cfg.width, cfg.height)
+    print(f"Verificação: {slug}\n{rep.render()}")
+    return 0 if rep.success else 1
+
+
 def cmd_voices(_args, _cfg) -> int:
     voices = tts_stage.available_providers()
     print("Provedores TTS disponíveis: " + (", ".join(voices) if voices else "nenhum"))
@@ -126,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tts", default=None, help="provedor TTS (ex.: espeak-ng)")
     ap.add_argument("--voice", default=None, help="voz TTS (ex.: pt-br)")
     ap.add_argument("--backend", default=None, help="auto|vaapi|qsv|cpu")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=False)
 
     g = sub.add_parser("generate", help="gerar vídeo a partir de uma ideia")
     g.add_argument("idea", nargs="+", help="ideia textual entre aspas")
@@ -144,6 +157,10 @@ def build_parser() -> argparse.ArgumentParser:
     inf.add_argument("idea", nargs="*", help="ideia original ou --slug")
     inf.add_argument("--slug", default=None)
     inf.set_defaults(func=cmd_info)
+
+    vf = sub.add_parser("verify", help="verificar um vídeo gerado (PRD §19)")
+    vf.add_argument("--slug", required=True, help="nome do diretório do vídeo")
+    vf.set_defaults(func=cmd_verify)
 
     v = sub.add_parser("voices", help="listar provedores TTS disponíveis")
     v.set_defaults(func=cmd_voices)
@@ -165,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
         cfg.tts_voice = args.voice
     if getattr(args, "backend", None):
         cfg.render_backend = args.backend
+    if args.cmd is None:
+        # Sem subcomando: abre a interface visual (TUI) — ex.: ./scripts/run.sh
+        from .tui import run as run_tui
+        return run_tui(cfg)
     return args.func(args, cfg)
 
 

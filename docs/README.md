@@ -9,6 +9,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 - `relatorios/20260928-123219_relatorio_mvp-inicial.md` — scaffolding + pipeline
   MVP + teste end-to-end (commit `7a18ec6`).
+- `relatorios/20260928-123729_relatorio_run-sh-tui-verify.md` — `run.sh` sem args
+  abre a TUI; novo `verify` (8 cheques) + fluxo "teste rápido".
 
 ## Análises (estado, gaps, riscos)
 
