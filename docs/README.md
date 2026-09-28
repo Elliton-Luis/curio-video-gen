@@ -26,6 +26,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   finalize/Whisper; 5 testes + validação visual (T4 com stand-in, não voz real).
 - `relatorios/20260928-180611_relatorio_tui-por-objetivo.md` — TUI reescrito
   por objetivo (vídeo pronto × narrar em 2 passos) + ajuda + lista com situação.
+- `relatorios/20260928-182208_relatorio_prompt-roteiro-curiosidade.md` — prompt
+  de roteiro do usuário vira regra oficial (loops pergunta-resposta); teste Lua.
 
 ## Análises (estado, gaps, riscos)
 
