@@ -1,12 +1,15 @@
 """Provedores de mídia pública (§4–5).
 
 Abstração mínima: `MediaProvider.search()` retorna candidatos com licença.
-Só integra o que funciona sem chave (Wikimedia). Fontes com chave entram
-via registro quando houver credencial — nunca quebram o pipeline ausentes.
+Fontes sem chave (Wikimedia, Openverse) sempre ativas; com chave (Pexels)
+só quando configurada — nunca quebram o pipeline ausentes.
+Todas servem arquivos diretos sem marca d'água (política do Commons;
+licença Pexels; Flickr via Openverse = original do autor).
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import urllib.parse
@@ -28,6 +31,7 @@ class MediaAsset:
     license: str = ""
     source_url: str = ""
     download_url: str = ""
+    download_fallback_url: str = ""  # ex.: Openverse `_b` se o `_k` 404/410
     width: int = 0
     height: int = 0
     size_bytes: int = 0
@@ -43,7 +47,7 @@ class MediaAsset:
                       ("provider", "asset_id")},
                    **{k: d.get(k, "") for k in
                       ("title", "author", "license", "source_url",
-                       "download_url", "local_path")},
+                       "download_url", "download_fallback_url", "local_path")},
                    width=int(d.get("width", 0)), height=int(d.get("height", 0)),
                    size_bytes=int(d.get("size_bytes", 0)),
                    kind=str(d.get("kind", "image")))
@@ -124,13 +128,123 @@ class WikimediaProvider(MediaProvider):
         return assets
 
 
+_OV_LICENSES = {"by": "CC BY", "by-sa": "CC BY-SA", "by-nc": "CC BY-NC",
+                 "by-nd": "CC BY-ND", "by-nc-sa": "CC BY-NC-SA",
+                 "by-nc-nd": "CC BY-NC-ND", "pdm": "Domínio público",
+                 "cc0": "CC0"}
+
+
+class OpenverseProvider(MediaProvider):
+    """Openverse (WordPress): sem chave, CC documentada, filtra `mature`."""
+
+    name = "openverse"
+    API = "https://api.openverse.org/v1/images/"
+
+    def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
+        params = {"q": query, "page_size": str(limit),
+                  "filter_dead": "false", "mature": "false"}
+        req = urllib.request.Request(
+            self.API + "?" + urllib.parse.urlencode(params),
+            headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                import json
+                data = json.load(resp)
+        except Exception as exc:
+            raise MediaError(f"openverse: busca falhou ({exc})") from exc
+        assets = []
+        for item in (data.get("results") or [])[:limit]:
+            if item.get("mature"):
+                continue
+            url = item.get("url", "")
+            if not url or not re.search(r"\.(jpe?g|png|webp)(\?|$|/)",
+                                        url, re.I):
+                continue
+            upgraded = False
+            fallback = ""
+            if "live.staticflickr.com" in url:
+                # Flickr serve `_b` (1024px); `_k` (2048px) existe na maioria
+                # das fotos — sem ele quase tudo cai no filtro de resolução.
+                # Nem toda foto tem `_k` (410/404): fallback guarda o `_b`.
+                new_url = re.sub(r"_[a-z]\.(jpe?g|png)$", r"_k.\1", url)
+                if new_url != url:
+                    upgraded, fallback, url = True, url, new_url
+            w, h = int(item.get("width") or 0), int(item.get("height") or 0)
+            # Dims da API descrevem o `_b`; após upgrade o `_k` é ~2× maior.
+            if not upgraded and w and h and min(w, h) < 800:
+                continue
+            lic = item.get("license", "")
+            ver = item.get("license_version", "")
+            assets.append(MediaAsset(
+                provider=self.name,
+                asset_id=str(item.get("id", "")),
+                title=str(item.get("title", "")),
+                author=str(item.get("creator", "")),
+                license=f"{_OV_LICENSES.get(lic, lic)} {ver}".strip()
+                or "ver licença na source_url",
+                source_url=str(item.get("foreign_landing_url", "")),
+                download_url=url, download_fallback_url=fallback,
+                width=w, height=h,
+            ))
+        return assets
+
+
+class PexelsProvider(MediaProvider):
+    """Pexels: exige PEXELS_API_KEY (grátis com cadastro). Fotos sem watermark,
+    licença Pexels (uso livre, sem atribuição obrigatória)."""
+
+    name = "pexels"
+    API = "https://api.pexels.com/v1/search"
+
+    def __init__(self) -> None:
+        import os as _os
+        key = _os.environ.get("PEXELS_API_KEY", "").strip()
+        if not key:
+            raise MediaError("pexels: sem PEXELS_API_KEY no ambiente")
+        self.key = key
+
+    def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
+        params = {"query": query, "per_page": str(limit),
+                  "orientation": "portrait"}
+        req = urllib.request.Request(
+            self.API + "?" + urllib.parse.urlencode(params),
+            headers={"User-Agent": USER_AGENT, "Authorization": self.key})
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                import json
+                data = json.load(resp)
+        except Exception as exc:
+            raise MediaError(f"pexels: busca falhou ({exc})") from exc
+        assets = []
+        for photo in (data.get("photos") or [])[:limit]:
+            src = photo.get("src") or {}
+            url = src.get("large2x") or src.get("large") or src.get("original", "")
+            if not url:
+                continue
+            w, h = int(photo.get("width") or 0), int(photo.get("height") or 0)
+            if w and h and min(w, h) < MIN_DIMENSION:
+                continue
+            assets.append(MediaAsset(
+                provider=self.name,
+                asset_id=str(photo.get("id", "")),
+                title=str(photo.get("alt", "")),
+                author=str(photo.get("photographer", "")),
+                license="Licença Pexels (uso livre)",
+                source_url=str(photo.get("url", "")),
+                download_url=url, width=w, height=h,
+            ))
+        return assets
+
+
 PROVIDERS: dict[str, type[MediaProvider]] = {
     "wikimedia": WikimediaProvider,
+    "openverse": OpenverseProvider,
+    "pexels": PexelsProvider,
 }
 
 
 def get_providers(cfg) -> list[MediaProvider]:
-    """Instancia os provedores configurados. Desconhecidos: aviso, nunca erro."""
+    """Instancia os provedores configurados. Desconhecidos/sem chave: aviso."""
     wanted = [p.strip().lower() for p in cfg.media_providers.split(",") if p.strip()]
     if "none" in wanted:
         return []
@@ -141,7 +255,10 @@ def get_providers(cfg) -> list[MediaProvider]:
             print(f"AVISO: provedor de mídia {name!r} desconhecido — ignorado.",
                   file=sys.stderr)
             continue
-        found.append(cls())
+        try:
+            found.append(cls())
+        except MediaError as exc:
+            print(f"AVISO: {exc} — provedor ignorado.", file=sys.stderr)
     return found
 
 

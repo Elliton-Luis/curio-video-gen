@@ -131,6 +131,9 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
                     seen.add(cand.asset_id)
                     ranked.append((_relevance(query, cand), query, cand))
         ranked.sort(key=lambda r: -r[0])
+        # Gate de relevância: escore 0 = título sem nada da consulta
+        # (ex.: foto aleatória) — fallback honesto em vez de associação falsa.
+        ranked = [r for r in ranked if r[0] > 0]
         asset = None
         for _score, _q, cand in ranked:
             try:
@@ -140,7 +143,7 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
                 print(f"AVISO: {exc} — tentando próximo asset.",
                       file=sys.stderr)
         if asset is None:
-            msg = (f"cena {ch.id}: sem mídia adequada "
+            msg = (f"cena {ch.id}: sem mídia relevante "
                    f"({', '.join(ch.visual_queries) or 'sem consultas'}) — fallback")
             warnings.append(msg)
             print(f"AVISO: {msg}", file=sys.stderr)
@@ -242,7 +245,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         chapters = _load_chapters(paths)
         scenes_source = "cache"
     else:
-        chapters, scenes_source = scenes_stage.build_chapters(script_text, cfg)
+        chapters, scenes_source = scenes_stage.build_chapters(
+            script_text, cfg,
+            n_scenes=scenes_stage.scenes_for_duration(cfg.duration_target))
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
     stage_times["scenes"] = round(time.monotonic() - t0, 2)
     emit(2, "Interpretando cenas", "OK")

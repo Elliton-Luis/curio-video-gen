@@ -18,19 +18,24 @@ from . import nvidia as nvidia_stage
 TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
 
+
+def scenes_for_duration(duration_target: float) -> int:
+    """~1 cena a cada 9 s: 30 s→3, 45 s→5, 60 s→7 (limites 3–7)."""
+    return max(3, min(7, round(duration_target / 9)))
+
 SCENES_SYSTEM_PROMPT = (
     "Você divide roteiros de vídeo educativo em cenas visuais. "
     "Responda SOMENTE com JSON válido, sem markdown nem explicações, neste formato: "
-    '{"title": "...", "chapters": [{"id": 1, "narration": "...", '
+    '{{"title": "...", "chapters": [{{"id": 1, "narration": "...", '
     '"visual_queries": ["english query 1", "english query 2"], '
-    '"visual_intent": "short english intent"}]}. Regras: '
+    '"visual_intent": "short english intent"}}]}}. Regras: '
     "1) use APENAS frases literais do roteiro, na mesma ordem, sem reescrever "
     "nem resumir — a junção das narrations deve reproduzir o roteiro; "
     "2) cada chapter é um momento semântico (não corte arbitrário); "
     "3) narration em português do Brasil; visual_queries e visual_intent em "
     "inglês, concretos e buscáveis em bancos de fotos (objetos, lugares, "
     "épocas — nunca conceitos abstratos); "
-    f"4) divida em {TARGET_SCENES} chapters (entre 4 e 7)."
+    "4) divida em {n} chapters (entre {lo} e {hi})."
 )
 
 
@@ -70,13 +75,13 @@ def _norm(text: str) -> str:
     return re.sub(r"[^\w\s]", "", text)
 
 
-def _local_chapters(script: str) -> list[Chapter]:
+def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]:
     """Divisão local por frases agrupadas (sem chave NVIDIA)."""
     from . import subs as subs_stage
     sentences = subs_stage._sentences(script)
     if not sentences:
         raise ValueError("roteiro vazio — nada para dividir em cenas")
-    per = max(1, round(len(sentences) / TARGET_SCENES))
+    per = max(1, round(len(sentences) / n_scenes))
     chapters = []
     for i in range(0, len(sentences), per):
         narration = " ".join(sentences[i:i + per])
@@ -90,12 +95,15 @@ def _local_chapters(script: str) -> list[Chapter]:
     return chapters
 
 
-def build_chapters(script: str, cfg: CurioConfig) -> tuple[list[Chapter], str]:
+def build_chapters(script: str, cfg: CurioConfig,
+                   n_scenes: int | None = None) -> tuple[list[Chapter], str]:
     """Retorna (capítulos, fonte). Fonte: 'nvidia' | 'local'."""
+    n_scenes = n_scenes or scenes_for_duration(cfg.duration_target)
+    lo, hi = max(3, n_scenes - 1), n_scenes + 1
     creds = nvidia_stage.NvidiaCredentials.from_env()
     if creds.available:
         data = nvidia_stage.complete_json(
-            SCENES_SYSTEM_PROMPT,
+            SCENES_SYSTEM_PROMPT.format(n=n_scenes, lo=lo, hi=hi),
             f"Divida este roteiro em cenas:\n\n{script}",
             cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout)
         chapters = []
@@ -116,7 +124,7 @@ def build_chapters(script: str, cfg: CurioConfig) -> tuple[list[Chapter], str]:
               "usando divisão local.", file=sys.stderr)
     else:
         print("Sem chave NVIDIA: cenas por divisão local.", file=sys.stderr)
-    return _local_chapters(script), "local"
+    return _local_chapters(script, n_scenes), "local"
 
 
 def apply_timings(chapters: list[Chapter],

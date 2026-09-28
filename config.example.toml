@@ -30,7 +30,7 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # timeout = 120
 
 [media]
-providers = "wikimedia"  # csv; "none" = só fallback (também serve p/ teste)
+providers = "wikimedia,openverse"  # csv; pexels entra se PEXELS_API_KEY existir; "none" = só fallback
 # cache em cache/media/<provedor>/<id> (CURIO_CACHE_DIR muda o root)
 
 [teleprompter]

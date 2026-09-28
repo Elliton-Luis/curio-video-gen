@@ -63,6 +63,22 @@ def _pause(c: dict[str, str]) -> None:
     _ask(f"\n{c['dim']}Enter para voltar ao menu...{c['reset']}")
 
 
+def _ask_duration(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
+    """Duração aproximada do vídeo (roteiro, cenas e verificação acompanham)."""
+    raw = _ask("Duração aproximada em segundos [30/45/60, padrão 45]: ").strip()
+    if not raw:
+        return cfg
+    try:
+        seconds = float(raw.replace(",", "."))
+    except ValueError:
+        print("Valor inválido — usando 45s.")
+        return cfg
+    seconds = min(120, max(15, seconds))
+    import dataclasses
+    print(f"Duração-alvo: {seconds:.0f}s (aproximada).")
+    return dataclasses.replace(cfg, duration_target=seconds)
+
+
 def _progress(idx: int, total: int, label: str, status: str) -> None:
     print(f"  [{idx}/{total}] {label}... {status}", flush=True)
 
@@ -147,6 +163,7 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
             return
         slug = slugify(idea)
         print(f"Pasta do projeto: {cfg.out_dir}/{slug}/")
+        cfg = _ask_duration(c, cfg)
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=force,
@@ -180,6 +197,7 @@ def _human_step1(c: dict[str, str], cfg: CurioConfig) -> str | None:
         return None
     slug = slugify(idea)
     print(f"Pasta do projeto: {cfg.out_dir}/{slug}/")
+    cfg = _ask_duration(c, cfg)
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=False,
                             narration="human", on_progress=_progress)

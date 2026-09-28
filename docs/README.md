@@ -28,6 +28,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   por objetivo (vídeo pronto × narrar em 2 passos) + ajuda + lista com situação.
 - `relatorios/20260928-182208_relatorio_prompt-roteiro-curiosidade.md` — prompt
   de roteiro do usuário vira regra oficial (loops pergunta-resposta); teste Lua.
+- `relatorios/20260928-183330_relatorio_imagens-duracao.md` — Openverse+Pexels,
+  gate de relevância, `--duration` e `verify` por projeto.
 
 ## Análises (estado, gaps, riscos)
 

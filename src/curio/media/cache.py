@@ -56,10 +56,17 @@ def download_asset(asset: MediaAsset, cache_dir: str) -> MediaAsset:
         return asset  # cache: zero downloads repetidos
     try:
         data = _fetch(asset.download_url)
-    except Exception as exc:
-        raise MediaError(
-            f"{asset.provider}: download falhou ({asset.asset_id}): {exc}"
-        ) from exc
+    except Exception as first_exc:
+        if not asset.download_fallback_url:
+            raise MediaError(
+                f"{asset.provider}: download falhou ({asset.asset_id}): {first_exc}"
+            ) from first_exc
+        try:
+            data = _fetch(asset.download_fallback_url)
+        except Exception as exc:
+            raise MediaError(
+                f"{asset.provider}: download falhou ({asset.asset_id}): {exc}"
+            ) from exc
     with open(dest, "wb") as fh:
         fh.write(data)
     time.sleep(1.0)  # intervalo entre downloads (cortesia)

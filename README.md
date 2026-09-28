@@ -46,6 +46,9 @@ O `install.sh` tenta `pip install -e .` para criar os comandos `video-gen` e
 # Gerar um vídeo (narração IA, com mídia dinâmica)
 video-gen generate "De onde veio a palavra salário?"
 
+# Duração aproximada à sua escolha (roteiro, cenas e verificação acompanham)
+video-gen generate --duration 30 "O que é um satélite?"
+
 # Gerar base para narrar você mesmo (silencioso + teleprompter)
 video-gen generate --narration human "De onde veio a palavra salário?"
 # ...grave sua voz assistindo ao teleprompter, depois:
@@ -123,7 +126,7 @@ config, usa a 1ª; **rotação ainda não implementada**).
 |---|---|
 | Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave; sem chave: base curada + template |
 | Cenas | divisão semântica via NVIDIA (JSON) ou local; consultas visuais em inglês |
-| Mídia | Wikimedia Commons (sem chave, licença registrada) + Ken Burns; fallback gradiente |
+| Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
 | Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base |
 | Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |

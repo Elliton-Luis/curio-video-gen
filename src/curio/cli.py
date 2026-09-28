@@ -35,6 +35,9 @@ def _fail(stage: str, exc: BaseException, hint: str = "") -> int:
 def cmd_generate(args, cfg: CurioConfig) -> int:
     idea = " ".join(args.idea).strip()
     narration = getattr(args, "narration", "ai")
+    if getattr(args, "duration", None):
+        cfg.duration_target = float(args.duration)
+        print(f"Duração-alvo: {cfg.duration_target:.0f}s (aproximada).")
     if narration not in ("ai", "human"):
         print("Narração deve ser 'ai' ou 'human'.", file=sys.stderr)
         return 2
@@ -137,8 +140,15 @@ def cmd_verify(args, cfg: CurioConfig) -> int:
     if not os.path.isfile(paths.final_mp4):
         print(f"Vídeo '{slug}' não encontrado em {cfg.out_dir}/.", file=sys.stderr)
         return 1
+    # A meta de duração é a do projeto (metadata), não a config atual.
+    target = cfg.duration_target
+    try:
+        with open(paths.metadata_json, encoding="utf-8") as fh:
+            target = float(json.load(fh).get("duration_target", target))
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
     rep = verify_mod.verify_video(paths.final_mp4, paths.subs_srt,
-                                  cfg.duration_target, cfg.width, cfg.height)
+                                  target, cfg.width, cfg.height)
     print(f"Verificação: {slug}\n{rep.render()}")
     return 0 if rep.success else 1
 
@@ -204,6 +214,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("idea", nargs="+", help="ideia textual entre aspas")
     g.add_argument("--slug", default=None, help="nome do diretório de saída")
     g.add_argument("--force", action="store_true", help="refazer todas as etapas")
+    g.add_argument("--duration", type=float, default=None,
+                   help="duração aproximada em segundos (ex.: 30, 45, 60)")
     g.add_argument("--narration", default="ai", choices=["ai", "human"],
                    help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
     g.set_defaults(func=cmd_generate)
