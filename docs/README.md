@@ -24,6 +24,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260928-161950_relatorio_midia-teleprompter-sincronizacao.md` —
   cenas NVIDIA + Wikimedia/Ken Burns + WordBoundary + teleprompter +
   finalize/Whisper; 5 testes + validação visual (T4 com stand-in, não voz real).
+- `relatorios/20260928-180611_relatorio_tui-por-objetivo.md` — TUI reescrito
+  por objetivo (vídeo pronto × narrar em 2 passos) + ajuda + lista com situação.
 
 ## Análises (estado, gaps, riscos)
 
