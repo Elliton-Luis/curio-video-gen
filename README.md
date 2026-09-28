@@ -11,10 +11,15 @@ acessível, mas não deve falsificá-la para torná-la mais viral.*
 
 ## Status
 
-MVP em construção (v0.1.0). Pipeline funcional:
+Em evolução (v0.2): dois fluxos de produção.
 
 ```text
-IDEIA → ROTEIRO → NARRAÇÃO → LEGENDAS → MONTAGEM → VÍDEO FINAL
+Fluxo A (narração IA):
+IDEIA → ROTEIRO → CENAS → MÍDIA → NARRAÇÃO → LEGENDAS → VÍDEO FINAL
+
+Fluxo B (narração humana):
+IDEIA → ROTEIRO → CENAS → MÍDIA → SILENCIOSO + TELEPROMPTER
+→ (você grava) → FINALIZE → VÍDEO FINAL
 ```
 
 ## Requisitos
@@ -38,8 +43,13 @@ O `install.sh` tenta `pip install -e .` para criar os comandos `video-gen` e
 ## Uso
 
 ```bash
-# Gerar um vídeo
+# Gerar um vídeo (narração IA, com mídia dinâmica)
 video-gen generate "De onde veio a palavra salário?"
+
+# Gerar base para narrar você mesmo (silencioso + teleprompter)
+video-gen generate --narration human "De onde veio a palavra salário?"
+# ...grave sua voz assistindo ao teleprompter, depois:
+video-gen finalize de-onde-veio-a-palavra-salario --audio minha-voz.wav
 
 # Refazer tudo do zero (padrão: reaproveita artefatos existentes)
 video-gen generate --force "O mito dos capacetes com chifres dos vikings"
@@ -59,11 +69,12 @@ video-gen verify --slug salario
 Progresso esperado:
 
 ```text
-[1/5] Gerando roteiro... OK
-[2/5] Gerando narração... OK
-[3/5] Sincronizando legendas... OK
-[4/5] Montando vídeo... OK
-[5/5] Finalizando... OK
+[1/6] Gerando roteiro... OK
+[2/6] Interpretando cenas... OK
+[3/6] Buscando mídia... OK
+[4/6] Gerando narração... OK
+[5/6] Sincronizando legendas... OK
+[6/6] Montando vídeo... OK
 
 Output: output/salario/render/final.mp4
 ```
@@ -72,12 +83,14 @@ Output: output/salario/render/final.mp4
 
 ```text
 output/<slug>/
-├── script/script.txt
-├── audio/narration.wav
-├── subtitles/subs.srt
-├── assets/
-├── render/final.mp4
-└── metadata.json
+├── script/script.txt + chapters.json
+├── media/media.json (+ cache/media/ global com licenças)
+├── timeline/timeline.json
+├── audio/narration.wav + words.json (IA) / human.wav (sua voz)
+├── teleprompter/teleprompter.mp4 (fluxo humano)
+├── subtitles/subs.srt + subs.ass
+├── render/silent.mp4 + final.mp4
+└── metadata.json (capítulos, assets, licenças, tempos)
 ```
 
 ## Configuração
@@ -109,10 +122,11 @@ config, usa a 1ª; **rotação ainda não implementada**).
 | Etapa | Implementação MVP |
 |---|---|
 | Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave; sem chave: base curada + template |
-| Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline |
-| Legendas | SRT em frases curtas, fonte escalada pela altura, base inferior |
-| Montagem | FFmpeg: gradiente lavfi + título + legendas libass |
-| Render | auto-detecta VA-API → QSV → libx264; 1080×1920, 30 fps |
+| Cenas | divisão semântica via NVIDIA (JSON) ou local; consultas visuais em inglês |
+| Mídia | Wikimedia Commons (sem chave, licença registrada) + Ken Burns; fallback gradiente |
+| Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
+| Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base |
+| Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |
 
 ## Roadmap
 

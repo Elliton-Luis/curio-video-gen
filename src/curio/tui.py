@@ -42,7 +42,7 @@ def _banner(c: dict[str, str]) -> None:
           "| |   | | | | |_) || | | | |\n"
           "| |___| |_| |  _ < | | |_| |\n"
           " \\____|\\___/|_| \\_\\___\\___/ \n"
-          f"{c['reset']}{c['dim']}Máquina de Conteúdo Educativo em Vídeo — MVP v0.1{c['reset']}\n")
+          f"{c['reset']}{c['dim']}Máquina de Conteúdo Educativo em Vídeo — v0.2{c['reset']}\n")
 
 
 def _ask(prompt: str) -> str:
@@ -69,7 +69,7 @@ def _show_verify(c: dict[str, str], mp4: str, srt: str, cfg: CurioConfig) -> boo
 
 def _generate_flow(c: dict[str, str], cfg: CurioConfig,
                    idea: str | None = None, slug: str | None = None,
-                   force: bool = False) -> None:
+                   force: bool = False, narration: str = "ai") -> None:
     if idea is None:
         idea = _ask("\nIdeia do vídeo (ex.: De onde veio a palavra salário?): ").strip()
         if not idea:
@@ -77,12 +77,22 @@ def _generate_flow(c: dict[str, str], cfg: CurioConfig,
             return
         slug = slugify(idea)
         print(f"Diretório de saída: {cfg.out_dir}/{slug}/")
+        kind = _ask("Narração: [1] IA (Edge TTS) / [2] humana (eu narro) [1]: ").strip()
+        narration = "human" if kind == "2" else "ai"
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
     try:
-        meta = run_pipeline(idea, cfg, slug=slug, force=force, on_progress=_progress)
+        meta = run_pipeline(idea, cfg, slug=slug, force=force,
+                            narration=narration, on_progress=_progress)
     except Exception as exc:  # noqa: BLE001 — TUI exibe erro e volta ao menu
         print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
         print("Artefatos anteriores foram preservados — tente de novo sem refazer tudo.")
+        return
+    if narration == "human":
+        print(f"\n{c['green']}Pronto!{c['reset']} "
+              f"Silencioso: {meta['artifacts']['silent']}")
+        print(f"Teleprompter: {meta['artifacts']['teleprompter']}")
+        print("Grave sua voz assistindo ao teleprompter e use a opção "
+              "Finalizar do menu.")
         return
     print(f"\n{c['green']}Pronto!{c['reset']} Vídeo: {meta['artifacts']['video']} "
           f"({meta['duration_actual']}s em {meta['processing_time_seconds']}s)")
@@ -115,6 +125,26 @@ def _list_flow(c: dict[str, str], cfg: CurioConfig) -> None:
             print(f"- {entry}: (metadados corrompidos)")
 
 
+def _finalize_flow(c: dict[str, str], cfg: CurioConfig) -> None:
+    from .cli import _final_progress
+    from .pipeline import finalize_project
+    slug = _ask("Slug do projeto (gerado com narração humana): ").strip()
+    audio = _ask("Arquivo de áudio com sua voz (wav/mp3): ").strip()
+    if not slug or not audio:
+        return
+    try:
+        meta = finalize_project(slug, os.path.expanduser(audio), cfg,
+                                on_progress=_final_progress)
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
+        return
+    print(f"\n{c['green']}Pronto!{c['reset']} Vídeo: {meta['artifacts']['video']} "
+          f"({meta['duration_actual']}s)")
+    _show_verify(c, meta["artifacts"]["video"], meta["artifacts"].get(
+        "subtitles", os.path.join(cfg.out_dir, slug, "subtitles", "subs.srt")),
+        cfg)
+
+
 def _verify_flow(c: dict[str, str], cfg: CurioConfig) -> None:
     slug = _ask("Slug do vídeo (ex.: teste-rapido): ").strip()
     if not slug:
@@ -137,9 +167,10 @@ def run(cfg: CurioConfig | None = None) -> int:
             print(f"{c['bold']}2){c['reset']} Teste rápido (vídeo-exemplo do zero + verificação)")
             print(f"{c['bold']}3){c['reset']} Listar vídeos")
             print(f"{c['bold']}4){c['reset']} Verificar um vídeo")
-            print(f"{c['bold']}5){c['reset']} Checar ambiente (doctor)")
-            print(f"{c['bold']}6){c['reset']} Sair")
-            choice = _ask(f"\n{c['bold']}Escolha [1-6]:{c['reset']} ").strip()
+            print(f"{c['bold']}5){c['reset']} Finalizar narração humana (--audio)")
+            print(f"{c['bold']}6){c['reset']} Checar ambiente (doctor)")
+            print(f"{c['bold']}7){c['reset']} Sair")
+            choice = _ask(f"\n{c['bold']}Escolha [1-7]:{c['reset']} ").strip()
             if choice == "1":
                 _generate_flow(c, cfg)
             elif choice == "2":
@@ -149,9 +180,11 @@ def run(cfg: CurioConfig | None = None) -> int:
             elif choice == "4":
                 _verify_flow(c, cfg)
             elif choice == "5":
+                _finalize_flow(c, cfg)
+            elif choice == "6":
                 from .cli import cmd_doctor
                 cmd_doctor(argparse.Namespace(), cfg)
-            elif choice == "6":
+            elif choice == "7":
                 print("Até logo!")
                 return 0
             else:

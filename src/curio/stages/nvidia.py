@@ -133,17 +133,12 @@ def _http_error_message(status: int, body: str, model: str) -> str:
     )
 
 
-def _request(idea: str, key: str, model: str, base_url: str,
-               timeout: int, max_chars: int, max_tokens: int) -> dict:
+def _post(messages: list[dict], key: str, model: str, base_url: str,
+          timeout: int, max_tokens: int, temperature: float) -> dict:
     payload = json.dumps({
         "model": model,
-        "messages": [
-            {"role": "system",
-             "content": SCRIPT_SYSTEM_PROMPT.format(max_chars=max_chars)},
-            {"role": "user",
-             "content": f"Escreva o roteiro de narração para a ideia: {idea}"},
-        ],
-        "temperature": 0.7,
+        "messages": messages,
+        "temperature": temperature,
         "max_tokens": max_tokens,
     }).encode()
     req = urllib.request.Request(
@@ -170,6 +165,41 @@ def _request(idea: str, key: str, model: str, base_url: str,
         raise NvidiaError(
             "etapa NVIDIA: falha de conexão com a API. "
             f"Motivo provável: {exc.reason}. Verifique rede e NVIDIA_BASE_URL."
+        ) from exc
+
+
+def _request(idea: str, key: str, model: str, base_url: str,
+               timeout: int, max_chars: int, max_tokens: int) -> dict:
+    return _post(
+        [{"role": "system",
+          "content": SCRIPT_SYSTEM_PROMPT.format(max_chars=max_chars)},
+         {"role": "user",
+          "content": f"Escreva o roteiro de narração para a ideia: {idea}"}],
+        key, model, base_url, timeout, max_tokens, 0.7)
+
+
+def complete_json(system_prompt: str, user_prompt: str, model: str,
+                  base_url: str, timeout: int) -> dict:
+    """Uma completion que DEVE retornar JSON. Falhas levantam NvidiaError."""
+    creds = NvidiaCredentials.from_env()
+    key = creds.active_key
+    body = _post([{"role": "system", "content": system_prompt},
+                  {"role": "user", "content": user_prompt}],
+                 key, model, base_url, timeout, 2000, 0.3)
+    try:
+        text = body["choices"][0]["message"].get("content", "").strip()
+    except (KeyError, IndexError, AttributeError) as exc:
+        raise NvidiaError(
+            "etapa NVIDIA: resposta inesperada da API (sem choices/message). "
+            "Tente novamente."
+        ) from exc
+    cleaned = re.sub(r"```(?:json)?", "", text).strip().strip("`")
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise NvidiaError(
+            "etapa NVIDIA: API não retornou JSON válido para as cenas. "
+            "Tente novamente."
         ) from exc
 
 

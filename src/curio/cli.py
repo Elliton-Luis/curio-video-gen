@@ -12,9 +12,10 @@ from . import __version__
 from . import ffmpeg as ff
 from . import verify as verify_mod
 from .config import CurioConfig
-from .pipeline import run_pipeline, video_paths
+from .pipeline import finalize_project, run_pipeline, video_paths
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
+from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
 
 
@@ -33,9 +34,13 @@ def _fail(stage: str, exc: BaseException, hint: str = "") -> int:
 
 def cmd_generate(args, cfg: CurioConfig) -> int:
     idea = " ".join(args.idea).strip()
+    narration = getattr(args, "narration", "ai")
+    if narration not in ("ai", "human"):
+        print("Narração deve ser 'ai' ou 'human'.", file=sys.stderr)
+        return 2
     try:
         meta = run_pipeline(idea, cfg, slug=args.slug, force=args.force,
-                            on_progress=_progress)
+                            narration=narration, on_progress=_progress)
     except ValueError as exc:
         return _fail("roteiro", exc, "ideia vazia ou inválida.")
     except nvidia_stage.NvidiaError as exc:
@@ -49,10 +54,44 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     except Exception as exc:  # noqa: BLE001 — CLI deve exibir erro amigável
         traceback.print_exc()
         return _fail("pipeline", exc, "erro inesperado; veja o traceback acima.")
+    if narration == "human":
+        print(f"\nSilencioso: {meta['artifacts']['silent']}")
+        print(f"Teleprompter: {meta['artifacts']['teleprompter']}")
+        print(f"Grave sua voz assistindo ao teleprompter e rode:\n"
+              f"  video-gen finalize {meta['slug']} --audio minha-voz.wav")
+        return 0
     print(f"\nOutput: {meta['artifacts']['video']}")
     print(f"Duração: {meta['duration_actual']}s (alvo: {meta['duration_target']}s) | "
           f"TTS: {meta['tts_provider']} | render: {meta['render_encoder']} | "
           f"tempo: {meta['processing_time_seconds']}s")
+    return 0
+
+
+def _final_progress(label: str, status: str) -> None:
+    print(f"[finalize] {label}... {status}", flush=True)
+
+
+def cmd_finalize(args, cfg: CurioConfig) -> int:
+    try:
+        meta = finalize_project(args.slug, args.audio, cfg,
+                                force=args.force, on_progress=_final_progress)
+    except FileNotFoundError as exc:
+        return _fail("finalize", exc, "projeto ou áudio não encontrado.")
+    except ValueError as exc:
+        return _fail("finalize", exc, "áudio inválido.")
+    except transcribe_stage.TranscribeError as exc:
+        return _fail("transcrição", exc, "instale faster-whisper "
+                                        "(`scripts/install.sh`).")
+    except ff.FFMpegError as exc:
+        return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        return _fail("finalize", exc, "erro inesperado; veja o traceback acima.")
+    print(f"\nOutput: {meta['artifacts']['video']}")
+    print(f"Duração: {meta['duration_actual']}s | legendas: "
+          f"{meta['subtitle_cues']} blocos ({meta['subtitle_source']})")
+    for w in meta.get("finalize_warnings", []):
+        print(f"AVISO: {w}")
     return 0
 
 
@@ -139,6 +178,12 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     extra = f" ({creds.count} configurada(s), usa a 1ª)" if creds.available else ""
     print(f"[{'OK' if creds.available else '--'}] NVIDIA API "
           f"{'— chave configurada' + extra if creds.available else '— sem chave (roteiros locais)'}")
+    has_fw = importlib.util.find_spec("faster_whisper") is not None
+    print(f"[{'OK' if has_fw else '--'}] faster-whisper (transcrição local) "
+          f"{'— ' + cfg.whisper_model if has_fw else '— finalize indisponível; pip install faster-whisper'}")
+    from .media import providers as media_prov
+    print(f"[{'OK' if media_prov.check_connectivity() else '--'}] "
+          f"Wikimedia Commons (mídia: {cfg.media_providers})")
     print(f"\nConfig: out_dir={cfg.out_dir} tts={cfg.tts_provider}/{cfg.tts_voice} "
           f"backend={cfg.render_backend} nvidia_model={cfg.nvidia_model}")
     return 0 if ok else 1
@@ -159,7 +204,15 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("idea", nargs="+", help="ideia textual entre aspas")
     g.add_argument("--slug", default=None, help="nome do diretório de saída")
     g.add_argument("--force", action="store_true", help="refazer todas as etapas")
+    g.add_argument("--narration", default="ai", choices=["ai", "human"],
+                   help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
     g.set_defaults(func=cmd_generate)
+
+    fin = sub.add_parser("finalize", help="unir áudio humano ao vídeo silencioso")
+    fin.add_argument("slug", help="projeto criado com --narration human")
+    fin.add_argument("--audio", required=True, help="wav/mp3 com a narração humana")
+    fin.add_argument("--force", action="store_true", help="retranscrever e refazer")
+    fin.set_defaults(func=cmd_finalize)
 
     t = sub.add_parser("tui", help="interface interativa em terminal")
     t.set_defaults(func=lambda a, c: __import__("curio.tui", fromlist=["run"]).run(c))

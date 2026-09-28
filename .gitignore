@@ -13,3 +13,5 @@ output/
 REGRAS.md
 # Segredos locais (chaves de API). Só .env.example vai para o git.
 .env
+# Cache de mídia baixada (Wikimedia etc.) — reconstruível via media.json.
+cache/

@@ -33,6 +33,11 @@ python3 -c "import edge_tts" 2>/dev/null && echo "edge-tts: pacote Python OK (vo
   python3 -m pip install --user edge-tts || echo "edge-tts: falhou (sem rede?) — TTS usará espeak-ng local."
 }
 
+python3 -c "import faster_whisper" 2>/dev/null && echo "faster-whisper: OK (transcrição local)" || {
+  echo "faster-whisper: instalando (transcrição local p/ narração humana)..."
+  python3 -m pip install --user faster-whisper || echo "faster-whisper: falhou (sem rede?) — finalize indisponível."
+}
+
 python3 -m pip install --user -e . 2>/dev/null || {
   echo "pip install -e . falhou (sem rede?); sem problema:"
   echo "use ./scripts/run.sh, que roda com PYTHONPATH=src sem instalar."

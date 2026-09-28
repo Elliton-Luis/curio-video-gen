@@ -81,6 +81,42 @@ def cues_to_srt(cues: list[tuple[float, float, str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _ends_sentence(text: str) -> bool:
+    return text.rstrip().endswith((".", "!", "?", "…", "..."))
+
+
+def cues_from_words(words: list[dict], max_words: int = 5,
+                    max_chars: int = 36, max_dur: float = 4.5,
+                    min_dur: float = 0.8) -> list[tuple[float, float, str]]:
+    """Agrupa WordBoundary reais em blocos legíveis.
+
+    Quebra em fim de frase quando o bloco já tem corpo (≥3 palavras ou
+    ≥20 chars); limites duros de palavras/chars/duração evitam estouro.
+    Sem offset artificial: o primeiro bloco começa no primeiro boundary real.
+    """
+    clean = [w for w in words if str(w.get("text", "")).strip()]
+    if not clean:
+        raise ValueError("sem timestamps de palavras — nada para legendar")
+    cues, cur = [], []
+    for w in clean:
+        cur.append(w)
+        nwords = len(cur)
+        nchars = sum(len(str(x["text"])) + 1 for x in cur)
+        dur = float(cur[-1]["end"]) - float(cur[0]["start"])
+        boundary = _ends_sentence(str(w["text"])) and (nwords >= 3 or nchars >= 20)
+        hard = nwords >= max_words or nchars > max_chars or dur >= max_dur
+        if boundary or hard:
+            start = float(cur[0]["start"])
+            end = max(float(cur[-1]["end"]), start + min_dur)
+            cues.append((start, end, " ".join(str(x["text"]) for x in cur)))
+            cur = []
+    if cur:
+        start = float(cur[0]["start"])
+        end = max(float(cur[-1]["end"]), start + min_dur)
+        cues.append((start, end, " ".join(str(x["text"]) for x in cur)))
+    return cues
+
+
 def build_srt(text: str, total_duration: float, lead: float = 0.15) -> str:
     return cues_to_srt(build_cues(text, total_duration, lead))
 
@@ -94,7 +130,9 @@ def _fmt_ass_ts(seconds: float) -> str:
 
 
 def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
-                font_size: int, margin_v: int) -> str:
+                font_size: int, margin_v: int, alignment: int = 2,
+                border_style: int = 1,
+                back_colour: str = "&H00000000") -> str:
     """ASS com PlayRes = resolução real: fonte/margem em pixels de verdade."""
     head = (
         "[Script Info]\n"
@@ -109,7 +147,8 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,DejaVu Sans,{font_size},&H00FFFFFF,&H000019FF,"
-        f"&H80000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,60,60,{margin_v},1\n"
+        f"&H80000000,{back_colour},0,0,0,0,100,100,0,0,{border_style},2,0,"
+        f"{alignment},60,60,{margin_v},1\n"
         "\n[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
         "Effect, Text\n"
@@ -131,14 +170,16 @@ def write_srt(text: str, total_duration: float, srt_path: str) -> tuple[str, int
 
 def write_subtitles(text: str, total_duration: float, srt_path: str,
                     ass_path: str, width: int, height: int,
-                    base_font_size: int, margin_v: int) -> int:
-    """Gera SRT + ASS a partir dos mesmos cues. Retorna nº de blocos.
+                    base_font_size: int, margin_v: int,
+                    words: list[dict] | None = None) -> int:
+    """Gera SRT + ASS. Com `words` (timestamps reais), sem offset artificial;
+    sem eles, cai no modo proporcional legado.
 
     A fonte do ASS é escalada pela altura (base calibrada para 1920),
     em pixels reais — PlayRes do ASS = resolução do vídeo.
     """
     font_size = max(20, round(base_font_size * height / 1920))
-    cues = build_cues(text, total_duration)
+    cues = cues_from_words(words) if words else build_cues(text, total_duration)
     with open(srt_path, "w", encoding="utf-8") as fh:
         fh.write(cues_to_srt(cues))
     with open(ass_path, "w", encoding="utf-8") as fh:

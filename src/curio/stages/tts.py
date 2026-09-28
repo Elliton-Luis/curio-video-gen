@@ -17,6 +17,10 @@ from .. import ffmpeg as ff
 
 DEFAULT_EDGE_VOICE = "pt-BR-AntonioNeural"  # masculina, PT-BR
 
+# NOTA: pausas SSML (<break>) foram avaliadas e descartadas — com entrada
+# SSML o Edge retorna boundaries dos TOKENS DO MARKUP (speak, voice, break…),
+# inutilizando os timestamps. Texto puro + WordBoundary dá palavras reais.
+
 
 class TTSError(RuntimeError):
     pass
@@ -29,6 +33,7 @@ class TTSResult:
     provider: str
     voice: str
     speed: int
+    words: list[dict] | None = None  # [{text, start, end}] timestamps reais
 
 
 def available_providers() -> list[str]:
@@ -50,8 +55,13 @@ def _estimate_wpm(text: str, duration: float) -> int:
     return round(words / max(duration, 0.1) * 60)
 
 
-def _synth_edge(text: str, wav_path: str, voice: str, rate: str) -> None:
-    """Voz neural via Edge (grátis, sem login). Requer pacote + internet."""
+def _synth_edge(text: str, wav_path: str, voice: str, rate: str,
+                words_path: str | None = None) -> list[dict]:
+    """Voz neural via Edge (grátis, sem login). Requer pacote + internet.
+
+    Texto puro + boundary=WordBoundary: captura timestamps reais por palavra
+    (offsets em ticks de 100ns → segundos). Retorna a lista de palavras.
+    """
     try:
         import edge_tts
     except ImportError as exc:
@@ -65,19 +75,44 @@ def _synth_edge(text: str, wav_path: str, voice: str, rate: str) -> None:
         voice = DEFAULT_EDGE_VOICE
     mp3_path = wav_path + ".edge.mp3"
 
-    async def _save() -> None:
-        await edge_tts.Communicate(text, voice, rate=rate).save(mp3_path)
+    words: list[dict] = []
+    audio_parts: list[bytes] = []
+
+    async def _stream() -> None:
+        async for chunk in edge_tts.Communicate(
+                text, voice, rate=rate, boundary="WordBoundary").stream():
+            if chunk.get("type") == "WordBoundary":
+                wtext = (chunk.get("text") or "").strip()
+                if wtext:
+                    words.append({
+                        "text": wtext,
+                        "start": round((chunk.get("offset") or 0) / 10_000_000, 3),
+                        "end": round(((chunk.get("offset") or 0)
+                                      + (chunk.get("duration") or 0)) / 10_000_000, 3),
+                    })
+            elif chunk.get("type") == "audio":
+                audio_parts.append(chunk.get("data") or b"")
 
     try:
-        asyncio.run(_save())
+        asyncio.run(_stream())
     except Exception as exc:
         raise TTSError(f"edge-tts falhou (voz={voice!r}): {exc}") from exc
+    if not audio_parts:
+        raise TTSError(f"edge-tts não retornou áudio (voz={voice!r}).")
+    with open(mp3_path, "wb") as fh:
+        for part in audio_parts:
+            fh.write(part)
     proc = ff.run([ff.FFMPEG, "-y", "-v", "error", "-i", mp3_path,
                    "-ar", "48000", "-ac", "2", wav_path])
     os.remove(mp3_path)
     if proc.returncode != 0:
         raise TTSError(
             f"conversão do áudio edge-tts falhou: {proc.stderr.strip()}")
+    if words_path:
+        import json
+        with open(words_path, "w", encoding="utf-8") as fh:
+            json.dump(words, fh, ensure_ascii=False, indent=1)
+    return words
 
 
 def _synth_espeak(text: str, wav_path: str, voice: str, speed: int) -> None:
@@ -97,7 +132,8 @@ def _synth_espeak(text: str, wav_path: str, voice: str, speed: int) -> None:
 
 
 def synthesize(text: str, wav_path: str, provider: str, voice: str,
-               speed: int, target_duration: float) -> TTSResult:
+               speed: int, target_duration: float,
+               words_path: str | None = None) -> TTSResult:
     if provider not in ("edge-tts", "espeak-ng", "auto"):
         raise TTSError(
             f"provedor TTS {provider!r} desconhecido "
@@ -108,7 +144,8 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
 
     if want_edge:
         try:
-            return _synthesize_edge(text, wav_path, voice, target_duration)
+            return _synthesize_edge(text, wav_path, voice, target_duration,
+                                    words_path)
         except TTSError as exc:
             if shutil.which("espeak-ng") is None:
                 raise TTSError(
@@ -126,8 +163,9 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
 
 
 def _synthesize_edge(text: str, wav_path: str, voice: str,
-                     target_duration: float) -> TTSResult:
-    _synth_edge(text, wav_path, voice, "+0%")
+                     target_duration: float,
+                     words_path: str | None = None) -> TTSResult:
+    words = _synth_edge(text, wav_path, voice, "+0%", words_path)
     duration = ff.probe_duration(wav_path)
 
     # Uma correção de ritmo (a duração-alvo é meta, não corte — §5).
@@ -136,12 +174,13 @@ def _synthesize_edge(text: str, wav_path: str, voice: str,
         if ratio < 0.85 or ratio > 1.15:
             pct = max(-30, min(30, round((ratio - 1) * 100)))
             rate = f"{pct:+d}%"
-            _synth_edge(text, wav_path, voice, rate)
+            words = _synth_edge(text, wav_path, voice, rate, words_path)
             duration = ff.probe_duration(wav_path)
             voice = f"{voice} ({rate})"
 
     return TTSResult(path=wav_path, duration=duration, provider="edge-tts",
-                     voice=voice, speed=_estimate_wpm(text, duration))
+                     voice=voice, speed=_estimate_wpm(text, duration),
+                     words=words)
 
 
 def _synthesize_espeak(text: str, wav_path: str, voice: str,

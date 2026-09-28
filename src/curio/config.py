@@ -25,7 +25,11 @@ class CurioConfig:
     sub_margin_v: int = 200
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
-    nvidia_timeout: int = 60
+    nvidia_timeout: int = 120  # chamadas JSON de cenas pensam mais que roteiro
+    media_providers: str = "wikimedia"  # csv; "none" = só fallback
+    cache_dir: str = "cache"
+    teleprompter_wpm: int = 150
+    whisper_model: str = "base"
     # Chaves NVIDIA NÃO vivem aqui: lidas direto do ambiente
     # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
     # para nunca vazarem em logs, erros ou metadata.
@@ -72,6 +76,13 @@ class CurioConfig:
         cfg.nvidia_base_url = os.environ.get("NVIDIA_BASE_URL", cfg.nvidia_base_url)
         if os.environ.get("NVIDIA_TIMEOUT"):
             cfg.nvidia_timeout = int(os.environ["NVIDIA_TIMEOUT"])
+        cfg.media_providers = os.environ.get("CURIO_MEDIA_PROVIDERS",
+                                             cfg.media_providers)
+        cfg.cache_dir = os.environ.get("CURIO_CACHE_DIR", cfg.cache_dir)
+        if os.environ.get("CURIO_WPM"):
+            cfg.teleprompter_wpm = int(os.environ["CURIO_WPM"])
+        cfg.whisper_model = os.environ.get("CURIO_WHISPER_MODEL",
+                                           cfg.whisper_model)
         return cfg
 
     def as_dict(self) -> dict:

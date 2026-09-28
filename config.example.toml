@@ -27,4 +27,14 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # [nvidia]
 # base_url = "https://integrate.api.nvidia.com/v1"
 # model = "nvidia/nemotron-3-ultra-550b-a55b"
-# timeout = 60
+# timeout = 120
+
+[media]
+providers = "wikimedia"  # csv; "none" = só fallback (também serve p/ teste)
+# cache em cache/media/<provedor>/<id> (CURIO_CACHE_DIR muda o root)
+
+[teleprompter]
+wpm = 150  # palavras/minuto estimadas p/ leitura (ajuste: 130/150/170)
+
+[transcribe]
+model = "base"  # faster-whisper local (tiny|base|small|medium)

@@ -21,6 +21,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260928-135530_relatorio_benchmark-vozes.md` — Donato/Humberto/
   Nicolau/Valerio não existem no Edge TTS; mesma frase renderizada nas 3
   vozes PT-BR reais (`output/benchmark_vozes/`) para avaliação auditiva.
+- `relatorios/20260928-161950_relatorio_midia-teleprompter-sincronizacao.md` —
+  cenas NVIDIA + Wikimedia/Ken Burns + WordBoundary + teleprompter +
+  finalize/Whisper; 5 testes + validação visual (T4 com stand-in, não voz real).
 
 ## Análises (estado, gaps, riscos)
 
