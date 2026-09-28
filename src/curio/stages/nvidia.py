@@ -42,6 +42,11 @@ SCRIPT_SYSTEM_PROMPT = (
     "5) não invente fatos, datas, nomes ou citações; se algo for incerto ou "
     "disputado, diga isso com honestidade em vez de afirmar como fato; "
     "6) não crie fontes falsas nem cite estudos inexistentes. "
+    "FORMATO DE SAÍDA (obrigatório): responda SOMENTE com o texto da narração. "
+    "PROIBIDO: títulos, 'Cena 1', 'Narrador:', rubricas entre colchetes, "
+    "markdown, listas, aspas de diálogo, emojis, preâmbulos como 'Aqui está' "
+    "ou qualquer explicação sobre o roteiro. Se precisar raciocinar, faça-o "
+    "apenas no raciocínio interno, nunca no texto final. "
     "Princípio editorial: o texto pode simplificar uma ideia para torná-la "
     "acessível, mas nunca deve falsificá-la para torná-la mais viral."
 )
@@ -128,10 +133,8 @@ def _http_error_message(status: int, body: str, model: str) -> str:
     )
 
 
-def generate_script(idea: str, creds: NvidiaCredentials, model: str,
-                    base_url: str, timeout: int, max_chars: int) -> str:
-    """Gera o roteiro via NVIDIA API. Falhas levantam NvidiaError (nunca silêncio)."""
-    key = creds.active_key  # levanta se não houver chave
+def _request(idea: str, key: str, model: str, base_url: str,
+               timeout: int, max_chars: int, max_tokens: int) -> dict:
     payload = json.dumps({
         "model": model,
         "messages": [
@@ -141,7 +144,7 @@ def generate_script(idea: str, creds: NvidiaCredentials, model: str,
              "content": f"Escreva o roteiro de narração para a ideia: {idea}"},
         ],
         "temperature": 0.7,
-        "max_tokens": 500,
+        "max_tokens": max_tokens,
     }).encode()
     req = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
@@ -151,7 +154,7 @@ def generate_script(idea: str, creds: NvidiaCredentials, model: str,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.load(resp)
+            return json.load(resp)
     except urllib.error.HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8", "replace")
@@ -169,23 +172,51 @@ def generate_script(idea: str, creds: NvidiaCredentials, model: str,
             f"Motivo provável: {exc.reason}. Verifique rede e NVIDIA_BASE_URL."
         ) from exc
 
+
+def generate_script(idea: str, creds: NvidiaCredentials, model: str,
+                    base_url: str, timeout: int, max_chars: int) -> str:
+    """Gera o roteiro via NVIDIA API. Falhas levantam NvidiaError (nunca silêncio)."""
+    key = creds.active_key  # levanta se não houver chave
+    # Modelos de raciocínio gastam tokens pensando: orçamento folgado e,
+    # se truncar (finish_reason=length), UMA escalada antes de desistir.
+    body, max_tokens = None, 1500
+    for _ in range(2):
+        body = _request(idea, key, model, base_url, timeout, max_chars, max_tokens)
+        if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
+            break
+        max_tokens = 3000
     try:
-        text = body["choices"][0]["message"]["content"].strip()
+        choice = body["choices"][0]
+        text = choice["message"].get("content", "").strip()
     except (KeyError, IndexError, AttributeError) as exc:
         raise NvidiaError(
             "etapa NVIDIA: resposta inesperada da API (sem choices/message). "
             "Tente novamente."
         ) from exc
-    if not text:
+    if choice.get("finish_reason") == "length":
         raise NvidiaError(
-            "etapa NVIDIA: API retornou roteiro vazio. Tente novamente."
+            "etapa NVIDIA: resposta truncada mesmo com orçamento estendido. "
+            "Tente novamente."
         )
-    return _sanitize(text, max_chars)
+    cleaned = _sanitize(text or "", max_chars)
+    if len(cleaned) < 100:
+        raise NvidiaError(
+            "etapa NVIDIA: API retornou texto inválido para narração "
+            "(vazio, curto demais ou só raciocínio). Tente novamente."
+        )
+    return cleaned
 
 
 def _sanitize(text: str, max_chars: int) -> str:
+    # Remove raciocínio vazado, cercas de código e rubricas de roteiro
+    # ("Cena 1", "Narrador:", colchetes) — nada disso pode ir para o TTS.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-    text = re.sub(r"\s+", " ", text).strip().strip("`\"' ")
+    text = re.sub(r"\[[^\]\n]*\]", "", text)  # [Cena 1: ...], [trilha]...
+    text = re.sub(r"(?im)^\s*(narrador|narração|roteiro)\s*:\s*", "", text)
+    text = re.sub(r"(?i)^(aqui está[^:]*|roteiro[^:]*|claro!?)\s*:?\s*", "", text.strip())
+    text = text.replace("*", "").replace("#", "").replace('"', "")
+    text = re.sub(r"\s+", " ", text).strip().strip("`' ")
     if len(text) <= max_chars:
         return text
     # Corta com dignidade: última fronteira de frase dentro do limite,
