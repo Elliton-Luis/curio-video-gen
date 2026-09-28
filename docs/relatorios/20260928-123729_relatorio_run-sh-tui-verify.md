@@ -3,7 +3,7 @@
 - **Data:** 2026-09-28 12:37 (UTC-3)
 - **Tipo:** relatorio
 - **Escopo:** corrigir `run.sh` sem argumentos e dar à TUI um fluxo visual de teste
-- **Commit(s):** `6e835d0` — `fix: open TUI when run without args and add video verification`
+- **Commit(s):** `4a7fac5` — `fix: open TUI when run without args and add video verification`
 - **Origem:** pedido do usuário ("run.sh não funciona; deve abrir interface visual que permita testar")
 
 ## 1. O que foi pedido
