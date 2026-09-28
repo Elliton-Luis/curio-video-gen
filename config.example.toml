@@ -18,13 +18,13 @@ height = 1920
 fps = 30
 
 [subtitles]
-font_size = 64
-margin_v = 200
+font_size = 68   # base para altura 1920, em pixels reais (ASS PlayRes = resolução)
+margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 
-# Descomente para habilitar roteiros via LLM (API compatível com OpenAI).
-# Sem chave configurada, o MVP usa o gerador local (custo zero).
-# [llm]
-# provider = "openai-compat"
-# base_url = "https://api.openai.com/v1"
-# model = "gpt-4o-mini"
-# api_key_env = "CURIO_LLM_API_KEY"
+# Roteiros via NVIDIA API. Chaves NUNCA aqui — use .env
+# (NVIDIA_API_KEY ou futura NVIDIA_API_KEYS="key1,key2").
+# Sem chave, o pipeline usa o gerador local (curado + template, custo zero).
+# [nvidia]
+# base_url = "https://integrate.api.nvidia.com/v1"
+# model = "nvidia/nemotron-3-ultra-550b-a55b"
+# timeout = 60

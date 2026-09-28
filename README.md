@@ -84,18 +84,32 @@ output/<slug>/
 Copie `config.example.toml` para `config.toml` e ajuste (duração-alvo, voz,
 backend de render `auto|vaapi|qsv|cpu`, resolução, legendas). Variáveis de
 ambiente (`CURIO_OUT_DIR`, `CURIO_TTS`, `CURIO_BACKEND`, …) sobrescrevem o
-arquivo. Chaves de API nunca vão no código — use env (ex.: `CURIO_LLM_API_KEY`).
+arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
+(gitignored; veja `.env.example`).
 
-Sem chave de LLM, o roteiro usa a base curada local + template (custo zero).
-Com chave, um provedor compatível com OpenAI pode ser usado (ver config).
+## Roteiros via NVIDIA API
+
+```bash
+cp .env.example .env
+# edite .env e preencha NVIDIA_API_KEY (gerada em https://build.nvidia.com)
+./scripts/run.sh generate "De onde veio a palavra salário?"
+```
+
+Com chave configurada, o roteiro vem do modelo `nvidia/nemotron-3-ultra-550b-a55b`
+(via `NVIDIA_MODEL` é possível trocar sem mexer no pipeline). Sem chave, o
+pipeline usa o gerador local (base curada + template, custo zero). Com roteiro
+em cache, a API **não** é chamada de novo — salvo com `--force`.
+
+Para múltiplas chaves futuras existe `NVIDIA_API_KEYS="key1,key2"` (aceita na
+config, usa a 1ª; **rotação ainda não implementada**).
 
 ## Como funciona
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | base curada + template honesto; LLM opcional e isolado |
+| Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave; sem chave: base curada + template |
 | Narração | `espeak-ng` pt-br, com 1 correção automática de ritmo |
-| Legendas | SRT com tempos proporcionais ao áudio (sem retranscrição) |
+| Legendas | SRT em frases curtas, fonte escalada pela altura, base inferior |
 | Montagem | FFmpeg: gradiente lavfi + título + legendas libass |
 | Render | auto-detecta VA-API → QSV → libx264; 1080×1920, 30 fps |
 

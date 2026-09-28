@@ -14,6 +14,7 @@ from . import verify as verify_mod
 from .config import CurioConfig
 from .pipeline import run_pipeline, video_paths
 from .slug import slugify
+from .stages import nvidia as nvidia_stage
 from .stages import tts as tts_stage
 
 
@@ -37,6 +38,10 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
                             on_progress=_progress)
     except ValueError as exc:
         return _fail("roteiro", exc, "ideia vazia ou inválida.")
+    except nvidia_stage.NvidiaError as exc:
+        return _fail("NVIDIA", exc, "verifique NVIDIA_API_KEY/NVIDIA_MODEL; "
+                                    "sem chave, o gerador local é usado; "
+                                    "com roteiro em cache, rode de novo para reaproveitá-lo.")
     except tts_stage.TTSError as exc:
         return _fail("narração", exc, "verifique espeak-ng (`video-gen doctor`).")
     except ff.FFMpegError as exc:
@@ -125,8 +130,13 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("VA-API (Intel Arc/discreta/iGPU)", dev is not None, dev or "vai usar CPU (libx264)")
     check("fonte para título", ff.find_font_bold() is not None,
           ff.find_font_bold() or "título será omitido")
+    creds = nvidia_stage.NvidiaCredentials.from_env()
+    # Informativo: ausência de chave NÃO falha o doctor (gerador local cobre).
+    extra = f" ({creds.count} configurada(s), usa a 1ª)" if creds.available else ""
+    print(f"[{'OK' if creds.available else '--'}] NVIDIA API "
+          f"{'— chave configurada' + extra if creds.available else '— sem chave (roteiros locais)'}")
     print(f"\nConfig: out_dir={cfg.out_dir} tts={cfg.tts_provider}/{cfg.tts_voice} "
-          f"backend={cfg.render_backend}")
+          f"backend={cfg.render_backend} nvidia_model={cfg.nvidia_model}")
     return 0 if ok else 1
 
 

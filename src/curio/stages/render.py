@@ -32,7 +32,7 @@ def _wrap_title(idea: str, width: int = 26) -> list[str]:
     return [line.upper() for line in lines][:2]
 
 
-def render_video(wav_path: str, srt_path: str, mp4_path: str,
+def render_video(wav_path: str, subs_path: str, mp4_path: str,
                  idea: str, audio_duration: float, cfg: CurioConfig) -> dict:
     ff.require_tools()
     backend, encoder = ff.pick_encoder(cfg.render_backend)
@@ -58,12 +58,7 @@ def render_video(wav_path: str, srt_path: str, mp4_path: str,
                 f"fontsize=54:fontcolor=white:borderw=2:bordercolor=0x000000AA:"
                 f"x=(w-text_w)/2:y={150 + i * 76}"
             )
-    vf.append(
-        f"subtitles={ff.escape_sub_path(srt_path)}:"
-        f"force_style='FontSize={cfg.sub_font_size},PrimaryColour=&HFFFFFF,"
-        f"OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=0,"
-        f"Alignment=2,MarginV={cfg.sub_margin_v}'"
-    )
+    vf.append(f"subtitles={ff.escape_sub_path(subs_path)}")
 
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-f", "lavfi", "-i", bg,

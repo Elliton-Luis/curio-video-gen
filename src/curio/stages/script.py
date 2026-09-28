@@ -1,28 +1,17 @@
 """Geração de roteiro (PRD §6).
 
-MVP: gerador local de custo zero com base curada + template honesto.
-Nenhuma afirmação é inventada para viralizar (princípio editorial, §2).
-LLM opcional e isolado: só ativa com CURIO_LLM_API_KEY configurada.
+Ordem: NVIDIA API (se houver chave) → base curada → template local.
+Com chave configurada, a NVIDIA é autoritativa e falhas são explícitas
+(NvidiaError) — nunca fallback silencioso. Sem chave, custo zero offline.
 """
 
 from __future__ import annotations
 
-import json
-import re
-import urllib.request
-
 from ..config import CurioConfig
+from . import nvidia as nvidia_stage
 
 # ~13,5 caracteres/segundo ≈ ritmo de narração PT-BR confortável.
 CHARS_PER_SECOND = 13.5
-
-SYSTEM_PROMPT = (
-    "Você escreve roteiros curtos de vídeo educativo em PT-BR. Regras: "
-    "texto corrido para narração, sem markdown, sem 'Você sabia que', "
-    "sem clickbait, sem inventar fatos; se algo for incerto, diga que é incerto. "
-    "Estrutura: apresentação rápida, desenvolvimento, conclusão. "
-    "Responda com no máximo {max_chars} caracteres."
-)
 
 # Base curada: cada entrada tem ~600 caracteres (≈45 s) e evita mitos comuns.
 CURATED: dict[str, str] = {
@@ -81,46 +70,21 @@ def _template_script(idea: str, max_chars: int) -> str:
     return text
 
 
-def _llm_script(idea: str, cfg: CurioConfig, max_chars: int) -> str | None:
-    if not (cfg.llm_api_key and cfg.llm_base_url and cfg.llm_model):
-        return None
-    payload = json.dumps({
-        "model": cfg.llm_model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT.format(max_chars=max_chars)},
-            {"role": "user", "content": f"Escreva o roteiro para a ideia: {idea}"},
-        ],
-        "temperature": 0.7,
-        "max_tokens": 400,
-    }).encode()
-    req = urllib.request.Request(
-        cfg.llm_base_url.rstrip("/") + "/chat/completions",
-        data=payload,
-        headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {cfg.llm_api_key}"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            body = json.load(resp)
-        text = body["choices"][0]["message"]["content"].strip()
-    except Exception:
-        return None
-    text = re.sub(r"\s+", " ", text)
-    return text[:max_chars] if len(text) > max_chars else text
-
-
 def generate_script(idea: str, cfg: CurioConfig) -> tuple[str, str]:
-    """Retorna (roteiro, fonte). Fonte: 'curated:...' | 'llm:...' | 'template'."""
+    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'curated' | 'template'."""
     if not idea or not idea.strip():
         raise ValueError("ideia vazia — informe um texto, ex.: video-gen generate \"...\"")
     max_chars = int(cfg.duration_target * CHARS_PER_SECOND)
 
+    creds = nvidia_stage.NvidiaCredentials.from_env()
+    if creds.available:
+        text = nvidia_stage.generate_script(
+            idea, creds, cfg.nvidia_model, cfg.nvidia_base_url,
+            cfg.nvidia_timeout, max_chars)
+        return text, f"nvidia:{cfg.nvidia_model}"
+
     curated = _match_curated(idea)
     if curated:
         return (curated[:max_chars], "curated")
-
-    llm_text = _llm_script(idea, cfg, max_chars)
-    if llm_text:
-        return llm_text, f"llm:{cfg.llm_model}"
 
     return _template_script(idea, max_chars), "template"

@@ -21,11 +21,14 @@ class CurioConfig:
     width: int = 1080
     height: int = 1920
     fps: int = 30
-    sub_font_size: int = 64
+    sub_font_size: int = 68  # base p/ altura 1920, em pixels reais (ASS PlayRes=vRes)
     sub_margin_v: int = 200
-    llm_base_url: str = ""
-    llm_model: str = ""
-    llm_api_key: str = ""
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    nvidia_timeout: int = 60
+    # Chaves NVIDIA NÃO vivem aqui: lidas direto do ambiente
+    # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
+    # para nunca vazarem em logs, erros ou metadata.
 
     @classmethod
     def load(cls, path: str | None = None) -> "CurioConfig":
@@ -51,11 +54,10 @@ class CurioConfig:
         sub = data.get("subtitles", {}) if isinstance(data.get("subtitles"), dict) else {}
         cfg.sub_font_size = int(sub.get("font_size", cfg.sub_font_size))
         cfg.sub_margin_v = int(sub.get("margin_v", cfg.sub_margin_v))
-        llm = data.get("llm", {}) if isinstance(data.get("llm"), dict) else {}
-        cfg.llm_base_url = str(llm.get("base_url", ""))
-        cfg.llm_model = str(llm.get("model", ""))
-        key_env = str(llm.get("api_key_env", "CURIO_LLM_API_KEY"))
-        cfg.llm_api_key = os.environ.get(key_env, "")
+        nvidia = data.get("nvidia", {}) if isinstance(data.get("nvidia"), dict) else {}
+        cfg.nvidia_base_url = str(nvidia.get("base_url", cfg.nvidia_base_url))
+        cfg.nvidia_model = str(nvidia.get("model", cfg.nvidia_model))
+        cfg.nvidia_timeout = int(nvidia.get("timeout", cfg.nvidia_timeout))
 
         # Overrides via ambiente.
         cfg.out_dir = os.environ.get("CURIO_OUT_DIR", cfg.out_dir)
@@ -66,6 +68,10 @@ class CurioConfig:
         cfg.render_backend = os.environ.get("CURIO_BACKEND", cfg.render_backend)
         if os.environ.get("CURIO_DURATION"):
             cfg.duration_target = float(os.environ["CURIO_DURATION"])
+        cfg.nvidia_model = os.environ.get("NVIDIA_MODEL", cfg.nvidia_model)
+        cfg.nvidia_base_url = os.environ.get("NVIDIA_BASE_URL", cfg.nvidia_base_url)
+        if os.environ.get("NVIDIA_TIMEOUT"):
+            cfg.nvidia_timeout = int(os.environ["NVIDIA_TIMEOUT"])
         return cfg
 
     def as_dict(self) -> dict:

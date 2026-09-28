@@ -29,6 +29,7 @@ class VideoPaths:
     script_txt: str
     narration_wav: str
     subs_srt: str
+    subs_ass: str
     final_mp4: str
     metadata_json: str
 
@@ -40,6 +41,7 @@ def video_paths(out_dir: str, slug: str) -> VideoPaths:
         script_txt=os.path.join(root, "script", "script.txt"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         subs_srt=os.path.join(root, "subtitles", "subs.srt"),
+        subs_ass=os.path.join(root, "subtitles", "subs.ass"),
         final_mp4=os.path.join(root, "render", "final.mp4"),
         metadata_json=os.path.join(root, "metadata.json"),
     )
@@ -97,8 +99,11 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     t0 = time.monotonic()
     emit(3, "Sincronizando legendas")
     cue_count = None
-    if force or not os.path.isfile(paths.subs_srt):
-        _, cue_count = subs_stage.write_srt(script_text, audio_duration, paths.subs_srt)
+    if force or not (os.path.isfile(paths.subs_srt)
+                     and os.path.isfile(paths.subs_ass)):
+        cue_count = subs_stage.write_subtitles(
+            script_text, audio_duration, paths.subs_srt, paths.subs_ass,
+            cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v)
     else:
         content = _read(paths.subs_srt)
         cue_count = content.count("-->")
@@ -114,7 +119,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                        "duration": video_duration, "path": paths.final_mp4}
     else:
         render_info = render_stage.render_video(
-            paths.narration_wav, paths.subs_srt, paths.final_mp4,
+            paths.narration_wav, paths.subs_ass, paths.final_mp4,
             idea, audio_duration, cfg)
         video_duration = render_info["duration"]
     stage_times["render"] = round(time.monotonic() - t0, 2)
@@ -150,6 +155,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "script": paths.script_txt,
             "audio": paths.narration_wav,
             "subtitles": paths.subs_srt,
+            "subtitles_ass": paths.subs_ass,
             "video": paths.final_mp4,
         },
     }

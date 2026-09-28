@@ -11,3 +11,5 @@ output/
 .DS_Store
 # Arquivo pessoal de regras do dono do projeto: nunca commitar.
 REGRAS.md
+# Segredos locais (chaves de API). Só .env.example vai para o git.
+.env
