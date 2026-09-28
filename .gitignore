@@ -9,3 +9,5 @@ output/
 *.mp4
 *.wav
 .DS_Store
+# Arquivo pessoal de regras do dono do projeto: nunca commitar.
+REGRAS.md
