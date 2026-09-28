@@ -1,0 +1,30 @@
+# Arquivo de configuração do curio (PRD §18).
+# Copie para `config.toml` e ajuste. Também é possível sobrescrever via
+# variáveis de ambiente (ex.: CURIO_OUT_DIR, CURIO_TTS, CURIO_BACKEND).
+# Segredos NUNCA vão no código — use env (ex.: CURIO_LLM_API_KEY).
+
+duration_target = 45.0
+out_dir = "output"
+
+[tts]
+provider = "espeak-ng"   # espeak-ng | piper | edge-tts
+voice = "pt-br"
+speed = 170              # palavras por minuto (espeak-ng)
+
+[render]
+backend = "auto"         # auto | vaapi | qsv | cpu
+width = 1080
+height = 1920
+fps = 30
+
+[subtitles]
+font_size = 64
+margin_v = 200
+
+# Descomente para habilitar roteiros via LLM (API compatível com OpenAI).
+# Sem chave configurada, o MVP usa o gerador local (custo zero).
+# [llm]
+# provider = "openai-compat"
+# base_url = "https://api.openai.com/v1"
+# model = "gpt-4o-mini"
+# api_key_env = "CURIO_LLM_API_KEY"
