@@ -71,17 +71,18 @@ def _template_script(idea: str, max_chars: int) -> str:
 
 
 def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str]:
-    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'curated' | 'template'."""
+    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'curated' | 'template'."""
     if not idea or not idea.strip():
         raise ValueError("ideia vazia — informe um texto, ex.: video-gen generate \"...\"")
     max_chars = int(cfg.duration_target * CHARS_PER_SECOND)
 
     creds = nvidia_stage.NvidiaCredentials.from_env()
     if creds.available:
-        text = nvidia_stage.generate_script(
+        text, _label = nvidia_stage.generate_script(
             idea, creds, cfg.nvidia_model, cfg.nvidia_base_url,
-            cfg.nvidia_timeout, max_chars, metrics)
-        return text, f"nvidia:{cfg.nvidia_model}"
+            cfg.nvidia_timeout, max_chars, metrics,
+            or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url)
+        return text, _label
 
     curated = _match_curated(idea)
     if curated:

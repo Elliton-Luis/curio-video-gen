@@ -56,6 +56,11 @@ video-gen generate --narration human "De onde veio a palavra salário?"
 # ...grave sua voz, depois:
 video-gen finalize de-onde-veio-a-palavra-salario --audio minha-voz.wav
 
+# Roteiro já pronto (não reescreve nada: só organiza as fotos por trecho)
+video-gen from-script meu-roteiro.txt --narration ai
+# 1-5 fotos por cena com sobreposição estilo álbum (--max-images 3);
+# SFX discretos em ~1/3 das inserções (desliga com CURIO_VISUAL_SFX=0)
+
 # Refazer tudo do zero (padrão: reaproveita artefatos existentes)
 video-gen generate --force "O mito dos capacetes com chifres dos vikings"
 
@@ -95,8 +100,9 @@ Output: output/salario/render/final.mp4
 output/<slug>/
 ├── script/script.txt + chapters.json
 ├── media/media.json (+ cache/media/ global com licenças)
-├── timeline/timeline.json
+├── timeline/timeline.json (+ visual_timeline.json no modo roteiro-pronto)
 ├── audio/narration.wav + words.json (IA) / human.wav (sua voz)
+│   └── sfx.wav + mixed.wav (SFX discretos, só roteiro-pronto com inserções)
 ├── teleprompter/teleprompter.mp4 (fluxo humano)
 ├── subtitles/subs.srt + subs.ass
 ├── render/silent.mp4 + final.mp4
@@ -124,6 +130,13 @@ Com chave configurada, o roteiro vem do modelo `nvidia/nemotron-3-ultra-550b-a55
 pipeline usa o gerador local (base curada + template, custo zero). Com roteiro
 em cache, a API **não** é chamada de novo — salvo com `--force`.
 
+Robustez da etapa LLM: cada provedor tem **5 tentativas** com backoff para
+falhas transitórias (timeout, conexão, 429/5xx; `CURIO_LLM_ATTEMPTS` ajusta,
+1–10). 401/403/404 não repetem. Se a NVIDIA esgotar as tentativas e houver
+`OPENROUTER_API_KEY` no `.env`, o pipeline **tenta sozinho no OpenRouter**
+(modelo via `OPENROUTER_MODEL`, padrão `google/gemini-2.5-flash`) antes de
+desistir — o erro final resume o que foi tentado em cada provedor.
+
 Para múltiplas chaves futuras existe `NVIDIA_API_KEYS="key1,key2"` (aceita na
 config, usa a 1ª; **rotação ainda não implementada**).
 
@@ -131,9 +144,9 @@ config, usa a 1ª; **rotação ainda não implementada**).
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave; sem chave: base curada + template |
-| Cenas | divisão semântica via NVIDIA (JSON) ou local; consultas visuais em inglês |
-| Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns |
+| Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave e 5 retries; fallback OpenRouter com chave; sem chave: base curada + template |
+| Cenas | divisão semântica via NVIDIA (JSON, com fallback OpenRouter) ou local; consultas visuais em inglês |
+| Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns; no modo roteiro-pronto, até 5 fotos/cena em colagem álbum sem repetição de entrada + SFX discretos |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
 | Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base |
 | Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |

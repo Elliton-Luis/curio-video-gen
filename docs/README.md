@@ -40,6 +40,17 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   consumo (chamadas/tokens/downloads) e tamanhos por vídeo + backfill.
 - `relatorios/20260928-195420_relatorio_json-cenas-smoke.md` — JSON de cenas
   tolerante (extração + orçamento estendido) + `scripts/smoke.sh` (14 cheques).
+- `relatorios/20260929-121121_relatorio_llm-retry-openrouter.md` — etapa LLM
+  com 5 tentativas (backoff, só transitório) + fallback OpenRouter
+  (`OPENROUTER_API_KEY`, padrão `google/gemini-2.5-flash`); `smoke.sh` com
+  40 cheques.
+- `relatorios/20260929-123641_relatorio_roteiro-pronto-modo.md` —
+  `from-script`: roteiro pronto vira colagem álbum sem reescrever a
+  narração (timeline visual, Ken Burns p/ 1 foto, `verify` 8/8 no E2E IA).
+- `relatorios/20260929-123641_relatorio_entradas-sfx-variedade.md` — 6
+  entradas sem repetição consecutiva (seed do slug) + SFX discretos em
+  ~1/3 das inserções (pico −35 dB, narração intacta); `smoke.sh` com
+  47 cheques.
 
 ## Análises (estado, gaps, riscos)
 

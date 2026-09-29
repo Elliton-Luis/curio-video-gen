@@ -97,16 +97,18 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
 
 def build_chapters(script: str, cfg: CurioConfig,
                    n_scenes: int | None = None, metrics=None) -> tuple[list[Chapter], str]:
-    """Retorna (capítulos, fonte). Fonte: 'nvidia' | 'local'."""
+    """Retorna (capítulos, fonte). Fonte: 'nvidia' | 'openrouter' | 'local'."""
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
     creds = nvidia_stage.NvidiaCredentials.from_env()
     if creds.available:
-        data = nvidia_stage.complete_json(
+        data, label = nvidia_stage.complete_json(
             SCENES_SYSTEM_PROMPT.format(n=n_scenes, lo=lo, hi=hi),
             f"Divida este roteiro em cenas:\n\n{script}",
             cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout,
-            metrics)
+            metrics,
+            or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url)
+        provider = label.split(":")[0]  # "nvidia" | "openrouter"
         chapters = []
         for i, raw in enumerate(data.get("chapters", []), 1):
             narration = str(raw.get("narration", "")).strip()
@@ -120,8 +122,8 @@ def build_chapters(script: str, cfg: CurioConfig,
                 visual_intent=str(raw.get("visual_intent", "")),
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
-            return chapters, "nvidia"
-        print("AVISO: cenas NVIDIA não reproduzem o roteiro literal — "
+            return chapters, provider
+        print(f"AVISO: cenas {provider} não reproduzem o roteiro literal — "
               "usando divisão local.", file=sys.stderr)
     else:
         print("Sem chave NVIDIA: cenas por divisão local.", file=sys.stderr)

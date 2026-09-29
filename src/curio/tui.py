@@ -105,11 +105,12 @@ def _project_status(cfg: CurioConfig, slug: str) -> tuple[str, dict]:
     except json.JSONDecodeError:
         return "metadados corrompidos", {}
     mode = meta.get("narration", "ai")
+    tag = " (roteiro pronto)" if meta.get("mode") == "script" else ""
     if mode == "human-pending":
-        return "aguardando sua voz (sem vídeo final ainda)", meta
+        return "aguardando sua voz (sem vídeo final ainda)" + tag, meta
     if mode == "human":
-        return "vídeo final com SUA voz", meta
-    return "vídeo final pronto (voz de IA)", meta
+        return "vídeo final com SUA voz" + tag, meta
+    return "vídeo final pronto (voz de IA)" + tag, meta
 
 
 # ---------------------------------------------------------------- ajuda
@@ -135,8 +136,14 @@ ONDE FICAM AS COISAS (pasta output/<projeto>/):
     render/final.mp4          o vídeo final (só existe no fim do fluxo A ou B)
     render/silent.mp4         base silenciosa (passo 1 do fluxo B)
     teleprompter/teleprompter.mp4   o texto grande para você ler gravando
+    timeline/visual_timeline.json   fotos por trecho (só no modo roteiro-pronto)
     audio/                    narração da IA ou a SUA voz + transcrição
     metadata.json             tudo sobre o projeto (capítulos, licenças, tempos)
+
+[C] ROTEIRO PRONTO (opção 9 — sem reescrever nada)
+    Você entrega o texto final; a máquina divide em trechos, busca fotos
+    para cada um e monta a sequência em álbum (fotos entrando umas sobre
+    as outras, nunca slides). A narração sai idêntica ao seu texto.
 
 DICAS:
     - Reexecutar sem --force reaproveita o já pronto (rápido e sem custo).
@@ -262,6 +269,56 @@ def _human_flow(c: dict[str, str], cfg: CurioConfig) -> None:
         print("Sem pressa: quando gravar, volte → 'Passo 2: finalizar com minha voz'.")
 
 
+# ------------------------------------------------------- roteiro pronto
+
+def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
+    from .pipeline import run_script_pipeline
+    from .stages import visual as visual_stage
+    print(f"\n{c['bold']}ROTEIRO PRONTO — suas palavras, intocadas; só as fotos mudam."
+          f"{c['reset']}")
+    print("O texto é usado exatamente como está (narração + legendas).")
+    path = _ask("Arquivo .txt com o roteiro: ").strip()
+    if not path:
+        return
+    try:
+        script_text = visual_stage.read_script_file(os.path.expanduser(path))
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"{c['red']}ERRO: {exc}{c['reset']}")
+        return
+    print(f"Roteiro: {len(script_text)} caracteres, "
+          f"{len(script_text.split())} palavras (será preservado).")
+    nar = _ask("Narração: [1] voz de IA (vídeo final) / [2] eu mesmo (2 passos)? [1]: "
+               ).strip()
+    narration = "human" if nar == "2" else "ai"
+    cfg = _ask_duration(c, cfg)
+    raw_max = _ask(f"Fotos por cena com sobreposição [1-5, padrão "
+                   f"{cfg.visual_max_images}]: ").strip()
+    if raw_max:
+        try:
+            import dataclasses
+            cfg = dataclasses.replace(
+                cfg, visual_max_images=max(1, min(5, int(raw_max))))
+        except ValueError:
+            print("Valor inválido — mantendo o padrão.")
+    try:
+        meta = run_script_pipeline(script_text, cfg, narration=narration,
+                                   on_progress=_progress)
+    except Exception as exc:  # noqa: BLE001 — TUI exibe erro e volta ao menu
+        print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
+        print("O que já estava pronto foi preservado — tente de novo.")
+        return
+    if narration == "human":
+        print(f"\n{c['green']}Base pronta!{c['reset']} (repare: ainda NÃO há vídeo final)")
+        print(f"  1. Assista e leia: {meta['artifacts']['teleprompter']}")
+        print(f"  2. Grave sua voz (~{meta['duration_actual']}s) com qualquer gravador")
+        print(f"  3. Volte aqui → opção 'Passo 2: finalizar com minha voz'")
+        print("Sem pressa: quando gravar, volte → 'Passo 2: finalizar com minha voz'.")
+        return
+    print(f"\n{c['green']}Pronto!{c['reset']} Vídeo final: {meta['artifacts']['video']} "
+          f"({meta['duration_actual']}s em {meta['processing_time_seconds']}s)")
+    _show_verify(c, meta["artifacts"]["video"], meta["artifacts"]["subtitles"], cfg)
+
+
 # ------------------------------------------------------- projetos
 
 def _list_flow(c: dict[str, str], cfg: CurioConfig) -> None:
@@ -319,8 +376,9 @@ def run(cfg: CurioConfig | None = None) -> int:
             print(f"  {c['bold']}6){c['reset']} Como funciona (ajuda)")
             print(f"  {c['bold']}7){c['reset']} Teste rápido")
             print(f"  {c['bold']}8){c['reset']} Checar ambiente (doctor)")
-            print(f"  {c['bold']}9){c['reset']} Sair")
-            choice = _ask(f"\n{c['bold']}Escolha [1-9]:{c['reset']} ").strip()
+            print(f"  {c['bold']}9){c['reset']} Criar vídeo de roteiro pronto (sem reescrever)")
+            print(f"  {c['bold']}10){c['reset']} Sair")
+            choice = _ask(f"\n{c['bold']}Escolha [1-10]:{c['reset']} ").strip()
             if choice == "1":
                 _ai_flow(c, cfg)
             elif choice == "2":
@@ -339,6 +397,8 @@ def run(cfg: CurioConfig | None = None) -> int:
                 from .cli import cmd_doctor
                 cmd_doctor(argparse.Namespace(), cfg)
             elif choice == "9":
+                _script_flow(c, cfg)
+            elif choice == "10":
                 print("Até logo!")
                 return 0
             else:

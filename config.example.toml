@@ -29,9 +29,20 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # model = "nvidia/nemotron-3-ultra-550b-a55b"
 # timeout = 120
 
+# Fallback automático quando a NVIDIA falha (roteiro e cenas).
+# Chave via .env (OPENROUTER_API_KEY); aqui só modelo/base.
+# [openrouter]
+# model = "google/gemini-2.5-flash"
+# base_url = "https://openrouter.ai/api/v1"
+
 [media]
 providers = "wikimedia,openverse"  # csv; pexels entra se PEXELS_API_KEY existir; "none" = só fallback
 # cache em cache/media/<provedor>/<id> (CURIO_CACHE_DIR muda o root)
+
+[visual]
+max_images = 3  # fotos por cena no modo roteiro-pronto (1-5; CURIO_VISUAL_MAX_IMAGES)
+overlap = 0.9   # sobreposição máxima (s) entre fotos (CURIO_VISUAL_OVERLAP)
+sfx = true      # SFX discretos em ~1/3 das inserções (CURIO_VISUAL_SFX=0 desliga)
 
 [teleprompter]
 wpm = 150  # palavras/minuto estimadas p/ leitura (ajuste: 130/150/170)

@@ -13,11 +13,12 @@ from . import ffmpeg as ff
 from . import verify as verify_mod
 from .config import CurioConfig
 from .metrics import backfill_from_metadata
-from .pipeline import finalize_project, run_pipeline, video_paths
+from .pipeline import finalize_project, run_pipeline, run_script_pipeline, video_paths
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
 from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
+from .stages import visual as visual_stage
 
 
 def _progress(idx: int, total: int, label: str, status: str) -> None:
@@ -48,9 +49,11 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     except ValueError as exc:
         return _fail("roteiro", exc, "ideia vazia ou inválida.")
     except nvidia_stage.NvidiaError as exc:
-        return _fail("NVIDIA", exc, "verifique NVIDIA_API_KEY/NVIDIA_MODEL; "
-                                    "sem chave, o gerador local é usado; "
-                                    "com roteiro em cache, rode de novo para reaproveitá-lo.")
+        return _fail("LLM", exc, "tentativas esgotadas na NVIDIA e no fallback; "
+                                 "verifique chaves/modelos (`video-gen doctor`), "
+                                 "rede e limites das contas; "
+                                 "sem chave, o gerador local é usado; "
+                                 "com roteiro em cache, rode de novo para reaproveitá-lo.")
     except tts_stage.TTSError as exc:
         return _fail("narração", exc, "verifique espeak-ng (`video-gen doctor`).")
     except ff.FFMpegError as exc:
@@ -78,6 +81,58 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
 
 def _final_progress(label: str, status: str) -> None:
     print(f"[finalize] {label}... {status}", flush=True)
+
+
+def cmd_from_script(args, cfg: CurioConfig) -> int:
+    """Modo roteiro-pronto: organiza mídia sobre narração existente."""
+    narration = getattr(args, "narration", "ai")
+    if narration not in ("ai", "human"):
+        print("Narração deve ser 'ai' ou 'human'.", file=sys.stderr)
+        return 2
+    if getattr(args, "duration", None):
+        cfg.duration_target = float(args.duration)
+        print(f"Duração-alvo: {cfg.duration_target:.0f}s (aproximada).")
+    max_images = getattr(args, "max_images", None)
+    if max_images is not None:
+        cfg.visual_max_images = max(1, min(5, int(max_images)))
+    try:
+        script_text = visual_stage.read_script_file(args.script)
+    except (FileNotFoundError, ValueError) as exc:
+        return _fail("roteiro", exc, "arquivo de roteiro inválido.")
+    try:
+        meta = run_script_pipeline(
+            script_text, cfg, title=getattr(args, "title", None),
+            slug=args.slug, force=args.force, narration=narration,
+            on_progress=_progress)
+    except ValueError as exc:
+        return _fail("roteiro", exc, "roteiro vazio ou divisão inválida.")
+    except nvidia_stage.NvidiaError as exc:
+        return _fail("LLM", exc, "tentativas esgotadas na NVIDIA e no fallback; "
+                                 "verifique chaves/modelos (`video-gen doctor`); "
+                                 "sem chave, a divisão local é usada.")
+    except tts_stage.TTSError as exc:
+        return _fail("narração", exc, "verifique espeak-ng (`video-gen doctor`).")
+    except ff.FFMpegError as exc:
+        return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
+    except Exception as exc:  # noqa: BLE001 — CLI deve exibir erro amigável
+        traceback.print_exc()
+        return _fail("pipeline", exc, "erro inesperado; veja o traceback acima.")
+    if narration == "human":
+        print(f"\nSilencioso: {meta['artifacts']['silent']}")
+        print(f"Teleprompter: {meta['artifacts']['teleprompter']}")
+        if not getattr(args, "no_open", False):
+            from .openers import open_after_teleprompter
+            for msg in open_after_teleprompter(
+                    cfg, os.path.dirname(meta['artifacts']['teleprompter'])):
+                print(msg)
+        print(f"Grave sua voz e rode:\n"
+              f"  video-gen finalize {meta['slug']} --audio minha-voz.wav")
+        return 0
+    print(f"\nOutput: {meta['artifacts']['video']}")
+    print(f"Duração: {meta['duration_actual']}s (alvo: {meta['duration_target']}s) | "
+          f"TTS: {meta['tts_provider']} | render: {meta['render_encoder']} | "
+          f"tempo: {meta['processing_time_seconds']}s")
+    return 0
 
 
 def cmd_finalize(args, cfg: CurioConfig) -> int:
@@ -221,6 +276,9 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     extra = f" ({creds.count} configurada(s), usa a 1ª)" if creds.available else ""
     print(f"[{'OK' if creds.available else '--'}] NVIDIA API "
           f"{'— chave configurada' + extra if creds.available else '— sem chave (roteiros locais)'}")
+    or_creds = nvidia_stage.OpenRouterCredentials.from_env()
+    print(f"[{'OK' if or_creds.available else '--'}] OpenRouter (fallback LLM) "
+          f"{'— chave configurada (' + cfg.openrouter_model + ')' if or_creds.available else '— sem chave (sem fallback; defina OPENROUTER_API_KEY)'}")
     has_fw = importlib.util.find_spec("faster_whisper") is not None
     print(f"[{'OK' if has_fw else '--'}] faster-whisper (transcrição local) "
           f"{'— ' + cfg.whisper_model if has_fw else '— finalize indisponível; pip install faster-whisper'}")
@@ -260,6 +318,23 @@ def build_parser() -> argparse.ArgumentParser:
     fin.add_argument("--audio", required=True, help="wav/mp3 com a narração humana")
     fin.add_argument("--force", action="store_true", help="retranscrever e refazer")
     fin.set_defaults(func=cmd_finalize)
+
+    fs = sub.add_parser("from-script", help="organizar mídia sobre um roteiro pronto "
+                                           "(sem reescrever a narração)")
+    fs.add_argument("script", help="arquivo .txt com o roteiro (ou - para stdin)")
+    fs.add_argument("--slug", default=None, help="nome do diretório de saída")
+    fs.add_argument("--title", default=None, help="título do vídeo "
+                                                  "(padrão: 1ª linha do roteiro)")
+    fs.add_argument("--force", action="store_true", help="refazer todas as etapas")
+    fs.add_argument("--duration", type=float, default=None,
+                    help="duração aproximada em segundos (ex.: 30, 45, 60)")
+    fs.add_argument("--narration", default="ai", choices=["ai", "human"],
+                    help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
+    fs.add_argument("--max-images", type=int, default=None,
+                    help="fotos por cena com sobreposição 1-5 (padrão: config)")
+    fs.add_argument("--no-open", action="store_true",
+                    help="não abrir pasta/gravador após o teleprompter")
+    fs.set_defaults(func=cmd_from_script)
 
     t = sub.add_parser("tui", help="interface interativa em terminal")
     t.set_defaults(func=lambda a, c: __import__("curio.tui", fromlist=["run"]).run(c))
