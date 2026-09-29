@@ -11,9 +11,10 @@ Saída dupla a partir dos mesmos cues (mesma sincronia):
   384x288 e estoura o tamanho/posição — bug encontrado em teste visual).
 
 Apresentação (só visual, nunca sincronia): fonte pesada e larga
-(Archivo Black, OFL) branca sobre caixa preta sólida com padding
-(BorderStyle 3 + Outline como respiro). Cantos arredondados NÃO existem
-no ASS/libass — caixa quadrada por limitação do formato.
+(Archivo Black, OFL) branca sobre caixa preta que acompanha o texto
+(BorderStyle 4 com Outline como padding). Entrada com fade-in suave.
+Cantos arredondados NÃO existem no ASS/libass — caixa quadrada por
+limitação do formato.
 """
 
 from __future__ import annotations
@@ -23,9 +24,10 @@ import re
 ARCHIVO_FAMILY = "Archivo Black"
 ARCHIVO_FILE = "ArchivoBlack-Regular.ttf"
 ARCHIVO_URL = ("https://github.com/google/fonts/raw/main/"
-               "ofl/archivoblack/ArchivoBlack-Regular.ttf")
-SUBTITLE_OUTLINE = 10  # em BorderStyle 3, vira padding da caixa preta
+              "ofl/archivoblack/ArchivoBlack-Regular.ttf")
+SUBTITLE_OUTLINE = 8  # em BorderStyle 4, vira padding da caixa preta
 SUBTITLE_MARGIN_LR = 80
+SUBTITLE_FADE_IN_MS = 300  # duração do fade-in em milissegundos
 
 
 def _fc_match(family: str) -> tuple[str, str] | None:
@@ -90,8 +92,37 @@ def _words(text: str) -> list[str]:
     return re.findall(r"\S+", text)
 
 
+def _normalize_subtitle_text(text: str) -> str:
+    """Normaliza texto da legenda: corrige pontuação, capitalização, interrogações."""
+    if not text:
+        return text
+    # Normaliza espaços
+    text = re.sub(r"\s+", " ", text.strip())
+    # Corrige letras maiúsculas aleatórias no meio da frase
+    text = re.sub(r"(?<=[a-z])\s+([A-Z])(?=[a-z])", lambda m: " " + m.group(1).lower(), text)
+    # Heurística simples para perguntas: palavras interrogativas no início
+    interrogatives = r"^(?:o que|o que e|por que|porque|como|quando|onde|quem|qual|quais|quanto|quantos|qual)"
+    # Divide em sentenças e normaliza cada uma
+    sentences = re.split(r"(?<=[.!?…])\s+", text)
+    normalized = []
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        # Se parece pergunta mas não tem ?, adiciona
+        if re.match(interrogatives, s, re.IGNORECASE) and not s.rstrip().endswith(("?", "？")):
+            s = s.rstrip(".!.") + "?"
+        # Garante primeira letra maiúscula
+        if s:
+            s = s[0].upper() + s[1:] if len(s) > 1 else s.upper()
+        normalized.append(s)
+    return " ".join(normalized)
+
+
 def _sentences(text: str) -> list[str]:
     """Quebra em frases para respeitar pausas naturais da narração."""
+    # Primeiro normaliza o texto
+    text = _normalize_subtitle_text(text)
     parts = re.split(r"(?<=[.!?…])\s+", text.strip())
     return [p for p in parts if p]
 
@@ -201,16 +232,17 @@ def _fmt_ass_ts(seconds: float) -> str:
 
 def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
                 font_size: int, margin_v: int, alignment: int = 2,
-                border_style: int = 3,
+                border_style: int = 4,
                 back_colour: str = "&H00000000",
                 fontname: str = "DejaVu Sans", bold: int = 0,
                 outline: int = SUBTITLE_OUTLINE,
-                margin_lr: int = SUBTITLE_MARGIN_LR) -> str:
+                margin_lr: int = SUBTITLE_MARGIN_LR,
+                fade_in_ms: int = SUBTITLE_FADE_IN_MS) -> str:
     """ASS com PlayRes = resolução real: fonte/margem em pixels de verdade.
 
-    Caixa preta sólida com padding (BorderStyle 3 + Outline como respiro,
-    cores opacas): legível sobre qualquer fundo. Só apresentação — tempos,
-    quebras e agrupamento dos cues intocados.
+    Caixa preta que acompanha o texto (BorderStyle 4 com Outline como padding).
+    Entrada com fade-in suave. Só apresentação — tempos, quebras e agrupamento
+    dos cues intocados.
     """
     head = (
         "[Script Info]\n"
@@ -235,8 +267,12 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
     body = []
     for start, end, cue in cues:
         safe = cue.replace("{", "").replace("}", "").replace("\n", " ")
+        # Adiciona fade-in no início de cada cue
+        start_cs = int(round(start * 100))
+        fade_start = max(0, start_cs - fade_in_ms // 10)
+        effect = f"\\fad({fade_in_ms},0)"
         body.append(f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},"
-                    f"Default,,0,0,0,,{safe}")
+                    f"Default,,0,0,0,{effect},{safe}")
     return head + "\n".join(body) + "\n"
 
 

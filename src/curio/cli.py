@@ -14,7 +14,7 @@ from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import backfill_from_metadata
 from .pipeline import finalize_project, run_pipeline, run_script_pipeline, video_paths
-from .slug import slugify
+from .slug import slugify, slugify_with_timestamp
 from .stages import nvidia as nvidia_stage
 from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage

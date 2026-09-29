@@ -171,9 +171,8 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
 def _synthesize_edge(text: str, wav_path: str, voice: str,
                      target_duration: float,
                      words_path: str | None = None, metrics=None) -> TTSResult:
-    # Ritmo sempre natural: a duração final é consequência do roteiro e do
-    # áudio — `target_duration` é só meta informativa (nunca altera a fala).
-    words = _synth_edge(text, wav_path, voice, "+0%", words_path, metrics)
+    # Velocidade 1.25x: áudio mais rápido, vídeo acompanha automaticamente.
+    words = _synth_edge(text, wav_path, voice, "+25%", words_path, metrics)
     duration = ff.probe_duration(wav_path)
 
     return TTSResult(path=wav_path, duration=duration, provider="edge-tts",

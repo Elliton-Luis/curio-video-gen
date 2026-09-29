@@ -270,8 +270,8 @@ from curio.stages import subs as _SU
 from curio.stages import script as _SC
 _doc10 = _SU.cues_to_ass([(1.0, 2.5, "salário vem do latim")], 1080, 1920,
                          92, 200, fontname="Archivo Black", bold=0)
-check("ASS: Archivo Black + caixa preta sólida c/ padding",
-      "Archivo Black" in _doc10 and ",3,10,0," in _doc10
+check("ASS: Archivo Black + caixa preta que acompanha o texto",
+      "Archivo Black" in _doc10 and ",4,8,0," in _doc10
       and "&H00000000,&H00000000" in _doc10
       and "80,80,200,1" in _doc10)
 check("ASS: tempos dos cues intactos",

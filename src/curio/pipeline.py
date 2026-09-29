@@ -21,7 +21,7 @@ from .config import CurioConfig
 from .media import download_asset, get_providers
 from .media.providers import MediaAsset, MediaError
 from .metrics import RunMetrics, backfill_from_metadata
-from .slug import slugify
+from .slug import slugify, slugify_with_timestamp
 from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage
 from .stages import scenes as scenes_stage
@@ -335,7 +335,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if on_progress:
             on_progress(idx, len(stages), label, status)
 
-    slug = slug or slugify(idea)
+    slug = slug or slugify_with_timestamp(idea)
     paths = video_paths(cfg.out_dir, slug)
     metrics = RunMetrics(slug, idea, narration)
     for d in ("script", "audio", "subtitles", "assets", "render",
@@ -658,7 +658,7 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
         first_line = next((ln.strip() for ln in text.splitlines()
                            if ln.strip()), text[:90])
         title = first_line[:90]
-    slug = slug or slugify(title)
+    slug = slug or slugify_with_timestamp(title)
     if max_images is None:
         max_images = cfg.visual_max_images
     return run_pipeline(title, cfg, slug=slug, force=force,
