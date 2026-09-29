@@ -61,6 +61,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260929-141815_relatorio_duracao-flexivel.md` — modo
   Automático/Ilimitado padrão (conteúdo manda), meta nunca corta, TTS sem
   compressão artificial, verify informativo; `smoke.sh` com 73 cheques.
+- `relatorios/20260929-142919_relatorio_llm-chain-gemini-groq.md` — chain
+  NVIDIA→OpenRouter→Gemini→Groq em rodízio intercalado com levantamento
+  final + `.env` organizado; `smoke.sh` com 77 cheques.
 
 ## Análises (estado, gaps, riscos)
 

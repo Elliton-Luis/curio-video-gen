@@ -78,7 +78,7 @@ def _template_script(idea: str, max_chars: int | None) -> str:
 
 
 def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str]:
-    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'curated' | 'template'.
+    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'gemini:...' | 'groq:...' | 'curated' | 'template'.
 
     Com duração escolhida, o tamanho é meta (corta com dignidade); no modo
     Automático (duration_target 0), sem corte — só o teto de segurança.
@@ -88,12 +88,12 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str
     auto = cfg.duration_target <= 0
     max_chars = None if auto else int(cfg.duration_target * CHARS_PER_SECOND)
 
-    creds = nvidia_stage.NvidiaCredentials.from_env()
-    if creds.available:
+    if nvidia_stage.any_llm_available():
         text, _label = nvidia_stage.generate_script(
-            idea, creds, cfg.nvidia_model, cfg.nvidia_base_url,
+            idea, cfg.nvidia_model, cfg.nvidia_base_url,
             cfg.nvidia_timeout, max_chars, metrics,
-            or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url)
+            or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
+            extra=cfg.llm_overrides())
         return text, _label
 
     curated = _match_curated(idea)
@@ -145,19 +145,19 @@ def generate_title(script_text: str, idea: str, cfg: CurioConfig,
                    metrics=None) -> tuple[str, str]:
     """Gera o título-pergunta do vídeo a partir do roteiro (não da ideia).
 
-    Retorna (título, fonte): 'nvidia:...' | 'openrouter:...' | 'fallback'.
-    O título nunca entra na narração nem nas legendas — só metadados e
-    abertura do vídeo.
+    Retorna (título, fonte): 'nvidia:...' | 'openrouter:...' | 'gemini:...' |
+    'groq:...' | 'fallback'. O título nunca entra na narração nem nas
+    legendas — só metadados e abertura do vídeo.
     """
-    creds = nvidia_stage.NvidiaCredentials.from_env()
-    if creds.available:
+    if nvidia_stage.any_llm_available():
         try:
             data, label = nvidia_stage.complete_json(
                 nvidia_stage.TITLE_SYSTEM_PROMPT,
                 f"Crie o título para este roteiro:\n\n{script_text}",
                 cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout,
                 metrics, or_model=cfg.openrouter_model,
-                or_base_url=cfg.openrouter_base_url)
+                or_base_url=cfg.openrouter_base_url,
+                extra=cfg.llm_overrides())
             return _validate_title(str(data.get("title", "")), script_text), label
         except (nvidia_stage.NvidiaError, ValueError) as exc:
             print(f"AVISO: título IA inválido ({exc}) — usando fallback.",

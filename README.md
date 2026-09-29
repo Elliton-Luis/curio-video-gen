@@ -119,35 +119,41 @@ ambiente (`CURIO_OUT_DIR`, `CURIO_TTS`, `CURIO_BACKEND`, …) sobrescrevem o
 arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
 (gitignored; veja `.env.example`).
 
-## Roteiros via NVIDIA API
+## Roteiros via LLM (chain com rodízio)
 
 ```bash
 cp .env.example .env
-# edite .env e preencha NVIDIA_API_KEY (gerada em https://build.nvidia.com)
+# edite .env e preencha ao menos uma chave (gere em):
+# NVIDIA https://build.nvidia.com · OpenRouter https://openrouter.ai/keys
+# Gemini https://aistudio.google.com/apikey · Groq https://console.groq.com/keys
 ./scripts/run.sh generate "De onde veio a palavra salário?"
 ```
 
-Com chave configurada, o roteiro vem do modelo `nvidia/nemotron-3-ultra-550b-a55b`
-(via `NVIDIA_MODEL` é possível trocar sem mexer no pipeline). Sem chave, o
-pipeline usa o gerador local (base curada + template, custo zero). Com roteiro
-em cache, a API **não** é chamada de novo — salvo com `--force`.
+Ordem do rodízio: NVIDIA → OpenRouter → Gemini → Groq. A NVIDIA falhou
+1x, já troca (intercalado com retries); erro definitivo (401/403/404)
+tira o provedor do rodízio; no fim sai um levantamento do que foi
+tentado. `video-gen doctor` mostra o status de cada um. Sem nenhuma
+chave, o pipeline usa o gerador local (base curada + template, custo
+zero). Com roteiro em cache, a API **não** é chamada de novo — salvo
+com `--force`.
 
-Robustez da etapa LLM: cada provedor tem **5 tentativas** com backoff para
-falhas transitórias (timeout, conexão, 429/5xx; `CURIO_LLM_ATTEMPTS` ajusta,
-1–10). 401/403/404 não repetem. Se a NVIDIA esgotar as tentativas e houver
-`OPENROUTER_API_KEY` no `.env`, o pipeline **tenta sozinho no OpenRouter**
-(modelo via `OPENROUTER_MODEL`, padrão `google/gemini-2.5-flash`) antes de
-desistir — o erro final resume o que foi tentado em cada provedor.
+Modelos padrão: NVIDIA `nvidia/nemotron-3-ultra-550b-a55b`, OpenRouter
+`google/gemini-2.5-flash`, Gemini `gemini-2.5-flash`, Groq
+`openai/gpt-oss-120b` (trocáveis via `*_MODEL` sem mexer no pipeline).
 
-Para múltiplas chaves futuras existe `NVIDIA_API_KEYS="key1,key2"` (aceita na
-config, usa a 1ª; **rotação ainda não implementada**).
+Robustez: até **6 tentativas totais** no rodízio (`CURIO_LLM_ATTEMPTS`,
+1–12) com backoff nas transitórias; 401/403/404 eliminam o provedor na
+hora. Sem nenhuma chave, vale o gerador local acima.
+
+Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
+(aceita na config, usa a 1ª; **rotação ainda não implementada**).
 
 ## Como funciona
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave e 5 retries; fallback OpenRouter com chave; tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
-| Cenas | divisão semântica via NVIDIA (JSON, com fallback OpenRouter) ou local; consultas visuais em inglês |
+| Roteiro | chain LLM (NVIDIA → OpenRouter → Gemini → Groq) em rodízio com retries; tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
+| Cenas | divisão semântica via LLM do chain (JSON) ou local; consultas visuais em inglês |
 | Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns; no modo roteiro-pronto, até 5 fotos/cena em colagem álbum sem repetição de entrada + SFX discretos |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
 | Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base, Archivo Black com caixa preta sólida |

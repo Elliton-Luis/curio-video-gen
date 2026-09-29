@@ -65,6 +65,10 @@ class CurioConfig:
     nvidia_timeout: int = 120  # chamadas JSON de cenas pensam mais que roteiro
     openrouter_model: str = "google/gemini-2.5-flash"  # fallback automático
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    gemini_model: str = "gemini-2.5-flash"  # Gemini direto (GEMINI_API_KEY)
+    gemini_base_url: str = ("https://generativelanguage.googleapis.com/v1beta/openai")
+    groq_model: str = "openai/gpt-oss-120b"  # Groq (GROQ_API_KEY)
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     media_providers: str = "wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
     teleprompter_wpm: int = 150
@@ -112,6 +116,12 @@ class CurioConfig:
         orouter = data.get("openrouter", {}) if isinstance(data.get("openrouter"), dict) else {}
         cfg.openrouter_model = str(orouter.get("model", cfg.openrouter_model))
         cfg.openrouter_base_url = str(orouter.get("base_url", cfg.openrouter_base_url))
+        gemini = data.get("gemini", {}) if isinstance(data.get("gemini"), dict) else {}
+        cfg.gemini_model = str(gemini.get("model", cfg.gemini_model))
+        cfg.gemini_base_url = str(gemini.get("base_url", cfg.gemini_base_url))
+        groq = data.get("groq", {}) if isinstance(data.get("groq"), dict) else {}
+        cfg.groq_model = str(groq.get("model", cfg.groq_model))
+        cfg.groq_base_url = str(groq.get("base_url", cfg.groq_base_url))
 
         # Overrides via ambiente.
         cfg.out_dir = os.environ.get("CURIO_OUT_DIR", cfg.out_dir)
@@ -130,6 +140,11 @@ class CurioConfig:
                                               cfg.openrouter_model)
         cfg.openrouter_base_url = os.environ.get("OPENROUTER_BASE_URL",
                                                  cfg.openrouter_base_url)
+        cfg.gemini_model = os.environ.get("GEMINI_MODEL", cfg.gemini_model)
+        cfg.gemini_base_url = os.environ.get("GEMINI_BASE_URL",
+                                             cfg.gemini_base_url)
+        cfg.groq_model = os.environ.get("GROQ_MODEL", cfg.groq_model)
+        cfg.groq_base_url = os.environ.get("GROQ_BASE_URL", cfg.groq_base_url)
         cfg.media_providers = os.environ.get("CURIO_MEDIA_PROVIDERS",
                                              cfg.media_providers)
         cfg.cache_dir = os.environ.get("CURIO_CACHE_DIR", cfg.cache_dir)
@@ -159,6 +174,16 @@ class CurioConfig:
             cfg.auto_open = os.environ["CURIO_AUTO_OPEN"].strip().lower() not in (
                 "0", "false", "no", "n")
         return cfg
+
+    def llm_overrides(self) -> dict:
+        """Overrides (model, base_url) p/ fallbacks do chain (gemini, groq).
+
+        Valores já com precedência CLI > env > config.toml > padrão.
+        """
+        return {
+            "gemini": (self.gemini_model, self.gemini_base_url),
+            "groq": (self.groq_model, self.groq_base_url),
+        }
 
     def as_dict(self) -> dict:
         return {

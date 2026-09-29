@@ -294,14 +294,21 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("VA-API (Intel Arc/discreta/iGPU)", dev is not None, dev or "vai usar CPU (libx264)")
     check("fonte para título", ff.find_font_bold() is not None,
           ff.find_font_bold() or "título será omitido")
-    creds = nvidia_stage.NvidiaCredentials.from_env()
     # Informativo: ausência de chave NÃO falha o doctor (gerador local cobre).
-    extra = f" ({creds.count} configurada(s), usa a 1ª)" if creds.available else ""
-    print(f"[{'OK' if creds.available else '--'}] NVIDIA API "
-          f"{'— chave configurada' + extra if creds.available else '— sem chave (roteiros locais)'}")
-    or_creds = nvidia_stage.OpenRouterCredentials.from_env()
-    print(f"[{'OK' if or_creds.available else '--'}] OpenRouter (fallback LLM) "
-          f"{'— chave configurada (' + cfg.openrouter_model + ')' if or_creds.available else '— sem chave (sem fallback; defina OPENROUTER_API_KEY)'}")
+    # Chain LLM: NVIDIA → OpenRouter → Gemini → Groq (1º com chave tenta).
+    _llm_models = {"nvidia": cfg.nvidia_model, "openrouter": cfg.openrouter_model,
+                   "gemini": cfg.gemini_model, "groq": cfg.groq_model}
+    for pid in nvidia_stage.PROVIDER_ORDER:
+        spec = nvidia_stage.PROVIDER_SPECS[pid]
+        creds = nvidia_stage.CREDENTIALS[pid].from_env()
+        mark = "OK" if creds.available else "--"
+        if creds.available:
+            detail = f"chave configurada ({_llm_models[pid]})"
+        else:
+            detail = f"sem chave (pula no rodízio; defina {spec['key_envs'][0]})"
+        if pid == "nvidia" and not creds.available:
+            detail = "sem chave (roteiros locais)"
+        print(f"[{mark}] {spec['display']} (LLM) — {detail}")
     has_fw = importlib.util.find_spec("faster_whisper") is not None
     print(f"[{'OK' if has_fw else '--'}] faster-whisper (transcrição local) "
           f"{'— ' + cfg.whisper_model if has_fw else '— finalize indisponível; pip install faster-whisper'}")

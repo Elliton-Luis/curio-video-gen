@@ -36,6 +36,15 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # model = "google/gemini-2.5-flash"
 # base_url = "https://openrouter.ai/api/v1"
 
+# Gemini direto e Groq entram no mesmo rodízio (chaves via .env:
+# GEMINI_API_KEY e GROQ_API_KEY). Ordem: NVIDIA → OpenRouter → Gemini → Groq.
+# [gemini]
+# model = "gemini-2.5-flash"
+# base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+# [groq]
+# model = "openai/gpt-oss-120b"
+# base_url = "https://api.groq.com/openai/v1"
+
 [media]
 providers = "wikimedia,openverse"  # csv; pexels entra se PEXELS_API_KEY existir; "none" = só fallback
 # cache em cache/media/<provedor>/<id> (CURIO_CACHE_DIR muda o root)

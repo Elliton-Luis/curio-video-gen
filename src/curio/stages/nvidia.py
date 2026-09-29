@@ -1,15 +1,20 @@
-"""Integração LLM para geração de roteiros e cenas (etapa NVIDIA + fallback).
+"""Integração LLM para geração de roteiros e cenas (etapa multi-provedor).
 
-- Primário: NVIDIA API, endpoint OpenAI-compatível {base_url}/chat/completions
-  (padrão: https://integrate.api.nvidia.com/v1), chave via NVIDIA_API_KEY.
-- Fallback: OpenRouter, mesmo protocolo ({base_url}/chat/completions,
-  padrão: https://openrouter.ai/api/v1), chave via OPENROUTER_API_KEY e
-  modelo via OPENROUTER_MODEL (padrão: google/gemini-2.5-flash).
-- Robustez: cada provedor tem até 5 tentativas (CURIO_LLM_ATTEMPTS, 1–10)
-  com backoff para falhas transitórias (timeout, conexão, HTTP 429/5xx).
-  401/403 (chave inválida) e 404 (modelo inexistente) NÃO repetem — falham
-  direto com a causa provável. Esgotado o primário, tenta o fallback; sem
-  chave de fallback, o erro final explica como habilitá-lo.
+Chain OpenAI-compatível (`{base_url}/chat/completions`), nesta ordem —
+cada um pulado sem chave, tentado com retries quando há chave:
+1. NVIDIA (NVIDIA_API_KEY; modelo NVIDIA_MODEL, padrão Nemotron 3 Ultra);
+2. OpenRouter (OPENROUTER_API_KEY; OPENROUTER_MODEL, padrão
+   google/gemini-2.5-flash);
+3. Gemini direto (GEMINI_API_KEY ou GOOGLE_API_KEY; GEMINI_MODEL, padrão
+   gemini-2.5-flash; endpoint OpenAI-compatível do Google);
+4. Groq (GROQ_API_KEY; GROQ_MODEL, padrão openai/gpt-oss-120b).
+- Robustez em rodízio: a NVIDIA falhou 1x, já troca — a rotação
+  intercala a NVIDIA entre os fallbacks (N, OpenRouter, N, Gemini, N,
+  Groq…), até CURIO_LLM_ATTEMPTS tentativas totais (padrão 6) com backoff
+  nas transitórias (timeout, conexão, HTTP 429/5xx). 401/403 (chave
+  inválida) e 404 (modelo inexistente) eliminam o provedor do rodízio na
+  hora. No fim, erro com levantamento completo: tentativas, últimos erros
+  e chaves ausentes.
 - Somente stdlib (urllib). Erros explícitos; chaves nunca aparecem em
   mensagens, logs ou metadados.
 """
@@ -31,9 +36,58 @@ DEFAULT_TIMEOUT = 60
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash"
 
-# Tentativas por provedor (1ª + retries). Override: CURIO_LLM_ATTEMPTS=3.
-DEFAULT_ATTEMPTS = 5
-RETRY_BASE_DELAY = 2.0  # backoff: 2s, 4s, 8s, 16s…
+GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
+
+GROQ_DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
+
+# Chain de provedores (ordem fixa): id → exibição, envs de chave (1ª
+# existente vence), envs de modelo/base, padrões e ajuda p/ HTTP 404.
+PROVIDER_SPECS = {
+    "nvidia": {
+        "display": "NVIDIA",
+        "key_envs": ("NVIDIA_API_KEY", "NVIDIA_API_KEYS"),
+        "model_env": "NVIDIA_MODEL",
+        "base_env": "NVIDIA_BASE_URL",
+        "default_model": DEFAULT_MODEL,
+        "default_base": DEFAULT_BASE_URL,
+        "models_url": "https://build.nvidia.com",
+    },
+    "openrouter": {
+        "display": "OpenRouter",
+        "key_envs": ("OPENROUTER_API_KEY",),
+        "model_env": "OPENROUTER_MODEL",
+        "base_env": "OPENROUTER_BASE_URL",
+        "default_model": OPENROUTER_DEFAULT_MODEL,
+        "default_base": OPENROUTER_DEFAULT_BASE_URL,
+        "models_url": "https://openrouter.ai/models",
+    },
+    "gemini": {
+        "display": "Gemini",
+        "key_envs": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "model_env": "GEMINI_MODEL",
+        "base_env": "GEMINI_BASE_URL",
+        "default_model": GEMINI_DEFAULT_MODEL,
+        "default_base": GEMINI_DEFAULT_BASE_URL,
+        "models_url": "https://ai.google.dev/models",
+    },
+    "groq": {
+        "display": "Groq",
+        "key_envs": ("GROQ_API_KEY",),
+        "model_env": "GROQ_MODEL",
+        "base_env": "GROQ_BASE_URL",
+        "default_model": GROQ_DEFAULT_MODEL,
+        "default_base": GROQ_DEFAULT_BASE_URL,
+        "models_url": "https://console.groq.com/docs/models",
+    },
+}
+PROVIDER_ORDER = ("nvidia", "openrouter", "gemini", "groq")
+
+# Tentativas TOTAIS no rodízio (CURIO_LLM_ATTEMPTS=8, por ex.). Padrão 6:
+# NVIDIA, OpenRouter, NVIDIA, Gemini, NVIDIA, Groq.
+DEFAULT_ATTEMPTS = 6
+RETRY_BASE_DELAY = 2.0  # backoff: 2s, 4s, 8s… (teto 30s)
 
 # Modelos irmãos da família Nemotron 3 (referência futura — NÃO usados aqui:
 # sem fallback/round-robin nesta etapa).
@@ -104,9 +158,9 @@ class _Skipped(RuntimeError):
 
 
 def max_attempts() -> int:
-    """Tentativas por provedor: 5 por padrão (CURIO_LLM_ATTEMPTS sobrescreve)."""
+    """Tentativas totais no rodízio: 6 por padrão (CURIO_LLM_ATTEMPTS)."""
     try:
-        return max(1, min(10, int(os.environ.get("CURIO_LLM_ATTEMPTS", "5"))))
+        return max(1, min(12, int(os.environ.get("CURIO_LLM_ATTEMPTS", "6"))))
     except ValueError:
         return DEFAULT_ATTEMPTS
 
@@ -182,18 +236,83 @@ class OpenRouterCredentials:
         return self.key
 
 
+class _SingleKeyCredentials:
+    """Base p/ provedores de chave única (mensagem de pulo padronizada)."""
+
+    provider = ""
+    key_envs: tuple = ()
+
+    def __init__(self, key: str = ""):
+        self.key = (key or "").strip()
+
+    @classmethod
+    def from_env(cls):
+        found = ""
+        for env in cls.key_envs:
+            if os.environ.get(env, "").strip():
+                found = os.environ[env].strip()
+                break
+        return cls(found)
+
+    @property
+    def available(self) -> bool:
+        return bool(self.key)
+
+    @property
+    def active_key(self) -> str:
+        if not self.key:
+            spec = PROVIDER_SPECS[self.provider]
+            raise _Skipped(
+                f"{spec['display']} pulado (sem {spec['key_envs'][0]} "
+                "no ambiente). Defina a chave no .env — veja .env.example."
+            )
+        return self.key
+
+
+class GeminiCredentials(_SingleKeyCredentials):
+    """Chave do Gemini direto (GEMINI_API_KEY ou GOOGLE_API_KEY)."""
+
+    provider = "gemini"
+    key_envs = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+
+
+class GroqCredentials(_SingleKeyCredentials):
+    """Chave do Groq (GROQ_API_KEY)."""
+
+    provider = "groq"
+    key_envs = ("GROQ_API_KEY",)
+
+
+CREDENTIALS = {
+    "nvidia": NvidiaCredentials,
+    "openrouter": OpenRouterCredentials,
+    "gemini": GeminiCredentials,
+    "groq": GroqCredentials,
+}
+
+
+def any_llm_available() -> bool:
+    """Há ao menos um provedor LLM com chave (qualquer um do chain)."""
+    return any(cls.from_env().available for cls in CREDENTIALS.values())
+
+
+def llm_settings(provider: str) -> tuple[str, str]:
+    """Retorna (model, base_url) do provedor (env > padrões)."""
+    spec = PROVIDER_SPECS[provider]
+    model = os.environ.get(spec["model_env"], spec["default_model"]).strip()
+    base = os.environ.get(spec["base_env"], spec["default_base"]).strip().rstrip("/")
+    return model or spec["default_model"], base or spec["default_base"]
+
+
 def openrouter_settings() -> tuple[str, str]:
     """Retorna (model, base_url) do fallback (env > padrões)."""
-    model = os.environ.get("OPENROUTER_MODEL",
-                           OPENROUTER_DEFAULT_MODEL).strip()
-    base = os.environ.get("OPENROUTER_BASE_URL",
-                          OPENROUTER_DEFAULT_BASE_URL).strip().rstrip("/")
-    return model or OPENROUTER_DEFAULT_MODEL, base or OPENROUTER_DEFAULT_BASE_URL
+    return llm_settings("openrouter")
 
 
 def _http_error_message(status: int, body: str, model: str,
                         provider: str = "NVIDIA",
-                        key_hint: str = "NVIDIA_API_KEY") -> str:
+                        key_hint: str = "NVIDIA_API_KEY",
+                        models_url: str | None = None) -> str:
     snippet = body.strip()[:300]
     if status in (401, 403):
         return (
@@ -202,12 +321,11 @@ def _http_error_message(status: int, body: str, model: str,
             "Gere outra chave e tente novamente."
         )
     if status == 404:
+        hint = (f"Confira o ID exato em {models_url}."
+                if models_url else "Confira o ID exato do modelo.")
         return (
             f"etapa {provider}: modelo {model!r} não encontrado (HTTP 404). "
-            f"Motivo provável: modelo incorreto ou sem acesso. "
-            + ("Confira o ID exato em https://build.nvidia.com."
-               if provider == "NVIDIA" else
-               "Confira o ID exato em https://openrouter.ai/models.")
+            f"Motivo provável: modelo incorreto ou sem acesso. {hint}"
         )
     if status == 429:
         return (
@@ -228,8 +346,10 @@ def _http_error_message(status: int, body: str, model: str,
 
 def _post_once(messages: list[dict], key: str, model: str, base_url: str,
                timeout: int, max_tokens: int, temperature: float,
-               provider: str, key_hint: str) -> dict:
+               pid: str) -> dict:
     """Uma tentativa HTTP. Erro transitório sai marcado (retryable=True)."""
+    spec = PROVIDER_SPECS[pid]
+    display, key_hint = spec["display"], spec["key_envs"][0]
     payload = json.dumps({
         "model": model,
         "messages": messages,
@@ -251,19 +371,20 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         except Exception:  # noqa: BLE001 — melhor mensagem parcial que nenhuma
             detail = ""
         err = NvidiaError(_http_error_message(exc.code, detail, model,
-                                              provider, key_hint))
+                                              display, key_hint,
+                                              spec["models_url"]))
         # 401/403/404 são definitivos (repetir não adianta); o resto repete.
         err.retryable = exc.code == 429 or 500 <= exc.code < 600
         raise err from exc
     except (socket.timeout, TimeoutError) as exc:
         err = NvidiaError(
-            f"etapa {provider}: timeout após {timeout}s com o modelo {model}."
+            f"etapa {display}: timeout após {timeout}s com o modelo {model}."
         )
         err.retryable = True
         raise err from exc
     except urllib.error.URLError as exc:
         err = NvidiaError(
-            f"etapa {provider}: falha de conexão com a API. "
+            f"etapa {display}: falha de conexão com a API. "
             f"Motivo provável: {exc.reason}. Verifique rede e base_url."
         )
         err.retryable = True
@@ -272,18 +393,18 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
 
 def _post_with_retries(messages: list[dict], key: str, model: str,
                        base_url: str, timeout: int, max_tokens: int,
-                       temperature: float, provider: str,
-                       key_hint: str) -> dict:
+                       temperature: float, pid: str) -> dict:
     """Até N tentativas com backoff para falhas transitórias.
 
     N = CURIO_LLM_ATTEMPTS (padrão 5). Erro definitivo (401/403/404) ou
     esgotamento levantam o último NvidiaError com o nº de tentativas.
     """
+    display = PROVIDER_SPECS[pid]["display"]
     attempts, last = max_attempts(), None
     for i in range(1, attempts + 1):
         try:
             return _post_once(messages, key, model, base_url, timeout,
-                              max_tokens, temperature, provider, key_hint)
+                              max_tokens, temperature, pid)
         except NvidiaError as exc:
             last = exc
             if not getattr(exc, "retryable", False) or i == attempts:
@@ -292,62 +413,114 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
                         f"{exc} (após {attempts} tentativas)")
                 raise last
             delay = RETRY_BASE_DELAY * (2 ** (i - 1))
-            print(f"[{provider}] tentativa {i}/{attempts} falhou "
+            print(f"[{display}] tentativa {i}/{attempts} falhou "
                   f"(transitório): {exc} — nova tentativa em {delay:.0f}s…",
                   flush=True)
             time.sleep(delay)
     raise last  # inalcançável (loop sempre retorna ou levanta)
 
 
-def _provider_attempt(provider: str, messages: list[dict], max_tokens: int,
-                      temperature: float, model: str, base_url: str,
-                      timeout: int, metrics=None) -> tuple[dict, str]:
-    """Uma rodada completa num provedor (com retries). Retorna (body, rótulo).
+def _rotation(pids: list[str]):
+    """Ordem do rodízio: NVIDIA intercalada entre os fallbacks.
 
-    `provider` é "nvidia" ou "openrouter" (minúsculo); o rótulo segue o
-    formato "provedor:modelo" para proveniência em metadata/métricas.
+    Com todos os 4: N, OpenRouter, N, Gemini, N, Groq, N, OpenRouter…
+    Sem NVIDIA: rodízio simples dos fallbacks. Infinito (o budget corta).
     """
-    display = "OpenRouter" if provider == "openrouter" else "NVIDIA"
-    if provider == "openrouter":
-        key = OpenRouterCredentials.from_env().active_key  # _Skipped sem chave
-        key_hint = "OPENROUTER_API_KEY"
+    others = [p for p in pids if p != "nvidia"]
+    if "nvidia" in pids and others:
+        i = 0
+        while True:
+            yield "nvidia" if i % 2 == 0 else others[(i // 2) % len(others)]
+            i += 1
     else:
-        key = NvidiaCredentials.from_env().active_key
-        key_hint = "NVIDIA_API_KEY"
-    body = _post_with_retries(messages, key, model, base_url, timeout,
-                              max_tokens, temperature, display, key_hint)
-    if metrics is not None:
-        metrics.nvidia(f"{provider}:{model}", (body or {}).get("usage"))
-    return body, f"{provider}:{model}"
+        i = 0
+        while True:
+            yield pids[i % len(pids)]
+            i += 1
 
 
 def _chat(messages: list[dict], max_tokens: int, temperature: float,
           model: str, base_url: str, timeout: int,
           or_model: str | None = None, or_base_url: str | None = None,
-          metrics=None) -> tuple[dict, str]:
-    """Chat com fallback: NVIDIA (retries) → OpenRouter (retries).
+          metrics=None, extra: dict | None = None) -> tuple[dict, str]:
+    """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
 
-    Retorna (body, rótulo-do-provedor). Sem chave OpenRouter, o erro final
-    explica como habilitá-lo; com ambas falhando, resume as duas tentativas.
+    Cada tentativa vai ao próximo da rotação; erro definitivo (401/403/404)
+    elimina o provedor do rodízio. Retorna (body, rótulo-do-provedor).
+    Esgotado o budget (ou os provedores), levanta NvidiaError com o
+    levantamento completo: tentativas, últimos erros e chaves ausentes.
     """
-    failures: list[str] = []
-    try:
-        return _provider_attempt("nvidia", messages, max_tokens, temperature,
-                                 model, base_url, timeout, metrics)
-    except _Skipped as exc:  # não deve ocorrer (callers exigem chave NVIDIA)
-        failures.append(str(exc))
-    except NvidiaError as exc:
-        failures.append(f"NVIDIA ({model}): {exc}")
-    dft_model, dft_base = openrouter_settings()
-    try:
-        return _provider_attempt("openrouter", messages, max_tokens,
-                                 temperature, or_model or dft_model,
-                                 or_base_url or dft_base, timeout, metrics)
-    except _Skipped as exc:
-        failures.append(str(exc))
-    except NvidiaError as exc:
-        failures.append(f"OpenRouter ({or_model or dft_model}): {exc}")
-    raise NvidiaError("LLM indisponível: " + " | ".join(failures))
+    extra = extra or {}
+    resolved: dict[str, tuple[str, str]] = {
+        "nvidia": (model, base_url),
+        "openrouter": (or_model, or_base_url),
+    }
+    for pid in PROVIDER_ORDER[2:]:
+        resolved[pid] = extra.get(pid, (None, None))
+    live = [pid for pid in PROVIDER_ORDER
+            if CREDENTIALS[pid].from_env().available]
+    skipped = [f"{PROVIDER_SPECS[pid]['display']} pulado "
+               f"(sem {PROVIDER_SPECS[pid]['key_envs'][0]})"
+               for pid in PROVIDER_ORDER if pid not in live]
+    if not live:
+        raise NvidiaError(
+            "LLM indisponível (nenhuma chave): " + " | ".join(skipped) + ". "
+            "Defina ao menos uma no .env — veja .env.example.")
+    budget, made = max_attempts(), 0
+    attempts: dict[str, int] = {}
+    last_err: dict[str, str] = {}
+    for pid in _rotation(list(live)):
+        if made >= budget or not live:
+            break
+        if pid not in live:
+            continue  # eliminado do rodízio por erro definitivo
+        made += 1
+        om, ob = resolved[pid]
+        dft_model, dft_base = llm_settings(pid)
+        use_model, use_base = om or dft_model, ob or dft_base
+        try:
+            key = CREDENTIALS[pid].from_env().active_key
+            body = _post_once(messages, key, use_model, use_base, timeout,
+                              max_tokens, temperature, pid)
+        except NvidiaError as exc:
+            attempts[pid] = attempts.get(pid, 0) + 1
+            last_err[pid] = str(exc)
+            if not getattr(exc, "retryable", False):
+                live.remove(pid)  # definitivo: fora do rodízio
+                print(f"[{PROVIDER_SPECS[pid]['display']}] erro definitivo "
+                      f"— fora do rodízio: {exc}", flush=True)
+                continue
+            if made < budget and live:
+                delay = min(30.0, RETRY_BASE_DELAY * (2 ** (made - 1)))
+                print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
+                      f"{made}/{budget} falhou (transitório): {exc} — "
+                      f"rodízio em {delay:.0f}s…", flush=True)
+                time.sleep(delay)
+            continue
+        if metrics is not None:
+            metrics.nvidia(f"{pid}:{use_model}", (body or {}).get("usage"))
+        return body, f"{pid}:{use_model}"
+    raise NvidiaError(_survey(budget, made, attempts, last_err,
+                              skipped, live))
+
+
+def _survey(budget: int, made: int, attempts: dict, last_err: dict,
+            skipped: list[str], remaining: list[str]) -> str:
+    """Levantamento final: o que foi tentado, onde parou, o que falta."""
+    parts = [f"LLM indisponível após {made}/{budget} tentativa(s)"]
+    for pid in PROVIDER_ORDER:
+        spec = PROVIDER_SPECS[pid]
+        if pid in attempts:
+            parts.append(f"{spec['display']}: {attempts[pid]} tentativa(s), "
+                         f"último erro: {last_err.get(pid, '?')}")
+    parts.extend(skipped)
+    if remaining:
+        parts.append("Ainda no rodízio sem sucesso: "
+                     + ", ".join(PROVIDER_SPECS[p]['display'] for p in remaining))
+    parts.append("Defina/renove as chaves no .env "
+                 "(NVIDIA_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, "
+                 "GROQ_API_KEY) e confira modelos e rede.")
+    return " | ".join(parts)
 
 
 def _extract_json(text: str) -> dict:
@@ -362,18 +535,19 @@ def _extract_json(text: str) -> dict:
 def complete_json(system_prompt: str, user_prompt: str, model: str,
                   base_url: str, timeout: int, metrics=None,
                   or_model: str | None = None,
-                  or_base_url: str | None = None) -> tuple[dict, str]:
-    """Uma completion que DEVE retornar JSON (NVIDIA → fallback OpenRouter).
+                  or_base_url: str | None = None,
+                  extra: dict | None = None) -> tuple[dict, str]:
+    """Uma completion que DEVE retornar JSON (chain com retries por provedor).
 
     Retorna (dados, rótulo "provedor:modelo"). Falhas levantam NvidiaError
-    resumindo as tentativas nos dois provedores.
+    resumindo pulos e tentativas no chain.
     """
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}]
     max_tokens, body, label = 2000, None, ""
     for _ in range(2):  # roteiros longos (60 s+) estouram 2000 tokens pensando
         body, label = _chat(messages, max_tokens, 0.3, model, base_url,
-                            timeout, or_model, or_base_url, metrics)
+                            timeout, or_model, or_base_url, metrics, extra)
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 4000
@@ -396,18 +570,26 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
         ) from exc
 
 
-def generate_script(idea: str, creds: NvidiaCredentials, model: str,
+def generate_script(idea: str, model: str,
                     base_url: str, timeout: int, max_chars: int | None,
                     metrics=None, or_model: str | None = None,
-                    or_base_url: str | None = None) -> tuple[str, str]:
-    """Gera o roteiro (NVIDIA → fallback OpenRouter). Nunca silêncio.
+                    or_base_url: str | None = None,
+                    extra: dict | None = None) -> tuple[str, str]:
+    """Gera o roteiro (chain com retries por provedor). Nunca silêncio.
 
     `max_chars=None` = Automático: duração livre, sem corte (só o teto de
     segurança). Com número, é meta de tamanho — nunca corta ideia no meio.
-    Retorna (texto, rótulo "provedor:modelo"). Falhas levantam NvidiaError.
+    Exige ao menos uma chave LLM (qualquer uma do chain). Retorna (texto,
+    rótulo "provedor:modelo"). Falhas levantam NvidiaError.
     """
     from .script import AUTO_MAX_CHARS
-    creds.active_key  # levanta se não houver chave NVIDIA
+    if not any_llm_available():
+        raise NvidiaError(
+            "etapa LLM: nenhuma chave configurada. Defina ao menos uma: "
+            "NVIDIA_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY ou "
+            "GROQ_API_KEY — veja .env.example. Sem chave, o pipeline usa "
+            "o gerador local de roteiros."
+        )
     auto = max_chars is None
     ceiling = AUTO_MAX_CHARS if auto else max_chars
     if auto:
@@ -429,7 +611,7 @@ def generate_script(idea: str, creds: NvidiaCredentials, model: str,
     body, label, max_tokens = None, "", 1500
     for _ in range(2):
         body, label = _chat(messages, max_tokens, 0.7, model, base_url,
-                            timeout, or_model, or_base_url, metrics)
+                            timeout, or_model, or_base_url, metrics, extra)
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 3000
