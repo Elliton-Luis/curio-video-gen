@@ -12,6 +12,7 @@ from . import __version__
 from . import ffmpeg as ff
 from . import verify as verify_mod
 from .config import CurioConfig
+from .metrics import backfill_from_metadata
 from .pipeline import finalize_project, run_pipeline, video_paths
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
@@ -158,6 +159,33 @@ def cmd_verify(args, cfg: CurioConfig) -> int:
     return 0 if rep.success else 1
 
 
+def cmd_metrics(args, cfg: CurioConfig) -> int:
+    """Backfill: métricas a partir do metadata de projetos existentes."""
+    if getattr(args, "slug", None):
+        slugs = [args.slug]
+    elif os.path.isdir(cfg.out_dir):
+        slugs = sorted(d for d in os.listdir(cfg.out_dir)
+                       if os.path.isfile(os.path.join(cfg.out_dir, d,
+                                                      "metadata.json")))
+    else:
+        slugs = []
+    if not slugs:
+        print("Nenhum projeto com metadata.json.", file=sys.stderr)
+        return 1
+    for slug in slugs:
+        meta_path = os.path.join(cfg.out_dir, slug, "metadata.json")
+        try:
+            with open(meta_path, encoding="utf-8") as fh:
+                meta = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"PULADO {slug}: {exc}", file=sys.stderr)
+            continue
+        path = backfill_from_metadata(slug, meta, cfg.metrics_dir)
+        dur = meta.get("duration_actual", "?")
+        print(f"{slug}: {dur}s → {path}")
+    return 0
+
+
 def cmd_voices(_args, _cfg) -> int:
     voices = tts_stage.available_providers()
     print("Provedores TTS disponíveis: " + (", ".join(voices) if voices else "nenhum"))
@@ -247,6 +275,11 @@ def build_parser() -> argparse.ArgumentParser:
     vf = sub.add_parser("verify", help="verificar um vídeo gerado (PRD §19)")
     vf.add_argument("--slug", required=True, help="nome do diretório do vídeo")
     vf.set_defaults(func=cmd_verify)
+
+    met = sub.add_parser("metrics", help="gerar métricas de vídeos existentes")
+    met.add_argument("--slug", default=None,
+                     help="só este projeto (padrão: todos com metadata.json)")
+    met.set_defaults(func=cmd_metrics)
 
     v = sub.add_parser("voices", help="listar provedores TTS disponíveis")
     v.set_defaults(func=cmd_voices)

@@ -12,7 +12,7 @@ class TranscribeError(RuntimeError):
 
 
 def transcribe(audio_path: str, model_name: str = "base",
-               language: str = "pt") -> list[dict]:
+               language: str = "pt", metrics=None) -> list[dict]:
     """Retorna palavras [{text, start, end}] com timestamps reais."""
     try:
         from faster_whisper import WhisperModel
@@ -37,4 +37,6 @@ def transcribe(audio_path: str, model_name: str = "base",
         raise TranscribeError(f"transcrição falhou: {exc}") from exc
     if not words:
         raise TranscribeError("transcrição vazia — áudio sem fala detectada?")
+    if metrics is not None:
+        metrics.whisper(model_name)
     return words

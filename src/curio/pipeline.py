@@ -20,6 +20,7 @@ from . import ffmpeg as ff
 from .config import CurioConfig
 from .media import download_asset, get_providers
 from .media.providers import MediaAsset, MediaError
+from .metrics import RunMetrics, backfill_from_metadata
 from .slug import slugify
 from .stages import render as render_stage
 from .stages import scenes as scenes_stage
@@ -108,7 +109,7 @@ def _relevance(query: str, asset: MediaAsset) -> int:
 
 
 def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
-                 paths: VideoPaths) -> tuple[list[dict], list[str]]:
+                 paths: VideoPaths, metrics=None) -> tuple[list[dict], list[str]]:
     """Busca e baixa um asset por cena. Falha vira fallback com aviso."""
     providers = get_providers(cfg)
     search_memo: dict[tuple[str, str], list] = {}
@@ -123,7 +124,7 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
                 memo_key = (prov.name, query)
                 if memo_key not in search_memo:
                     try:
-                        search_memo[memo_key] = prov.search(query)
+                        search_memo[memo_key] = prov.search(query, metrics=metrics)
                     except MediaError as exc:
                         print(f"AVISO: {exc} — tentando próxima fonte.",
                               file=sys.stderr)
@@ -140,7 +141,7 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
         asset = None
         for _score, _q, cand in ranked:
             try:
-                asset = download_asset(cand, cfg.cache_dir)
+                asset = download_asset(cand, cfg.cache_dir, metrics)
                 break
             except MediaError as exc:
                 print(f"AVISO: {exc} — tentando próximo asset.",
@@ -246,6 +247,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     slug = slug or slugify(idea)
     paths = video_paths(cfg.out_dir, slug)
+    metrics = RunMetrics(slug, idea, narration)
     for d in ("script", "audio", "subtitles", "assets", "render",
               "media", "timeline", "teleprompter"):
         os.makedirs(os.path.join(paths.root, d), exist_ok=True)
@@ -256,7 +258,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if not force and os.path.isfile(paths.script_txt):
         script_text, script_source = _read(paths.script_txt), "cache"
     else:
-        script_text, script_source = script_stage.generate_script(idea, cfg)
+        script_text, script_source = script_stage.generate_script(idea, cfg, metrics)
         with open(paths.script_txt, "w", encoding="utf-8") as fh:
             fh.write(script_text)
     stage_times["script"] = round(time.monotonic() - t0, 2)
@@ -271,7 +273,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     else:
         chapters, scenes_source = scenes_stage.build_chapters(
             script_text, cfg,
-            n_scenes=scenes_stage.scenes_for_duration(cfg.duration_target))
+            n_scenes=scenes_stage.scenes_for_duration(cfg.duration_target),
+            metrics=metrics)
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
     stage_times["scenes"] = round(time.monotonic() - t0, 2)
     emit(2, "Interpretando cenas", "OK")
@@ -292,7 +295,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         except (json.JSONDecodeError, KeyError):
             media_scenes = None
     if media_scenes is None:
-        media_scenes, media_warnings = _fetch_media(chapters, cfg, paths)
+        media_scenes, media_warnings = _fetch_media(chapters, cfg, paths, metrics)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
     stage_times["media"] = round(time.monotonic() - t0, 2)
@@ -302,7 +305,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if narration == "human":
         return _human_prep(idea, slug, cfg, paths, script_text, script_source,
                            chapters, scenes_source, media_scenes, warnings,
-                           stage_times, started, emit)
+                           stage_times, started, emit, metrics)
 
     # [4/6] Narração (IA) — timestamps reais via WordBoundary
     t0 = time.monotonic()
@@ -318,7 +321,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         res = tts_stage.synthesize(script_text, paths.narration_wav,
                                    cfg.tts_provider, cfg.tts_voice,
                                    cfg.tts_speed, cfg.duration_target,
-                                   words_path=paths.words_json)
+                                   words_path=paths.words_json, metrics=metrics)
         audio_duration = res.duration
         words = res.words
         tts_info = {"provider": res.provider, "voice": res.voice,
@@ -418,6 +421,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     _write_json(paths.metadata_json, metadata)
     stage_times["finalize"] = 0.0
     metadata["stage_times"] = stage_times
+    metadata["metrics_file"] = metrics.save(metadata, stage_times,
+                                            cfg.metrics_dir)
     return metadata
 
 
@@ -425,7 +430,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                 script_text: str, script_source: str, chapters: list[Chapter],
                 scenes_source: str, media_scenes: list[dict],
                 warnings: list[str], stage_times: dict, started: float,
-                emit) -> dict:
+                emit, metrics) -> dict:
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
     emit(4, "Estimando timeline")
@@ -480,6 +485,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     })
     _write_json(paths.metadata_json, metadata)
     metadata["stage_times"] = stage_times
+    metadata["metrics_file"] = metrics.save(metadata, stage_times,
+                                            cfg.metrics_dir)
     return metadata
 
 
@@ -497,6 +504,7 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     """Une áudio humano ao vídeo silencioso: transcreve, legenda, merge."""
     started = time.monotonic()
     paths = video_paths(cfg.out_dir, slug)
+    metrics = RunMetrics(slug, audio_src, "human-finalize")
     for need in (paths.chapters_json, paths.timeline_json, paths.media_json,
                  paths.silent_mp4):
         if not os.path.isfile(need):
@@ -537,7 +545,7 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     emit("Transcrevendo")
     if force or not os.path.isfile(paths.transcription_json):
         words = transcribe_stage.transcribe(paths.human_wav,
-                                            cfg.whisper_model)
+                                            cfg.whisper_model, metrics=metrics)
         _write_json(paths.transcription_json, words)
     else:
         words = _read_json(paths.transcription_json)
@@ -592,4 +600,6 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     meta["artifacts"]["human_audio"] = paths.human_wav
     meta["artifacts"]["transcription"] = paths.transcription_json
     _write_json(paths.metadata_json, meta)
+    meta["metrics_file"] = metrics.save(meta, {"finalize": round(
+        time.monotonic() - started, 2)}, cfg.metrics_dir)
     return meta

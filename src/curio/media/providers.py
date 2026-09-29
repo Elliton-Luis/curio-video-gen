@@ -60,7 +60,7 @@ class MediaError(RuntimeError):
 class MediaProvider:
     name = "base"
 
-    def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
         raise NotImplementedError
 
 
@@ -74,7 +74,7 @@ class WikimediaProvider(MediaProvider):
     name = "wikimedia"
     API = "https://commons.wikimedia.org/w/api.php"
 
-    def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
         params = {
             "action": "query", "format": "json",
             "generator": "search",
@@ -94,6 +94,8 @@ class WikimediaProvider(MediaProvider):
         import time as _time
         _time.sleep(1.5)  # cortesia: throttling progressivo derruba o fim da lista
         for attempt in range(5):
+            if metrics is not None:
+                metrics.media_search(self.name)
             try:
                 with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                     import json
@@ -142,7 +144,7 @@ class OpenverseProvider(MediaProvider):
     name = "openverse"
     API = "https://api.openverse.org/v1/images/"
 
-    def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
         params = {"q": query, "page_size": str(limit),
                   "filter_dead": "false", "mature": "false"}
         req = urllib.request.Request(
@@ -150,6 +152,8 @@ class OpenverseProvider(MediaProvider):
             headers={"User-Agent": USER_AGENT})
         import time as _time
         _time.sleep(1.0)  # cortesia entre buscas
+        if metrics is not None:
+            metrics.media_search(self.name)
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 import json
@@ -207,12 +211,14 @@ class PexelsProvider(MediaProvider):
             raise MediaError("pexels: sem PEXELS_API_KEY no ambiente")
         self.key = key
 
-    def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
         params = {"query": query, "per_page": str(limit),
                   "orientation": "portrait"}
         req = urllib.request.Request(
             self.API + "?" + urllib.parse.urlencode(params),
             headers={"User-Agent": USER_AGENT, "Authorization": self.key})
+        if metrics is not None:
+            metrics.media_search(self.name)
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 import json

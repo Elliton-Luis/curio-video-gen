@@ -197,7 +197,7 @@ def _extract_json(text: str) -> dict:
 
 
 def complete_json(system_prompt: str, user_prompt: str, model: str,
-                  base_url: str, timeout: int) -> dict:
+                  base_url: str, timeout: int, metrics=None) -> dict:
     """Uma completion que DEVE retornar JSON. Falhas levantam NvidiaError."""
     creds = NvidiaCredentials.from_env()
     key = creds.active_key
@@ -206,6 +206,8 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
         body = _post([{"role": "system", "content": system_prompt},
                       {"role": "user", "content": user_prompt}],
                      key, model, base_url, timeout, max_tokens, 0.3)
+        if metrics is not None:
+            metrics.nvidia(model, (body or {}).get("usage"))
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 4000
@@ -232,7 +234,8 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
 
 
 def generate_script(idea: str, creds: NvidiaCredentials, model: str,
-                    base_url: str, timeout: int, max_chars: int) -> str:
+                    base_url: str, timeout: int, max_chars: int,
+                    metrics=None) -> str:
     """Gera o roteiro via NVIDIA API. Falhas levantam NvidiaError (nunca silêncio)."""
     key = creds.active_key  # levanta se não houver chave
     # Modelos de raciocínio gastam tokens pensando: orçamento folgado e,
@@ -240,6 +243,8 @@ def generate_script(idea: str, creds: NvidiaCredentials, model: str,
     body, max_tokens = None, 1500
     for _ in range(2):
         body = _request(idea, key, model, base_url, timeout, max_chars, max_tokens)
+        if metrics is not None:
+            metrics.nvidia(model, (body or {}).get("usage"))
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 3000

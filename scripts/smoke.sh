@@ -62,6 +62,42 @@ check("título sem nada da consulta zera", _relevance("worker salt wages", a) ==
 b = MediaAsset(provider="w", asset_id="2", title="Ancient Roman salt coin")
 check("título relevante pontua", _relevance("roman salt coin", b) >= 2)
 
+# 5. Métricas (offline, em /tmp)
+import tempfile
+from curio.metrics import RunMetrics, backfill_from_metadata
+tmp = tempfile.mkdtemp()
+m = RunMetrics("slug-teste", "ideia", "ai")
+m.nvidia("modelo-x", {"prompt_tokens": 10, "completion_tokens": 20})
+m.tts("edge-tts", 100)
+m.media_search("wikimedia")
+m.media_download(500, False)
+m.media_download(0, True)
+m.whisper("base")
+fake_meta = {"title": "T", "duration_target": 45, "duration_actual": 44.0,
+             "audio_duration": 43.0, "width": 1080, "height": 1920,
+             "script_source": "nvidia:x", "script_chars": 500,
+             "scenes_source": "nvidia", "chapters": [{"a": 1}],
+             "media": [{"asset": {"x": 1}}, {"asset": None, "reused_from": 1}],
+             "subtitle_cues": 10, "subtitle_source": "wordboundary",
+             "tts_provider": "edge-tts", "tts_voice": "v",
+             "render_backend": "cpu", "render_encoder": "libx264",
+             "warnings": [], "artifacts": {}}
+path = m.save(fake_meta, {"tts": 1.0}, tmp)
+import os as _os, re as _re, json as _json
+check("métricas salvas timestamp_slug.json",
+      bool(_re.match(r"\d{8}-\d{6}_slug-teste\.json", _os.path.basename(path))))
+doc = _json.load(open(path))
+check("consumo registrado",
+      doc["consumption"]["nvidia"]["calls"] == 1
+      and doc["consumption"]["nvidia"]["completion_tokens"] == 20
+      and doc["consumption"]["media"]["cache_hits"] == 1
+      and doc["consumption"]["whisper"] == {"calls": 1, "model": "base"})
+bf = backfill_from_metadata("antigo", fake_meta, tmp)
+bfdoc = _json.load(open(bf))
+check("backfill marca consumo indisponível",
+      bfdoc["source"].startswith("backfill")
+      and bfdoc["consumption"]["nvidia"] is None)
+
 print(f"\n{passed} passaram, {len(failed)} falharam.")
 sys.exit(1 if failed else 0)
 EOF

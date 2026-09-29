@@ -15,3 +15,5 @@ REGRAS.md
 .env
 # Cache de mídia baixada (Wikimedia etc.) — reconstruível via media.json.
 cache/
+# Métricas de execução (geradas; ver docs/). Não versionar.
+metrics/

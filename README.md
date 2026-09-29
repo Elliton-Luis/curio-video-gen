@@ -69,6 +69,11 @@ video-gen info --slug salario
 
 # Verificar um vídeo contra os critérios do MVP (PRD §19)
 video-gen verify --slug salario
+
+# Métricas de cada vídeo (tempo, consumo, tamanhos) em metrics/
+video-gen metrics --slug salario
+# sem --slug: gera para todos os projetos (a partir do metadata quando
+# a execução é anterior à metrificação)
 ```
 
 Progresso esperado:

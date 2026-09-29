@@ -30,6 +30,7 @@ class CurioConfig:
     cache_dir: str = "cache"
     teleprompter_wpm: int = 150
     whisper_model: str = "base"
+    metrics_dir: str = "metrics"
     file_manager: str = "dolphin"  # pasta do teleprompter pós-geração
     audio_recorder: str = "audacity"  # gravador aberto pós-teleprompter
     auto_open: bool = True  # abre apps após teleprompter (só c/ sessão gráfica)
@@ -86,6 +87,8 @@ class CurioConfig:
             cfg.teleprompter_wpm = int(os.environ["CURIO_WPM"])
         cfg.whisper_model = os.environ.get("CURIO_WHISPER_MODEL",
                                            cfg.whisper_model)
+        cfg.metrics_dir = os.environ.get("CURIO_METRICS_DIR",
+                                         cfg.metrics_dir)
         cfg.file_manager = os.environ.get("CURIO_FILE_MANAGER",
                                           cfg.file_manager)
         cfg.audio_recorder = os.environ.get("CURIO_AUDIO_RECORDER",

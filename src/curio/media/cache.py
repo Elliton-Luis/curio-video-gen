@@ -45,7 +45,8 @@ def _safe_ext(url: str) -> str:
     return "." + m.group(1).lower().replace("jpeg", "jpg") if m else ".jpg"
 
 
-def download_asset(asset: MediaAsset, cache_dir: str) -> MediaAsset:
+def download_asset(asset: MediaAsset, cache_dir: str,
+                   metrics=None) -> MediaAsset:
     dest_dir = os.path.join(cache_dir, "media", asset.provider)
     os.makedirs(dest_dir, exist_ok=True)
     safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", asset.asset_id) or "asset"
@@ -53,6 +54,8 @@ def download_asset(asset: MediaAsset, cache_dir: str) -> MediaAsset:
     sidecar = dest + ".json"
     if os.path.isfile(dest) and os.path.isfile(sidecar):
         asset.local_path = dest
+        if metrics is not None:
+            metrics.media_download(0, True)
         return asset  # cache: zero downloads repetidos
     try:
         data = _fetch(asset.download_url)
@@ -69,6 +72,8 @@ def download_asset(asset: MediaAsset, cache_dir: str) -> MediaAsset:
             ) from exc
     with open(dest, "wb") as fh:
         fh.write(data)
+    if metrics is not None:
+        metrics.media_download(os.path.getsize(dest), False)
     time.sleep(1.0)  # intervalo entre downloads (cortesia)
     asset.local_path = dest
     record = asset.to_dict()

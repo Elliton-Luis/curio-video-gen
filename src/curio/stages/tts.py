@@ -56,7 +56,7 @@ def _estimate_wpm(text: str, duration: float) -> int:
 
 
 def _synth_edge(text: str, wav_path: str, voice: str, rate: str,
-                words_path: str | None = None) -> list[dict]:
+                words_path: str | None = None, metrics=None) -> list[dict]:
     """Voz neural via Edge (grátis, sem login). Requer pacote + internet.
 
     Texto puro + boundary=WordBoundary: captura timestamps reais por palavra
@@ -99,6 +99,8 @@ def _synth_edge(text: str, wav_path: str, voice: str, rate: str,
         raise TTSError(f"edge-tts falhou (voz={voice!r}): {exc}") from exc
     if not audio_parts:
         raise TTSError(f"edge-tts não retornou áudio (voz={voice!r}).")
+    if metrics is not None:
+        metrics.tts("edge-tts", len(text))
     with open(mp3_path, "wb") as fh:
         for part in audio_parts:
             fh.write(part)
@@ -115,7 +117,8 @@ def _synth_edge(text: str, wav_path: str, voice: str, rate: str,
     return words
 
 
-def _synth_espeak(text: str, wav_path: str, voice: str, speed: int) -> None:
+def _synth_espeak(text: str, wav_path: str, voice: str, speed: int,
+                  metrics=None) -> None:
     txt_path = wav_path + ".txt"
     with open(txt_path, "w", encoding="utf-8") as fh:
         fh.write(text)
@@ -124,6 +127,8 @@ def _synth_espeak(text: str, wav_path: str, voice: str, speed: int) -> None:
         capture_output=True, text=True,
     )
     os.remove(txt_path)
+    if metrics is not None:
+        metrics.tts("espeak-ng", len(text))
     if proc.returncode != 0:
         raise TTSError(
             f"espeak-ng falhou (voz={voice!r}): {proc.stderr.strip() or proc.stdout.strip()}. "
@@ -133,7 +138,7 @@ def _synth_espeak(text: str, wav_path: str, voice: str, speed: int) -> None:
 
 def synthesize(text: str, wav_path: str, provider: str, voice: str,
                speed: int, target_duration: float,
-               words_path: str | None = None) -> TTSResult:
+               words_path: str | None = None, metrics=None) -> TTSResult:
     if provider not in ("edge-tts", "espeak-ng", "auto"):
         raise TTSError(
             f"provedor TTS {provider!r} desconhecido "
@@ -145,7 +150,7 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
     if want_edge:
         try:
             return _synthesize_edge(text, wav_path, voice, target_duration,
-                                    words_path)
+                                    words_path, metrics)
         except TTSError as exc:
             if shutil.which("espeak-ng") is None:
                 raise TTSError(
@@ -159,13 +164,14 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
             voice, speed = "pt-br", 170
     if shutil.which("espeak-ng") is None:
         raise TTSError("espeak-ng não encontrado. Rode `scripts/install.sh`.")
-    return _synthesize_espeak(text, wav_path, voice, speed, target_duration)
+    return _synthesize_espeak(text, wav_path, voice, speed, target_duration,
+                              metrics)
 
 
 def _synthesize_edge(text: str, wav_path: str, voice: str,
                      target_duration: float,
-                     words_path: str | None = None) -> TTSResult:
-    words = _synth_edge(text, wav_path, voice, "+0%", words_path)
+                     words_path: str | None = None, metrics=None) -> TTSResult:
+    words = _synth_edge(text, wav_path, voice, "+0%", words_path, metrics)
     duration = ff.probe_duration(wav_path)
 
     # Uma correção de ritmo (a duração-alvo é meta, não corte — §5).
@@ -174,7 +180,7 @@ def _synthesize_edge(text: str, wav_path: str, voice: str,
         if ratio < 0.85 or ratio > 1.15:
             pct = max(-30, min(30, round((ratio - 1) * 100)))
             rate = f"{pct:+d}%"
-            words = _synth_edge(text, wav_path, voice, rate, words_path)
+            words = _synth_edge(text, wav_path, voice, rate, words_path, metrics)
             duration = ff.probe_duration(wav_path)
             voice = f"{voice} ({rate})"
 
@@ -184,8 +190,9 @@ def _synthesize_edge(text: str, wav_path: str, voice: str,
 
 
 def _synthesize_espeak(text: str, wav_path: str, voice: str,
-                       speed: int, target_duration: float) -> TTSResult:
-    _synth_espeak(text, wav_path, voice, speed)
+                       speed: int, target_duration: float,
+                       metrics=None) -> TTSResult:
+    _synth_espeak(text, wav_path, voice, speed, metrics)
     duration = ff.probe_duration(wav_path)
 
     # Uma tentativa de correção de ritmo: se fugir >15% da meta, ajusta a
@@ -194,7 +201,7 @@ def _synthesize_espeak(text: str, wav_path: str, voice: str,
         ratio = duration / target_duration
         if ratio < 0.85 or ratio > 1.15:
             fixed = max(120, min(220, round(speed * ratio)))
-            _synth_espeak(text, wav_path, voice, fixed)
+            _synth_espeak(text, wav_path, voice, fixed, metrics)
             duration = ff.probe_duration(wav_path)
             speed = fixed
 
