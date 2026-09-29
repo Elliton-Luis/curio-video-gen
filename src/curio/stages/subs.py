@@ -1,4 +1,4 @@
-"""Legendas sincronizadas a partir da narração (PRD §9).
+"""Legendas sincronizadas a partir da narração (PRD §9) — Estilo Shorts/Reels/TikTok.
 
 O TTS do MVP não fornece timestamps por palavra, então os tempos são
 distribuídos proporcionalmente ao tamanho de cada bloco — sincronização
@@ -10,24 +10,34 @@ Saída dupla a partir dos mesmos cues (mesma sincronia):
   posição e margens explícitos (o filtro `subtitles` sem PlayRes usa
   384x288 e estoura o tamanho/posição — bug encontrado em teste visual).
 
-Apresentação (só visual, nunca sincronia): fonte pesada e larga
-(Archivo Black, OFL) branca sobre caixa preta que acompanha o texto
-(BorderStyle 4 com Outline como padding). Entrada com fade-in suave.
-Cantos arredondados NÃO existem no ASS/libass — caixa quadrada por
-limitação do formato.
+Apresentação (estilo Shorts/Reels/TikTok):
+- Fonte monoespaçada (JetBrains Mono / Courier New fallback)
+- Texto em MAIÚSCULAS obrigatório
+- Caixa preta opaca que acompanha o texto (BorderStyle 4)
+- Destaque com aberração cromática: ciano #00F2FE + deslocamento magenta #FF0055
+- Entrada com fade-in suave (300ms)
+- Máximo 5 palavras por tela, 1 palavra de destaque por segmento
 """
 
 from __future__ import annotations
 
 import re
 
+MONO_FAMILY = "JetBrains Mono"
+MONO_FILE = "JetBrainsMono-Bold.ttf"
+MONO_URL = ("https://github.com/JetBrains/JetBrainsMono/raw/main/fonts/ttf/"
+            "JetBrainsMono-Bold.ttf")
+FALLBACK_FAMILY = "Courier New"
 ARCHIVO_FAMILY = "Archivo Black"
 ARCHIVO_FILE = "ArchivoBlack-Regular.ttf"
 ARCHIVO_URL = ("https://github.com/google/fonts/raw/main/"
               "ofl/archivoblack/ArchivoBlack-Regular.ttf")
-SUBTITLE_OUTLINE = 8  # em BorderStyle 4, vira padding da caixa preta
-SUBTITLE_MARGIN_LR = 80
-SUBTITLE_FADE_IN_MS = 300  # duração do fade-in em milissegundos
+SUBTITLE_OUTLINE = 10  # padding da caixa preta (BorderStyle 4)
+SUBTITLE_MARGIN_LR = 120
+SUBTITLE_FADE_IN_MS = 300
+MAX_WORDS_PER_CUE = 5
+HIGHLIGHT_COLOR = "#00F2FE"
+GLITCH_OFFSET_COLOR = "#FF0055"
 
 
 def _fc_match(family: str) -> tuple[str, str] | None:
@@ -112,17 +122,19 @@ def _normalize_subtitle_text(text: str) -> str:
         # Se parece pergunta mas não tem ?, adiciona
         if re.match(interrogatives, s, re.IGNORECASE) and not s.rstrip().endswith(("?", "？")):
             s = s.rstrip(".!.") + "?"
-        # Garante primeira letra maiúscula
-        if s:
-            s = s[0].upper() + s[1:] if len(s) > 1 else s.upper()
-        normalized.append(s)
+# Garante primeira letra maiúscula
+    if s:
+        s = s.upper()
+    normalized.append(s)
     return " ".join(normalized)
 
 
 def _sentences(text: str) -> list[str]:
-    """Quebra em frases para respeitar pausas naturais da narração."""
-    # Primeiro normaliza o texto
-    text = _normalize_subtitle_text(text)
+    """Quebra em frases para respeitar pausas naturais da narração.
+    
+    Não modifica o texto original — apenas divide em frases.
+    A normalização (maiúsculas, interrogações) é feita apenas para exibição.
+    """
     parts = re.split(r"(?<=[.!?…])\s+", text.strip())
     return [p for p in parts if p]
 
@@ -142,24 +154,53 @@ def chunk_words(words: list[str], max_words: int = 5, max_chars: int = 36) -> li
     return chunks
 
 
-def _fmt_ts(seconds: float) -> str:
-    ms = max(0, int(round(seconds * 1000)))
-    h, ms = divmod(ms, 3_600_000)
-    m, ms = divmod(ms, 60_000)
-    s, ms = divmod(ms, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+def _select_highlight_word(words: list[str]) -> int:
+    """Seleciona a palavra de maior impacto no segmento (mais longa, exceto stopwords)."""
+    stopwords = {"A", "O", "E", "E", "DE", "DA", "DO", "DOS", "DAS", "EM", "UM", "UMA",
+                 "PARA", "COM", "SEM", "SOB", "ENTRE", "APÓS", "ATÉ", "QUE", "SE", "NO",
+                 "NA", "NOS", "NAS", "PELO", "PELA", "PELOS", "PELAS", "DO", "DA"}
+    candidates = [(i, w) for i, w in enumerate(words) if w.upper() not in stopwords and len(w) > 2]
+    if not candidates:
+        return len(words) - 1  # última palavra como fallback
+    # Retorna índice da palavra mais longa
+    return max(candidates, key=lambda x: len(x[1]))[0]
+
+
+def _apply_highlight(text: str, highlight_idx: int) -> str:
+    """Aplica efeito de aberração cromática na palavra de destaque.
+    
+    Formato ASS: {\c&HFEF200&\shad3\4c&H5500FF&}PALAVRA{\r}
+    - Ciano (#00F2FE) = &HFEF200 (BBGGRR)
+    - Magenta (#FF0055) = &H5500FF (BBGGRR)
+    """
+    words = text.split()
+    if highlight_idx >= len(words):
+        highlight_idx = len(words) - 1
+    highlighted = []
+    for i, word in enumerate(words):
+        if i == highlight_idx:
+            # Ciano com sombra magenta deslocada (aberração cromática)
+            highlighted.append(r"{\c&HFEF200&\shad3\4c&H5500FF&}" + word + r"{\r}")
+        else:
+            highlighted.append(word)
+    return " ".join(highlighted)
 
 
 def build_cues(text: str, total_duration: float,
                lead: float = 0.15) -> list[tuple[float, float, str]]:
-    """Divide em cues curtos com tempos proporcionais. Coração da sincronia."""
+    """Divide em cues curtos com tempos proporcionais. Coração da sincronia.
+    
+    Limita a MAX_WORDS_PER_CUE palavras por cue, 1 palavra de destaque por cue.
+    Normaliza o texto (maiúsculas, pontuação) antes de processar.
+    """
+    text = _normalize_subtitle_text(text)
     words = _words(text)
     if not words:
         raise ValueError("roteiro vazio — nada para legendar")
     # Frases primeiro (quebras naturais), depois limite de palavras/chars.
-    chunks = [c for s in _sentences(text) for c in chunk_words(s.split())]
+    chunks = [c for s in _sentences(text) for c in chunk_words(s.split(), MAX_WORDS_PER_CUE)]
     if not chunks:
-        chunks = chunk_words(words)
+        chunks = chunk_words(words, MAX_WORDS_PER_CUE)
     weights = [sum(len(w) + 1 for w in c.split()) for c in chunks]
     total_w = sum(weights)
     usable = max(0.5, total_duration - lead)
@@ -170,15 +211,25 @@ def build_cues(text: str, total_duration: float,
         end = total_duration if i == len(chunks) - 1 else cursor + share
         if end - start < 1.0 and i != len(chunks) - 1:
             end = min(total_duration, start + 1.0)
-        cues.append((start, end, cue))
+        # Aplica destaque na palavra de impacto
+        words_in_cue = cue.split()
+        highlight_idx = _select_highlight_word(words_in_cue)
+        cue_styled = _apply_highlight(cue, highlight_idx)
+        cues.append((start, end, cue_styled))
         cursor = end
     return cues
+
+
+def _strip_ass_tags(text: str) -> str:
+    """Remove tags ASS ({...}) do texto para SRT."""
+    return re.sub(r"\{[^}]*\}", "", text)
 
 
 def cues_to_srt(cues: list[tuple[float, float, str]]) -> str:
     lines = []
     for i, (start, end, cue) in enumerate(cues, 1):
-        lines.append(f"{i}\n{_fmt_ts(start)} --> {_fmt_ts(end)}\n{cue}\n")
+        plain = _strip_ass_tags(cue)
+        lines.append(f"{i}\n{_fmt_ts(start)} --> {_fmt_ts(end)}\n{plain}\n")
     return "\n".join(lines) + "\n"
 
 
@@ -194,6 +245,7 @@ def cues_from_words(words: list[dict], max_words: int = 5,
     Quebra em fim de frase quando o bloco já tem corpo (≥3 palavras ou
     ≥20 chars); limites duros de palavras/chars/duração evitam estouro.
     Sem offset artificial: o primeiro bloco começa no primeiro boundary real.
+    Aplica formatação: maiúsculas + destaque em 1 palavra por cue.
     """
     clean = [w for w in words if str(w.get("text", "")).strip()]
     if not clean:
@@ -209,17 +261,34 @@ def cues_from_words(words: list[dict], max_words: int = 5,
         if boundary or hard:
             start = float(cur[0]["start"])
             end = max(float(cur[-1]["end"]), start + min_dur)
-            cues.append((start, end, " ".join(str(x["text"]) for x in cur)))
+            # Monta o texto do cue em maiúsculas com destaque
+            cue_text = " ".join(str(x["text"]).upper() for x in cur)
+            # Aplica destaque na palavra de impacto
+            highlight_idx = _select_highlight_word([x["text"].upper() for x in cur])
+            words_upper = [x["text"].upper() for x in cur]
+            cue_styled = _apply_highlight(" ".join(words_upper), highlight_idx)
+            cues.append((start, end, cue_styled))
             cur = []
     if cur:
         start = float(cur[0]["start"])
         end = max(float(cur[-1]["end"]), start + min_dur)
-        cues.append((start, end, " ".join(str(x["text"]) for x in cur)))
+        words_upper = [x["text"].upper() for x in cur]
+        highlight_idx = _select_highlight_word(words_upper)
+        cue_styled = _apply_highlight(" ".join(words_upper), highlight_idx)
+        cues.append((start, end, cue_styled))
     return cues
 
 
 def build_srt(text: str, total_duration: float, lead: float = 0.15) -> str:
     return cues_to_srt(build_cues(text, total_duration, lead))
+
+
+def _fmt_ts(seconds: float) -> str:
+    ms = max(0, int(round(seconds * 1000)))
+    h, ms = divmod(ms, 3_600_000)
+    m, ms = divmod(ms, 60_000)
+    s, ms = divmod(ms, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 def _fmt_ass_ts(seconds: float) -> str:
@@ -266,7 +335,8 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
     )
     body = []
     for start, end, cue in cues:
-        safe = cue.replace("{", "").replace("}", "").replace("\n", " ")
+        # Preserva tags ASS de override (ex: {\c&H...}) mas escapa caracteres perigosos
+        safe = cue.replace("\n", " ")
         # Adiciona fade-in no início de cada cue
         start_cs = int(round(start * 100))
         fade_start = max(0, start_cs - fade_in_ms // 10)

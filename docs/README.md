@@ -68,6 +68,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   fontes factuais + procedência de mídia (claims + mídia, persistência,
   dedup, status, CLI, registro automático de mídia); `smoke.sh` com
   87 cheques.
+- `relatorios/20260929-174157_relatorio_legendas-shorts-reels.md` — legendas
+  Shorts/Reels/TikTok (uppercase, glitch highlight, fade-in, timestamp folder);
+  `smoke.sh` com 87 cheques.
 
 ## Análises (estado, gaps, riscos)
 
