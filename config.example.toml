@@ -3,7 +3,8 @@
 # variáveis de ambiente (ex.: CURIO_OUT_DIR, CURIO_TTS, CURIO_BACKEND).
 # Segredos NUNCA vão no código — use env (ex.: CURIO_LLM_API_KEY).
 
-duration_target = 45.0
+duration_target = 0  # 0 = Automático/Ilimitado (padrão: o conteúdo manda);
+# ou meta em segundos (30/45/60/90/120/180 ou 5..600) — meta, nunca corte
 out_dir = "output"
 
 [tts]

@@ -64,18 +64,25 @@ def _pause(c: dict[str, str]) -> None:
 
 
 def _ask_duration(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
-    """Duração aproximada do vídeo (roteiro, cenas e verificação acompanham)."""
-    raw = _ask("Duração aproximada em segundos [30/45/60, padrão 45]: ").strip()
+    """Meta de duração (nunca corta): auto ou segundos. Padrão: auto."""
+    from .config import parse_duration
+    raw = _ask("Duração [auto/30/45/60/90/120/180/outro Nºs, padrão auto]: ").strip()
     if not raw:
-        return cfg
+        print("Duração: automática (o conteúdo manda).")
+        import dataclasses as _dc
+        return _dc.replace(cfg, duration_target=0.0)
+    if raw.strip().lower().startswith("person"):
+        raw = _ask("Quantos segundos (5..600)? ").strip()
     try:
-        seconds = float(raw.replace(",", "."))
-    except ValueError:
-        print("Valor inválido — usando 45s.")
+        seconds = parse_duration(raw)
+    except ValueError as exc:
+        print(f"{exc} — mantendo atual.")
         return cfg
-    seconds = min(120, max(15, seconds))
     import dataclasses
-    print(f"Duração-alvo: {seconds:.0f}s (aproximada).")
+    if seconds <= 0:
+        print("Duração: automática (o conteúdo manda).")
+    else:
+        print(f"Duração-alvo: {seconds:.0f}s (meta, sem corte).")
     return dataclasses.replace(cfg, duration_target=seconds)
 
 

@@ -306,6 +306,38 @@ check("prompt de título exige pergunta curta sem clickbait",
       and "55 caracteres" in _NV.TITLE_SYSTEM_PROMPT
       and "sem clickbait" in _NV.TITLE_SYSTEM_PROMPT)
 
+# 11. Duração flexível (auto padrão; meta nunca corta)
+from curio.config import parse_duration as _pd, DURATION_AUTO as _DA
+check("parse auto/ilimitado/zero",
+      all(_pd(x) == 0.0 for x in ("auto", "AUTO", "ilimitado", "", None, 0)))
+check("parse segundos (vírgula incl.)",
+      _pd("45") == 45.0 and _pd("37,5") == 37.5 and _pd(120) == 120.0)
+for _bad in ("banana", -5, 601):
+    try:
+        _pd(_bad)
+        check(f"parse rejeita {_bad!r}", False)
+    except ValueError:
+        check(f"parse rejeita {_bad!r}", True)
+check("cenas pelo tamanho (auto), não pela meta",
+      S.scenes_for_length(131) == 6 and S.scenes_for_length(40) == 3
+      and S.scenes_for_length(5000) == 12)
+check("prompt com cláusula de duração (sem segundos fixos)",
+      "{duration_clause}" in _NV.SCRIPT_SYSTEM_PROMPT
+      and "45 segundos" not in _NV.SCRIPT_SYSTEM_PROMPT)
+import shutil as _sh
+if _sh.which("ffmpeg"):
+    _VF = _os.path.join(tmp, "v.mp4")
+    _os.system(f"ffmpeg -y -v error -f lavfi -i color=s=64x64:d=1 {_VF} >/dev/null 2>&1")
+    from curio import verify as _VV
+    _rep0 = _VV.verify_video(_VF, None, 0.0)
+    check("auto: duração só informa",
+          any(c.ok and "livre (auto)" in c.label for c in _rep0.checks))
+    _rep1 = _VV.verify_video(_VF, None, 30.0)
+    check("meta distante: informa, não reprova",
+          any(c.ok and "fora da meta" in c.label for c in _rep1.checks))
+else:
+    check("ffmpeg ausente: verify pulado", True)
+
 # 7. LLM: 5 tentativas + fallback OpenRouter (offline, urlopen simulado)
 import io as _io
 import socket as _sock

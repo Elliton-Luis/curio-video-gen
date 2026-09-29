@@ -46,8 +46,10 @@ O `install.sh` tenta `pip install -e .` para criar os comandos `video-gen` e
 # Gerar um vídeo (narração IA, com mídia dinâmica)
 video-gen generate "De onde veio a palavra salário?"
 
-# Duração aproximada à sua escolha (roteiro, cenas e verificação acompanham)
+# Duração automática (padrão: o conteúdo manda) ou meta à sua escolha
 video-gen generate --duration 30 "O que é um satélite?"
+# auto/30/45/60/90/120/180 ou segundos (5..600) — meta, nunca corta nem
+# acelera a fala; sem --duration, o vídeo tem o tamanho do conteúdo
 
 # Gerar base para narrar você mesmo (silencioso + teleprompter)
 video-gen generate --narration human "De onde veio a palavra salário?"

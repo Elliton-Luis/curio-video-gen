@@ -58,7 +58,6 @@ CARD_WIDTH_RATIO = 0.85
 SUBTITLE_RESERVE_PX = 360
 
 MIN_IMAGE_SECONDS = 1.0
-MAX_SCENES_SCRIPT_MODE = 12
 
 
 # Heurística offline p/ consultas visuais (sem chave NVIDIA as cenas locais
@@ -261,14 +260,13 @@ def read_script_file(path: str) -> str:
 def scenes_for_script(script_text: str, cfg: CurioConfig) -> int:
     """Nº de cenas p/ roteiro pronto: acompanha o TAMANHO REAL do texto.
 
-    `scenes_for_duration` usa só a duração-alvo (boa p/ roteiro gerado sob
-    medida). Aqui o texto já existe e pode ser mais longo: estima a duração
-    por WPM de leitura e usa o maior dos dois, limitado a 12 cenas para não
-    explodir o nº de buscas de mídia.
+    Com duração escolhida, vale o maior entre meta e tamanho (nunca menos
+    cenas que o conteúdo pede). No Automático, só o tamanho manda.
+    Limitado a 12 cenas para não explodir o nº de buscas de mídia.
     """
-    words = len(script_text.split())
-    est_dur = words / scenes_stage.WORDS_PER_MINUTE * 60
-    by_length = max(3, min(MAX_SCENES_SCRIPT_MODE, round(est_dur / 9)))
+    by_length = scenes_stage.scenes_for_length(len(script_text.split()))
+    if cfg.duration_target <= 0:
+        return by_length
     return max(scenes_stage.scenes_for_duration(cfg.duration_target), by_length)
 
 

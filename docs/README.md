@@ -58,6 +58,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260929-135442_relatorio_legendas-titulo.md` — legendas
   Archivo Black com caixa preta sólida (sincronia intacta) + título-pergunta
   IA queimado 5 s (`video_title`); `smoke.sh` com 64 cheques.
+- `relatorios/20260929-141815_relatorio_duracao-flexivel.md` — modo
+  Automático/Ilimitado padrão (conteúdo manda), meta nunca corta, TTS sem
+  compressão artificial, verify informativo; `smoke.sh` com 73 cheques.
 
 ## Análises (estado, gaps, riscos)
 

@@ -171,18 +171,10 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
 def _synthesize_edge(text: str, wav_path: str, voice: str,
                      target_duration: float,
                      words_path: str | None = None, metrics=None) -> TTSResult:
+    # Ritmo sempre natural: a duração final é consequência do roteiro e do
+    # áudio — `target_duration` é só meta informativa (nunca altera a fala).
     words = _synth_edge(text, wav_path, voice, "+0%", words_path, metrics)
     duration = ff.probe_duration(wav_path)
-
-    # Uma correção de ritmo (a duração-alvo é meta, não corte — §5).
-    if target_duration > 0:
-        ratio = duration / target_duration
-        if ratio < 0.85 or ratio > 1.15:
-            pct = max(-30, min(30, round((ratio - 1) * 100)))
-            rate = f"{pct:+d}%"
-            words = _synth_edge(text, wav_path, voice, rate, words_path, metrics)
-            duration = ff.probe_duration(wav_path)
-            voice = f"{voice} ({rate})"
 
     return TTSResult(path=wav_path, duration=duration, provider="edge-tts",
                      voice=voice, speed=_estimate_wpm(text, duration),
@@ -192,18 +184,9 @@ def _synthesize_edge(text: str, wav_path: str, voice: str,
 def _synthesize_espeak(text: str, wav_path: str, voice: str,
                        speed: int, target_duration: float,
                        metrics=None) -> TTSResult:
+    # Idem: sem segunda passada acelerada — ritmo natural, sem corte.
     _synth_espeak(text, wav_path, voice, speed, metrics)
     duration = ff.probe_duration(wav_path)
-
-    # Uma tentativa de correção de ritmo: se fugir >15% da meta, ajusta a
-    # velocidade e sintetiza de novo (a duração-alvo é meta, não corte — §5).
-    if target_duration > 0:
-        ratio = duration / target_duration
-        if ratio < 0.85 or ratio > 1.15:
-            fixed = max(120, min(220, round(speed * ratio)))
-            _synth_espeak(text, wav_path, voice, fixed, metrics)
-            duration = ff.probe_duration(wav_path)
-            speed = fixed
 
     return TTSResult(path=wav_path, duration=duration,
                      provider="espeak-ng", voice=voice, speed=speed)

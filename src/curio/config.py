@@ -20,9 +20,36 @@ def _as_bool(value, default: bool = True) -> bool:
         "0", "false", "no", "n", "nao", "não", "off")
 
 
+DURATION_AUTO = 0.0  # Automático/Ilimitado: o conteúdo determina a duração.
+
+
+def parse_duration(raw) -> float:
+    """Duração desejada em segundos; 0.0 = Automático/Ilimitado.
+
+    Aceita número, "auto"/"ilimitado"/"unlimited"/"" ou None (=auto).
+    Número precisa estar em 5..600 (fora disso, ValueError — sem clamp
+    silencioso: a meta é do usuário, não nossa).
+    """
+    if raw is None:
+        return DURATION_AUTO
+    text = str(raw).strip().lower()
+    if text in ("", "auto", "automatico", "automático", "ilimitado",
+                "unlimited", "none", "0", "0.0"):
+        return DURATION_AUTO
+    try:
+        seconds = float(text.replace(",", "."))
+    except ValueError:
+        raise ValueError(
+            f"duração inválida: {raw!r} — use 'auto', 30, 45, 60, 90, 120, "
+            "180 ou segundos (5..600)")
+    if not 5 <= seconds <= 600:
+        raise ValueError(f"duração fora do intervalo (5..600 s): {raw!r}")
+    return seconds
+
+
 @dataclass
 class CurioConfig:
-    duration_target: float = 45.0
+    duration_target: float = DURATION_AUTO  # 0 = Automático/Ilimitado (padrão)
     out_dir: str = "output"
     tts_provider: str = "edge-tts"  # edge-tts (neural, grátis) | espeak-ng (local)
     tts_voice: str = "pt-BR-AntonioNeural"  # masculina PT-BR (edge); espeak: "pt-br"
@@ -63,7 +90,8 @@ class CurioConfig:
                     data = tomllib.load(fh)
                 break
         cfg = cls()
-        cfg.duration_target = float(data.get("duration_target", cfg.duration_target))
+        cfg.duration_target = parse_duration(
+            data.get("duration_target", cfg.duration_target))
         cfg.out_dir = str(data.get("out_dir", cfg.out_dir))
         tts = data.get("tts", {}) if isinstance(data.get("tts"), dict) else {}
         cfg.tts_provider = str(tts.get("provider", cfg.tts_provider))
@@ -92,8 +120,8 @@ class CurioConfig:
         if os.environ.get("CURIO_SPEED"):
             cfg.tts_speed = int(os.environ["CURIO_SPEED"])
         cfg.render_backend = os.environ.get("CURIO_BACKEND", cfg.render_backend)
-        if os.environ.get("CURIO_DURATION"):
-            cfg.duration_target = float(os.environ["CURIO_DURATION"])
+        if os.environ.get("CURIO_DURATION") is not None:
+            cfg.duration_target = parse_duration(os.environ["CURIO_DURATION"])
         cfg.nvidia_model = os.environ.get("NVIDIA_MODEL", cfg.nvidia_model)
         cfg.nvidia_base_url = os.environ.get("NVIDIA_BASE_URL", cfg.nvidia_base_url)
         if os.environ.get("NVIDIA_TIMEOUT"):

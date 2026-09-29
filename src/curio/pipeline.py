@@ -392,6 +392,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     else:
         if script_mode:
             n = visual_stage.scenes_for_script(script_text, cfg)
+        elif cfg.duration_target <= 0:
+            # Automático: o roteiro (não a meta) define as cenas.
+            n = scenes_stage.scenes_for_length(len(script_text.split()))
         else:
             n = scenes_stage.scenes_for_duration(cfg.duration_target)
         try:

@@ -20,8 +20,22 @@ WORDS_PER_MINUTE = 150
 
 
 def scenes_for_duration(duration_target: float) -> int:
-    """~1 cena a cada 9 s: 30 s→3, 45 s→5, 60 s→7 (limites 3–7)."""
+    """~1 cena a cada 9 s: 30 s→3, 45 s→5, 60 s→7 (limites 3–7).
+
+    Meta 0 (Automático) cai no piso: quem manda no nº de cenas é o
+    tamanho do roteiro (ver `scenes_for_length`).
+    """
     return max(3, min(7, round(duration_target / 9)))
+
+
+def scenes_for_length(words: int) -> int:
+    """Nº de cenas pelo TAMANHO do roteiro (~1 cena/9 s a 150 WPM, 3–12).
+
+    Usado no modo Automático e como piso no `visual.scenes_for_script`:
+    roteiro longo = mais cenas, nunca corte para caber em meta.
+    """
+    est_seconds = max(1, words) / WORDS_PER_MINUTE * 60
+    return max(3, min(12, round(est_seconds / 9)))
 
 SCENES_SYSTEM_PROMPT = (
     "Você divide roteiros de vídeo educativo em cenas visuais. "

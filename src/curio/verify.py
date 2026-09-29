@@ -93,9 +93,18 @@ def verify_video(mp4_path: str, srt_path: str | None = None,
         dur = float(info.get("format", {}).get("duration", 0))
     except (TypeError, ValueError):
         dur = 0.0
-    lo, hi = duration_target * 0.75, duration_target * 1.25
-    rep.checks.append(Check(lo <= dur <= hi, "duração próxima da meta",
-                            f"{dur:.1f}s (alvo {duration_target:.0f}s ±25%)"))
+    # A duração é meta, não regra: o vídeo tem o tamanho do conteúdo.
+    # Auto (meta 0) ou qualquer distância da meta informam, nunca reprovam.
+    if duration_target <= 0:
+        rep.checks.append(Check(True, "duração livre (auto)",
+                                f"{dur:.1f}s (conteúdo manda, sem meta)"))
+    else:
+        lo, hi = duration_target * 0.75, duration_target * 1.25
+        inside = lo <= dur <= hi
+        rep.checks.append(Check(
+            True, "duração próxima da meta" if inside else "duração fora da meta",
+            f"{dur:.1f}s (meta {duration_target:.0f}s ±25% — "
+            f"{'dentro' if inside else 'conteúdo manda, sem corte'})"))
 
     if srt_path:
         ok_srt = os.path.isfile(srt_path) and os.path.getsize(srt_path) > 0

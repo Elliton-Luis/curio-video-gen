@@ -44,8 +44,8 @@ FUTURE_MODELS = {
 
 SCRIPT_SYSTEM_PROMPT = (
     "Você escreve roteiros curtos e envolventes de vídeo educativo em "
-    "português do Brasil. O roteiro será lido em voz alta e deve durar cerca "
-    "de 45 segundos (no máximo {max_chars} caracteres). Regras de narrativa "
+    "português do Brasil. O roteiro será lido em voz alta, {duration_clause}. "
+    "Regras de narrativa "
     "(obrigatórias): "
     "1) comece com uma pergunta, afirmação intrigante ou problema; "
     "2) toda pergunta criada deve ser respondida em algum momento; "
@@ -397,17 +397,30 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
 
 
 def generate_script(idea: str, creds: NvidiaCredentials, model: str,
-                    base_url: str, timeout: int, max_chars: int,
+                    base_url: str, timeout: int, max_chars: int | None,
                     metrics=None, or_model: str | None = None,
                     or_base_url: str | None = None) -> tuple[str, str]:
     """Gera o roteiro (NVIDIA → fallback OpenRouter). Nunca silêncio.
 
+    `max_chars=None` = Automático: duração livre, sem corte (só o teto de
+    segurança). Com número, é meta de tamanho — nunca corta ideia no meio.
     Retorna (texto, rótulo "provedor:modelo"). Falhas levantam NvidiaError.
     """
+    from .script import AUTO_MAX_CHARS
     creds.active_key  # levanta se não houver chave NVIDIA
+    auto = max_chars is None
+    ceiling = AUTO_MAX_CHARS if auto else max_chars
+    if auto:
+        duration_clause = (
+            "sem duração fixa: complete o assunto com começo, meio e fim, "
+            f"sem enrolar nem cortar (teto técnico de {ceiling} caracteres)")
+    else:
+        duration_clause = (
+            f"com duração aproximada de {ceiling / 13.5:.0f} segundos "
+            f"(no máximo {ceiling} caracteres; meta, não corte seco)")
     messages = [
         {"role": "system",
-         "content": SCRIPT_SYSTEM_PROMPT.format(max_chars=max_chars)},
+         "content": SCRIPT_SYSTEM_PROMPT.format(duration_clause=duration_clause)},
         {"role": "user",
          "content": f"Escreva o roteiro de narração para a ideia: {idea}"},
     ]
@@ -431,7 +444,7 @@ def generate_script(idea: str, creds: NvidiaCredentials, model: str,
         raise NvidiaError(
             f"[{label}] resposta truncada mesmo com orçamento estendido."
         )
-    cleaned = _sanitize(text or "", max_chars)
+    cleaned = _sanitize(text or "", ceiling)
     if len(cleaned) < 100:
         raise NvidiaError(
             f"[{label}] API retornou texto inválido para narração "

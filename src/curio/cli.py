@@ -11,7 +11,7 @@ import traceback
 from . import __version__
 from . import ffmpeg as ff
 from . import verify as verify_mod
-from .config import CurioConfig
+from .config import CurioConfig, parse_duration
 from .metrics import backfill_from_metadata
 from .pipeline import finalize_project, run_pipeline, run_script_pipeline, video_paths
 from .slug import slugify
@@ -34,12 +34,35 @@ def _fail(stage: str, exc: BaseException, hint: str = "") -> int:
     return 1
 
 
+def _apply_duration(args, cfg: CurioConfig) -> int:
+    """Aplica --duration (meta, nunca corte). Retorna 0 ou código de erro."""
+    if getattr(args, "duration", None) is None:
+        return 0
+    try:
+        cfg.duration_target = parse_duration(args.duration)
+    except ValueError as exc:
+        print(f"Duração inválida: {exc}", file=sys.stderr)
+        return 2
+    if cfg.duration_target <= 0:
+        print("Duração: automática (o conteúdo manda).")
+    else:
+        print(f"Duração-alvo: {cfg.duration_target:.0f}s (meta, sem corte).")
+    return 0
+
+
+def _duration_suffix(meta: dict) -> str:
+    target = float(meta.get("duration_target", 0) or 0)
+    if target <= 0:
+        return "modo auto"
+    return f"meta: {target:.0f}s"
+
+
 def cmd_generate(args, cfg: CurioConfig) -> int:
     idea = " ".join(args.idea).strip()
     narration = getattr(args, "narration", "ai")
-    if getattr(args, "duration", None):
-        cfg.duration_target = float(args.duration)
-        print(f"Duração-alvo: {cfg.duration_target:.0f}s (aproximada).")
+    rc = _apply_duration(args, cfg)
+    if rc:
+        return rc
     if narration not in ("ai", "human"):
         print("Narração deve ser 'ai' ou 'human'.", file=sys.stderr)
         return 2
@@ -73,7 +96,7 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
               f"  video-gen finalize {meta['slug']} --audio minha-voz.wav")
         return 0
     print(f"\nOutput: {meta['artifacts']['video']}")
-    print(f"Duração: {meta['duration_actual']}s (alvo: {meta['duration_target']}s) | "
+    print(f"Duração: {meta['duration_actual']}s ({_duration_suffix(meta)}) | "
           f"TTS: {meta['tts_provider']} | render: {meta['render_encoder']} | "
           f"tempo: {meta['processing_time_seconds']}s")
     return 0
@@ -89,9 +112,9 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     if narration not in ("ai", "human"):
         print("Narração deve ser 'ai' ou 'human'.", file=sys.stderr)
         return 2
-    if getattr(args, "duration", None):
-        cfg.duration_target = float(args.duration)
-        print(f"Duração-alvo: {cfg.duration_target:.0f}s (aproximada).")
+    rc = _apply_duration(args, cfg)
+    if rc:
+        return rc
     max_images = getattr(args, "max_images", None)
     if max_images is not None:
         cfg.visual_max_images = max(1, min(5, int(max_images)))
@@ -129,7 +152,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
               f"  video-gen finalize {meta['slug']} --audio minha-voz.wav")
         return 0
     print(f"\nOutput: {meta['artifacts']['video']}")
-    print(f"Duração: {meta['duration_actual']}s (alvo: {meta['duration_target']}s) | "
+    print(f"Duração: {meta['duration_actual']}s ({_duration_suffix(meta)}) | "
           f"TTS: {meta['tts_provider']} | render: {meta['render_encoder']} | "
           f"tempo: {meta['processing_time_seconds']}s")
     return 0
@@ -305,8 +328,9 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("idea", nargs="+", help="ideia textual entre aspas")
     g.add_argument("--slug", default=None, help="nome do diretório de saída")
     g.add_argument("--force", action="store_true", help="refazer todas as etapas")
-    g.add_argument("--duration", type=float, default=None,
-                   help="duração aproximada em segundos (ex.: 30, 45, 60)")
+    g.add_argument("--duration", default=None,
+                   help="meta de duração (não corta): auto (padrão), 30, 45, "
+                        "60, 90, 120, 180 ou segundos 5..600")
     g.add_argument("--narration", default="ai", choices=["ai", "human"],
                    help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
     g.add_argument("--no-open", action="store_true",
@@ -326,8 +350,9 @@ def build_parser() -> argparse.ArgumentParser:
     fs.add_argument("--title", default=None, help="título do vídeo "
                                                   "(padrão: 1ª linha do roteiro)")
     fs.add_argument("--force", action="store_true", help="refazer todas as etapas")
-    fs.add_argument("--duration", type=float, default=None,
-                    help="duração aproximada em segundos (ex.: 30, 45, 60)")
+    fs.add_argument("--duration", default=None,
+                    help="meta de duração (não corta): auto (padrão), 30, 45, "
+                         "60, 90, 120, 180 ou segundos 5..600")
     fs.add_argument("--narration", default="ai", choices=["ai", "human"],
                     help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
     fs.add_argument("--max-images", type=int, default=None,

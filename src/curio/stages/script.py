@@ -15,6 +15,11 @@ from . import nvidia as nvidia_stage
 # ~13,5 caracteres/segundo ≈ ritmo de narração PT-BR confortável.
 CHARS_PER_SECOND = 13.5
 
+# Teto de segurança do modo Automático (~5 min): evita conta runaway na
+# API sem amputar conteúdo real. NÃO é meta — o roteiro termina quando o
+# assunto termina.
+AUTO_MAX_CHARS = 4000
+
 # Base curada: cada entrada tem ~600 caracteres (≈45 s) e evita mitos comuns.
 CURATED: dict[str, str] = {
     "salario": (
@@ -56,7 +61,7 @@ def _match_curated(idea: str) -> str | None:
     return None
 
 
-def _template_script(idea: str, max_chars: int) -> str:
+def _template_script(idea: str, max_chars: int | None) -> str:
     topic = idea.strip().rstrip("?.!").strip()
     text = (
         f"{topic}. Parece uma pergunta simples, e é justamente por isso que ela é boa. "
@@ -67,16 +72,21 @@ def _template_script(idea: str, max_chars: int) -> str:
         f"E talvez esse seja o ponto mais interessante: uma boa pergunta não termina quando o vídeo acaba. "
         f"Ela continua na sua cabeça, e isso já é aprender alguma coisa."
     )
-    if len(text) > max_chars:
+    if max_chars is not None and len(text) > max_chars:
         text = text[: max_chars - 1].rsplit(" ", 1)[0] + "."
     return text
 
 
 def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str]:
-    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'curated' | 'template'."""
+    """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'curated' | 'template'.
+
+    Com duração escolhida, o tamanho é meta (corta com dignidade); no modo
+    Automático (duration_target 0), sem corte — só o teto de segurança.
+    """
     if not idea or not idea.strip():
         raise ValueError("ideia vazia — informe um texto, ex.: video-gen generate \"...\"")
-    max_chars = int(cfg.duration_target * CHARS_PER_SECOND)
+    auto = cfg.duration_target <= 0
+    max_chars = None if auto else int(cfg.duration_target * CHARS_PER_SECOND)
 
     creds = nvidia_stage.NvidiaCredentials.from_env()
     if creds.available:
@@ -88,7 +98,8 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str
 
     curated = _match_curated(idea)
     if curated:
-        return (curated[:max_chars], "curated")
+        return (curated if auto else curated[:max_chars or len(curated)],
+                "curated")
 
     return _template_script(idea, max_chars), "template"
 
