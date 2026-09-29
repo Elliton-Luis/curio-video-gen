@@ -64,6 +64,10 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260929-142919_relatorio_llm-chain-gemini-groq.md` — chain
   NVIDIA→OpenRouter→Gemini→Groq em rodízio intercalado com levantamento
   final + `.env` organizado; `smoke.sh` com 77 cheques.
+- `relatorios/20260929-155200_relatorio_sistema-fontes.md` — sistema de
+  fontes factuais + procedência de mídia (claims + mídia, persistência,
+  dedup, status, CLI, registro automático de mídia); `smoke.sh` com
+  87 cheques.
 
 ## Análises (estado, gaps, riscos)
 

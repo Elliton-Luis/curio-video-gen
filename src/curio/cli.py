@@ -158,6 +158,39 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     return 0
 
 
+def cmd_sources(args, cfg: CurioConfig) -> int:
+    """Gerencia o registro de fontes de um projeto."""
+    from .stages import sources as sources_stage
+    paths = video_paths(cfg.out_dir, args.slug)
+    reg = sources_stage.SourceRegistry.load(paths.sources_json)
+    reg.slug = args.slug
+    if getattr(args, "add", None):
+        src = reg.add_claim(
+            claim=args.add, title=args.title, url=args.url,
+            evidence=args.evidence or "", author=args.author or "",
+            date=args.date or "", status=args.status or "confirmed",
+            notes=args.notes or "")
+        reg.save(paths.sources_json)
+        print(f"Fonte registrada: {src.title} ({src.status})")
+        return 0
+    if not os.path.isfile(paths.sources_json):
+        print(f"Projeto '{args.slug}' ainda não tem fontes registradas.")
+        return 0
+    print(f"Fontes de {args.slug}:")
+    print(f"  Afirmações factuais: {len(reg.claims)}")
+    for c in reg.claims:
+        mark = {"confirmed": "OK", "partial": "~", "contested": "!",
+                "unverified": "?"}.get(c.status, "?")
+        print(f"    [{mark}] {c.claim}")
+        print(f"        {c.title} — {c.url}")
+        if c.evidence:
+            print(f"        evidência: {c.evidence[:120]}")
+    print(f"  Mídias: {len(reg.media)}")
+    for m in reg.media:
+        print(f"    - {m.title} ({m.provider}) — {m.origin_url}")
+    return 0
+
+
 def cmd_finalize(args, cfg: CurioConfig) -> int:
     try:
         meta = finalize_project(args.slug, args.audio, cfg,
@@ -349,6 +382,21 @@ def build_parser() -> argparse.ArgumentParser:
     fin.add_argument("--audio", required=True, help="wav/mp3 com a narração humana")
     fin.add_argument("--force", action="store_true", help="retranscrever e refazer")
     fin.set_defaults(func=cmd_finalize)
+
+    src = sub.add_parser("sources", help="gerenciar fontes de um projeto")
+    src.add_argument("slug", help="nome do diretório do projeto")
+    src.add_argument("--add", default=None,
+                    help="afirmação factual a registrar (ou 'show' p/ listar)")
+    src.add_argument("--title", default=None, help="título da fonte")
+    src.add_argument("--url", default=None, help="URL completa da fonte")
+    src.add_argument("--evidence", default=None,
+                    help="trecho/evidência que sustenta a afirmação")
+    src.add_argument("--author", default=None, help="autor ou instituição")
+    src.add_argument("--date", default=None, help="data da fonte")
+    src.add_argument("--status", default="confirmed",
+                    choices=["confirmed", "partial", "contested", "unverified"])
+    src.add_argument("--notes", default=None, help="observações")
+    src.set_defaults(func=cmd_sources)
 
     fs = sub.add_parser("from-script", help="organizar mídia sobre um roteiro pronto "
                                            "(sem reescrever a narração)")

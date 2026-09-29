@@ -502,6 +502,49 @@ finally:
         else:
             _os.environ[k] = v
 
+# 12. Registro de fontes (claims + mídia, persistido, sem duplicar)
+from curio.stages import sources as _SRC
+_sp = _os.path.join(tmp, "projeto-teste", "sources", "sources.json")
+_reg = _SRC.SourceRegistry(slug="projeto-teste")
+_c1 = _reg.add_claim("O sal era essencial na Roma antiga.",
+                     "Salt in ancient Rome — Britannica",
+                     "https://www.britannica.com/science/salt",
+                     "O sal era usado como conservante e moeda de troca.",
+                     author="Encyclopaedia Britannica", date="2024")
+check("claim registrado com status", _c1.status == "confirmed")
+_dup = _reg.add_claim("O sal era essencial na Roma antiga.",
+                      "Salt in ancient Rome — Britannica",
+                      "https://www.britannica.com/science/salt",
+                      "O sal era usado como conservante e moeda de troca.")
+check("mesma URL+claim não duplica", len(_reg.claims) == 1)
+_c2 = _reg.add_claim("Soldados recebiam soldo em moeda.",
+                     "Roman military pay — Cambridge",
+                     "https://www.cambridge.org/roman-pay",
+                     "O soldo era pago em moeda, não em sal.",
+                     status="partial")
+check("claim partial registrado", _c2.status == "partial")
+_m1 = _reg.add_media("Roman salt road", "https://commons.wikimedia.org/salt",
+                     "https://upload.wikimedia.org/salt.jpg", "wikimedia",
+                     author="Unknown", license="CC BY-SA 2.0",
+                     query="roman salt", scene="cena 1")
+check("mídia registrada", _m1.provider == "wikimedia")
+_m2 = _reg.add_media("Roman salt road", "https://commons.wikimedia.org/salt",
+                     "https://upload.wikimedia.org/salt.jpg", "wikimedia")
+check("mesma mídia não duplica", len(_reg.media) == 1)
+_reg.save(_sp)
+check("sources.json criado", _os.path.isfile(_sp))
+_reg2 = _SRC.SourceRegistry.load(_sp)
+check("reload preserva claims", len(_reg2.claims) == 2)
+check("reload preserva mídias", len(_reg2.media) == 1)
+_reg2.add_claim("Nova afirmação verificada.", "Fonte nova",
+                "https://exemplo.org/nova", "Evidência nova.")
+_reg2.save(_sp)
+_reg3 = _SRC.SourceRegistry.load(_sp)
+check("adicionar não apaga anteriores", len(_reg3.claims) == 3)
+check("status inválido vira unverified",
+      _SRC.Source.from_dict({"claim": "x", "title": "y", "url": "z",
+                             "status": "invalid"}).status == "unverified")
+
 print(f"\n{passed} passaram, {len(failed)} falharam.")
 sys.exit(1 if failed else 0)
 EOF

@@ -105,6 +105,7 @@ output/<slug>/
 ├── timeline/timeline.json (+ visual_timeline.json no modo roteiro-pronto)
 ├── audio/narration.wav + words.json (IA) / human.wav (sua voz)
 │   └── sfx.wav + mixed.wav (SFX discretos, só roteiro-pronto com inserções)
+├── sources/sources.json (claims factuais + procedência de mídia)
 ├── teleprompter/teleprompter.mp4 (fluxo humano: fonte grande, marca a virada de cena)
 ├── subtitles/subs.srt + subs.ass
 ├── render/silent.mp4 + final.mp4
@@ -154,7 +155,7 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 |---|---|
 | Roteiro | chain LLM (NVIDIA → OpenRouter → Gemini → Groq) em rodízio com retries; tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
 | Cenas | divisão semântica via LLM do chain (JSON) ou local; consultas visuais em inglês |
-| Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns; no modo roteiro-pronto, até 5 fotos/cena em colagem álbum sem repetição de entrada + SFX discretos |
+| Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia; CLI `sources`; registro automático de mídia ao baixar; URLs exatas da pesquisa |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
 | Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base, Archivo Black com caixa preta sólida |
 | Título | pergunta curta gerada pela IA a partir do roteiro (metadados `video_title`), queimada nos primeiros 5 s |

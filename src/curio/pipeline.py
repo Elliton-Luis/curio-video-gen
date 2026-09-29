@@ -30,6 +30,7 @@ from .stages import subs as subs_stage
 from .stages import teleprompter as tele_stage
 from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
+from .stages import sources as sources_stage
 from .stages import visual as visual_stage
 from .stages.scenes import Chapter
 
@@ -45,6 +46,7 @@ class VideoPaths:
     chapters_json: str
     title_txt: str
     media_json: str
+    sources_json: str
     narration_wav: str
     words_json: str
     timeline_json: str
@@ -68,6 +70,7 @@ def video_paths(out_dir: str, slug: str) -> VideoPaths:
         chapters_json=os.path.join(root, "script", "chapters.json"),
         title_txt=os.path.join(root, "script", "title.txt"),
         media_json=os.path.join(root, "media", "media.json"),
+        sources_json=os.path.join(root, "sources", "sources.json"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         words_json=os.path.join(root, "audio", "words.json"),
         timeline_json=os.path.join(root, "timeline", "timeline.json"),
@@ -336,8 +339,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     paths = video_paths(cfg.out_dir, slug)
     metrics = RunMetrics(slug, idea, narration)
     for d in ("script", "audio", "subtitles", "assets", "render",
-              "media", "timeline", "teleprompter"):
+              "media", "timeline", "teleprompter", "sources"):
         os.makedirs(os.path.join(paths.root, d), exist_ok=True)
+    sources = sources_stage.SourceRegistry.load(paths.sources_json)
+    sources.slug = slug
 
     # [1/6] Roteiro (modo roteiro-pronto: usa o texto verbatim, nunca gera)
     t0 = time.monotonic()
@@ -453,6 +458,20 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                                        metrics)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
+    # Registra procedência das mídias no registro de fontes do projeto.
+    for scene in media_scenes:
+        for entry in scene.get("assets") or []:
+            asset = entry.get("asset") or {}
+            if asset.get("local_path"):
+                sources.add_media(
+                    title=asset.get("title", ""),
+                    origin_url=asset.get("source_url", ""),
+                    file_url=asset.get("download_url", ""),
+                    provider=asset.get("provider", ""),
+                    author=asset.get("author", ""),
+                    license=asset.get("license", ""),
+                    query=entry.get("query", ""),
+                    scene=f"cena {scene['chapter_id']}")
     stage_times["media"] = round(time.monotonic() - t0, 2)
     emit(3, "Buscando mídia",
          "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")
@@ -590,6 +609,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "overlap_cap": overlap_cap,
             "sfx": bool(sfx_path),
         } if max_images > 1 else None),
+        "sources": {
+            "claims": len(sources.claims),
+            "media": len(sources.media),
+        },
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,
@@ -608,6 +631,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         },
     })
     _write_json(paths.metadata_json, metadata)
+    sources.save(paths.sources_json)
     stage_times["finalize"] = 0.0
     metadata["stage_times"] = stage_times
     metadata["metrics_file"] = metrics.save(metadata, stage_times,
