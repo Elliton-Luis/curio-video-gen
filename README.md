@@ -103,7 +103,7 @@ output/<slug>/
 ├── timeline/timeline.json (+ visual_timeline.json no modo roteiro-pronto)
 ├── audio/narration.wav + words.json (IA) / human.wav (sua voz)
 │   └── sfx.wav + mixed.wav (SFX discretos, só roteiro-pronto com inserções)
-├── teleprompter/teleprompter.mp4 (fluxo humano)
+├── teleprompter/teleprompter.mp4 (fluxo humano: fonte grande, marca a virada de cena)
 ├── subtitles/subs.srt + subs.ass
 ├── render/silent.mp4 + final.mp4
 └── metadata.json (capítulos, assets, licenças, tempos)
@@ -144,7 +144,7 @@ config, usa a 1ª; **rotação ainda não implementada**).
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave e 5 retries; fallback OpenRouter com chave; sem chave: base curada + template |
+| Roteiro | NVIDIA API (Nemotron 3 Ultra) com chave e 5 retries; fallback OpenRouter com chave; tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
 | Cenas | divisão semântica via NVIDIA (JSON, com fallback OpenRouter) ou local; consultas visuais em inglês |
 | Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns; no modo roteiro-pronto, até 5 fotos/cena em colagem álbum sem repetição de entrada + SFX discretos |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |

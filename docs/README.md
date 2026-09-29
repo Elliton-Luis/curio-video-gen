@@ -51,6 +51,10 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   entradas sem repetição consecutiva (seed do slug) + SFX discretos em
   ~1/3 das inserções (pico −35 dB, narração intacta); `smoke.sh` com
   47 cheques.
+- `relatorios/20260929-133806_relatorio_teleprompter-roteiro-natural.md` —
+  teleprompter legível (fonte 104, negrito, separador + ciano na virada de
+  cena, sincronia intacta) + prompt de roteiro conversado; `smoke.sh` com
+  54 cheques.
 
 ## Análises (estado, gaps, riscos)
 

@@ -11,27 +11,40 @@ from __future__ import annotations
 from . import subs as subs_stage
 from .scenes import Chapter
 
-TELE_FONT_SIZE = 84
-TELE_NEXT_FONT_SIZE = 56
-TELE_MAX_WORDS = 6
-TELE_MAX_CHARS = 40
+TELE_FONT_SIZE = 104
+TELE_NEXT_FONT_SIZE = 64
+TELE_MARK_FONT_SIZE = 48
+TELE_MAX_WORDS = 5
+TELE_MAX_CHARS = 34
 # Últimos X segundos de cada bloco: texto atual fica amarelo (aviso de virada).
 TELE_WARN_SECONDS = 0.7
+# Última fala antes de trocar de cena: aviso mais longo (a virada importa).
+TELE_SCENE_WARN_SECONDS = 1.4
 
 WHITE = r"\c&H00FFFFFF&"
 YELLOW = r"\c&H0000FFFF&"
 DIM = r"\c&H00A0A0A0&"
+# Próximo bloco quando abre cena nova: ciano claro (≠ cinza = continua).
+NEXT_SCENE = r"\c&H00A0FFFF&"
+MARK = r"\c&H00808080&"
 
 
 def _safe(text: str) -> str:
     return text.replace("{", "").replace("}", "").replace("\\", "")
 
 
-def _event_text(current: str, nxt: str, color: str) -> str:
+def _event_text(current: str, nxt: str, color: str,
+                nxt_new_scene: bool = False) -> str:
     cur = f"{{\\fs{TELE_FONT_SIZE}{color}}}{_safe(current)}"
     if not nxt:
         return cur
     # DIM em bloco próprio: tag solta fora de {} vaza como texto na tela.
+    if nxt_new_scene:
+        # Cena nova chegando: separador + próximo em ciano (≠ cinza).
+        mark = (f"{{\\fs{TELE_MARK_FONT_SIZE}{MARK}}}"
+                "\\N··· próxima parte ···\\N")
+        return (f"{cur}{mark}{{{NEXT_SCENE}}}"
+                f"{{\\fs{TELE_NEXT_FONT_SIZE}}}{_safe(nxt)}")
     return f"{cur}{{{DIM}}}\\N{{\\fs{TELE_NEXT_FONT_SIZE}}}{_safe(nxt)}"
 
 
@@ -48,9 +61,9 @@ def _tele_ass_doc(events: list[tuple[float, float, str]],
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        "Alignment, MarginL, MarginR, MarginV, Encoding, LineSpacing\n"
         f"Style: Teleprompter,DejaVu Sans,{TELE_FONT_SIZE},&H00FFFFFF,&H000019FF,"
-        f"&H80000000,&HAA000000,0,0,0,0,100,100,0,0,3,2,0,5,60,60,60,1\n"
+        f"&H80000000,&HCC000000,1,0,0,0,100,100,0,0,3,2,0,5,120,120,60,1,12\n"
         "\n[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
         "Effect, Text\n"
@@ -60,8 +73,13 @@ def _tele_ass_doc(events: list[tuple[float, float, str]],
     return head + "\n".join(body) + "\n"
 
 
-def build_teleprompter_cues(chapters: list[Chapter]) -> list[tuple[float, float, str]]:
-    """Espalha blocos de cada capítulo pela sua duração estimada."""
+def build_teleprompter_cues(chapters: list[Chapter]
+                            ) -> list[tuple[float, float, str, int]]:
+    """Espalha blocos de cada capítulo pela sua duração estimada.
+
+    Retorna (início, fim, bloco, id_do_capítulo). Tempos idênticos a
+    antes — só carrega o capítulo junto para marcar viradas de cena.
+    """
     cues = []
     for ch in chapters:
         chunks = subs_stage.chunk_words(ch.narration.split(),
@@ -75,7 +93,7 @@ def build_teleprompter_cues(chapters: list[Chapter]) -> list[tuple[float, float,
         for i, (chunk, w) in enumerate(zip(chunks, weights)):
             share = dur * w / total
             end = ch.start + dur if i == len(chunks) - 1 else cursor + share
-            cues.append((cursor, end, chunk))
+            cues.append((cursor, end, chunk, ch.id))
             cursor = end
     return cues
 
@@ -84,21 +102,27 @@ def write_teleprompter_ass(chapters: list[Chapter], ass_path: str,
                            width: int, height: int) -> int:
     """Teleprompter de verdade: atual em destaque + próximo embaixo + virada.
 
-    Cada evento mostra o bloco atual (grande, branco) e o seguinte (menor,
-    cinza). Nos últimos TELE_WARN_SECONDS o atual fica amarelo — o leitor vê
-    a mudança chegando. Blocos curtos demais mostram fase única.
+    Cada evento mostra o bloco atual (grande, branco, negrito) e o seguinte
+    (menor: cinza = continua; ciano + separador = cena nova chegando). Nos
+    últimos instantes o atual fica amarelo — o leitor vê a mudança chegando,
+    com aviso mais longo no fim de cada cena. Só decoração: texto e tempos
+    da narração intactos.
     """
     cues = build_teleprompter_cues(chapters)
-    texts = [t for _, _, t in cues]
     events = []
-    for i, (start, end, text) in enumerate(cues):
-        nxt = texts[i + 1] if i + 1 < len(texts) else ""
-        if end - start > TELE_WARN_SECONDS + 0.5:
-            mid = end - TELE_WARN_SECONDS
-            events.append((start, mid, _event_text(text, nxt, WHITE)))
-            events.append((mid, end, _event_text(text, nxt, YELLOW)))
+    for i, (start, end, text, cid) in enumerate(cues):
+        nxt = cues[i + 1][2] if i + 1 < len(cues) else ""
+        nxt_new_scene = bool(nxt) and cues[i + 1][3] != cid
+        warn = TELE_SCENE_WARN_SECONDS if nxt_new_scene else TELE_WARN_SECONDS
+        if end - start > warn + 0.5:
+            mid = end - warn
+            events.append((start, mid,
+                           _event_text(text, nxt, WHITE, nxt_new_scene)))
+            events.append((mid, end,
+                           _event_text(text, nxt, YELLOW, nxt_new_scene)))
         else:
-            events.append((start, end, _event_text(text, nxt, WHITE)))
+            events.append((start, end,
+                           _event_text(text, nxt, WHITE, nxt_new_scene)))
     with open(ass_path, "w", encoding="utf-8") as fh:
         fh.write(_tele_ass_doc(events, width, height))
     return len(cues)

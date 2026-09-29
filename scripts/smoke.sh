@@ -232,6 +232,39 @@ check("retime mantém transições e SFX (só move tempos)",
       and all(at not in _old_at for _, at in _rt8_sfx)
       and all(0.0 <= at <= 36.0 for _, at in _rt8_sfx))
 
+# 9. Teleprompter legível + viradas de cena + prompt conversado
+from curio.stages import teleprompter as _TP
+from curio.stages import nvidia as _NV
+_tch = [_Ch(id=1, narration="A palavra salario vem do latim salarium ligado ao sal.",
+            duration_estimate=6.0, start=0.0, end=6.0),
+        _Ch(id=2, narration="Os soldados recebiam soldo em moeda todos os meses.",
+            duration_estimate=6.0, start=6.0, end=12.0)]
+_tcues = _TP.build_teleprompter_cues(_tch)
+check("cues carregam o capítulo (virada detectável)",
+      all(len(c) == 4 for c in _tcues)
+      and [c[3] for c in _tcues] == [1, 1, 2, 2])
+check("poucas palavras por linha",
+      all(len(c[2].split()) <= 5 for c in _tcues))
+_n = _TP.write_teleprompter_ass(_tch, _os.path.join(tmp, "tele.ass"), 1080, 1920)
+_doc = open(_os.path.join(tmp, "tele.ass"), encoding="utf-8").read()
+check("ASS: negrito + margens centrais + entrelinha",
+      ",1,0,0,0,100" in _doc and "5,120,120,60,1" in _doc
+      and "LineSpacing" in _doc)
+check("fronteira de cena: separador + próximo em ciano",
+      _doc.count("próxima parte") >= 1 and "A0FFFF" in _doc)
+check("narração intacta no teleprompter (só UI adicionada)",
+      all(w in _re.sub(r"\{[^}]*\}|\\N", " ",
+                       "\n".join(_doc.splitlines())) for w in
+          "A palavra salario vem do latim".split()))
+_p = _NV.SCRIPT_SYSTEM_PROMPT
+check("prompt mantém curiosidade + formato",
+      "termine respondendo" in _p and "SOMENTE com o texto" in _p
+      and "nunca invente fatos" in _p)
+check("prompt conversado sem jargão acadêmico",
+      "como quem conta algo interessante a um amigo" in _p
+      and "diante disso, podemos concluir" in _p
+      and "sem gíria e sem forçar humor" in _p)
+
 # 7. LLM: 5 tentativas + fallback OpenRouter (offline, urlopen simulado)
 import io as _io
 import socket as _sock
