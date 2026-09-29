@@ -17,14 +17,17 @@ Burns sutil em vez de inventar uma segunda.
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import re
 import sys
+import time
 import unicodedata
+from dataclasses import dataclass
 
 from ..config import CurioConfig
 from ..media import download_asset, get_providers
-from ..media.providers import MediaAsset, MediaError
+from ..media.providers import MediaAsset, MediaError, MediaProvider
 from . import scenes as scenes_stage
 
 # Entradas suaves e variadas, sem repetição consecutiva no vídeo inteiro.
@@ -58,6 +61,34 @@ CARD_WIDTH_RATIO = 0.85
 SUBTITLE_RESERVE_PX = 360
 
 MIN_IMAGE_SECONDS = 1.0
+
+# Limites de concorrência para busca/baixa de mídia (configuráveis via env)
+import os as _os
+MAX_CONCURRENT_SEARCHES = int(_os.environ.get("CURIO_MAX_CONCURRENT_SEARCHES", "3"))
+MAX_CONCURRENT_DOWNLOADS = int(_os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS", "2"))
+SEARCH_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
+DOWNLOAD_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
+
+
+@dataclass
+class SearchTask:
+    """Representa uma tarefa de busca: (provider, query)."""
+    provider: str
+    query: str
+    provider_obj: MediaProvider
+
+
+def _search_with_timeout(provider_obj, query: str, timeout: float, metrics=None) -> list[MediaAsset]:
+    """Executa busca com timeout."""
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(provider_obj.search, query, 5, metrics)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            if metrics:
+                metrics.media_record_timeout()
+            raise MediaError(f"{provider_obj.name}: busca timeout ({timeout}s)")
 
 
 # Heurística offline p/ consultas visuais (sem chave NVIDIA as cenas locais
@@ -307,63 +338,138 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
                       metrics=None) -> tuple[list[dict], list[str]]:
     """Busca até `max_images` assets relevantes por cena (gate > 0).
 
+    Combina queries globais (contexto geral) + queries da cena (precisão local).
     Ordena por relevância consulta↔título; em empate, prefere assets ainda
     não usados em outras cenas (diversidade sem inventar relação). Falha de
     uma cena vira fallback honesto com aviso — nunca associação falsa.
+
+    Otimizações:
+    - Buscas em paralelo entre providers e queries (com limite de concorrência)
+    - Timeout por busca para não travar em provider lento
+    - Seleção por metadados antes do download (só baixa o que tem chance)
+    - Downloads em paralelo com limite
+    - Cache aproveitado: assets em cache não geram novo download
     """
     max_images = max(1, min(5, int(max_images)))
     providers = get_providers(cfg)
-    search_memo: dict[tuple[str, str], list] = {}
+    if not providers:
+        return _fetch_media_fallback(chapters, max_images, warnings=[])
+    
     used_count: dict[str, int] = {}
     scenes, warnings = [], []
+    
+    # Prepara todas as tarefas de busca (provider x query) para todas as cenas
+    all_search_tasks: list[SearchTask] = []
+    chapter_queries: dict[int, list[str]] = {}
+    
     for ch in chapters:
-        queries = list(ch.visual_queries) or local_queries(ch.narration)
-        ranked: list[tuple[int, str, MediaAsset]] = []
-        seen = set()
+        scene_queries = list(ch.visual_queries) or local_queries(ch.narration)
+        global_queries = list(getattr(ch, "global_visual_queries", [])) or []
+        queries = scene_queries + global_queries
+        chapter_queries[ch.id] = queries
         for query in queries:
             for prov in providers:
-                memo_key = (prov.name, query)
-                if memo_key not in search_memo:
-                    try:
-                        search_memo[memo_key] = prov.search(query, metrics=metrics)
-                    except MediaError as exc:
-                        print(f"AVISO: {exc} — tentando próxima fonte.",
-                              file=sys.stderr)
-                        search_memo[memo_key] = []
-                for cand in search_memo[memo_key]:
+                all_search_tasks.append(SearchTask(prov.name, query, prov))
+    
+    if metrics:
+        metrics.media_queries_count = len(all_search_tasks)
+    
+    # Executa buscas em paralelo com limite de concorrência
+    search_results: dict[tuple[str, str], list[MediaAsset]] = {}
+    
+    def run_search(task: SearchTask) -> tuple[tuple[str, str], list[MediaAsset]]:
+        start = time.monotonic()
+        try:
+            results = _search_with_timeout(task.provider_obj, task.query, SEARCH_TIMEOUT, metrics)
+            elapsed = time.monotonic() - start
+            if metrics:
+                metrics.media_record_search_time(task.provider, elapsed)
+                metrics.media_record_results(task.provider, len(results))
+            return (task.provider, task.query), results
+        except MediaError as exc:
+            elapsed = time.monotonic() - start
+            if metrics:
+                metrics.media_record_search_time(task.provider, elapsed)
+            print(f"AVISO: {exc} — ignorando.", file=sys.stderr)
+            return (task.provider, task.query), []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SEARCHES) as executor:
+        futures = {executor.submit(run_search, task): task for task in all_search_tasks}
+        for future in concurrent.futures.as_completed(futures):
+            key, results = future.result()
+            search_results[key] = results
+    
+    # Processa resultados por cena
+    for ch in chapters:
+        queries = chapter_queries[ch.id]
+        ranked: list[tuple[int, str, MediaAsset]] = []
+        seen = set()
+        
+        for query in queries:
+            for prov in providers:
+                key = (prov.name, query)
+                if key not in search_results:
+                    continue
+                for cand in search_results[key]:
                     if cand.asset_id in seen:
                         continue
                     seen.add(cand.asset_id)
                     score = _relevance(query, cand)
                     if score > 0:
                         ranked.append((score, query, cand))
+        
         # Diversidade: menos usados primeiro; depois maior relevância.
         ranked.sort(key=lambda r: (used_count.get(r[2].asset_id, 0), -r[0]))
+        
+        # Seleção ANTES do download: pega top N candidatos por relevância
+        # e só depois tenta baixar (evita baixar imagens que não serão usadas)
+        candidates = ranked[:max_images * 3]  # margem para falhas de download
+        
+        # Downloads em paralelo
         picked: list[dict] = []
         picked_ids = set()
         picked_titles = set()
-        for score, query, cand in ranked:
-            if len(picked) >= max_images:
-                break
+        
+        def try_download(cand: MediaAsset, query: str, score: int) -> dict | None:
             if cand.asset_id in picked_ids:
-                continue
-            # Mesma cena, arquivo duplicado no Commons (títulos idênticos):
-            # pula para não exibir a "mesma foto" duas vezes seguidas.
+                return None
             norm_title = re.sub(r"\s+", " ", (cand.title or "").lower()).strip()
             if norm_title and norm_title in picked_titles:
-                continue
+                return None
             try:
                 asset = download_asset(cand, cfg.cache_dir, metrics)
+                return {"asset": asset.to_dict(), "query": query,
+                        "relevance": score, "order": -1}
             except MediaError as exc:
-                print(f"AVISO: {exc} — tentando próximo asset.",
-                      file=sys.stderr)
-                continue
-            picked_ids.add(cand.asset_id)
-            if norm_title:
-                picked_titles.add(norm_title)
-            used_count[cand.asset_id] = used_count.get(cand.asset_id, 0) + 1
-            picked.append({"asset": asset.to_dict(), "query": query,
-                           "relevance": score, "order": len(picked)})
+                if metrics:
+                    metrics.media_record_asset_rejected()
+                print(f"AVISO: {exc} — tentando próximo asset.", file=sys.stderr)
+                return None
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS) as executor:
+            futures = {
+                executor.submit(try_download, cand, query, score): (cand, query, score)
+                for score, query, cand in candidates
+            }
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result:
+                    result["order"] = len(picked)
+                    picked.append(result)
+                    cand, query, score = futures[future]
+                    picked_ids.add(cand.asset_id)
+                    norm_title = re.sub(r"\s+", " ", (cand.title or "").lower()).strip()
+                    if norm_title:
+                        picked_titles.add(norm_title)
+                    used_count[cand.asset_id] = used_count.get(cand.asset_id, 0) + 1
+                    if metrics:
+                        metrics.media_record_asset_reused()
+                if len(picked) >= max_images:
+                    # Cancela downloads restantes
+                    for f in futures:
+                        f.cancel()
+                    break
+        
         if not picked:
             msg = (f"cena {ch.id}: sem mídia relevante "
                    f"({', '.join(queries) or 'sem consultas'}) — fallback")
@@ -371,10 +477,21 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
             print(f"AVISO: {msg}", file=sys.stderr)
         first = picked[0]["asset"] if picked else None
         scenes.append({"chapter_id": ch.id,
-                       "asset": first,  # compat: fluxos antigos usam 1 imagem
+                       "asset": first,
                        "assets": picked,
                        "reused_from": None})
     _resolve_reuse_multi(scenes)
+    return scenes, warnings
+
+
+def _fetch_media_fallback(chapters, max_images: int, warnings: list) -> tuple[list[dict], list[str]]:
+    """Fallback quando não há providers configurados."""
+    scenes = []
+    for ch in chapters:
+        msg = f"cena {ch.id}: sem providers de mídia — fallback"
+        warnings.append(msg)
+        print(f"AVISO: {msg}", file=sys.stderr)
+        scenes.append({"chapter_id": ch.id, "asset": None, "assets": [], "reused_from": None})
     return scenes, warnings
 
 

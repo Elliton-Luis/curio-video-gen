@@ -40,7 +40,8 @@ def scenes_for_length(words: int) -> int:
 SCENES_SYSTEM_PROMPT = (
     "Você divide roteiros de vídeo educativo em cenas visuais. "
     "Responda SOMENTE com JSON válido, sem markdown nem explicações, neste formato: "
-    '{{"title": "...", "chapters": [{{"id": 1, "narration": "...", '
+    '{{"title": "...", "global_visual_queries": ["global query 1", "global query 2"], '
+    '"chapters": [{{"id": 1, "narration": "...", '
     '"visual_queries": ["english query 1", "english query 2"], '
     '"visual_intent": "short english intent"}}]}}. Regras: '
     "1) use APENAS frases literais do roteiro, na mesma ordem, sem reescrever "
@@ -49,7 +50,13 @@ SCENES_SYSTEM_PROMPT = (
     "3) narration em português do Brasil; visual_queries e visual_intent em "
     "inglês, concretos e buscáveis em bancos de fotos (objetos, lugares, "
     "épocas — nunca conceitos abstratos); "
-    "4) divida em {n} chapters (entre {lo} e {hi})."
+    "4) global_visual_queries: 2-3 consultas que representam o TEMA GERAL do vídeo "
+    "(contexto amplo para buscar imagens de abertura/contexto); "
+    "5) por chapter: visual_queries específicos da cena (2-3), visual_intent curto; "
+    "6) divida em {n} chapters (entre {lo} e {hi}). "
+    "IMPORTANTE: queries em inglês, concretas (objetos, lugares, ações), "
+    "nunca conceitos abstratos. Global queries dão contexto amplo; "
+    "scene queries dão precisão local."
 )
 
 
@@ -59,6 +66,7 @@ class Chapter:
     narration: str
     duration_estimate: float
     visual_queries: list[str] = field(default_factory=list)
+    global_visual_queries: list[str] = field(default_factory=list)
     visual_intent: str = ""
     start: float = 0.0
     end: float = 0.0
@@ -73,6 +81,7 @@ class Chapter:
             narration=str(d.get("narration", "")),
             duration_estimate=float(d.get("duration_estimate", 0)),
             visual_queries=[str(q) for q in d.get("visual_queries", [])],
+            global_visual_queries=[str(q) for q in d.get("global_visual_queries", [])],
             visual_intent=str(d.get("visual_intent", "")),
             start=float(d.get("start", 0.0)),
             end=float(d.get("end", 0.0)),
@@ -123,6 +132,8 @@ def build_chapters(script: str, cfg: CurioConfig,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
             extra=cfg.llm_overrides())
         provider = label.split(":")[0]  # id do provedor que respondeu
+        # Extrai queries globais do roteiro
+        global_queries = [str(q) for q in data.get("global_visual_queries", [])][:3]
         chapters = []
         for i, raw in enumerate(data.get("chapters", []), 1):
             narration = str(raw.get("narration", "")).strip()
@@ -133,6 +144,7 @@ def build_chapters(script: str, cfg: CurioConfig,
                 narration=narration,
                 duration_estimate=estimate_duration(narration),
                 visual_queries=[str(q) for q in raw.get("visual_queries", [])][:3],
+                global_visual_queries=global_queries,
                 visual_intent=str(raw.get("visual_intent", "")),
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):

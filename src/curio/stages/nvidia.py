@@ -642,11 +642,12 @@ def generate_script(idea: str, model: str,
 def _sanitize(text: str, max_chars: int) -> str:
     # Remove raciocínio vazado, cercas de código e rubricas de roteiro
     # ("Cena 1", "Narrador:", colchetes) — nada disso pode ir para o TTS.
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"think.*?end", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
     text = re.sub(r"\[[^\]\n]*\]", "", text)  # [Cena 1: ...], [trilha]...
     text = re.sub(r"(?im)^\s*(narrador|narração|roteiro)\s*:\s*", "", text)
     text = re.sub(r"(?i)^(aqui está[^:]*|roteiro[^:]*|claro!?)\s*:?\s*", "", text.strip())
+    text = re.sub(r"^\s*\d+\)\s*", "", text)  # remove "0) ", "1) ", etc. prefixo
     text = text.replace("*", "").replace("#", "").replace('"', "")
     text = re.sub(r"\s+", " ", text).strip().strip("`' ")
     if len(text) <= max_chars:

@@ -10,6 +10,7 @@ import traceback
 
 from . import __version__
 from . import ffmpeg as ff
+from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import backfill_from_metadata
@@ -353,6 +354,96 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     return 0 if ok else 1
 
 
+def _queue_progress(queue: queue_mod.VideoQueue) -> None:
+    os.system("clear" if os.name == "posix" else "cls")
+    queue.print_status()
+
+
+def cmd_queue(args, cfg: CurioConfig) -> int:
+    """Processa uma fila de ideias de vídeos sequencialmente."""
+    queue = queue_mod.VideoQueue()
+    
+    if args.file:
+        queue.add_from_file(args.file)
+    elif args.ideas:
+        queue.add_from_list(args.ideas)
+    
+    if not queue.items:
+        print("Nenhuma ideia fornecida. Use --file ou passe ideias como argumentos.", file=sys.stderr)
+        return 2
+    
+    if args.save:
+        queue.queue_file = args.save
+        queue.save(args.save)
+        print(f"Fila salva em {args.save}")
+    
+    if args.load:
+        queue = queue_mod.VideoQueue.load(args.load)
+    
+    if args.list:
+        queue.print_status()
+        return 0
+    
+    if args.retry:
+        count = queue_mod.retry_failed(queue)
+        print(f"{count} itens com erro marcados para reprocessamento.")
+        if queue.queue_file:
+            queue.save(queue.queue_file)
+        return 0
+    
+    if args.cancel_index is not None:
+        if queue_mod.cancel_item(queue, args.cancel_index):
+            print(f"Item {args.cancel_index} cancelado.")
+        else:
+            print(f"Não foi possível cancelar item {args.cancel_index}.")
+        if queue.queue_file:
+            queue.save(queue.queue_file)
+        return 0
+    
+    if args.move:
+        from_idx, to_idx = args.move
+        if queue_mod.reorder_items(queue, from_idx, to_idx):
+            print(f"Item {from_idx} movido para posição {to_idx}.")
+        else:
+            print("Não foi possível mover (apenas itens aguardando).")
+        if queue.queue_file:
+            queue.save(queue.queue_file)
+        return 0
+    
+    # Processa a fila
+    print(f"Iniciando processamento de {len(queue.items)} vídeos...")
+    print(f"Saída: {cfg.out_dir}")
+    print()
+    
+    def on_item_start(item):
+        print(f"\n▶ [{item.slug}] {item.idea}")
+    
+    def on_item_complete(item, success):
+        if success:
+            print(f"✓ [{item.slug}] Concluído em {item.duration_seconds:.1f}s")
+            if item.video_path:
+                print(f"  Vídeo: {item.video_path}")
+        else:
+            print(f"✗ [{item.slug}] ERRO: {item.error}")
+    
+    queue_mod.process_queue(
+        queue, cfg, cfg.out_dir,
+        on_item_start=on_item_start,
+        on_item_complete=on_item_complete,
+        on_progress=_queue_progress if not args.no_progress else None,
+    )
+    
+    if queue.queue_file:
+        queue.save(queue.queue_file)
+    
+    print("\n" + "=" * 50)
+    queue.print_status()
+    
+    # Retorna erro se algum item falhou
+    errors = sum(1 for i in queue.items if i.status == queue_mod.QueueItemStatus.ERROR)
+    return 1 if errors > 0 else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="video-gen",
                                  description="Máquina de Conteúdo Educativo em Vídeo (MVP)")
@@ -441,6 +532,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", help="checar dependências do ambiente")
     d.set_defaults(func=cmd_doctor)
+
+    q = sub.add_parser("queue", help="processar fila de vídeos sequencialmente")
+    q.add_argument("ideas", nargs="*", help="ideias textuais (ou use --file)")
+    q.add_argument("--file", "-f", default=None, help="arquivo com uma ideia por linha")
+    q.add_argument("--save", default=None, help="salvar fila em arquivo JSON")
+    q.add_argument("--load", default=None, help="carregar fila de arquivo JSON")
+    q.add_argument("--list", action="store_true", help="apenas listar status da fila")
+    q.add_argument("--retry", action="store_true", help="reprocessar itens com erro")
+    q.add_argument("--cancel", dest="cancel_index", type=int, default=None,
+                   help="cancelar item por índice (aguardando ou erro)")
+    q.add_argument("--move", nargs=2, type=int, metavar=("FROM", "TO"),
+                   help="reordenar item aguardando")
+    q.add_argument("--no-progress", action="store_true",
+                   help="não mostrar progresso visual (limpa tela)")
+    q.set_defaults(func=cmd_queue)
     return ap
 
 

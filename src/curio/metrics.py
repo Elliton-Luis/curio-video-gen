@@ -41,6 +41,21 @@ class RunMetrics:
         self.media_cache_hits = 0
         self.whisper_calls = 0
         self.whisper_model = ""
+        # Detailed media metrics
+        self.media_query_generation_time = 0.0
+        self.media_provider_search_time: dict[str, float] = {}
+        self.media_downloads_time = 0.0
+        self.media_selection_time = 0.0
+        self.media_deduplication_time = 0.0
+        self.media_queries_count = 0
+        self.media_requests_per_provider: dict[str, int] = {}
+        self.media_time_per_request: dict[str, list[float]] = {}
+        self.media_results_received: dict[str, int] = {}
+        self.media_cache_misses = 0
+        self.media_assets_rejected = 0
+        self.media_assets_reused = 0
+        self.media_timeouts = 0
+        self.media_retries = 0
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -56,6 +71,7 @@ class RunMetrics:
 
     def media_search(self, provider: str) -> None:
         self.media_searches[provider] = self.media_searches.get(provider, 0) + 1
+        self.media_requests_per_provider[provider] = self.media_requests_per_provider.get(provider, 0) + 1
 
     def media_download(self, bytes_: int, cached: bool) -> None:
         if cached:
@@ -63,6 +79,26 @@ class RunMetrics:
         else:
             self.media_downloads += 1
             self.media_bytes += bytes_
+            self.media_cache_misses += 1
+
+    def media_record_search_time(self, provider: str, elapsed: float) -> None:
+        self.media_provider_search_time[provider] = self.media_provider_search_time.get(provider, 0.0) + elapsed
+        self.media_time_per_request.setdefault(provider, []).append(elapsed)
+
+    def media_record_results(self, provider: str, count: int) -> None:
+        self.media_results_received[provider] = self.media_results_received.get(provider, 0) + count
+
+    def media_record_timeout(self) -> None:
+        self.media_timeouts += 1
+
+    def media_record_retry(self) -> None:
+        self.media_retries += 1
+
+    def media_record_asset_rejected(self) -> None:
+        self.media_assets_rejected += 1
+
+    def media_record_asset_reused(self) -> None:
+        self.media_assets_reused += 1
 
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1
@@ -133,9 +169,23 @@ class RunMetrics:
                     "downloads": self.media_downloads,
                     "bytes": self.media_bytes,
                     "cache_hits": self.media_cache_hits,
+                    "cache_misses": self.media_cache_misses,
                     "assets": sum(1 for s in media if s.get("asset")),
                     "fallbacks": sum(1 for s in media if not s.get("asset")),
                     "reused": sum(1 for s in media if s.get("reused_from")),
+                    "query_generation_time": round(self.media_query_generation_time, 2),
+                    "provider_search_time": {k: round(v, 2) for k, v in self.media_provider_search_time.items()},
+                    "downloads_time": round(self.media_downloads_time, 2),
+                    "selection_time": round(self.media_selection_time, 2),
+                    "deduplication_time": round(self.media_deduplication_time, 2),
+                    "queries_count": self.media_queries_count,
+                    "requests_per_provider": dict(self.media_requests_per_provider),
+                    "time_per_request": {k: [round(t, 2) for t in v] for k, v in self.media_time_per_request.items()},
+                    "results_received": dict(self.media_results_received),
+                    "assets_rejected": self.media_assets_rejected,
+                    "assets_reused": self.media_assets_reused,
+                    "timeouts": self.media_timeouts,
+                    "retries": self.media_retries,
                 },
                 "whisper": {"calls": self.whisper_calls,
                             "model": self.whisper_model},

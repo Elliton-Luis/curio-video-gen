@@ -1,0 +1,284 @@
+"""Fila de processamento de vídeos (§Queue).
+
+Permite processar múltiplas ideias de vídeos sequencialmente,
+cada uma gerando seu projeto independente com pipeline completo.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import sys
+import time
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Callable, Optional
+
+from .config import CurioConfig
+from .pipeline import run_pipeline
+from .slug import slugify
+
+
+class QueueItemStatus(str, Enum):
+    WAITING = "waiting"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    ERROR = "error"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class QueueItem:
+    """Um item na fila de processamento."""
+    idea: str
+    status: QueueItemStatus = QueueItemStatus.WAITING
+    slug: str = ""
+    project_dir: str = ""
+    error: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    duration_seconds: float = 0.0
+    video_path: str = ""
+    metadata_path: str = ""
+    retry_count: int = 0
+    config_overrides: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.slug:
+            self.slug = slugify(self.idea[:60]) or f"video-{int(time.time())}"
+
+
+@dataclass
+class VideoQueue:
+    """Fila de vídeos para processamento sequencial."""
+    items: list[QueueItem] = field(default_factory=list)
+    current_index: int = -1
+    paused: bool = False
+    cancelled: bool = False
+    queue_file: str = ""
+
+    def add(self, idea: str, config_overrides: dict | None = None) -> QueueItem:
+        item = QueueItem(idea=idea, config_overrides=config_overrides or {})
+        self.items.append(item)
+        return item
+
+    def add_from_list(self, ideas: list[str], config_overrides: dict | None = None) -> list[QueueItem]:
+        return [self.add(idea, config_overrides) for idea in ideas if idea.strip()]
+
+    def add_from_file(self, path: str, config_overrides: dict | None = None) -> list[QueueItem]:
+        with open(path, encoding="utf-8") as f:
+            ideas = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+        return self.add_from_list(ideas, config_overrides)
+
+    def get_next_waiting(self) -> Optional[QueueItem]:
+        for i, item in enumerate(self.items):
+            if item.status == QueueItemStatus.WAITING:
+                self.current_index = i
+                return item
+        return None
+
+    def get_current(self) -> Optional[QueueItem]:
+        if 0 <= self.current_index < len(self.items):
+            return self.items[self.current_index]
+        return None
+
+    def progress_str(self) -> str:
+        total = len(self.items)
+        completed = sum(1 for i in self.items if i.status == QueueItemStatus.COMPLETED)
+        processing = sum(1 for i in self.items if i.status == QueueItemStatus.PROCESSING)
+        errors = sum(1 for i in self.items if i.status == QueueItemStatus.ERROR)
+        waiting = sum(1 for i in self.items if i.status == QueueItemStatus.WAITING)
+        return f"Fila: {completed + processing + errors} / {total} (✓{completed} ▶{processing} ✗{errors} ○{waiting})"
+
+    def status_lines(self) -> list[str]:
+        lines = [self.progress_str(), ""]
+        for i, item in enumerate(self.items):
+            icon = {
+                QueueItemStatus.WAITING: "○",
+                QueueItemStatus.PROCESSING: "▶",
+                QueueItemStatus.COMPLETED: "✓",
+                QueueItemStatus.ERROR: "✗",
+                QueueItemStatus.PAUSED: "⏸",
+                QueueItemStatus.CANCELLED: "⊘",
+            }.get(item.status, "?")
+            error_info = f" ({item.error[:50]}...)" if item.error else ""
+            lines.append(f"{icon} {item.idea}{error_info}")
+        return lines
+
+    def print_status(self) -> None:
+        for line in self.status_lines():
+            print(line)
+
+    def save(self, path: str) -> None:
+        self.queue_file = path
+        data = {
+            "items": [asdict(item) for item in self.items],
+            "current_index": self.current_index,
+            "paused": self.paused,
+            "cancelled": self.cancelled,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+
+    @classmethod
+    def load(cls, path: str) -> "VideoQueue":
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        queue = cls(
+            items=[QueueItem(**item) for item in data.get("items", [])],
+            current_index=data.get("current_index", -1),
+            paused=data.get("paused", False),
+            cancelled=data.get("cancelled", False),
+            queue_file=path,
+        )
+        return queue
+
+
+def process_queue(
+    queue: VideoQueue,
+    cfg: CurioConfig,
+    output_dir: str,
+    on_item_start: Optional[Callable[[QueueItem], None]] = None,
+    on_item_complete: Optional[Callable[[QueueItem, bool], None]] = None,
+    on_progress: Optional[Callable[[VideoQueue], None]] = None,
+) -> VideoQueue:
+    """Processa a fila sequencialmente.
+
+    Args:
+        queue: Fila com itens a processar
+        cfg: Configuração base do Curio
+        output_dir: Diretório base para saída dos projetos
+        on_item_start: Callback quando item inicia
+        on_item_complete: Callback quando item termina (item, success)
+        on_progress: Callback de progresso geral
+
+    Returns:
+        Fila atualizada com status dos itens
+    """
+    def signal_handler(signum, frame):
+        queue.cancelled = True
+        print("\nSinal de interrupção recebido. Finalizando item atual...")
+
+    old_handler = signal.signal(signal.SIGINT, signal_handler)
+    try:
+        while not queue.cancelled:
+            if queue.paused:
+                time.sleep(1)
+                continue
+
+            item = queue.get_next_waiting()
+            if not item:
+                break  # Fila vazia ou tudo processado
+
+            item.status = QueueItemStatus.PROCESSING
+            item.started_at = datetime.now(timezone.utc).isoformat()
+            start_time = time.monotonic()
+
+            if on_item_start:
+                on_item_start(item)
+            if on_progress:
+                on_progress(queue)
+
+            # Configura projeto específico
+            project_dir = os.path.join(output_dir, item.slug)
+            os.makedirs(project_dir, exist_ok=True)
+            item.project_dir = project_dir
+
+            # Aplica overrides de config
+            item_cfg = CurioConfig()
+            for key, value in cfg.__dict__.items():
+                setattr(item_cfg, key, value)
+            for key, value in item.config_overrides.items():
+                if hasattr(item_cfg, key):
+                    setattr(item_cfg, key, value)
+
+            item_cfg.output_dir = project_dir
+
+            try:
+                # Executa pipeline completo
+                result = run_pipeline(item.idea, item_cfg)
+                
+                item.status = QueueItemStatus.COMPLETED
+                item.finished_at = datetime.now(timezone.utc).isoformat()
+                item.duration_seconds = round(time.monotonic() - start_time, 2)
+                item.video_path = result.get("artifacts", {}).get("video", "")
+                item.metadata_path = result.get("artifacts", {}).get("video", "").replace(".mp4", "_metadata.json")
+                
+                if on_item_complete:
+                    on_item_complete(item, True)
+                    
+            except Exception as exc:
+                item.status = QueueItemStatus.ERROR
+                item.error = str(exc)
+                item.finished_at = datetime.now(timezone.utc).isoformat()
+                item.duration_seconds = round(time.monotonic() - start_time, 2)
+                
+                if on_item_complete:
+                    on_item_complete(item, False)
+                
+                print(f"ERRO no item '{item.idea}': {exc}", file=sys.stderr)
+
+            # Salva progresso
+            if queue.queue_file:
+                queue.save(queue.queue_file)
+            
+            if on_progress:
+                on_progress(queue)
+
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
+
+    return queue
+
+
+def retry_failed(queue: VideoQueue) -> int:
+    """Marca itens com erro como aguardando para reprocessamento."""
+    count = 0
+    for item in queue.items:
+        if item.status == QueueItemStatus.ERROR:
+            item.status = QueueItemStatus.WAITING
+            item.error = ""
+            item.retry_count += 1
+            count += 1
+    return count
+
+
+def cancel_item(queue: VideoQueue, index: int) -> bool:
+    """Cancela um item específico (se aguardando ou em erro)."""
+    if 0 <= index < len(queue.items):
+        item = queue.items[index]
+        if item.status in (QueueItemStatus.WAITING, QueueItemStatus.ERROR):
+            item.status = QueueItemStatus.CANCELLED
+            return True
+    return False
+
+
+def reorder_items(queue: VideoQueue, from_index: int, to_index: int) -> bool:
+    """Reordena itens na fila (apenas itens aguardando)."""
+    if not (0 <= from_index < len(queue.items) and 0 <= to_index < len(queue.items)):
+        return False
+    if queue.items[from_index].status != QueueItemStatus.WAITING:
+        return False
+    item = queue.items.pop(from_index)
+    queue.items.insert(to_index, item)
+    return True
+
+
+def pause_queue(queue: VideoQueue) -> None:
+    queue.paused = True
+
+
+def resume_queue(queue: VideoQueue) -> None:
+    queue.paused = False
+
+
+def cancel_queue(queue: VideoQueue) -> None:
+    queue.cancelled = True
+    current = queue.get_current()
+    if current and current.status == QueueItemStatus.PROCESSING:
+        current.status = QueueItemStatus.CANCELLED
