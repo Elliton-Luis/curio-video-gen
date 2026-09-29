@@ -106,6 +106,8 @@ def _normalize_subtitle_text(text: str) -> str:
     """Normaliza texto da legenda: corrige pontuação, capitalização, interrogações."""
     if not text:
         return text
+    # Remove prefixos numerados "0) ", "1) ", etc. em qualquer posição
+    text = re.sub(r"(^|\.\s+)\d+\)\s*", r"\1", text)
     # Normaliza espaços
     text = re.sub(r"\s+", " ", text.strip())
     # Corrige letras maiúsculas aleatórias no meio da frase
@@ -122,10 +124,10 @@ def _normalize_subtitle_text(text: str) -> str:
         # Se parece pergunta mas não tem ?, adiciona
         if re.match(interrogatives, s, re.IGNORECASE) and not s.rstrip().endswith(("?", "？")):
             s = s.rstrip(".!.") + "?"
-# Garante primeira letra maiúscula
-    if s:
-        s = s.upper()
-    normalized.append(s)
+        # Garante primeira letra maiúscula
+        if s:
+            s = s.upper()
+        normalized.append(s)
     return " ".join(normalized)
 
 
@@ -169,7 +171,7 @@ def _select_highlight_word(words: list[str]) -> int:
 def _apply_highlight(text: str, highlight_idx: int) -> str:
     """Aplica efeito de aberração cromática na palavra de destaque.
     
-    Formato ASS: {\c&HFEF200&\shad3\4c&H5500FF&}PALAVRA{\r}
+    Formato ASS: {{\\c&HFEF200&\\shad3\\4c&H5500FF&}}PALAVRA{{\\r}}
     - Ciano (#00F2FE) = &HFEF200 (BBGGRR)
     - Magenta (#FF0055) = &H5500FF (BBGGRR)
     """

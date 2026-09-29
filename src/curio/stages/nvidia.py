@@ -647,7 +647,8 @@ def _sanitize(text: str, max_chars: int) -> str:
     text = re.sub(r"\[[^\]\n]*\]", "", text)  # [Cena 1: ...], [trilha]...
     text = re.sub(r"(?im)^\s*(narrador|narração|roteiro)\s*:\s*", "", text)
     text = re.sub(r"(?i)^(aqui está[^:]*|roteiro[^:]*|claro!?)\s*:?\s*", "", text.strip())
-    text = re.sub(r"^\s*\d+\)\s*", "", text)  # remove "0) ", "1) ", etc. prefixo
+    # Remove prefixos numerados "0) ", "1) ", etc. em qualquer posição
+    text = re.sub(r"(^|\.\s+)\d+\)\s*", r"\1", text)
     text = text.replace("*", "").replace("#", "").replace('"', "")
     text = re.sub(r"\s+", " ", text).strip().strip("`' ")
     if len(text) <= max_chars:
