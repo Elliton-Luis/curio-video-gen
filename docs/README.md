@@ -55,6 +55,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   teleprompter legível (fonte 104, negrito, separador + ciano na virada de
   cena, sincronia intacta) + prompt de roteiro conversado; `smoke.sh` com
   54 cheques.
+- `relatorios/20260929-135442_relatorio_legendas-titulo.md` — legendas
+  Archivo Black com caixa preta sólida (sincronia intacta) + título-pergunta
+  IA queimado 5 s (`video_title`); `smoke.sh` com 64 cheques.
 
 ## Análises (estado, gaps, riscos)
 

@@ -265,6 +265,47 @@ check("prompt conversado sem jargão acadêmico",
       and "diante disso, podemos concluir" in _p
       and "sem gíria e sem forçar humor" in _p)
 
+# 10. Legendas pesadas + título-pergunta (só apresentação; tempos intactos)
+from curio.stages import subs as _SU
+from curio.stages import script as _SC
+_doc10 = _SU.cues_to_ass([(1.0, 2.5, "salário vem do latim")], 1080, 1920,
+                         92, 200, fontname="Archivo Black", bold=0)
+check("ASS: Archivo Black + caixa preta sólida c/ padding",
+      "Archivo Black" in _doc10 and ",3,10,0," in _doc10
+      and "&H00000000,&H00000000" in _doc10
+      and "80,80,200,1" in _doc10)
+check("ASS: tempos dos cues intactos",
+      "0:00:01.00,0:00:02.50" in _doc10)
+_cues10 = _SU.build_cues("O sal era essencial. " * 10, 45.0)
+check("agrupamento de palavras intacto",
+      all(len(c[2].split()) <= 5 for c in _cues10))
+_fam, _bold, _path = _SU.ensure_display_font(tmp)
+check("resolver de fonte nunca fatal (fallback honesto)",
+      isinstance(_fam, str) and _fam
+      and _bold in (0, 1) and (_path is None or _path.endswith(".ttf")))
+from curio.stages import render as _R
+check("título quebra em poucas linhas preservando '?'",
+      _R._wrap_title_lines("Por que o sal valia ouro na Roma antiga?")
+      == ["Por que o sal valia ouro", "na Roma antiga?"])
+check("escape drawtext cobre os separadores do filtro",
+      _R._escape_drawtext("a:b,c%d'e\\f") == "a\\:b\\,c\\%d\\'e\\\\f")
+try:
+    _SC._validate_title("Sem interrogacao", "Texto qualquer aqui.")
+    check("título sem '?' rejeitado", False)
+except ValueError:
+    check("título sem '?' rejeitado", True)
+try:
+    _SC._validate_title("Primeira frase aqui?", "Primeira frase aqui? Resto.")
+    check("título cópia da 1ª frase rejeitado", False)
+except ValueError:
+    check("título cópia da 1ª frase rejeitado", True)
+check("fallback usa a ideia se já for pergunta",
+      _SC._fallback_title("Roteiro.", "De onde veio o sal?") == "De onde veio o sal?")
+check("prompt de título exige pergunta curta sem clickbait",
+      "SEMPRE uma pergunta" in _NV.TITLE_SYSTEM_PROMPT
+      and "55 caracteres" in _NV.TITLE_SYSTEM_PROMPT
+      and "sem clickbait" in _NV.TITLE_SYSTEM_PROMPT)
+
 # 7. LLM: 5 tentativas + fallback OpenRouter (offline, urlopen simulado)
 import io as _io
 import socket as _sock

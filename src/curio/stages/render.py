@@ -347,15 +347,59 @@ def mix_sfx(narration_wav: str, sfx_wav: str, out_path: str,
     return out_path
 
 
+def _escape_drawtext(text: str) -> str:
+    return (text.replace("\\", "\\\\").replace(":", "\\:")
+            .replace("'", "\\'").replace("%", "\\%").replace(",", "\\,"))
+
+
+def _wrap_title_lines(title: str, width: int = 24,
+                      max_lines: int = 3) -> list[str]:
+    """Quebra o título em poucas linhas curtas, preservando o '?' final."""
+    words, lines, cur = title.strip().split(), [], ""
+    for word in words:
+        trial = f"{cur} {word}".strip()
+        if len(trial) > width and cur:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    lines = [ln for ln in lines if ln][:max_lines]
+    if len(lines) == max_lines and len(title.strip()) > sum(
+            len(ln) for ln in lines) + max_lines:
+        lines[-1] = lines[-1][: width - 3].rstrip() + "…?"
+    return lines
+
+
 def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
-               out_path: str, cfg: CurioConfig, total: float) -> dict:
-    """silent + legendas queimadas + áudio → MP4 final (um encode só)."""
+               out_path: str, cfg: CurioConfig, total: float,
+               title: str | None = None,
+               title_fontfile: str | None = None) -> dict:
+    """silent + legendas queimadas + áudio → MP4 final (um encode só).
+
+    Com `title`, queima a pergunta de abertura nos primeiros 5 s (caixa
+    preta própria, topo fora da zona das legendas). Sem título, idêntico
+    ao comportamento anterior.
+    """
     ff.require_tools()
     backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error", "-i", silent_path]
     vf = []
     if subs_ass:
         vf.append(f"subtitles={ff.escape_sub_path(subs_ass)}")
+    if title and title.strip():
+        fontfile = title_fontfile or ff.find_font_bold()
+        if fontfile:
+            y0 = round(cfg.height * 0.12)
+            for i, line in enumerate(_wrap_title_lines(title)):
+                vf.append(
+                    f"drawtext=fontfile='{fontfile}':"
+                    f"text='{_escape_drawtext(line)}':"
+                    f"fontsize=64:fontcolor=white:"
+                    f"box=1:boxcolor=black@0.85:boxborderw=28:"
+                    f"x=(w-text_w)/2:y={y0 + i * 84}:"
+                    f"enable='between(t,0,5)'")
     if backend == "vaapi":
         from ..ffmpeg import vaapi_device
         vf.extend(["format=nv12", "hwupload"])

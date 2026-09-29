@@ -148,7 +148,8 @@ config, usa a 1ª; **rotação ainda não implementada**).
 | Cenas | divisão semântica via NVIDIA (JSON, com fallback OpenRouter) ou local; consultas visuais em inglês |
 | Mídia | Wikimedia + Openverse (sem chave) e Pexels (com chave); só entra imagem com título ligado ao tema, sem marca d'água; fallback gradiente honesto + Ken Burns; no modo roteiro-pronto, até 5 fotos/cena em colagem álbum sem repetição de entrada + SFX discretos |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
-| Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base |
+| Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base, Archivo Black com caixa preta sólida |
+| Título | pergunta curta gerada pela IA a partir do roteiro (metadados `video_title`), queimada nos primeiros 5 s |
 | Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |
 
 ## Roadmap

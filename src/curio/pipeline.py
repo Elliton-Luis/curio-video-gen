@@ -43,6 +43,7 @@ class VideoPaths:
     root: str
     script_txt: str
     chapters_json: str
+    title_txt: str
     media_json: str
     narration_wav: str
     words_json: str
@@ -65,6 +66,7 @@ def video_paths(out_dir: str, slug: str) -> VideoPaths:
         root=root,
         script_txt=os.path.join(root, "script", "script.txt"),
         chapters_json=os.path.join(root, "script", "chapters.json"),
+        title_txt=os.path.join(root, "script", "title.txt"),
         media_json=os.path.join(root, "media", "media.json"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         words_json=os.path.join(root, "audio", "words.json"),
@@ -364,6 +366,21 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     stage_times["script"] = round(time.monotonic() - t0, 2)
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro", "OK")
 
+    # Título-pergunta (IA a partir do roteiro; nunca entra na narração).
+    if not force_after_script and os.path.isfile(paths.title_txt):
+        video_title, title_source = _read(paths.title_txt).strip(), "cache"
+        if not video_title:
+            video_title, title_source = script_stage.generate_title(
+                script_text, idea, cfg, metrics)
+            with open(paths.title_txt, "w", encoding="utf-8") as fh:
+                fh.write(video_title)
+    else:
+        video_title, title_source = script_stage.generate_title(
+            script_text, idea, cfg, metrics)
+        with open(paths.title_txt, "w", encoding="utf-8") as fh:
+            fh.write(video_title)
+    print(f"Título: {video_title} ({title_source})")
+
     # [2/6] Cenas
     t0 = time.monotonic()
     emit(2, "Interpretando cenas")
@@ -501,7 +518,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         cue_count = subs_stage.write_subtitles(
             script_text, audio_duration, paths.subs_srt, paths.subs_ass,
             cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
-            words=words if tts_info["provider"] == "edge-tts" else None)
+            words=words if tts_info["provider"] == "edge-tts" else None,
+            cache_dir=cfg.cache_dir)
     else:
         cue_count = _read(paths.subs_srt).count("-->")
     stage_times["subs"] = round(time.monotonic() - t0, 2)
@@ -535,9 +553,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if sfx_path:
             narration_wav = _narration_with_sfx(paths.narration_wav, sfx_path,
                                                 total, paths)
+        title_fontfile = subs_stage.ensure_display_font(cfg.cache_dir)[2]
         render_info = render_stage.burn_final(
             silent, paths.subs_ass, narration_wav, paths.final_mp4,
-            cfg, total)
+            cfg, total, title=video_title, title_fontfile=title_fontfile)
         video_duration = render_info["duration"]
     stage_times["render"] = round(time.monotonic() - t0, 2)
     emit(6, "Montando vídeo", "OK")
@@ -548,6 +567,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     metadata.update({
         "narration": "ai",
         "mode": "script" if script_mode else "idea",
+        "video_title": video_title,
+        "title_source": title_source,
         "timeline_source": timed_source,
         "duration_actual": round(video_duration, 2),
         "audio_duration": round(audio_duration, 2),
@@ -568,6 +589,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         } if max_images > 1 else None),
         "artifacts": {
             "script": paths.script_txt,
+            "title": paths.title_txt,
             "chapters": paths.chapters_json,
             "media": paths.media_json,
             "audio": paths.narration_wav,
@@ -671,6 +693,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     metadata.update({
         "narration": "human-pending",
         "mode": "script" if script_mode else "idea",
+        "video_title": video_title,
+        "title_source": title_source,
         "duration_actual": estimated_total,
         "teleprompter_wpm": cfg.teleprompter_wpm,
         "teleprompter_cues": tele_cues,
@@ -680,6 +704,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         } if max_images > 1 else None),
         "artifacts": {
             "script": paths.script_txt,
+            "title": paths.title_txt,
             "chapters": paths.chapters_json,
             "media": paths.media_json,
             "timeline": paths.timeline_json,
@@ -762,7 +787,7 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     cue_count = subs_stage.write_subtitles(
         "", human_dur, paths.subs_srt, paths.subs_ass,
         cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
-        words=words)
+        words=words, cache_dir=cfg.cache_dir)
     emit("Legendando", "OK")
 
     emit("Ajustando visual")
@@ -808,8 +833,15 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         if sfx_path:
             human_wav = _narration_with_sfx(paths.human_wav, sfx_path,
                                             total, paths)
+    try:
+        _meta_prev = _read_json(paths.metadata_json)
+    except (json.JSONDecodeError, FileNotFoundError):
+        _meta_prev = {}
+    video_title = (_meta_prev.get("video_title") or "").strip() or None
+    title_fontfile = subs_stage.ensure_display_font(cfg.cache_dir)[2]
     render_info = render_stage.burn_final(
-        silent, paths.subs_ass, human_wav, paths.final_mp4, cfg, total)
+        silent, paths.subs_ass, human_wav, paths.final_mp4, cfg, total,
+        title=video_title, title_fontfile=title_fontfile)
     emit("Merge final", "OK")
 
     try:

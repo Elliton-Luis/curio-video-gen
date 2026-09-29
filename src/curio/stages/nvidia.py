@@ -73,9 +73,25 @@ SCRIPT_SYSTEM_PROMPT = (
     "markdown, listas, aspas de diálogo, emojis, preâmbulos como 'Aqui está' "
     "ou qualquer explicação sobre o roteiro. Se precisar raciocinar, faça-o "
     "apenas no raciocínio interno, nunca no texto final. "
+     "Princípio editorial: simplificar para tornar acessível, nunca falsificar "
+     "para viralizar. O objetivo é o espectador continuar assistindo porque "
+     "sempre há uma pergunta sendo respondida e outra surgindo."
+)
+
+TITLE_SYSTEM_PROMPT = (
+    "Você cria o título de um vídeo a partir do roteiro educativo já pronto, "
+    "em português do Brasil. Responda SOMENTE com JSON válido, sem markdown "
+    "nem explicações: {\"title\": \"...\"}. Regras (obrigatórias): "
+    "1) o título é SEMPRE uma pergunta terminando com '?'; "
+    "2) representa a principal curiosidade que o vídeo responde (NUNCA copie "
+    "a primeira frase do roteiro); "
+    "3) curto: no máximo 55 caracteres; "
+    "4) soa natural falado em voz alta; "
+    "5) desperta curiosidade sem clickbait: nada de exagero, mistério falso "
+    "ou promessa que o vídeo não cumpre; "
+    "6) sem aspas, markdown, emojis, hashtags ou explicações. "
     "Princípio editorial: simplificar para tornar acessível, nunca falsificar "
-    "para viralizar. O objetivo é o espectador continuar assistindo porque "
-    "sempre há uma pergunta sendo respondida e outra surgindo."
+    "para viralizar."
 )
 
 

@@ -31,7 +31,7 @@ class CurioConfig:
     width: int = 1080
     height: int = 1920
     fps: int = 30
-    sub_font_size: int = 68  # base p/ altura 1920, em pixels reais (ASS PlayRes=vRes)
+    sub_font_size: int = 92  # base p/ altura 1920, em pixels reais (ASS PlayRes=vRes)
     sub_margin_v: int = 200
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"

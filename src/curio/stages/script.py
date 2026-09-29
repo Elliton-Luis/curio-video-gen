@@ -7,6 +7,8 @@ Com chave configurada, a NVIDIA é autoritativa e falhas são explícitas
 
 from __future__ import annotations
 
+import sys
+
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
 
@@ -89,3 +91,64 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str
         return (curated[:max_chars], "curated")
 
     return _template_script(idea, max_chars), "template"
+
+
+TITLE_MAX_CHARS = 90  # limite duro de validação (prompt pede ≤55)
+
+
+def _first_sentence(text: str) -> str:
+    import re as _re
+    parts = _re.split(r"(?<=[.!?…])\s+", text.strip())
+    return next((p for p in parts if p), text.strip()[:TITLE_MAX_CHARS])
+
+
+def _validate_title(title: str, script_text: str) -> str:
+    """Título precisa ser pergunta curta, própria (não cópia da 1ª frase)."""
+    from . import scenes as scenes_stage
+    t = (title or "").strip().replace("\n", " ")
+    t = t.strip("`'\" ")
+    if not (12 <= len(t) <= TITLE_MAX_CHARS):
+        raise ValueError(f"título fora do tamanho (12–90): {t!r}")
+    if not t.endswith("?"):
+        raise ValueError(f"título sem '?': {t!r}")
+    if any(c in t for c in "*#[]{}"):
+        raise ValueError(f"título com formatação: {t!r}")
+    if scenes_stage._norm(t) == scenes_stage._norm(_first_sentence(script_text)):
+        raise ValueError("título cópia da primeira frase do roteiro")
+    return t
+
+
+def _fallback_title(script_text: str, idea: str) -> str:
+    """Sem LLM: a ideia se já for pergunta; senão a ideia verbatim.
+
+    Melhor esforço documentado (source 'fallback'): nunca inventa pergunta
+    nova nem reescreve — só reaproveita o que o usuário já escreveu.
+    """
+    guess = (idea or "").strip()
+    if guess.endswith("?") and 12 <= len(guess) <= TITLE_MAX_CHARS:
+        return guess
+    return guess[:TITLE_MAX_CHARS] or _first_sentence(script_text)[:TITLE_MAX_CHARS]
+
+
+def generate_title(script_text: str, idea: str, cfg: CurioConfig,
+                   metrics=None) -> tuple[str, str]:
+    """Gera o título-pergunta do vídeo a partir do roteiro (não da ideia).
+
+    Retorna (título, fonte): 'nvidia:...' | 'openrouter:...' | 'fallback'.
+    O título nunca entra na narração nem nas legendas — só metadados e
+    abertura do vídeo.
+    """
+    creds = nvidia_stage.NvidiaCredentials.from_env()
+    if creds.available:
+        try:
+            data, label = nvidia_stage.complete_json(
+                nvidia_stage.TITLE_SYSTEM_PROMPT,
+                f"Crie o título para este roteiro:\n\n{script_text}",
+                cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout,
+                metrics, or_model=cfg.openrouter_model,
+                or_base_url=cfg.openrouter_base_url)
+            return _validate_title(str(data.get("title", "")), script_text), label
+        except (nvidia_stage.NvidiaError, ValueError) as exc:
+            print(f"AVISO: título IA inválido ({exc}) — usando fallback.",
+                  file=sys.stderr)
+    return _fallback_title(script_text, idea), "fallback"

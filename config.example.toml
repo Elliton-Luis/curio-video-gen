@@ -18,7 +18,7 @@ height = 1920
 fps = 30
 
 [subtitles]
-font_size = 68   # base para altura 1920, em pixels reais (ASS PlayRes = resolução)
+font_size = 92   # base para altura 1920, em pixels reais (ASS PlayRes = resolução)
 margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 
 # Roteiros via NVIDIA API. Chaves NUNCA aqui — use .env

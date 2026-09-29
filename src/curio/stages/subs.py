@@ -9,11 +9,81 @@ Saída dupla a partir dos mesmos cues (mesma sincronia):
 - `.ass`: o que o FFmpeg realmente queima no vídeo, com PlayRes, fonte,
   posição e margens explícitos (o filtro `subtitles` sem PlayRes usa
   384x288 e estoura o tamanho/posição — bug encontrado em teste visual).
+
+Apresentação (só visual, nunca sincronia): fonte pesada e larga
+(Archivo Black, OFL) branca sobre caixa preta sólida com padding
+(BorderStyle 3 + Outline como respiro). Cantos arredondados NÃO existem
+no ASS/libass — caixa quadrada por limitação do formato.
 """
 
 from __future__ import annotations
 
 import re
+
+ARCHIVO_FAMILY = "Archivo Black"
+ARCHIVO_FILE = "ArchivoBlack-Regular.ttf"
+ARCHIVO_URL = ("https://github.com/google/fonts/raw/main/"
+               "ofl/archivoblack/ArchivoBlack-Regular.ttf")
+SUBTITLE_OUTLINE = 10  # em BorderStyle 3, vira padding da caixa preta
+SUBTITLE_MARGIN_LR = 80
+
+
+def _fc_match(family: str) -> tuple[str, str] | None:
+    """Resolve (família, caminho) via fontconfig. None se ausente/falha."""
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["fc-match", family, "--format=%{family}|%{file}\n"],
+            capture_output=True, text=True, timeout=15, check=False)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0 or "|" not in proc.stdout:
+        return None
+    found_family, _, path = proc.stdout.strip().partition("|")
+    if family.lower() not in found_family.lower():
+        return None
+    return found_family, path
+
+
+def ensure_display_font(cache_dir: str = "cache"
+                        ) -> tuple[str, int, str | None]:
+    """Fonte pesada p/ legendas e título: (família ASS, bold, fontfile).
+
+    Tenta Archivo Black (OFL): já instalado → baixa p/ cache/fonts →
+    instala em ~/.local/share/fonts (+fc-cache). Qualquer falha cai para
+    DejaVu Sans com Bold=1 — nunca quebra o pipeline por causa de fonte.
+    """
+    hit = _fc_match(ARCHIVO_FAMILY)
+    if hit:
+        return ARCHIVO_FAMILY, 0, hit[1]
+    import os
+    import shutil
+    import subprocess
+    import urllib.request
+    user_dir = os.path.expanduser("~/.local/share/fonts")
+    cached = os.path.join(cache_dir, "fonts", ARCHIVO_FILE)
+    installed = os.path.join(user_dir, ARCHIVO_FILE)
+    try:
+        if not os.path.isfile(cached):
+            os.makedirs(os.path.dirname(cached), exist_ok=True)
+            with urllib.request.urlopen(ARCHIVO_URL, timeout=60) as resp:
+                data = resp.read(5 * 1024 * 1024 + 1)
+            if len(data) < 10_000 or len(data) > 5 * 1024 * 1024:
+                raise ValueError("download da fonte com tamanho suspeito")
+            with open(cached, "wb") as fh:
+                fh.write(data)
+        if not os.path.isfile(installed):
+            os.makedirs(user_dir, exist_ok=True)
+            shutil.copyfile(cached, installed)
+            subprocess.run(["fc-cache", "-f", user_dir],
+                           capture_output=True, timeout=60, check=False)
+        hit = _fc_match(ARCHIVO_FAMILY)
+        if hit:
+            return ARCHIVO_FAMILY, 0, hit[1]
+    except Exception:  # noqa: BLE001 — fonte é apresentação, nunca fatal
+        pass
+    from .. import ffmpeg as ff
+    return "DejaVu Sans", 1, ff.find_font_bold()
 
 
 def _words(text: str) -> list[str]:
@@ -131,9 +201,17 @@ def _fmt_ass_ts(seconds: float) -> str:
 
 def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
                 font_size: int, margin_v: int, alignment: int = 2,
-                border_style: int = 1,
-                back_colour: str = "&H00000000") -> str:
-    """ASS com PlayRes = resolução real: fonte/margem em pixels de verdade."""
+                border_style: int = 3,
+                back_colour: str = "&H00000000",
+                fontname: str = "DejaVu Sans", bold: int = 0,
+                outline: int = SUBTITLE_OUTLINE,
+                margin_lr: int = SUBTITLE_MARGIN_LR) -> str:
+    """ASS com PlayRes = resolução real: fonte/margem em pixels de verdade.
+
+    Caixa preta sólida com padding (BorderStyle 3 + Outline como respiro,
+    cores opacas): legível sobre qualquer fundo. Só apresentação — tempos,
+    quebras e agrupamento dos cues intocados.
+    """
     head = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -146,9 +224,10 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,DejaVu Sans,{font_size},&H00FFFFFF,&H000019FF,"
-        f"&H80000000,{back_colour},0,0,0,0,100,100,0,0,{border_style},2,0,"
-        f"{alignment},60,60,{margin_v},1\n"
+        f"Style: Default,{fontname},{font_size},&H00FFFFFF,&H000019FF,"
+        f"&H00000000,{back_colour},{bold},0,0,0,100,100,0,0,{border_style},"
+        f"{outline},0,"
+        f"{alignment},{margin_lr},{margin_lr},{margin_v},1\n"
         "\n[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
         "Effect, Text\n"
@@ -171,17 +250,26 @@ def write_srt(text: str, total_duration: float, srt_path: str) -> tuple[str, int
 def write_subtitles(text: str, total_duration: float, srt_path: str,
                     ass_path: str, width: int, height: int,
                     base_font_size: int, margin_v: int,
-                    words: list[dict] | None = None) -> int:
+                    words: list[dict] | None = None,
+                    fontname: str | None = None, bold: int | None = None,
+                    cache_dir: str = "cache") -> int:
     """Gera SRT + ASS. Com `words` (timestamps reais), sem offset artificial;
     sem eles, cai no modo proporcional legado.
 
     A fonte do ASS é escalada pela altura (base calibrada para 1920),
-    em pixels reais — PlayRes do ASS = resolução do vídeo.
+    em pixels reais — PlayRes do ASS = resolução do vídeo. Fonte pesada
+    resolvida uma vez (Archivo Black instalado sob demanda, senão DejaVu
+    Bold). Sincronia e agrupamento: intocados.
     """
+    if fontname is None or bold is None:
+        resolved, resolved_bold, _path = ensure_display_font(cache_dir)
+        fontname = resolved if fontname is None else fontname
+        bold = resolved_bold if bold is None else bold
     font_size = max(20, round(base_font_size * height / 1920))
     cues = cues_from_words(words) if words else build_cues(text, total_duration)
     with open(srt_path, "w", encoding="utf-8") as fh:
         fh.write(cues_to_srt(cues))
     with open(ass_path, "w", encoding="utf-8") as fh:
-        fh.write(cues_to_ass(cues, width, height, font_size, margin_v))
+        fh.write(cues_to_ass(cues, width, height, font_size, margin_v,
+                             fontname=fontname, bold=bold))
     return len(cues)
