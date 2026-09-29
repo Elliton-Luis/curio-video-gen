@@ -197,6 +197,59 @@ class OpenverseProvider(MediaProvider):
         return assets
 
 
+class PixabayProvider(MediaProvider):
+    """Pixabay: exige PIXABAY_API_KEY (grátis com cadastro). Fotos e
+    ilustrações sem marca d'água, licença Pixabay (uso livre)."""
+
+    name = "pixabay"
+    API = "https://pixabay.com/api/"
+
+    def __init__(self) -> None:
+        import os as _os
+        key = _os.environ.get("PIXABAY_API_KEY", "").strip()
+        if not key:
+            raise MediaError("pixabay: sem PIXABAY_API_KEY no ambiente")
+        self.key = key
+
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
+        params = {
+            "key": self.key,
+            "q": query,
+            "image_type": "photo",
+            "per_page": str(min(limit, 20)),
+            "safesearch": "true",
+        }
+        req = urllib.request.Request(
+            self.API + "?" + urllib.parse.urlencode(params),
+            headers={"User-Agent": USER_AGENT})
+        if metrics is not None:
+            metrics.media_search(self.name)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                import json
+                data = json.load(resp)
+        except Exception as exc:
+            raise MediaError(f"pixabay: busca falhou ({exc})") from exc
+        assets = []
+        for item in (data.get("hits") or [])[:limit]:
+            url = item.get("largeImageURL") or item.get("webformatURL", "")
+            if not url or not re.search(r"\.(jpe?g|png|webp)(\?|$)", url, re.I):
+                continue
+            w, h = int(item.get("imageWidth") or 0), int(item.get("imageHeight") or 0)
+            if w and h and min(w, h) < MIN_DIMENSION:
+                continue
+            assets.append(MediaAsset(
+                provider=self.name,
+                asset_id=str(item.get("id", "")),
+                title=str(item.get("tags", "")),
+                author=str(item.get("user", "")),
+                license="Licença Pixabay (uso livre)",
+                source_url=str(item.get("pageURL", "")),
+                download_url=url, width=w, height=h,
+            ))
+        return assets
+
+
 class PexelsProvider(MediaProvider):
     """Pexels: exige PEXELS_API_KEY (grátis com cadastro). Fotos sem watermark,
     licença Pexels (uso livre, sem atribuição obrigatória)."""
@@ -247,9 +300,10 @@ class PexelsProvider(MediaProvider):
 
 
 PROVIDERS: dict[str, type[MediaProvider]] = {
+    "pixabay": PixabayProvider,
+    "pexels": PexelsProvider,
     "wikimedia": WikimediaProvider,
     "openverse": OpenverseProvider,
-    "pexels": PexelsProvider,
 }
 
 

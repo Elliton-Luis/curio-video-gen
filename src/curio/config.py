@@ -69,7 +69,7 @@ class CurioConfig:
     gemini_base_url: str = ("https://generativelanguage.googleapis.com/v1beta/openai")
     groq_model: str = "openai/gpt-oss-120b"  # Groq (GROQ_API_KEY)
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    media_providers: str = "wikimedia"  # csv; "none" = só fallback
+    media_providers: str = "pixabay,pexels,wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
     teleprompter_wpm: int = 150
     whisper_model: str = "base"
