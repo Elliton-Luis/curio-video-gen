@@ -437,6 +437,19 @@ def _fc_resolve(family: str, want_italic: bool) -> tuple[str, str, bool] | None:
 _CACHE: dict[tuple[str, bool], tuple[str, str, bool] | None] = {}
 
 
+def clear_cache() -> None:
+    """Esvazia a resolução memorizada.
+
+    A memória é global de propósito — resolver o mesmo papel duas vezes
+    num vídeo não pode custar dois `fc-match` — mas quem muda o ambiente
+    (fonte instalada, fontconfig indisponível) precisa de uma forma de
+    mandar o módulo olhar de novo. Sem esta função, uma falha transitória
+    fica na memória como se fosse definitiva, e a próxima fonte instalada
+    continua invisível.
+    """
+    _CACHE.clear()
+
+
 def _fc_cached(family: str, want_italic: bool):
     # A chave usa a forma já separada, para "X Italic" com e sem o token
     # não pagarem duas consultas ao fontconfig.

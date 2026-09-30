@@ -272,6 +272,23 @@ class CurioConfig:
                     if "=" in pedaco:
                         k, v = pedaco.split("=", 1)
                         tabela[k.strip()] = v.strip()
+        # E o env sozinho, sem nenhuma tabela no arquivo: é o caso de quem
+        # não mantém config.toml. Sem esta volta, `CURIO_TYPOGRAPHY_PEOPLE`
+        # seria ignorado justamente quando não há `[typography.people]`
+        # para ele sobrescrever, que é quando ele é a única fonte.
+        for variavel, valor in os.environ.items():
+            if not variavel.startswith("CURIO_TYPOGRAPHY_") or not valor:
+                continue
+            g = variavel[len("CURIO_TYPOGRAPHY_"):].strip().lower()
+            if not g or g in cfg.typography:
+                continue
+            tabela = {}
+            for pedaco in valor.split(";"):
+                if "=" in pedaco:
+                    k, v = pedaco.split("=", 1)
+                    tabela[k.strip()] = v.strip()
+            if tabela:
+                cfg.typography[g] = tabela
         cfg.queues_dir = str(data.get("queues_dir", cfg.queues_dir))
         if os.environ.get("CURIO_QUEUES_DIR"):
             cfg.queues_dir = str(os.environ["CURIO_QUEUES_DIR"])
