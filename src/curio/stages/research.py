@@ -501,14 +501,74 @@ def _fact_tokens(text: str) -> set[str]:
     return out
 
 
+def _claim_for(script_text: str, fact: str, window: int = 90) -> str:
+    """A frase do roteiro onde o fato aparece.
+
+    Sem isto o aviso dice "135" e o desenvolvedor não tem por onde
+    começar: 135 é um número, não um identificador, e há dezenas no
+    texto. A janela em volta é o bastante para reconhecer a afirmação sem
+    despejar o parágrafo inteiro no log.
+    """
+    alvo = fact.split()[0] if fact else ""
+    if not alvo:
+        return ""
+    melhor, pos = "", -1
+    # Procura a menção mais próxima do NÚMERO, não da string completa:
+    # o token pode ser "480 anos" e no texto aparecer só "480".
+    for m in re.finditer(r"(?<![\w.])" + re.escape(alvo) + r"(?![\w])",
+                         script_text):
+        ini = max(0, m.start() - window)
+        fim = min(len(script_text), m.end() + window)
+        trecho = " ".join(script_text[ini:fim].split())
+        if len(trecho) > len(melhor):
+            melhor, pos = trecho, m.start()
+        break
+    if not melhor:
+        return alvo
+    return ("…" if pos > 0 else "") + melhor + (
+        "…" if pos + window < len(script_text) else "")
+
+
+def _cause(fact: str, source_facts: set[str],
+           sources: list[ResearchSource]) -> str:
+    """A causa provável, para o aviso distinguir três coisas diferentes.
+
+    A CONFERÊNCIA NÃO MUDA: isto é só a leitura do mesmo resultado. O que
+    se oferece aqui é a distinção entre "faltou fonte", "a fonte tem o
+    dado com outro valor" e "o número simplesmente não está lá" — que
+    são três correções diferentes e que o aviso antigotreatava como uma.
+    """
+    num = fact.split()[0] if fact else ""
+    unidade = fact.split()[1] if len(fact.split()) > 1 else ""
+    # Mesma unidade com OUTRO valor: a fonte cobre o assunto e diverge.
+    if unidade:
+        irmas = {f for f in source_facts if f.split()[-1:] == [unidade]
+                 and f.split()[0] != num}
+        if irmas:
+            return ("fonte_presente_valor_diferente: alguma fonte traz "
+                    f"'{unidade}' com outro número ({min(irmas)})")
+    # Algum número nas fontes, mas não este: provável valor inventado ou
+    # transcrição trocada.
+    if any(any(c.isdigit() for c in f) for f in source_facts):
+        return "valor_ausente_das_fontes"
+    # Nenhum número em lugar nenhum do material: as fontes não são
+    # numéricas, então a afirmação não tem como ter vindo delas.
+    return "fontes_sem_dado_numerico"
+
+
 def verify_grounding(script_text: str, sources: list[ResearchSource],
                      language: str = "pt-BR") -> dict:
     """Confere se os fatos do roteiro estão nas fontes (anti-invenção).
 
     Devolve {"checked": n, "grounded": [...], "unverified": [...],
-    "coverage": 0.0–1.0}. `unverified` são os fatos que o texto afirma e
-    nenhuma fonte sustenta — é o mecanismo que torna a promessa "a IA
-    nunca inventa" auditável em vez de só prometida no prompt.
+    "unverified_detail": [...], "coverage": 0.0–1.0}. `unverified` são os
+    fatos que o texto afirma e nenhuma fonte sustenta — é o mecanismo que
+    torna a promessa "a IA nunca inventa" auditável em vez de só
+    prometida no prompt.
+
+    `unverified_detail` é o mesmo resultado com endereço: a frase do
+    roteiro, os títulos das fontes avaliadas e a causa provável. É
+    diagnóstico, não decisão: o gate acima é idêntico com ou sem ele.
 
     É conferência de números, não prova semântica: um texto pode parafrasear
     um fato sem repetir o mesmo numeral. Por isso o relatório é
@@ -517,21 +577,39 @@ def verify_grounding(script_text: str, sources: list[ResearchSource],
     script_facts = _fact_tokens(script_text)
     if not script_facts:
         return {"checked": 0, "grounded": [], "unverified": [],
+                "unverified_detail": [], "unverified_display": [],
+                "sources_checked": [s.title for s in sources],
                 "coverage": 1.0, "language": language}
     haystack = " ".join(f"{s.title} {s.snippet} {s.url}" for s in sources)
     source_facts = _fact_tokens(haystack)
     # Formas alternativas: ano "44" casa com "44 a.C." e com "44".
-    grounded, unverified = [], []
+    grounded, unverified, detalhe = [], [], []
     for fact in sorted(script_facts):
         if fact in source_facts or fact.split()[0] in source_facts:
             grounded.append(fact)
         else:
             unverified.append(fact)
+            detalhe.append({
+                "fact": fact,
+                "claim": _claim_for(script_text, fact),
+                "cause": _cause(fact, source_facts, sources),
+            })
     checked = len(grounded) + len(unverified)
+    # Na EXIBIÇÃO, "135" e "135 anos" são o mesmo dado duas vezes: o
+    # extrator guarda o número solto e o número com unidade. O gate conta
+    # os dois, que é o comportamento antigo e não se mexe; o diagnóstico
+    # mostra um, com a unidade, porque é o que o leitor reconhece.
+    com_unidade = {f for f in unverified if len(f.split()) > 1}
+    detalhe_visivel = [d for d in detalhe
+                       if d["fact"] in com_unidade
+                       or d["fact"] not in {c.split()[0] for c in com_unidade}]
     return {
         "checked": checked,
         "grounded": grounded,
         "unverified": unverified,
+        "unverified_detail": detalhe,
+        "unverified_display": detalhe_visivel,
+        "sources_checked": [s.title for s in sources],
         "coverage": round(len(grounded) / checked, 3) if checked else 1.0,
         "language": language,
     }

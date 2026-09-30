@@ -690,11 +690,28 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     grounding = research_stage.verify_grounding(script_text, research_sources,
                                                 cfg.language)
     if grounding["unverified"]:
-        msg = (f"{len(grounding['unverified'])} dado(s) do roteiro sem "
-               f"correspondência nas fontes: "
-               f"{', '.join(grounding['unverified'][:6])}")
+        # O aviso não sai mais como "135, 393": 135 é um número, não um
+        # identificador, e com dezenas deles no texto o aviso não levava
+        # ninguém a lugar nenhum. Sai a afirmação, onde ela está e por que
+        # ela provavelmente não bate. O gate é o mesmo de antes — a
+        # contagem e a cobertura saem inalteradas.
+        _det = grounding.get("unverified_display") or []
+        msg = (f"{len(grounding['unverified'])} afirmação(ões) do roteiro sem "
+               f"correspondência nas fontes")
         warnings.append(msg)
-        print(f"AVISO: {msg} — ver sources/FONTES.md", file=sys.stderr)
+        print(f"AVISO: {msg}:", file=sys.stderr)
+        for _d in _det[:8]:
+            print(f"  - {_d['fact']}: \"{_d['claim']}\"", file=sys.stderr)
+            print(f"      possível causa: {_d['cause']}", file=sys.stderr)
+        _mais = len(_det) - 8
+        if _mais > 0:
+            print(f"  ... e {_mais} outra(s). Ver o relatório completo.",
+                  file=sys.stderr)
+        print(f"  Fontes avaliadas: "
+              f"{', '.join(grounding.get('sources_checked', [])[:6])}",
+              file=sys.stderr)
+        print("  Consulte sources/FONTES.md para as fontes relacionadas.",
+              file=sys.stderr)
     elif grounding["checked"]:
         print(f"Fundamentação: {grounding['checked']} dado(s) conferidos, "
               f"todos nas fontes.")

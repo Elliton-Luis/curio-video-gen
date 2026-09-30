@@ -396,9 +396,23 @@ def write_report(path: str, registry: "SourceRegistry",
                 "valor. Pode ser paráfrase, arredondamento ou invenção — "
                 "confira antes de publicar:")
             add("")
+            detalhe = list(grounding.get("unverified_detail") or [])
+            por_fato = {d["fact"]: d for d in detalhe}
             for fact in unverified:
-                add(f"- `{fact}`")
+                d = por_fato.get(fact)
+                if not d:
+                    add(f"- `{fact}`")
+                    continue
+                # A frase e a causa vêm do mesmo gate: aqui é o registro
+                # completo, sem o corte de 8 linhas do log.
+                add(f"- `{fact}` — {d['cause']}")
+                add(f"  > {d['claim']}")
             add("")
+            fontes = list(grounding.get("sources_checked") or [])
+            if fontes:
+                add("Fontes avaliadas nesta conferência: "
+                    + ", ".join(f"`{t}`" for t in fontes))
+                add("")
         grounded = list(grounding.get("grounded") or [])
         if grounded:
             add("### Confirmados nas fontes")
