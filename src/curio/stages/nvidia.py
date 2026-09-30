@@ -448,6 +448,9 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
             f"etapa {display}: timeout após {timeout}s com o modelo {model}."
         )
         err.retryable = True
+        # Timeout = provedor lento: não repetir aqui dentro (evita 6×15s
+        # no mesmo provedor); o rodízio troca imediatamente de provedor.
+        err.fast_fail = True
         raise err from exc
     except urllib.error.URLError as exc:
         err = NvidiaError(
@@ -474,6 +477,8 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
                               max_tokens, temperature, pid, json_mode)
         except NvidiaError as exc:
             last = exc
+            if getattr(exc, "fast_fail", False):
+                raise last  # timeout: troca de provedor já, sem retry interno
             if not getattr(exc, "retryable", False) or i == attempts:
                 if i == attempts and getattr(exc, "retryable", False):
                     last = NvidiaError(
@@ -585,6 +590,11 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
                 print(f"[{PROVIDER_SPECS[pid]['display']}] erro definitivo "
                       f"— fora do rodízio: {exc}", flush=True)
                 continue
+            if getattr(exc, "fast_fail", False):
+                print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
+                      f"{made}/{budget} falhou (timeout): {exc} — "
+                      f"trocando de provedor já…", flush=True)
+                continue  # sem backoff: provedor lento não bloqueia o rodízio
             if made < budget and live:
                 delay = min(30.0, RETRY_BASE_DELAY * (2 ** (made - 1)))
                 print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "

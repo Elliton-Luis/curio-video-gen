@@ -53,7 +53,7 @@ def scenes_for_length(words: int) -> int:
 SCENES_SYSTEM_PROMPT = (
     "You split educational video scripts into visual scenes. "
     "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
-    '{"scenes": [{"index": 1, "narration": "...", "visual_search_terms": "water glass"}]}. '
+    '{{"scenes": [{{"index": 1, "narration": "...", "visual_search_terms": "water glass"}}]}}. '
     "Rules: "
     "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
     "or summarizing — the joined narrations must reproduce the script exactly; "
@@ -74,7 +74,7 @@ SCENES_SYSTEM_PROMPT = (
 SCENES_SYSTEM_PROMPT_EN = (
     "You split educational video scripts into visual scenes. "
     "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
-    '{"scenes": [{"index": 1, "narration": "...", "visual_search_terms": "water glass"}]}. '
+    '{{"scenes": [{{"index": 1, "narration": "...", "visual_search_terms": "water glass"}}]}}. '
     "Rules: "
     "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
     "or summarizing — the joined narrations must reproduce the script exactly; "
