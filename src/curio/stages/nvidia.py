@@ -701,7 +701,8 @@ def generate_script(idea: str, model: str,
                     extra: dict | None = None,
                     language: str = "pt-BR",
                     research: str | None = None,
-                    genre_directive: str | None = None) -> tuple[str, str]:
+                    genre_directive: str | None = None,
+                    entity_context: str | None = None) -> tuple[str, str]:
     """Gera o roteiro (chain com retries por provedor). Nunca silêncio.
 
     `max_chars=None` = Automático: duração livre, sem corte (só o teto de
@@ -745,6 +746,14 @@ def generate_script(idea: str, model: str,
         # system prompt (que é a que garante a prosa falada) e o bloco do
         # gênero decide estrutura, ritmo e o que não fazer.
         system_prompt = system_prompt + "\n\n" + genre_directive.strip()
+    if (entity_context or "").strip():
+        # QUEM é o sujeito, antes do QUE dizer. Este bloco vem da
+        # resolução de entidade e não inventa nada: é o nome canônico,
+        # as formas alternativas, os termos que identificam a pessoa e as
+        # armadilhas de homônimo. Sem ele, o roteiro é escrito a partir da
+        # frase da ideia, e um padre da Igreja vira "Jerônimo" no primeiro
+        # parágrafo.
+        user_prompt += "\n\n" + entity_context.strip()
     if (research or "").strip():
         # RAG: fatos reais entram no pedido; o system prompt já proíbe
         # afirmar qualquer fato fora deles.

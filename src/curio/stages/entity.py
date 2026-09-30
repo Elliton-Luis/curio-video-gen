@@ -483,6 +483,75 @@ def source_verdict(source, target: TargetEntity) -> tuple[str, str]:
     return REASON_OK, ""
 
 
+def script_context(target: TargetEntity | None,
+                   language: str = "pt-BR") -> str:
+    """O contexto da ENTIDADE para o prompt do roteiro. Vazio se não houver.
+
+    Este texto não cria informação: ele reformula o que a resolução de
+    entidade já produziu, e existe porque essa informação não chegava ao
+    gerador de roteiro. A pesquisa sabe que o sujeito é "São Jerônimo de
+    Estrídia", que "São Jerônimo" e "Jerônimo" são a mesma pessoa, que
+    "Padre da Igreja" e "Vulgata" o identificam, e que "São Jerônimo RS"
+    é outra coisa; o roteiro era escrito a partir da frase da ideia e
+    quase sempre sem nenhum disso.
+
+    A forma exata do nome NÃO é o que se impõe aqui. O que se impõe é:
+    mencione a pessoa pela forma que preserva quem ela é — "São
+    Jerônimo", com o título — e alongue quando o contexto pedir. Um
+    vídeo sobre o padre da Igreja que abre chamando-o de "Jerônimo" é o
+    mesmo vídeo sobre outro assunto, e nenhum aviso sobre homônimo
+    conserta isso depois.
+
+    Deliberadamente NÃO há nada aqui sobre linguagem religiosa. A
+    direção de arte não pediu devocional, pediu que o contexto não fosse
+    apagado; mandar o modelo "inclua linguagem sagrada" produziria
+    exatamente o oposto — invenção devocional num vídeo documental.
+    """
+    if target is None or not (target.name or "").strip():
+        return ""
+    if not target.is_entity:
+        # Sem entidade não há forma canônica a preservar: o bloco não
+        # teria nada de específico e só poluiria o prompt.
+        return ""
+    english = str(language or "").lower().startswith("en")
+    nome = target.name
+    linhas = []
+    if english:
+        linhas.append(f"THE SUBJECT OF THIS VIDEO IS: {nome}.")
+        if target.aliases:
+            linhas.append("It is the same person as: "
+                          + ", ".join(target.aliases)
+                          + ". You may use a shorter form when the "
+                            "narrative calls for it, but keep the form "
+                            "that identifies who this is.")
+        if target.discriminants:
+            linhas.append("Words that identify THIS subject: "
+                          + ", ".join(target.discriminants) + ".")
+        if target.forbidden:
+            linhas.append("NEVER confuse this subject with: "
+                          + ", ".join(target.forbidden)
+                          + ". Those are different places or people; "
+                            "referring to them means the video is about "
+                            "the wrong thing.")
+    else:
+        linhas.append(f"O SUJEITO DESTE VÍDEO É: {nome}.")
+        if target.aliases:
+            linhas.append(
+                "É a mesma pessoa que: " + ", ".join(target.aliases)
+                + ". Pode usar uma forma mais curta quando a narração "
+                  "pedir, mas conserve a forma que identifica quem é.")
+        if target.discriminants:
+            linhas.append("Termos que identificam ESTE sujeito: "
+                          + ", ".join(target.discriminants) + ".")
+        if target.forbidden:
+            linhas.append("NUNCA confunda este sujeito com: "
+                          + ", ".join(target.forbidden)
+                          + ". São outros lugares ou outras pessoas; "
+                          "falar deles significa que o vídeo é sobre "
+                          "outra coisa.")
+    return "\n".join(linhas)
+
+
 def explain(target: TargetEntity, accepted: list, rejected: list) -> str:
     """Diagnóstico legível da seleção de fontes (para log e relatório)."""
     linhas = ["", "Diagnóstico das fontes:", "=" * 62]

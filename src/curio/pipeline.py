@@ -668,9 +668,16 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 fh.write(healed)
         script_text, script_source = healed, "cache"
     else:
+        # A entidade JÁ foi resolvida na etapa de pesquisa; o roteiro
+        # recebia só a frase da ideia e perdia o nome canônico, as formas
+        # alternativas e as armadilhas de homônimo. Nenhuma segunda
+        # resolução acontece aqui: é o mesmo objeto.
+        from .stages import entity as entity_stage
         script_text, script_source = script_stage.generate_script(
             idea, cfg, metrics, research=research_pack,
-            genre_directive=genre_directive)
+            genre_directive=genre_directive,
+            entity_context=entity_stage.script_context(
+                research_target, cfg.language))
         with open(paths.script_txt, "w", encoding="utf-8") as fh:
             fh.write(script_text)
     stage_times["script"] = round(time.monotonic() - t0, 2)
