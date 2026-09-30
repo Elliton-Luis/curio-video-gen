@@ -924,3 +924,41 @@ def test_banner_mostra_o_fallback_quando_a_fonte_pedida_faltou():
         assert "pediu Minion Pro" in b or "Minion Pro" not in b
     finally:
         T.clear_cache()
+
+
+# --- o teleprompter é DELETA fora da identidade editorial -------------
+
+def test_teleprompter_nao_usa_a_fonte_do_genero(tmp_path):
+    """Este é um arquivo de narração, não de identidade editorial.
+
+    O teleprompter vai para um monitor onde alguém lê o texto ao vivo. A
+    identidade do gênero é para quem assiste; itálico serifado no texto
+    que o narrator está lendo em tempo real atrapalha tanto quanto
+    atrapalharia na legenda. O teste existe para ninguém "consertar" isso
+    depois achando que é omissão.
+    """
+    from curio.stages import teleprompter as TP
+    caps = [Chapter(id=1, narration="A primeira frase da narração.",
+                    duration_estimate=8.0, visual_type="literal")]
+    out = str(tmp_path / "tele.ass")
+    TP.write_teleprompter_ass(caps, out, 1080, 1920)
+    ass = pathlib.Path(out).read_text(encoding="utf-8")
+    assert f"Style: Teleprompter,{TP.TELE_FAMILY}," in ass
+    for familia in ("Utopia", "Noto Serif", "Minion", "EB Garamond"):
+        assert familia not in ass, familia
+
+
+def test_teleprompter_ignora_gênero_por_completo(tmp_path):
+    """Não existe caminho pelo qual o gênero chegue ao teleprompter."""
+    from curio.stages import teleprompter as TP
+    import inspect
+    sig = inspect.signature(TP.write_teleprompter_ass)
+    assert "genre" not in sig.parameters
+    assert "typo" not in sig.parameters
+
+
+def test_legenda_e_teleprompter_compartilham_a_mesma_decisao():
+    """Um lugar só declara a regra da legibilidade."""
+    from curio.stages import teleprompter as TP
+    assert TP.TELE_FAMILY not in [T.PROFILES[g].family_for(T.INTENT_SERIF)
+                                  for g in T.PROFILES]

@@ -14,6 +14,9 @@ from .scenes import Chapter
 TELE_FONT_SIZE = 104
 TELE_NEXT_FONT_SIZE = 64
 TELE_MARK_FONT_SIZE = 48
+# A fonte do teleprompter não vem do perfil de gênero. Ver o comentário
+# dentro de `_tele_ass_doc`.
+TELE_FAMILY = "DejaVu Sans"
 TELE_MAX_WORDS = 5
 TELE_MAX_CHARS = 34
 # Últimos X segundos de cada bloco: texto atual fica amarelo (aviso de virada).
@@ -62,7 +65,15 @@ def _tele_ass_doc(events: list[tuple[float, float, str]],
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding, LineSpacing\n"
-        f"Style: Teleprompter,DejaVu Sans,{TELE_FONT_SIZE},&H00FFFFFF,&H000019FF,"
+        # A fonte do teleprompter é DELETA de propósito, e não uma
+        # esquecimento: este arquivo vai para um monitor onde uma pessoa
+        # lê o texto ao vivo, não para o vídeo. A identidade editorial do
+        # gênero é para quem assiste; itálico serifado num texto que o
+        # narrator está lendo em tempo real atrapalha, exatamente como
+        # atrapalharia na legenda. É a mesma decisão de
+        # `typography.LEGIBILITY_ROLES`, e o teste abaixo impede que
+        # alguém "corrija" isso depois.
+        f"Style: Teleprompter,{TELE_FAMILY},{TELE_FONT_SIZE},&H00FFFFFF,&H000019FF,"
         f"&H80000000,&HCC000000,1,0,0,0,100,100,0,0,3,2,0,5,120,120,60,1,12\n"
         "\n[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
