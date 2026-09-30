@@ -132,7 +132,6 @@ def _print_sources(meta: dict) -> None:
     titles = [t for t in (research.get("titles") or []) if t][:3]
     extra = f" ({'; '.join(titles)})" if titles else ""
     print(f"Fontes: {n} [{research.get('status', '?')}]" + extra)
-    print(f"[finalize] {label}... {status}", flush=True)
 
 
 def cmd_from_script(args, cfg: CurioConfig) -> int:
