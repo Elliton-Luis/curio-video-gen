@@ -497,7 +497,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         res = tts_stage.synthesize(script_text, paths.narration_wav,
                                    cfg.tts_provider, cfg.tts_voice,
                                    cfg.tts_speed, cfg.duration_target,
-                                   words_path=paths.words_json, metrics=metrics)
+                                   words_path=paths.words_json, metrics=metrics,
+                                   language=cfg.language)
         audio_duration = res.duration
         words = res.words
         tts_info = {"provider": res.provider, "voice": res.voice,

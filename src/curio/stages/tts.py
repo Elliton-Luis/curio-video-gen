@@ -138,7 +138,8 @@ def _synth_espeak(text: str, wav_path: str, voice: str, speed: int,
 
 def synthesize(text: str, wav_path: str, provider: str, voice: str,
                speed: int, target_duration: float,
-               words_path: str | None = None, metrics=None) -> TTSResult:
+               words_path: str | None = None, metrics=None,
+               language: str = "pt-BR") -> TTSResult:
     if provider not in ("edge-tts", "espeak-ng", "auto"):
         raise TTSError(
             f"provedor TTS {provider!r} desconhecido "
@@ -146,6 +147,13 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
         )
     ff.require_tools()
     want_edge = provider in ("edge-tts", "auto")
+
+    # Seleciona voz baseada no idioma se não especificada explicitamente
+    if voice in ("pt-br", "pt-BR", "en-us", "en-US", ""):
+        if language.startswith("en"):
+            voice = "en-US-GuyNeural" if want_edge else "en-us"
+        else:
+            voice = "pt-BR-AntonioNeural" if want_edge else "pt-br"
 
     if want_edge:
         try:
@@ -159,9 +167,7 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
                 ) from exc
             print(f"AVISO: {exc} Usando espeak-ng local como fallback.",
                   file=sys.stderr)
-            # Vozes neurais ("pt-BR-AntonioNeural") não existem no espeak:
-            # fallback usa o padrão local pt-br.
-            voice, speed = "pt-br", 170
+            voice, speed = ("en-us", 170) if language.startswith("en") else ("pt-br", 170)
     if shutil.which("espeak-ng") is None:
         raise TTSError("espeak-ng não encontrado. Rode `scripts/install.sh`.")
     return _synthesize_espeak(text, wav_path, voice, speed, target_duration,

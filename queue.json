@@ -1,0 +1,64 @@
+{
+ "items": [
+  {
+   "idea": "Como o touch screen do celular reconhece o seu dedo, mas não um pano?",
+   "status": "completed",
+   "slug": "como-o-touch-screen-do-celular-reconhece",
+   "project_dir": "output/como-o-touch-screen-do-celular-reconhece",
+   "error": "",
+   "started_at": "2026-09-29T23:29:03.139112+00:00",
+   "finished_at": "2026-09-29T23:35:23.058113+00:00",
+   "duration_seconds": 379.92,
+   "video_path": "output/20260929-202903_como-o-touch-screen-do-ce/render/final.mp4",
+   "metadata_path": "output/20260929-202903_como-o-touch-screen-do-ce/render/final_metadata.json",
+   "retry_count": 0,
+   "config_overrides": {}
+  },
+  {
+   "idea": "Por que quase todo remédio em pílula é metade de uma cor e metade de outra?",
+   "status": "completed",
+   "slug": "por-que-quase-todo-remedio-em-pilula-e-m",
+   "project_dir": "output/por-que-quase-todo-remedio-em-pilula-e-m",
+   "error": "",
+   "started_at": "2026-09-29T23:35:23.058500+00:00",
+   "finished_at": "2026-09-29T23:42:32.734378+00:00",
+   "duration_seconds": 429.68,
+   "video_path": "output/20260929-203523_por-que-quase-todo-remedi/render/final.mp4",
+   "metadata_path": "output/20260929-203523_por-que-quase-todo-remedi/render/final_metadata.json",
+   "retry_count": 0,
+   "config_overrides": {}
+  },
+  {
+   "idea": "Como as formigas conseguem andar no teto sem cair?",
+   "status": "completed",
+   "slug": "como-as-formigas-conseguem-andar-no-teto",
+   "project_dir": "output/como-as-formigas-conseguem-andar-no-teto",
+   "error": "",
+   "started_at": "2026-09-29T23:42:32.734737+00:00",
+   "finished_at": "2026-09-29T23:49:41.192450+00:00",
+   "duration_seconds": 428.46,
+   "video_path": "output/20260929-204232_como-as-formigas-consegue/render/final.mp4",
+   "metadata_path": "output/20260929-204232_como-as-formigas-consegue/render/final_metadata.json",
+   "retry_count": 0,
+   "config_overrides": {}
+  },
+  {
+   "idea": "Por que o céu da noite é escuro se o universo está cheio de estrelas?",
+   "status": "completed",
+   "slug": "por-que-o-ceu-da-noite-e-escuro-se-o-uni",
+   "project_dir": "output/por-que-o-ceu-da-noite-e-escuro-se-o-uni",
+   "error": "",
+   "started_at": "2026-09-29T23:49:41.192780+00:00",
+   "finished_at": "2026-09-29T23:56:34.380146+00:00",
+   "duration_seconds": 413.19,
+   "video_path": "output/20260929-204941_por-que-o-ceu-da-noite-e/render/final.mp4",
+   "metadata_path": "output/20260929-204941_por-que-o-ceu-da-noite-e/render/final_metadata.json",
+   "retry_count": 0,
+   "config_overrides": {}
+  }
+ ],
+ "current_index": 3,
+ "paused": false,
+ "cancelled": false,
+ "saved_at": "2026-09-29T23:56:34.380208+00:00"
+}

@@ -13,17 +13,26 @@ tempo da cena com sobreposição e entradas suaves/variadas (álbum de
 fotografias): a nova imagem entra sobre a atual, assume o destaque e a
 próxima repete o ciclo. Com uma única imagem adequada, o render usa Ken
 Burns sutil em vez de inventar uma segunda.
+
+NOVO PIPELINE DE MÍDIA (short-circuit):
+- Hierarquia rígida: Pixabay → Pexels (se chave) → Wikimedia
+- Para ao primeiro provedor que retorne ativo válido por cena
+- Cache local por termo de busca (visual_search_terms)
+- Apenas 2 termos em inglês por cena (substantivos visuais atómicos)
 """
 
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
+import json
 import os
 import re
 import sys
 import time
 import unicodedata
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..config import CurioConfig
 from ..media import download_asset, get_providers
@@ -69,6 +78,12 @@ MAX_CONCURRENT_DOWNLOADS = int(_os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS",
 SEARCH_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
 DOWNLOAD_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
 
+# Hierarquia de provedores (ordem de prioridade)
+PROVIDER_PRIORITY = ("pixabay", "pexels", "wikimedia", "openverse")
+
+# Cache local de mídia por termo de busca
+MEDIA_CACHE_DIR = "cache/media_query"
+
 
 @dataclass
 class SearchTask:
@@ -89,6 +104,68 @@ def _search_with_timeout(provider_obj, query: str, timeout: float, metrics=None)
             if metrics:
                 metrics.media_record_timeout()
             raise MediaError(f"{provider_obj.name}: busca timeout ({timeout}s)")
+
+
+def _cache_key(query: str) -> str:
+    """Gera chave de cache determinística para o termo de busca."""
+    return hashlib.sha256(query.lower().strip().encode()).hexdigest()[:16]
+
+
+def _get_cached_asset(cache_dir: str, query: str) -> MediaAsset | None:
+    """Verifica se há ativo válido em cache para o termo de busca."""
+    cache_path = Path(cache_dir) / MEDIA_CACHE_DIR
+    key = _cache_key(query)
+    meta_file = cache_path / f"{key}.json"
+    if not meta_file.is_file():
+        return None
+    try:
+        with open(meta_file, encoding="utf-8") as f:
+            data = json.load(f)
+        # Verifica se o arquivo ainda existe
+        asset_file = Path(data.get("local_path", ""))
+        if asset_file.is_file() and asset_file.stat().st_size > 10000:
+            asset = MediaAsset.from_dict(data)
+            asset.local_path = str(asset_file)
+            return asset
+    except (json.JSONDecodeError, OSError, KeyError):
+        pass
+    return None
+
+
+def _save_to_cache(cache_dir: str, query: str, asset: MediaAsset) -> None:
+    """Salva ativo no cache local indexado por termo de busca."""
+    cache_path = Path(cache_dir) / MEDIA_CACHE_DIR
+    cache_path.mkdir(parents=True, exist_ok=True)
+    key = _cache_key(query)
+    meta_file = cache_path / f"{key}.json"
+    # Copia o arquivo para o cache de consulta se não estiver lá
+    src = Path(asset.local_path)
+    dst = cache_path / f"{key}{src.suffix}"
+    if not dst.is_file():
+        import shutil
+        shutil.copy2(src, dst)
+    record = asset.to_dict()
+    record["local_path"] = str(dst)
+    record["query"] = query
+    record["cached_at"] = time.time()
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(record, f, ensure_ascii=False, indent=1)
+
+
+def _sanitize_query(query: str) -> str:
+    """Sanitiza termo de busca: apenas alfanuméricos, espaços, hífens."""
+    return re.sub(r"[^\w\s-]", "", query).strip()
+
+
+def _validate_asset(asset: MediaAsset) -> bool:
+    """Valida se o ativo atende aos requisitos mínimos."""
+    return (
+        asset.width >= 1000 and
+        asset.height >= 1000 and
+        asset.size_bytes > 10000 and
+        asset.download_url and
+        re.search(r"\.(jpe?g|png|webp)(\?|$)", asset.download_url, re.I)
+    )
 
 
 # Heurística offline p/ consultas visuais (sem chave NVIDIA as cenas locais
@@ -203,15 +280,10 @@ def _strip_acc(text: str) -> str:
     return "".join(c for c in norm if not unicodedata.combining(c))
 
 
-def local_queries(narration: str, k: int = 4) -> list[str]:
+def local_queries(narration: str, k: int = 2) -> list[str]:
     """Consultas visuais offline a partir do texto do trecho (PT→EN).
 
-    Nomes próprios no meio da frase primeiro (início de frase capitaliza
-    qualquer palavra — "Não"/"Foi" não são entidades), depois palavras-cheia
-    por frequência. Estrutura: entidade mais forte sozinha, duplas de termos
-    e os melhores termos avulsos como rede de segurança. O ranking por
-    relevância prefere os matches mais específicos; os avulsos só vencem
-    quando nada melhor existe (fallback honesto em vez de tela vazia).
+    Retorna exatamente 2 termos em inglês (substantivos visuais atómicos).
     """
     # Palavras que abrem frase (capitalização gramatical, não entidade).
     first_words = set()
@@ -242,7 +314,6 @@ def local_queries(narration: str, k: int = 4) -> list[str]:
             continue
         freq[base] = freq.get(base, 0) + 1
     # Traduzidos primeiro (substantivos visuais conhecidos); crus por último
-    # (verbo cru como "virou" só vira consulta se nada melhor existir).
     translated = [(c, _en(b)) for b, c in freq.items() if _en(b)]
     raw = [(c, b) for b, c in freq.items() if not _en(b)]
     translated.sort(key=lambda t: -t[0])
@@ -251,21 +322,19 @@ def local_queries(narration: str, k: int = 4) -> list[str]:
     for _count, term in translated + raw:
         if term not in entities and term not in keywords:
             keywords.append(term)
+    # Constrói exatamente 2 termos: entidade + substantivo visual
     queries: list[str] = []
     if entities:
         queries.append(entities[0])
-    top = (entities + keywords)[:6]
-    for i in range(0, len(top) - 1, 2):
-        queries.append(" ".join(top[i:i + 2]))
-    for term in (entities[:1] + keywords[:2]):
-        if term not in queries:
-            queries.append(term)
-    seen_q, out = set(), []
-    for q in queries:
-        if q and q not in seen_q:
-            seen_q.add(q)
-            out.append(q)
-    return out[:max(1, k)]
+    if keywords:
+        queries.append(keywords[0])
+    # Fallback se não houver entidades
+    if len(queries) < 2:
+        if entities and len(entities) > 1:
+            queries.append(entities[1])
+        elif keywords and len(keywords) > 1:
+            queries.append(keywords[1])
+    return queries[:2]
 
 
 def read_script_file(path: str) -> str:
@@ -333,155 +402,170 @@ def _relevance(query: str, asset: MediaAsset) -> int:
     return sum(1 for term in _query_terms(query) if term in haystack)
 
 
+def _provider_priority_order(cfg: CurioConfig) -> list[MediaProvider]:
+    """Retorna provedores na ordem de prioridade rigorosa."""
+    all_providers = get_providers(cfg)
+    # Ordena pela hierarquia definida
+    priority_map = {name: i for i, name in enumerate(PROVIDER_PRIORITY)}
+    return sorted(all_providers, key=lambda p: priority_map.get(p.name, 999))
+
+
+def _search_scene_with_shortcircuit(
+    ch,
+    providers: list[MediaProvider],
+    cfg: CurioConfig,
+    max_images: int,
+    metrics,
+    cache_dir: str,
+) -> tuple[list[dict], list[str]]:
+    """
+    Busca mídia para uma cena com short-circuit:
+    - Para cada query, tenta provedores em ordem de prioridade
+    - Para no primeiro provedor que retorne ativo válido
+    - Verifica cache local antes de bater na API
+    """
+    warnings = []
+    queries = list(ch.visual_queries) or local_queries(ch.narration)
+    
+    # Sanitiza queries
+    queries = [_sanitize_query(q) for q in queries if q.strip()]
+    if not queries:
+        queries = [local_queries(ch.narration)[0]] if local_queries(ch.narration) else ["abstract concept"]
+    
+    picked: list[dict] = []
+    picked_ids = set()
+    picked_titles = set()
+    
+    for query in queries:
+        if len(picked) >= max_images:
+            break
+            
+        # 1. Verifica cache local primeiro
+        cached = _get_cached_asset(cache_dir, query)
+        if cached and _validate_asset(cached):
+            if cached.asset_id not in picked_ids:
+                norm_title = re.sub(r"\s+", " ", (cached.title or "").lower()).strip()
+                if not norm_title or norm_title not in picked_titles:
+                    picked_ids.add(cached.asset_id)
+                    if norm_title:
+                        picked_titles.add(norm_title)
+                    picked.append({
+                        "asset": cached.to_dict(),
+                        "query": query,
+                        "relevance": 100,  # cache hit = max relevance
+                        "order": len(picked),
+                        "from_cache": True
+                    })
+                    if metrics:
+                        metrics.media_cache_hits += 1
+                        metrics.media_record_asset_reused()
+                    continue
+        
+        # 2. Busca com short-circuit por provedor
+        asset_found = False
+        for prov in providers:
+            # Skip se provedor desativado por 429
+            if getattr(prov, "_disabled", False):
+                continue
+                
+            if metrics:
+                metrics.media_search(prov.name)
+            
+            try:
+                results = _search_with_timeout(prov, query, SEARCH_TIMEOUT, metrics)
+            except MediaError as exc:
+                # Se for 429, desativa provedor temporariamente
+                if "429" in str(exc) or "Too Many Requests" in str(exc):
+                    prov._disabled = True
+                    if metrics:
+                        metrics.media_record_timeout()
+                    print(f"AVISO: {prov.name} desativado por rate limit (429)", file=sys.stderr)
+                continue
+            
+            if metrics:
+                metrics.media_record_results(prov.name, len(results))
+            
+            # Filtra e valida resultados
+            for cand in results:
+                if not _validate_asset(cand):
+                    continue
+                if cand.asset_id in picked_ids:
+                    continue
+                norm_title = re.sub(r"\s+", " ", (cand.title or "").lower()).strip()
+                if norm_title and norm_title in picked_titles:
+                    continue
+                
+                # Tenta baixar
+                try:
+                    asset = download_asset(cand, cfg.cache_dir, metrics)
+                except MediaError as exc:
+                    if metrics:
+                        metrics.media_record_asset_rejected()
+                    continue
+                
+                # Sucesso! Salva no cache de query e adiciona
+                _save_to_cache(cache_dir, query, asset)
+                
+                picked_ids.add(cand.asset_id)
+                if norm_title:
+                    picked_titles.add(norm_title)
+                picked.append({
+                    "asset": asset.to_dict(),
+                    "query": query,
+                    "relevance": _relevance(query, cand),
+                    "order": len(picked),
+                    "from_cache": False
+                })
+                asset_found = True
+                break  # Short-circuit: para no primeiro provedor que funcionar
+            
+            if asset_found:
+                break  # Short-circuit: para de tentar outros provedores para esta query
+        
+        if not asset_found and metrics:
+            metrics.media_record_asset_rejected()
+    
+    if not picked:
+        msg = (f"cena {ch.id}: sem mídia relevante "
+               f"({', '.join(queries) or 'sem consultas'}) — fallback")
+        warnings.append(msg)
+        print(f"AVISO: {msg}", file=sys.stderr)
+    
+    first = picked[0]["asset"] if picked else None
+    return [{
+        "chapter_id": ch.id,
+        "asset": first,
+        "assets": picked,
+        "reused_from": None
+    }], warnings
+
+
 def fetch_media_multi(chapters, cfg: CurioConfig,
                       max_images: int = 3,
                       metrics=None) -> tuple[list[dict], list[str]]:
-    """Busca até `max_images` assets relevantes por cena (gate > 0).
+    """Busca ativos por cena com short-circuit rigoroso e cache local.
 
-    Combina queries globais (contexto geral) + queries da cena (precisão local).
-    Ordena por relevância consulta↔título; em empate, prefere assets ainda
-    não usados em outras cenas (diversidade sem inventar relação). Falha de
-    uma cena vira fallback honesto com aviso — nunca associação falsa.
-
-    Otimizações:
-    - Buscas em paralelo entre providers e queries (com limite de concorrência)
-    - Timeout por busca para não travar em provider lento
-    - Seleção por metadados antes do download (só baixa o que tem chance)
-    - Downloads em paralelo com limite
-    - Cache aproveitado: assets em cache não geram novo download
+    Hierarquia: Pixabay → Pexels → Wikimedia → Openverse
+    Para no primeiro provedor que retornar ativo válido por query.
+    Cache local indexado por termo de busca (visual_search_terms).
     """
     max_images = max(1, min(5, int(max_images)))
-    providers = get_providers(cfg)
+    providers = _provider_priority_order(cfg)
     if not providers:
         return _fetch_media_fallback(chapters, max_images, warnings=[])
     
-    used_count: dict[str, int] = {}
-    scenes, warnings = [], []
-    
-    # Prepara todas as tarefas de busca (provider x query) para todas as cenas
-    all_search_tasks: list[SearchTask] = []
-    chapter_queries: dict[int, list[str]] = {}
+    all_warnings = []
+    scenes = []
     
     for ch in chapters:
-        scene_queries = list(ch.visual_queries) or local_queries(ch.narration)
-        global_queries = list(getattr(ch, "global_visual_queries", [])) or []
-        queries = scene_queries + global_queries
-        chapter_queries[ch.id] = queries
-        for query in queries:
-            for prov in providers:
-                all_search_tasks.append(SearchTask(prov.name, query, prov))
+        scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
+            ch, providers, cfg, max_images, metrics, cfg.cache_dir
+        )
+        scenes.extend(scene_scenes)
+        all_warnings.extend(scene_warnings)
     
-    if metrics:
-        metrics.media_queries_count = len(all_search_tasks)
-    
-    # Executa buscas em paralelo com limite de concorrência
-    search_results: dict[tuple[str, str], list[MediaAsset]] = {}
-    
-    def run_search(task: SearchTask) -> tuple[tuple[str, str], list[MediaAsset]]:
-        start = time.monotonic()
-        try:
-            results = _search_with_timeout(task.provider_obj, task.query, SEARCH_TIMEOUT, metrics)
-            elapsed = time.monotonic() - start
-            if metrics:
-                metrics.media_record_search_time(task.provider, elapsed)
-                metrics.media_record_results(task.provider, len(results))
-            return (task.provider, task.query), results
-        except MediaError as exc:
-            elapsed = time.monotonic() - start
-            if metrics:
-                metrics.media_record_search_time(task.provider, elapsed)
-            print(f"AVISO: {exc} — ignorando.", file=sys.stderr)
-            return (task.provider, task.query), []
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SEARCHES) as executor:
-        futures = {executor.submit(run_search, task): task for task in all_search_tasks}
-        for future in concurrent.futures.as_completed(futures):
-            key, results = future.result()
-            search_results[key] = results
-    
-    # Processa resultados por cena
-    for ch in chapters:
-        queries = chapter_queries[ch.id]
-        ranked: list[tuple[int, str, MediaAsset]] = []
-        seen = set()
-        
-        for query in queries:
-            for prov in providers:
-                key = (prov.name, query)
-                if key not in search_results:
-                    continue
-                for cand in search_results[key]:
-                    if cand.asset_id in seen:
-                        continue
-                    seen.add(cand.asset_id)
-                    score = _relevance(query, cand)
-                    if score > 0:
-                        ranked.append((score, query, cand))
-        
-        # Diversidade: menos usados primeiro; depois maior relevância.
-        ranked.sort(key=lambda r: (used_count.get(r[2].asset_id, 0), -r[0]))
-        
-        # Seleção ANTES do download: pega top N candidatos por relevância
-        # e só depois tenta baixar (evita baixar imagens que não serão usadas)
-        candidates = ranked[:max_images * 3]  # margem para falhas de download
-        
-        # Downloads em paralelo
-        picked: list[dict] = []
-        picked_ids = set()
-        picked_titles = set()
-        
-        def try_download(cand: MediaAsset, query: str, score: int) -> dict | None:
-            if cand.asset_id in picked_ids:
-                return None
-            norm_title = re.sub(r"\s+", " ", (cand.title or "").lower()).strip()
-            if norm_title and norm_title in picked_titles:
-                return None
-            try:
-                asset = download_asset(cand, cfg.cache_dir, metrics)
-                return {"asset": asset.to_dict(), "query": query,
-                        "relevance": score, "order": -1}
-            except MediaError as exc:
-                if metrics:
-                    metrics.media_record_asset_rejected()
-                print(f"AVISO: {exc} — tentando próximo asset.", file=sys.stderr)
-                return None
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS) as executor:
-            futures = {
-                executor.submit(try_download, cand, query, score): (cand, query, score)
-                for score, query, cand in candidates
-            }
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result:
-                    result["order"] = len(picked)
-                    picked.append(result)
-                    cand, query, score = futures[future]
-                    picked_ids.add(cand.asset_id)
-                    norm_title = re.sub(r"\s+", " ", (cand.title or "").lower()).strip()
-                    if norm_title:
-                        picked_titles.add(norm_title)
-                    used_count[cand.asset_id] = used_count.get(cand.asset_id, 0) + 1
-                    if metrics:
-                        metrics.media_record_asset_reused()
-                if len(picked) >= max_images:
-                    # Cancela downloads restantes
-                    for f in futures:
-                        f.cancel()
-                    break
-        
-        if not picked:
-            msg = (f"cena {ch.id}: sem mídia relevante "
-                   f"({', '.join(queries) or 'sem consultas'}) — fallback")
-            warnings.append(msg)
-            print(f"AVISO: {msg}", file=sys.stderr)
-        first = picked[0]["asset"] if picked else None
-        scenes.append({"chapter_id": ch.id,
-                       "asset": first,
-                       "assets": picked,
-                       "reused_from": None})
     _resolve_reuse_multi(scenes)
-    return scenes, warnings
+    return scenes, all_warnings
 
 
 def _fetch_media_fallback(chapters, max_images: int, warnings: list) -> tuple[list[dict], list[str]]:

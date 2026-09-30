@@ -17,3 +17,5 @@ REGRAS.md
 cache/
 # Métricas de execução (geradas; ver docs/). Não versionar.
 metrics/
+
+ideias.txt

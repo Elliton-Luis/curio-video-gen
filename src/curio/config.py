@@ -62,8 +62,8 @@ class CurioConfig:
     sub_margin_v: int = 200
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
-    nvidia_timeout: int = 120  # chamadas JSON de cenas pensam mais que roteiro
-    openrouter_model: str = "google/gemini-2.5-flash"  # fallback automático
+    nvidia_timeout: int = 15  # timeout estrito para chamadas LLM
+    openrouter_model: str = "google/gemini-2.5-flash"  # modelo padrão via OpenRouter
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     gemini_model: str = "gemini-2.5-flash"  # Gemini direto (GEMINI_API_KEY)
     gemini_base_url: str = ("https://generativelanguage.googleapis.com/v1beta/openai")
@@ -80,6 +80,8 @@ class CurioConfig:
     file_manager: str = "dolphin"  # pasta do teleprompter pós-geração
     audio_recorder: str = "audacity"  # gravador aberto pós-teleprompter
     auto_open: bool = True  # abre apps após teleprompter (só c/ sessão gráfica)
+    # Idioma do vídeo: "pt-BR" ou "en-US"
+    language: str = "pt-BR"
     # Chaves NVIDIA NÃO vivem aqui: lidas direto do ambiente
     # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
     # para nunca vazarem em logs, erros ou metadata.
@@ -173,6 +175,10 @@ class CurioConfig:
         if os.environ.get("CURIO_AUTO_OPEN") is not None:
             cfg.auto_open = os.environ["CURIO_AUTO_OPEN"].strip().lower() not in (
                 "0", "false", "no", "n")
+        cfg.language = os.environ.get("CURIO_LANGUAGE", cfg.language)
+        lang = data.get("language", cfg.language)
+        if lang:
+            cfg.language = str(lang)
         return cfg
 
     def llm_overrides(self) -> dict:

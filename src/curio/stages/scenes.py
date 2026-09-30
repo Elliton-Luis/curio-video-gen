@@ -2,8 +2,20 @@
 
 Divide o roteiro em segmentos semânticos com texto narrado, duração estimada,
 consultas visuais (em inglês — bancos de mídia respondem melhor) e intenção
-visual. Via NVIDIA (JSON) quando há chave; senão divisão local por frases.
-A junção das narrações deve reproduzir o roteiro — validado, nunca assumido.
+visual. Via OpenRouter:Gemini 2.5 Flash (JSON) quando há chave; senão divisão
+local por frases. A junção das narrações deve reproduzir o roteiro — validado,
+nunca assumido.
+
+Formato de saída rígido:
+{
+  "scenes": [
+    {
+      "index": 1,
+      "narration": "texto falado correspondente",
+      "visual_search_terms": "glass water"
+    }
+  ]
+}
 """
 
 from __future__ import annotations
@@ -37,26 +49,26 @@ def scenes_for_length(words: int) -> int:
     est_seconds = max(1, words) / WORDS_PER_MINUTE * 60
     return max(3, min(12, round(est_seconds / 9)))
 
+
 SCENES_SYSTEM_PROMPT = (
-    "Você divide roteiros de vídeo educativo em cenas visuais. "
-    "Responda SOMENTE com JSON válido, sem markdown nem explicações, neste formato: "
-    '{{"title": "...", "global_visual_queries": ["global query 1", "global query 2"], '
-    '"chapters": [{{"id": 1, "narration": "...", '
-    '"visual_queries": ["english query 1", "english query 2"], '
-    '"visual_intent": "short english intent"}}]}}. Regras: '
-    "1) use APENAS frases literais do roteiro, na mesma ordem, sem reescrever "
-    "nem resumir — a junção das narrations deve reproduzir o roteiro; "
-    "2) cada chapter é um momento semântico (não corte arbitrário); "
-    "3) narration em português do Brasil; visual_queries e visual_intent em "
-    "inglês, concretos e buscáveis em bancos de fotos (objetos, lugares, "
-    "épocas — nunca conceitos abstratos); "
-    "4) global_visual_queries: 2-3 consultas que representam o TEMA GERAL do vídeo "
-    "(contexto amplo para buscar imagens de abertura/contexto); "
-    "5) por chapter: visual_queries específicos da cena (2-3), visual_intent curto; "
-    "6) divida em {n} chapters (entre {lo} e {hi}). "
-    "IMPORTANTE: queries em inglês, concretas (objetos, lugares, ações), "
-    "nunca conceitos abstratos. Global queries dão contexto amplo; "
-    "scene queries dão precisão local."
+    "You split educational video scripts into visual scenes. "
+    "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
+    '{"scenes": [{"index": 1, "narration": "...", "visual_search_terms": "water glass"}]}. '
+    "Rules: "
+    "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
+    "or summarizing — the joined narrations must reproduce the script exactly; "
+    "2) Each scene is a semantic moment (not arbitrary cuts); "
+    "3) narration in Brazilian Portuguese; "
+    "4) visual_search_terms: EXACTLY 2 English words (two simple nouns or "
+    "one visual adjective + one noun) — concrete, searchable in photo banks "
+    "(objects, places, eras — NEVER abstract concepts); "
+    "5) Examples of ACCEPTABLE terms: \"water glass\", \"snake skin\", \"plant seedling\", "
+    "\"soap bubbles\", \"roman helmet\", \"ocean wave\", \"coffee bean\", \"microscope slide\"; "
+    "6) Examples of FORBIDDEN terms: \"how soap works\", \"chemical molecules reacting\", "
+    "\"cinematic close-up 4k\", \"beautiful landscape\", \"scientific explanation\"; "
+    "7) Split into {n} scenes (between {lo} and {hi}). "
+    "IMPORTANT: visual_search_terms must be exactly 2 English words, concrete nouns/adjectives. "
+    "No Portuguese, no verbs, no abstract concepts, no descriptive phrases."
 )
 
 
@@ -99,7 +111,7 @@ def _norm(text: str) -> str:
 
 
 def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]:
-    """Divisão local por frases agrupadas (sem chave NVIDIA)."""
+    """Divisão local por frases agrupadas (sem chave OpenRouter)."""
     from . import subs as subs_stage
     sentences = subs_stage._sentences(script)
     if not sentences:
@@ -120,7 +132,7 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
 
 def build_chapters(script: str, cfg: CurioConfig,
                    n_scenes: int | None = None, metrics=None) -> tuple[list[Chapter], str]:
-    """Retorna (capítulos, fonte). Fonte: 'nvidia' | 'openrouter' | 'gemini' | 'groq' | 'local'."""
+    """Retorna (capítulos, fonte). Fonte: 'openrouter:gemini-2.5-flash' | 'local'."""
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
     if nvidia_stage.any_llm_available():
@@ -131,28 +143,29 @@ def build_chapters(script: str, cfg: CurioConfig,
             metrics,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
             extra=cfg.llm_overrides())
-        provider = label.split(":")[0]  # id do provedor que respondeu
-        # Extrai queries globais do roteiro
-        global_queries = [str(q) for q in data.get("global_visual_queries", [])][:3]
+        provider = label.split(":")[0]
         chapters = []
-        for i, raw in enumerate(data.get("chapters", []), 1):
+        for i, raw in enumerate(data.get("scenes", []), 1):
             narration = str(raw.get("narration", "")).strip()
             if not narration:
                 continue
+            # visual_search_terms vem como "term1 term2" - divide em lista
+            terms_str = str(raw.get("visual_search_terms", "")).strip()
+            visual_queries = terms_str.split()[:2] if terms_str else []
             chapters.append(Chapter(
                 id=i,
                 narration=narration,
                 duration_estimate=estimate_duration(narration),
-                visual_queries=[str(q) for q in raw.get("visual_queries", [])][:3],
-                global_visual_queries=global_queries,
-                visual_intent=str(raw.get("visual_intent", "")),
+                visual_queries=visual_queries,
+                global_visual_queries=visual_queries,  # mesmo para global
+                visual_intent=terms_str,
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
             return chapters, provider
         print(f"AVISO: cenas {provider} não reproduzem o roteiro literal — "
               "usando divisão local.", file=sys.stderr)
     else:
-        print("Sem chave LLM: cenas por divisão local.", file=sys.stderr)
+        print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
     return _local_chapters(script, n_scenes), "local"
 
 

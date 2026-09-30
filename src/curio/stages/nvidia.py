@@ -350,16 +350,19 @@ def _http_error_message(status: int, body: str, model: str,
 
 def _post_once(messages: list[dict], key: str, model: str, base_url: str,
                timeout: int, max_tokens: int, temperature: float,
-               pid: str) -> dict:
+               pid: str, json_mode: bool = False) -> dict:
     """Uma tentativa HTTP. Erro transitório sai marcado (retryable=True)."""
     spec = PROVIDER_SPECS[pid]
     display, key_hint = spec["display"], spec["key_envs"][0]
-    payload = json.dumps({
+    payload_dict = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
-    }).encode()
+    }
+    if json_mode:
+        payload_dict["response_format"] = {"type": "json_object"}
+    payload = json.dumps(payload_dict).encode()
     req = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
         data=payload,
@@ -397,7 +400,7 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
 
 def _post_with_retries(messages: list[dict], key: str, model: str,
                        base_url: str, timeout: int, max_tokens: int,
-                       temperature: float, pid: str) -> dict:
+                       temperature: float, pid: str, json_mode: bool = False) -> dict:
     """Até N tentativas com backoff para falhas transitórias.
 
     N = CURIO_LLM_ATTEMPTS (padrão 5). Erro definitivo (401/403/404) ou
@@ -408,7 +411,7 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
     for i in range(1, attempts + 1):
         try:
             return _post_once(messages, key, model, base_url, timeout,
-                              max_tokens, temperature, pid)
+                              max_tokens, temperature, pid, json_mode)
         except NvidiaError as exc:
             last = exc
             if not getattr(exc, "retryable", False) or i == attempts:
@@ -446,7 +449,7 @@ def _rotation(pids: list[str]):
 def _chat(messages: list[dict], max_tokens: int, temperature: float,
           model: str, base_url: str, timeout: int,
           or_model: str | None = None, or_base_url: str | None = None,
-          metrics=None, extra: dict | None = None) -> tuple[dict, str]:
+          metrics=None, extra: dict | None = None, json_mode: bool = False) -> tuple[dict, str]:
     """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
 
     Cada tentativa vai ao próximo da rotação; erro definitivo (401/403/404)
@@ -484,8 +487,8 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         use_model, use_base = om or dft_model, ob or dft_base
         try:
             key = CREDENTIALS[pid].from_env().active_key
-            body = _post_once(messages, key, use_model, use_base, timeout,
-                              max_tokens, temperature, pid)
+            body = _post_with_retries(messages, key, use_model, use_base, timeout,
+                                      max_tokens, temperature, pid, json_mode)
         except NvidiaError as exc:
             attempts[pid] = attempts.get(pid, 0) + 1
             last_err[pid] = str(exc)
@@ -545,13 +548,15 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
 
     Retorna (dados, rótulo "provedor:modelo"). Falhas levantam NvidiaError
     resumindo pulos e tentativas no chain.
+    Usa response_format: json_object para garantir JSON válido.
     """
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}]
     max_tokens, body, label = 2000, None, ""
     for _ in range(2):  # roteiros longos (60 s+) estouram 2000 tokens pensando
         body, label = _chat(messages, max_tokens, 0.3, model, base_url,
-                            timeout, or_model, or_base_url, metrics, extra)
+                            timeout, or_model, or_base_url, metrics, extra,
+                            json_mode=True)
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 4000
