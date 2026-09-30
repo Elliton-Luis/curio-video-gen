@@ -111,15 +111,75 @@ def insertion_scenes(n_scenes: int, budget: int) -> set[int]:
     return {inner[p] for p in positions}
 
 
-def cap_scene_images(entries: list, want_insertion: bool) -> list:
-    """Limita a cena ao orçamento de fotos: 1 fundo + 1 inserção (ou só o fundo).
+def _topic_terms(ch) -> set[str]:
+    """Vocabulário que define o ASSUNTO da cena (não uma consulta só).
 
-    Sem isto, uma cena com 5 imagens viraria um slideshow e furaria o
-    orçamento de "1–2 por vídeo". A foto de fundo é sempre a ordem 0 —
-    nunca trocada nem deslocada pela complementar.
+    Reúne os termos visuais que a IA deu para a cena e, na falta deles, as
+    palavras da narração. É contra este conjunto que a precisão da imagem
+    é medida — medir contra uma única consulta premiaria a foto que
+    casou com a palavra mais genérica em vez da mais informativa.
     """
-    limit = 2 if want_insertion else 1
-    return entries[:limit]
+    terms: set[str] = set()
+    for query in list(getattr(ch, "visual_queries", []) or []):
+        terms.update(_query_terms(query))
+        for w in query.replace(",", " ").split():
+            base = _strip_acc(w)
+            if len(base) >= 3 and base not in PT_STOP:
+                terms.add(base)
+    if not terms:  # sem consulta da IA: a narração é a única pista
+        for w in re.findall(r"[a-zà-ÿ]{4,}", (ch.narration or "").lower()):
+            base = _strip_acc(w)
+            if base and base not in PT_STOP:
+                terms.add(base)
+    return terms
+
+
+def _topic_score(asset: dict, terms: set[str]) -> int:
+    """Quantos termos do assunto da cena aparecem no título da imagem.
+
+    Só o título: o provedor também devolve tags, e tag é o que produziu
+    "wallpaper", "4k" e "usina" numa cena sobre papel térmico. O título
+    descreve a foto; a tag é palpite de quem doou o acervo.
+    """
+    hay = _strip_acc(str(asset.get("title", "") or ""))
+    if not hay:
+        return 0
+    return sum(1 for t in terms if t in hay)
+
+
+def order_for_insertion(entries: list, ch) -> tuple[list, list]:
+    """Reparte (fundo, inserção) exigindo que a inserção seja a mais precisa.
+
+    A foto complementar existe para APROFUNDAR o tema; repetir a imagem
+    genérica do fundo não acrescenta nada e só polui o vídeo. Por isso a
+    inserção é a de maior nota de assunto, e o fundo é a melhor foto que
+    ainda é **estritamente menos** precisa que ela. Empate não é
+    aprofundamento, é repetição: nesse caso a cena fica só com uma imagem.
+
+    Sem isso, a ordem da busca definia o papel da foto e o waterfall
+    genérico ("science", "laboratory") às vezes fornecia justamente a
+    inserção — que é a imagem que não tem nada a ver.
+    """
+    if len(entries) < 2:
+        return list(entries), []
+    terms = _topic_terms(ch)
+    if not terms:
+        return [entries[0]], []
+    scored = sorted(
+        ((_topic_score(e.get("asset") or {}, terms), i, e)
+         for i, e in enumerate(entries)),
+        key=lambda r: (-r[0], r[1]))
+    best_score, _, insert_entry = scored[0]
+    if best_score <= 0:
+        return [entries[0]], []  # nada no lote fala do assunto
+    rest = scored[1:]
+    # Fundo = melhor foto que ainda perde para a inserção. Se todas empatam
+    # com ela, a inserção não é mais precisa que o resto: não insere.
+    below = [r for r in rest if r[0] < best_score]
+    if not below:
+        return [entries[0]], []
+    background_entry = below[0][2]
+    return [background_entry], [insert_entry]
 
 
 # Pequenas diferenças de composição entre fotos sobrepostas (álbum natural).
@@ -1034,6 +1094,7 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
     styles = _shuffled_styles(seed)
     sparse = insertions is not None
     insert_at = insertion_scenes(len(chapters), insertions or 0) if sparse else set()
+    scene_no_insert: set[int] = set()  # cena que ficou sem deepenho
     overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
     timeline = []
     for idx, ch in enumerate(chapters):
@@ -1042,7 +1103,13 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
         dur = max(0.5, end - start)
         entries = list(scene.get("assets") or [])
         if sparse:
-            entries = cap_scene_images(entries, idx in insert_at)
+            # A inserção tem de ser a imagem MAIS PRECISA sobre o assunto da
+            # cena — é o que a diferencia do fundo. Sem candidata que bata o
+            # fundo, a cena fica só com o fundo.
+            background, insertion = order_for_insertion(entries, ch)
+            entries = background if idx not in insert_at else background + insertion
+            if idx in insert_at and not insertion:
+                scene_no_insert.add(ch.id)
         images, consumed = _spec_images(entries, dur,
                                        overlap_cap, styles, style_pos)
         if sparse:
@@ -1063,6 +1130,8 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             "images": images,
             "fallback": not images,
             "reused_from": scene.get("reused_from"),
+            **({"no_insertion": "nenhuma imagem mais precisa que o fundo"
+               } if ch.id in scene_no_insert else {}),
         })
     return timeline
 

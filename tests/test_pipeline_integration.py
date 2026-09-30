@@ -34,13 +34,22 @@ def _sources():
         origin="wikipedia")]
 
 
+# Assunto declarado por cena: a inserção só entra se for mais precisa sobre
+# o tema que o fundo (regra de `order_for_insertion`).
+SCENE_QUERIES = ["mars craters surface", "mars moons telescope",
+                 "mars dust atmosphere", "red sky dust",
+                 "mars sunset horizon", "mars surface rocks"]
+
+
 def _chapters():
     parts = [p.strip() + "." for p in SCRIPT.split(".") if p.strip()]
     out, t = [], 0.0
     for i, p in enumerate(parts, 1):
         dur = 6.0
-        out.append(Chapter(id=i, narration=p, duration_estimate=dur,
-                           start=t, end=t + dur))
+        ch = Chapter(id=i, narration=p, duration_estimate=dur,
+                     start=t, end=t + dur)
+        ch.visual_queries = [SCENE_QUERIES[i - 1]]
+        out.append(ch)
         t += dur
     return out
 
@@ -48,7 +57,7 @@ def _chapters():
 def _real_images(tmp_path):
     """Imagens REAIS (o Ken Burns do ffmpeg não digere arquivo falso)."""
     paths = []
-    for k, color in enumerate(("0x224466", "0x88aacc")):
+    for k, color in enumerate(("0x224466", "0x88aacc", "0x667788")):
         p = str(tmp_path / f"fundo{k}.png")
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
                         "-i", f"color=c={color}:s=480x854",
@@ -58,18 +67,24 @@ def _real_images(tmp_path):
 
 
 def _media(chapters, paths):
-    """2 candidatos por cena (fundo + complementar) com licença livre."""
+    """3 candidatos por cena com licença livre.
+
+    O fundo é genérico (não fala de Marte) e um dos complementares é o
+    preciso — é o que tem de acabar como inserção.
+    """
+    titles = ["red dunes generic", "mars craters closeup",
+              "mars planet surface"]
     def asset(k):
         return {"provider": "pixabay", "asset_id": f"a{k}",
-                "title": f"Foto {k}", "author": "Alguem",
+                "title": titles[k], "author": "Alguem",
                 "license": "Pixabay License", "license_url": "https://p.io/l",
                 "source_url": f"https://p.io/{k}",
                 "download_url": f"https://p.io/{k}.jpg",
                 "width": 2000, "height": 2000, "kind": "image",
                 "local_path": paths[k], "rights_status": "clear"}
     return [{"chapter_id": c.id, "asset": asset(0),
-             "assets": [{"asset": asset(0), "query": "fundo", "order": 0},
-                        {"asset": asset(1), "query": "extra", "order": 1}],
+             "assets": [{"asset": asset(k), "query": f"q{k}", "order": k}
+                        for k in range(3)],
              "reused_from": None} for c in chapters]
 
 
@@ -162,7 +177,7 @@ def test_integracao_completa(tmp_path):
     # 4) direitos autorais registrados como livres, uma entrada por imagem
     #    distinta (o registro deduplica a mesma foto usada em várias cenas)
     assert meta["sources"]["blocked_media"] == 0
-    assert meta["sources"]["media"] == 2
+    assert meta["sources"]["media"] == 3  # 3 fotos distintas no vídeo
     reg = json.load(open(paths.sources_json, encoding="utf-8"))
     assert all(m["rights_status"] == "clear" for m in reg["media"])
     assert all(m["license"] == "Pixabay License" for m in reg["media"])

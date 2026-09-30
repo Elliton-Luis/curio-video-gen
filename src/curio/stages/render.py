@@ -183,24 +183,30 @@ def render_collage_segment(images: list[dict], duration: float,
         end_e = start + entry
         fade_d = min(0.4, max(0.2, entry * 0.5))
         tr = im.get("transition", "fade")
+        # Sem moldura branca: a foto é recortada e pousa direto sobre o
+        # fundo. A moldura de 14px + fillcolor=white deixava um retângulo
+        # claro recortado no meio da imagem — lia como defeito de render,
+        # não como foto de álbum. `format=rgba` antes da rotação e
+        # `fillcolor=none` depois: os cantos da inclinação ficam
+        # transparentes, como papel de verdade.
         base_card = (f"scale={card_w}:1000:force_original_aspect_ratio=decrease,"
-                     f"pad=iw+28:ih+28:14:14:color=white")
+                     f"format=rgba")
         if tr == "scale_in":
             # Cresce 0.88→1.0 dissolvendo (eval por frame; overlay recentra).
             grow = (f"0.88+0.12*if(lt(t,{end_e:.3f}),"
                     f"(t-{start:.3f})/{entry:.3f},1)")
-            chain = (f"{base_card},rotate={rot:.4f}:fillcolor=white,"
+            chain = (f"{base_card},rotate={rot:.4f}:fillcolor=none,"
                      f"scale=w='iw*({grow})':h='ih*({grow})':eval=frame,"
-                     f"format=rgba,fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
+                     f"fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
         elif tr == "tilt_in":
             # Assenta de +8° até a rotação do cartão, dissolvendo junto.
             settle = (f"{rot:.4f}+0.14*if(lt(t,{end_e:.3f}),"
                       f"({end_e:.3f}-t)/{entry:.3f},0)")
-            chain = (f"{base_card},rotate='{settle}':fillcolor=white,"
-                     f"format=rgba,fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
+            chain = (f"{base_card},rotate='{settle}':fillcolor=none,"
+                     f"fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
         else:
-            chain = (f"{base_card},rotate={rot:.4f}:fillcolor=white,"
-                     f"format=rgba,fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
+            chain = (f"{base_card},rotate={rot:.4f}:fillcolor=none,"
+                     f"fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
         parts.append(f"[{i}:v]{chain}[c{i}]")
 
     def _target(i: int) -> tuple[str, str]:

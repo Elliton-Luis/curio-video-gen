@@ -478,12 +478,14 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     max_images = max(1, min(5, int(max_images or 1)))
     overlap_cap = float(cfg.visual_overlap if visual_overlap is None
                         else visual_overlap)
-    # Fotos complementares: o orçamento é do VÍDEO (1–2), não da cena. Com
-    # inserções ligadas a cena precisa de 2 fotos (fundo + uma complementar):
-    # busca 2, exibe 2. Mais que isso é baixar material que nunca entra.
+    # Fotos complementares: o orçamento de EXIBIÇÃO é do vídeo (1–2), não da
+    # cena. A busca, porém, traz 3 candidatos por cena de propósito: a
+    # inserção tem de ser a imagem mais precisa sobre o assunto, e escolher
+    # a melhor exige mais de uma opção. A exibição continua em 2 (fundo +
+    # uma complementar): o terceiro candidato existe só para a comparação.
     insert_budget = int(cfg.visual_insertions)
     if insert_budget > 0:
-        max_images = 2
+        max_images = 3
 
     def emit(idx: int, label: str, status: str = "…") -> None:
         if on_progress:
