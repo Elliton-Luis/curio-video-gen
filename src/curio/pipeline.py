@@ -28,6 +28,7 @@ from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
 from .stages import scenes as scenes_stage
+from .stages import scoring as scoring_stage
 from .stages import script as script_stage
 from .stages import subs as subs_stage
 from .stages import teleprompter as tele_stage
@@ -51,6 +52,7 @@ class VideoPaths:
     media_json: str
     sources_json: str
     sources_report: str
+    contact_sheet: str
     narration_wav: str
     words_json: str
     research_json: str
@@ -77,6 +79,7 @@ def video_paths(out_dir: str, slug: str) -> VideoPaths:
         media_json=os.path.join(root, "media", "media.json"),
         sources_json=os.path.join(root, "sources", "sources.json"),
         sources_report=os.path.join(root, "sources", "FONTES.md"),
+        contact_sheet=os.path.join(root, "review", "contact_sheet.html"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         words_json=os.path.join(root, "audio", "words.json"),
         research_json=os.path.join(root, "sources", "research.json"),
@@ -934,6 +937,12 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     sources_stage.write_report(paths.sources_report, sources,
                                research=research_sources, grounding=grounding,
                                media_notes=media_rights_notes)
+    # Folha de contato: o autor revisa o vídeo em ~1 min sem assistir.
+    if media_scenes:
+        from .stages import review as review_stage
+        review_stage.write_contact_sheet(
+            paths.contact_sheet, chapters, media_scenes, paths.root, slug,
+            threshold=scoring_stage.threshold())
     stage_times["finalize"] = 0.0
     metadata["stage_times"] = stage_times
     metadata["metrics_file"] = metrics.save(metadata, stage_times,

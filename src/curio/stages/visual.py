@@ -1156,7 +1156,8 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
                           sfx: bool = True,
                           insertions: int | None = None,
                           insert_style: str = "drop_in",
-                          insert_gain_db: int = -30) -> list[dict]:
+                          insert_gain_db: int = -30,
+                          honor_order: bool = False) -> list[dict]:
     """Timeline visual renderizável: um trecho por cena com suas imagens.
 
     Cada trecho carrega texto/narração original, início/fim, imagens em
@@ -1169,11 +1170,17 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
     escolhidas por `insertion_scenes` recebem 1 cartaz a mais, sempre com
     `insert_style` (padrão: caiu do álbum) e um toque de som discreto no
     instante exato da entrada — as outras cenas ficam só com o fundo.
+
+    `honor_order` respeita a ordem que já está em `assets` em vez de
+    redecidir o papel de cada foto. É o que o `swap` precisa: se o
+    replanejamento re-executasse `order_for_insertion`, ele devolveria a
+    foto que o autor acabou de tirar para o fim.
     """
     by_chapter = {s["chapter_id"]: s for s in media_scenes}
     styles = _shuffled_styles(seed)
-    sparse = insertions is not None
-    insert_at = insertion_scenes(len(chapters), insertions or 0) if sparse else set()
+    sparse = insertions is not None and not honor_order
+    insert_at = (insertion_scenes(len(chapters), insertions or 0)
+                 if sparse else set())
     scene_no_insert: set[int] = set()  # cena que ficou sem deepenho
     overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
     timeline = []
@@ -1297,3 +1304,19 @@ def _slug_from_text(text: str, fallback: str = "roteiro") -> str:
     from ..slug import slugify
     first = re.split(r"(?<=[.!?…])\s+|\n+", text.strip())[0]
     return slugify(first[:60]) or fallback
+
+
+def rebuild_visual_timeline(chapters, media_scenes: list[dict],
+                            previous: list[dict], cfg: CurioConfig,
+                            seed: str = "") -> list[dict]:
+    """Replaneja a geometria depois de um `swap`, sem reescolher as fotos.
+
+    Só tempos, transições e sobreposição são recalculados. A ordem das
+    imagens vem do `media.json` já editado à mão pelo autor: a decisão dele
+    é a última palavra. Passar por `build_visual_timeline` aqui desfaria o
+    swap, porque o scoring reporia a foto mais pontuada na frente.
+    """
+    return build_visual_timeline(
+        chapters, media_scenes,
+        overlap_cap=float(cfg.visual_overlap), seed=seed,
+        sfx=bool(cfg.visual_sfx), honor_order=True)

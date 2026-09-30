@@ -14,8 +14,11 @@ from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import backfill_from_metadata
-from .pipeline import (MediaStandby, finalize_project, run_pipeline,
+from .pipeline import (MediaStandby, _build_silent, _build_silent_visual,
+                        _narration_with_sfx, _read, _read_json, _sfx_track_for,
+                        _write_json, finalize_project, run_pipeline,
                         run_script_pipeline, video_paths)
+from .stages.scenes import Chapter
 from .slug import slugify, slugify_with_timestamp
 from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
@@ -281,6 +284,144 @@ def cmd_info(args, cfg: CurioConfig) -> int:
         return 1
     with open(meta_path, encoding="utf-8") as fh:
         print(json.dumps(json.load(fh), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_review(args, cfg: CurioConfig) -> int:
+    """Abre a folha de contato, ou imprime a decisão por cena (--dry-run)."""
+    from .stages import review as review_stage
+    from .stages import scoring as scoring_stage
+    slug = args.slug
+    paths = video_paths(cfg.out_dir, slug)
+    if not os.path.isfile(paths.chapters_json):
+        print(f"Projeto '{slug}' incompleto ({paths.chapters_json} ausente).",
+              file=sys.stderr)
+        return 1
+    chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
+    media = _read_json(paths.media_json) if os.path.isfile(paths.media_json) else []
+    if args.dry_run:
+        print(review_stage.dry_run_text(chapters, media,
+                                        threshold=scoring_stage.threshold()))
+        return 0
+    out = review_stage.write_contact_sheet(
+        paths.contact_sheet, chapters, media, paths.root, slug,
+        threshold=scoring_stage.threshold())
+    print(f"Folha de contato: {out}")
+    return 0
+
+
+def cmd_swap(args, cfg: CurioConfig) -> int:
+    """Troca a imagem de uma cena por outra, sem refazer narração.
+
+    A escolha é sempre entre candidatos JÁ baixados e avaliados (o pick é o
+    índice na lista da cena). Assim o swap é instantâneo e não volta à
+    rede nem re-sintetiza áudio — que é o ponto: revisar um vídeo não pode
+    custar uma nova geração de voz.
+    """
+    from .stages import visual as visual_stage
+    paths = video_paths(cfg.out_dir, args.slug)
+    if not os.path.isfile(paths.media_json):
+        print(f"Projeto '{args.slug}' sem media.json — rode o generate antes.",
+              file=sys.stderr)
+        return 1
+    media = _read_json(paths.media_json)
+    target = next((s for s in media if s.get("chapter_id") == args.scene), None)
+    if target is None:
+        print(f"Cena {args.scene} não existe no projeto.", file=sys.stderr)
+        return 1
+    entries = target.get("assets") or []
+    if not entries:
+        print(f"Cena {args.scene} não tem imagens escolhidas para trocar.",
+              file=sys.stderr)
+        return 1
+    if not 0 <= args.pick < len(entries):
+        print(f"--pick fora da faixa: a cena tem {len(entries)} imagem(ns) "
+              f"(0..{len(entries) - 1}).", file=sys.stderr)
+        return 1
+    entry = entries[args.pick]
+    asset = entry.get("asset") or {}
+    if not asset.get("local_path") or not os.path.isfile(asset["local_path"]):
+        print("A imagem escolhida não está em disco — refaça a etapa de mídia.",
+              file=sys.stderr)
+        return 1
+    # Reordena: a escolhida vai para order 0 e é a única visível da cena.
+    previous_id = ((target.get("asset") or {}).get("asset_id") or "")
+    others = [e for i, e in enumerate(entries) if i != args.pick]
+    novo = dict(entry)
+    novo["order"] = 0
+    target["assets"] = [novo] + [dict(e, order=i + 1)
+                                 for i, e in enumerate(others)]
+    target["asset"] = asset
+    if previous_id and previous_id != asset.get("asset_id"):
+        target["swapped_from"] = previous_id
+    with open(paths.media_json, "w", encoding="utf-8") as fh:
+        json.dump(media, fh, ensure_ascii=False, indent=1)
+    print(f"Cena {args.scene}: agora usa "
+          f"'{asset.get('title', '')[:70]}' ({asset.get('provider', '?')}).")
+    print(f"Rode `video-gen rerender --slug {args.slug}` para aplicar.")
+    return 0
+
+
+def cmd_rerender(args, cfg: CurioConfig) -> int:
+    """Refaz só o que mudou: visual, legendas queimadas, MP4.
+
+    Narração, transcrição, roteiro e pesquisa ficam em cache e não são
+    refeitos — trocar uma imagem não pode custar uma nova voz.
+    """
+    from .stages import render as render_stage
+    from .stages import subs as subs_stage
+    paths = video_paths(cfg.out_dir, args.slug)
+    for need, dica in ((paths.chapters_json, "rode o generate"),
+                       (paths.media_json, "rode o generate"),
+                       (paths.narration_wav, "rode o generate")):
+        if not os.path.isfile(need):
+            print(f"Falta {os.path.basename(need)} em {paths.root}/ — {dica}.",
+                  file=sys.stderr)
+            return 1
+    if not os.path.isfile(paths.timeline_json):
+        print(f"Falta timeline.json em {paths.root}/ — rode o generate.",
+              file=sys.stderr)
+        return 1
+
+    chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
+    media = _read_json(paths.media_json)
+    audio_duration = ff.probe_duration(paths.narration_wav)
+
+    visual_timeline = None
+    if os.path.isfile(paths.visual_json):
+        try:
+            visual_timeline = _read_json(paths.visual_json)
+        except json.JSONDecodeError:
+            visual_timeline = None
+    if visual_timeline is not None:
+        # Replaneja só a geometria: as imagens podem ter mudado de ordem.
+        visual_timeline = visual_stage.rebuild_visual_timeline(
+            chapters, media, visual_timeline, cfg)
+        _write_json(paths.visual_json, visual_timeline)
+
+    if visual_timeline:
+        _build_silent_visual(chapters, visual_timeline, args.slug, cfg,
+                             paths, paths.silent_mp4)
+    else:
+        durations = [max(0.5, c.end - c.start) for c in chapters]
+        _build_silent(chapters, media, args.slug, durations, paths, cfg,
+                      paths.silent_mp4)
+
+    total = round(audio_duration + 0.8, 2)
+    wav = paths.narration_wav
+    if visual_timeline and cfg.visual_sfx:
+        sfx = _sfx_track_for(visual_timeline, total, paths)
+        if sfx:
+            wav = _narration_with_sfx(paths.narration_wav, sfx, total, paths)
+    title = None
+    if os.path.isfile(paths.title_txt):
+        title = _read(paths.title_txt).strip() or None
+    info = render_stage.burn_final(
+        paths.silent_mp4, paths.subs_ass, wav, paths.final_mp4, cfg, total,
+        title=title,
+        title_fontfile=subs_stage.ensure_display_font(cfg.cache_dir)[2])
+    print(f"Refeito: {info['path']} ({info['duration']}s, {info['encoder']})")
+    print("Narração, roteiro e legendas vieram do cache — não foram refeitos.")
     return 0
 
 
@@ -570,6 +711,27 @@ def build_parser() -> argparse.ArgumentParser:
     vf = sub.add_parser("verify", help="verificar um vídeo gerado (PRD §19)")
     vf.add_argument("--slug", required=True, help="nome do diretório do vídeo")
     vf.set_defaults(func=cmd_verify)
+
+    rv = sub.add_parser(
+        "review", help="folha de contato da escolha visual (revisão humana)")
+    rv.add_argument("--slug", required=True, help="nome do diretório do vídeo")
+    rv.add_argument("--dry-run", action="store_true",
+                    help="imprime a decisão por cena em texto, sem HTML")
+    rv.set_defaults(func=cmd_review)
+
+    sw = sub.add_parser("swap", help="trocar a imagem de uma cena")
+    sw.add_argument("--slug", required=True, help="nome do diretório do vídeo")
+    sw.add_argument("--scene", type=int, required=True,
+                    help="número da cena (1-based, como no vídeo)")
+    sw.add_argument("--pick", type=int, default=0,
+                    help="índice da imagem escolhida nesta cena (0-based)")
+    sw.set_defaults(func=cmd_swap)
+
+    rr = sub.add_parser(
+        "rerender", help="refazer vídeo e legendas a partir do que mudou "
+                         "(não re-sintetiza a narração)")
+    rr.add_argument("--slug", required=True, help="nome do diretório do vídeo")
+    rr.set_defaults(func=cmd_rerender)
 
     met = sub.add_parser("metrics", help="gerar métricas de vídeos existentes")
     met.add_argument("--slug", default=None,
