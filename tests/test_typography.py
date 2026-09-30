@@ -719,3 +719,76 @@ def test_metadata_do_genero_desconhecido_nao_quebra():
     from curio.pipeline import _typography_report
     r = _typography_report(CurioConfig(), "inexistente")
     assert r["key"] == ""
+
+
+# --- o papel da cena tem que chegar a TODA forma, não só à citação --
+
+def _papel_de(cena, forma, genre, tmp_path):
+    """Roda a forma e devolve os papéis que o desenho pediu."""
+    real = T.Typography.pil
+    pedidos = []
+
+    def espiao(self, role="title", size=48):
+        pedidos.append(role)
+        return real(self, role, size)
+
+    T.Typography.pil = espiao
+    try:
+        V.render_form(cena, forma, str(tmp_path), "pt-BR",
+                      T.for_genre(genre))
+    finally:
+        T.Typography.pil = real
+    return pedidos
+
+
+def test_spotlight_usa_o_papel_declarado_e_nao_um_fixo(tmp_path):
+    """Person e term saíam iguais em mitologia, apesar do perfil distinguir.
+
+    O perfil de mitologia põe o NOME do mito em itálico e o termo reto.
+    Com o papel fixo em `term` no desenho, a distinção não chegava à
+    tela: as duas cenas renderizavam idênticas.
+    """
+    nome = Chapter(id=1, narration="O mito contava-se em Nápoles.",
+                   duration_estimate=12.0, visual_type="historical_art",
+                   subject="Santa Luzia", text_role="person")
+    termo = Chapter(id=2, narration="A palavra vem de Neapolis.",
+                    duration_estimate=12.0, visual_type="historical_art",
+                    subject="Nápoles", text_role="term")
+    p_nome = _papel_de(nome, V.FORM_SPOTLIGHT, "mythology", tmp_path)
+    p_termo = _papel_de(termo, V.FORM_SPOTLIGHT, "mythology", tmp_path)
+    assert "person" in p_nome
+    assert "term" in p_termo
+    assert set(p_nome) != set(p_termo)
+
+
+def test_spotlight_mantem_term_quando_a_cena_nao_declara(tmp_path):
+    cena = Chapter(id=1, narration="Uma cena qualquer.",
+                   duration_estimate=12.0, visual_type="historical_art",
+                   subject="assunto")
+    assert "term" in _papel_de(cena, V.FORM_SPOTLIGHT, "people", tmp_path)
+
+
+def test_enum_e_contrast_tambem_ouvem_a_cena(tmp_path):
+    cena = Chapter(id=1, narration="E enumeração.", duration_estimate=12.0,
+                   visual_type="mechanism", subject="assunto",
+                   visual_entities=["a", "b"], text_role="person")
+    assert "person" in _papel_de(cena, V.FORM_ENUM, "mythology", tmp_path)
+    assert "person" in _papel_de(cena, V.FORM_CONTRAST, "mythology", tmp_path)
+
+
+def test_papeis_que_o_perfil_NAO_distingue_continuam_iguais(tmp_path):
+    """Em `people` os dois são serifados: a cena não pode inventar diferença."""
+    nome = Chapter(id=1, narration="x", duration_estimate=12.0,
+                   visual_type="historical_art", subject="São Bento",
+                   text_role="person")
+    termo = Chapter(id=2, narration="x", duration_estimate=12.0,
+                    visual_type="historical_art", subject="salário",
+                    text_role="term")
+    a = V.render_form(nome, V.FORM_SPOTLIGHT, str(tmp_path / "a"), "pt-BR",
+                      T.for_genre("people"))
+    b = V.render_form(termo, V.FORM_SPOTLIGHT, str(tmp_path / "b"), "pt-BR",
+                      T.for_genre("people"))
+    assert a.asset_id != b.asset_id      # textos diferentes
+    for papel in ("title", "term", "person"):
+        assert (T.resolve(papel, "people").intent
+                == T.resolve("term", "people").intent)

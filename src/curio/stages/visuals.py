@@ -377,14 +377,21 @@ def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR",
     d = ImageDraw.Draw(img)
     english = str(language or "").lower().startswith("en")
 
+    # O papel que o assunto desta tela exerce. Um `spotlight` cujo
+    # sujeito é o nome da pessoa usa `person`; um cujo sujeito é a palavra
+    # em foco usa `term`. Sem isto o papel declarado pela cena só
+    # chegava à forma de citação, e `mythology` — que põe o nome do mito
+    # em itálico e o termo reto — desenhava os dois iguais.
+    papel_assunto = _role(ch, "term")
     if form == FORM_SPOTLIGHT:
-        _draw_spotlight(d, sujeito, narration, english, typo)
+        _draw_spotlight(d, sujeito, narration, english, typo, papel_assunto)
     elif form == FORM_ENUM:
-        _draw_enum(d, sujeito, entities, narration, english, typo)
+        _draw_enum(d, sujeito, entities, narration, english, typo,
+                   papel_assunto)
     elif form == FORM_CONTRAST:
         par = _contrast_pair(ch)
         _draw_contrast(d, par[0] if par else sujeito, par[1] if par else "",
-                       narration, english, typo)
+                       narration, english, typo, papel_assunto)
     elif form == FORM_QUOTE:
         _draw_quote(d, _quote_line(narration) or sujeito, english, typo,
                     _role(ch, "quote"))
@@ -409,7 +416,7 @@ def _footer(d, narration: str, linhas: int = 2, typo=None) -> None:
 
 
 def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
-                    typo=None) -> None:
+                    typo=None, papel: str = "") -> None:
     """Um termo, enorme, e quase nada mais. A forma mais silenciosa.
 
     Existe para as cenas cujo assunto já apareceu: repetir o layout
@@ -419,7 +426,10 @@ def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
     f_kick = _font(30, typo, "kicker")
     d.text((W // 2, 520), "THE SUBJECT" if english else "O ASSUNTO",
            font=f_kick, fill=ACCENT_2, anchor="mm")
-    f_main = _font(112, typo, "term")
+    # O sujeito da cena decide o papel. Em `mythology` o NOME do mito é
+    # itálico e o termo não; com o papel fixo em "term" os dois saíam
+    # iguais e a distinção que o perfil declara não chegava à tela.
+    f_main = _font(112, typo, papel or "term")
     linhas = _wrap(d, str(sujeito or "—").upper(), f_main, W - 160)[:4]
     y = 720 - (len(linhas) - 1) * 68
     for line in linhas:
@@ -430,20 +440,20 @@ def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
 
 
 def _draw_enum(d, sujeito: str, entities: list[str], narration: str,
-               english: bool, typo=None) -> None:
+               english: bool, typo=None, papel: str = "") -> None:
     """Assunto + lista numerada. Para cenas que enumeram qualidades ou itens."""
-    f_head = _font(38, typo, "term")
+    f_head = _font(38, typo, papel or "term")
     d.text((W // 2, 210), str(sujeito or "").upper()[:34], font=f_head,
            fill=INK, anchor="mm")
     itens = entities or []
     if not itens:
         itens = [str(narration or "—").strip()[:40]]
-    f_item = _font(46, typo, "term")
+    f_item = _font(46, typo, papel or "term")
     top, gap = 380, 190
     for i, item in enumerate(itens[:4]):
         y = top + i * gap
         d.ellipse([150, y - 34, 218, y + 34], fill=ACCENT)
-        d.text((184, y), str(i + 1), font=_font(36, typo, "term"),
+        d.text((184, y), str(i + 1), font=_font(36, typo, papel or "term"),
                fill="#0f1117", anchor="mm")
         for j, line in enumerate(_wrap(d, item, f_item, W - 340)[:2]):
             d.text((250, y - 18 + j * 56), line, font=f_item, fill=INK_SOFT,
@@ -452,7 +462,7 @@ def _draw_enum(d, sujeito: str, entities: list[str], narration: str,
 
 
 def _draw_contrast(d, left: str, right: str, narration: str,
-                   english: bool, typo=None) -> None:
+                   english: bool, typo=None, papel: str = "") -> None:
     """Duas colunas e uma divisória: isto NÃO é aquilo.
 
     Cenas negativas ("não tem relação com") precisam de um layout que
@@ -462,13 +472,14 @@ def _draw_contrast(d, left: str, right: str, narration: str,
     f_kick = _font(30, typo, "kicker")
     d.text((W // 2, 230), "THIS IS NOT" if english else "ISTO NÃO É",
            font=f_kick, fill=ACCENT_2, anchor="mm")
-    f_side = _font(52, typo, "term")
+    f_side = _font(52, typo, papel or "term")
     meio = W // 2
     d.line([(meio, 340), (meio, 1120)], fill=(70, 78, 102), width=4)
     for x0, x1, texto, cor, marca in (
             (110, meio - 40, left, INK, "✕"),
             (meio + 40, W - 110, right, INK_SOFT, "≠")):
-        d.text(((x0 + x1) // 2, 430), marca, font=_font(44, typo, "term"),
+        d.text(((x0 + x1) // 2, 430), marca, font=_font(44, typo,
+                                                        papel or "term"),
                fill=ACCENT, anchor="mm")
         y = 540
         for line in _wrap(d, str(texto or "—"), f_side, x1 - x0)[:4]:
