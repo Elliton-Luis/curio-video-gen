@@ -3,7 +3,7 @@
 - **Data:** 2026-09-30 14:43 (-03:00)
 - **Tipo:** relatorio
 - **Escopo:** contexto de entidade religiosa, grounding, providers de mídia, reuso, timeout LLM e validação do caso São Jerônimo.
-- **Commit(s):** implementação: `9324ba9`, `0a8d67b`, `88b0b78`, `14dc589`, `89f2d44`, `aa15ba1`, `5f2d7f6`, `bc5fec2`, `22b98f3`; documentação: pendente.
+- **Commit(s):** implementação: `9324ba9`, `0a8d67b`, `88b0b78`, `14dc589`, `89f2d44`, `aa15ba1`, `5f2d7f6`, `bc5fec2`, `22b98f3`; documentação: `6d200cc` (`docs: record São Jerônimo diagnostics and validation`).
 - **Origem:** prompt de correções após a execução de História de Pessoas: São Jerônimo.
 
 ## 1. O que foi pedido
