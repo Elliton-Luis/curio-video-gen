@@ -2,7 +2,7 @@
 
 Primitivas: segmentos por cena (imagem com Ken Burns, vídeo com crop 9:16,
 fallback em gradiente), concat, queima de legendas + áudio. Encoder:
-VA-API > QSV > libx264 (auto-detect).
+Intel Arc (VA-API/AV1 no nó Intel) > QSV > libx264 (auto-detect).
 """
 
 from __future__ import annotations
@@ -46,23 +46,37 @@ def _background_src(cfg: CurioConfig) -> str:
     return f"color=c=0x141433:s={w}x{h}:r={fps},format=yuv420p"
 
 
+def _hw_device() -> str:
+    """Nó DRI a usar no encode por hardware (Intel primeiro, nunca sorte)."""
+    from ..ffmpeg import intel_render_node, vaapi_device
+    return intel_render_node() or vaapi_device() or "/dev/dri/renderD128"
+
+
+def _is_vaapi(encoder: str) -> bool:
+    return encoder.endswith("_vaapi")
+
+
 def _video_codec_args(cfg: CurioConfig) -> tuple[str, str, list[str]]:
     backend, encoder = ff.pick_encoder(cfg.render_backend)
-    if backend == "vaapi":
+    if encoder == "av1_vaapi":
+        # Arc B580 via VA-API: único encode HW funcional aqui (1080x1920 OK).
+        return backend, encoder, ["-c:v", "av1_vaapi", "-qp", "60"]
+    if encoder == "hevc_vaapi":
+        return backend, encoder, ["-c:v", "hevc_vaapi", "-qp", "24"]
+    if encoder == "h264_vaapi":
         return backend, encoder, ["-c:v", "h264_vaapi", "-qp", "22"]
-    if backend == "qsv":
+    if encoder == "h264_qsv":
         return backend, encoder, ["-c:v", "h264_qsv", "-global_quality", "23"]
     return backend, encoder, ["-c:v", "libx264", "-preset", "veryfast",
                               "-crf", "20", "-pix_fmt", "yuv420p"]
 
 
 def _hw_upload(vf: list[str], cmd: list[str], cfg: CurioConfig,
-               backend: str) -> None:
+               backend: str, encoder: str = "") -> None:
     """VA-API exige frames em hardware: upload no fim da cadeia de filtros."""
-    if backend == "vaapi":
-        from ..ffmpeg import vaapi_device
+    if backend == "vaapi" or _is_vaapi(encoder):
         vf.extend(["format=nv12", "hwupload"])
-        cmd += ["-vaapi_device", vaapi_device() or "/dev/dri/renderD128"]
+        cmd += ["-vaapi_device", _hw_device()]
 
 
 def _check(proc, what: str) -> None:
@@ -85,11 +99,11 @@ def render_image_segment(img_path: str, duration: float, out_path: str,
         zb = (f"zoompan=z=1.08:x='(iw-iw/zoom)*on/{frames}':"
               f"y='ih/2-(ih/zoom/2)'")
     vf = (f"{base},{zb}:d={frames}:s={w}x{h}:fps={fps},format=yuv420p")
-    backend, _, vargs = _video_codec_args(cfg)
+    backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-loop", "1", "-framerate", str(fps), "-i", img_path]
     vf_list = [vf]
-    _hw_upload(vf_list, cmd, cfg, backend)
+    _hw_upload(vf_list, cmd, cfg, backend, encoder)
     proc = ff.run(cmd + ["-vf", ",".join(vf_list), "-frames:v", str(frames),
                          "-r", str(fps)] + vargs + ["-an", out_path])
     _check(proc, "ken-burns")
@@ -206,8 +220,8 @@ def render_collage_segment(images: list[dict], duration: float,
                      f"eof_action=pass{tag}")
         prev = tag
 
-    backend, _, vargs = _video_codec_args(cfg)
-    tail = ("format=nv12,hwupload" if backend == "vaapi"
+    backend, encoder, vargs = _video_codec_args(cfg)
+    tail = ("format=nv12,hwupload" if _is_vaapi(encoder)
             else "format=yuv420p")
     # O último overlay já sai em [vout]; só converte o formato final.
     fc = ";".join(parts) + f";[vout]{tail}[vend]"
@@ -215,9 +229,8 @@ def render_collage_segment(images: list[dict], duration: float,
     cmd = ["ffmpeg", "-y", "-v", "error"]
     for im in valid:
         cmd += ["-loop", "1", "-framerate", str(fps), "-i", im["local_path"]]
-    if backend == "vaapi":
-        from ..ffmpeg import vaapi_device
-        cmd += ["-vaapi_device", vaapi_device() or "/dev/dri/renderD128"]
+    if _is_vaapi(encoder):
+        cmd += ["-vaapi_device", _hw_device()]
     proc = ff.run(cmd + ["-filter_complex", fc, "-map", out_label,
                          "-t", str(duration), "-r", str(fps)]
                   + vargs + ["-an", out_path])
@@ -233,11 +246,11 @@ def render_video_segment(vid_path: str, duration: float, out_path: str,
     ss = max(0.0, (vdur - duration) / 2) if vdur > duration else 0.0
     vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
           f"crop={w}:{h},fps={fps},format=yuv420p")
-    backend, _, vargs = _video_codec_args(cfg)
+    backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-ss", str(round(ss, 2)), "-i", vid_path]
     vf_list = [vf]
-    _hw_upload(vf_list, cmd, cfg, backend)
+    _hw_upload(vf_list, cmd, cfg, backend, encoder)
     proc = ff.run(cmd + ["-vf", ",".join(vf_list), "-t", str(duration),
                          "-r", str(fps)] + vargs + ["-an", out_path])
     _check(proc, "video-cover")
@@ -259,10 +272,10 @@ def render_fallback_segment(duration: float, out_path: str, cfg: CurioConfig,
                 f"x=(w-text_w)/2:y={150 + i * 76}"
             )
     vf.append("format=yuv420p")
-    backend, _, vargs = _video_codec_args(cfg)
+    backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-f", "lavfi", "-i", _background_src(cfg)]
-    _hw_upload(vf, cmd, cfg, backend)
+    _hw_upload(vf, cmd, cfg, backend, encoder)
     proc = ff.run(cmd + ["-vf", ",".join(vf), "-t", str(duration),
                          "-r", str(fps)] + vargs + ["-an", out_path])
     _check(proc, "fallback")
@@ -391,19 +404,21 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
     if title and title.strip():
         fontfile = title_fontfile or ff.find_font_bold()
         if fontfile:
+            # Título em relevo (contorno + sombra), sem caixa — mesmo
+            # idioma visual das legendas.
             y0 = round(cfg.height * 0.12)
             for i, line in enumerate(_wrap_title_lines(title)):
                 vf.append(
                     f"drawtext=fontfile='{fontfile}':"
                     f"text='{_escape_drawtext(line)}':"
                     f"fontsize=64:fontcolor=white:"
-                    f"box=1:boxcolor=black@0.85:boxborderw=28:"
+                    f"borderw=3:bordercolor=black:"
+                    f"shadowcolor=black@0.9:shadowx=4:shadowy=4:"
                     f"x=(w-text_w)/2:y={y0 + i * 84}:"
                     f"enable='between(t,0,5)'")
-    if backend == "vaapi":
-        from ..ffmpeg import vaapi_device
+    if backend == "vaapi" or _is_vaapi(encoder):
         vf.extend(["format=nv12", "hwupload"])
-        cmd += ["-vaapi_device", vaapi_device() or "/dev/dri/renderD128"]
+        cmd += ["-vaapi_device", _hw_device()]
     if wav_path:
         cmd += ["-i", wav_path, "-map", "0:v", "-map", "1:a"]
     if vf:

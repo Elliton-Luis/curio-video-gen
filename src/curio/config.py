@@ -66,7 +66,7 @@ class CurioConfig:
     tts_provider: str = "edge-tts"  # edge-tts (neural, grátis) | espeak-ng (local)
     tts_voice: str = "pt-BR-AntonioNeural"  # masculina PT-BR (edge); espeak: "pt-br"
     tts_speed: int = 170
-    render_backend: str = "auto"  # auto | vaapi | qsv | cpu
+    render_backend: str = "arc"  # arc (Intel B580 primeiro) | auto | vaapi | qsv | cpu
     width: int = 1080
     height: int = 1920
     fps: int = 30
@@ -81,7 +81,7 @@ class CurioConfig:
     gemini_base_url: str = ("https://generativelanguage.googleapis.com/v1beta/openai")
     groq_model: str = "openai/gpt-oss-120b"  # Groq (GROQ_API_KEY)
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    media_providers: str = "pixabay,pexels,wikimedia"  # csv; "none" = só fallback
+    media_providers: str = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
     queues_dir: str = "queues"  # pasta padrão das filas de ideias
     teleprompter_wpm: int = 150

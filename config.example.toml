@@ -15,7 +15,7 @@ voice = "pt-BR-AntonioNeural"  # masculina PT-BR; espeak-ng usa "pt-br"
 speed = 170              # palavras por minuto (só espeak-ng)
 
 [render]
-backend = "auto"         # auto | vaapi | qsv | cpu
+backend = "arc"          # arc (Intel B580 primeiro, ex.: AV1 VA-API) | auto | vaapi | qsv | cpu
 width = 1080
 height = 1920
 fps = 30
@@ -48,7 +48,8 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # base_url = "https://api.groq.com/openai/v1"
 
 [media]
-providers = "pixabay,pexels,wikimedia"  # csv; "none" = só fallback
+providers = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback
+# unsplash exige UNSPLASH_ACCESS_KEY; nasa não exige chave (acervo público)
 # cache em cache/media/<provedor>/<id> (CURIO_CACHE_DIR muda o root)
 
 [visual]

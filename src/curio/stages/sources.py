@@ -62,13 +62,21 @@ class Source:
 
 @dataclass
 class MediaSource:
-    """Procedência de uma mídia (imagem/vídeo) utilizada no projeto."""
+    """Procedência de uma mídia (imagem/vídeo) utilizada no projeto.
+
+    Guarda o link ANTES do uso (origin_url = página da obra, file_url =
+    arquivo direto, license_url = onde conferir a licença) e o local
+    APÓS o uso (local_path) mais onde entrou no vídeo (used_in).
+    """
     title: str
     origin_url: str = ""
     file_url: str = ""
     provider: str = ""
     author: str = ""
     license: str = ""
+    license_url: str = ""
+    local_path: str = ""
+    used_in: str = ""
     query: str = ""
     scene: str = ""
 
@@ -79,7 +87,8 @@ class MediaSource:
     def from_dict(cls, d: dict) -> "MediaSource":
         return cls(**{k: d.get(k, "") for k in
                       ("title", "origin_url", "file_url", "provider",
-                       "author", "license", "query", "scene")})
+                       "author", "license", "license_url", "local_path",
+                       "used_in", "query", "scene")})
 
 
 @dataclass
@@ -107,15 +116,25 @@ class SourceRegistry:
 
     def add_media(self, title: str, origin_url: str, file_url: str,
                   provider: str, author: str = "", license: str = "",
-                  query: str = "", scene: str = "") -> MediaSource:
+                  query: str = "", scene: str = "",
+                  license_url: str = "", local_path: str = "",
+                  used_in: str = "") -> MediaSource:
         """Registra procedência de mídia. Reutiliza se (title, origin_url)
-        já estiver registrada."""
+        já estiver registrada (completa os campos de uso se vazios)."""
         for src in self.media:
             if src.title == title and src.origin_url == origin_url:
+                if not src.local_path and local_path:
+                    src.local_path = local_path
+                if not src.used_in and used_in:
+                    src.used_in = used_in
+                if not src.license_url and license_url:
+                    src.license_url = license_url
                 return src
         src = MediaSource(title=title, origin_url=origin_url,
                           file_url=file_url, provider=provider, author=author,
-                          license=license, query=query, scene=scene)
+                          license=license, license_url=license_url,
+                          local_path=local_path, used_in=used_in,
+                          query=query, scene=scene)
         self.media.append(src)
         return src
 

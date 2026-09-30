@@ -11,11 +11,11 @@ Saída dupla a partir dos mesmos cues (mesma sincronia):
   384x288 e estoura o tamanho/posição — bug encontrado em teste visual).
 
 Apresentação (estilo Shorts/Reels/TikTok):
-- Fonte monoespaçada (JetBrains Mono / Courier New fallback)
+- Fonte pesada (Archivo Black / DejaVu Bold fallback)
 - Texto em MAIÚSCULAS obrigatório
-- Caixa preta opaca que acompanha o texto (BorderStyle 4)
-- Destaque com aberração cromática: ciano #00F2FE + deslocamento magenta #FF0055
-- Entrada com fade-in suave (300ms)
+- Contorno 3D: borda preta grossa no formato das letras (BorderStyle 1)
+  + sombra deslocada — sem caixa/bloco quadrado
+- Destaque com aberração cromática: ciano #00F2FE com contorno magenta #FF0055
 - Máximo 5 palavras por tela, 1 palavra de destaque por segmento
 """
 
@@ -32,9 +32,9 @@ ARCHIVO_FAMILY = "Archivo Black"
 ARCHIVO_FILE = "ArchivoBlack-Regular.ttf"
 ARCHIVO_URL = ("https://github.com/google/fonts/raw/main/"
               "ofl/archivoblack/ArchivoBlack-Regular.ttf")
-SUBTITLE_OUTLINE = 10  # padding da caixa preta (BorderStyle 4)
+SUBTITLE_OUTLINE = 7  # contorno preto grosso no formato das letras
+SUBTITLE_SHADOW = 4  # sombra deslocada (relevo 3D)
 SUBTITLE_MARGIN_LR = 120
-SUBTITLE_FADE_IN_MS = 300
 MAX_WORDS_PER_CUE = 5
 HIGHLIGHT_COLOR = "#00F2FE"
 GLITCH_OFFSET_COLOR = "#FF0055"
@@ -198,8 +198,9 @@ def _select_highlight_word(words: list[str]) -> int:
 
 def _apply_highlight(text: str, highlight_idx: int) -> str:
     """Aplica efeito de aberração cromática na palavra de destaque.
-    
-    Formato ASS: {{\\c&HFEF200&\\shad3\\4c&H5500FF&}}PALAVRA{{\\r}}
+
+    Preenchimento ciano + CONTORNO magenta (sem vírgulas nas tags):
+    {\\c&HFEF200&\\3c&H5500FF&}PALAVRA{\\r}
     - Ciano (#00F2FE) = &HFEF200 (BBGGRR)
     - Magenta (#FF0055) = &H5500FF (BBGGRR)
     """
@@ -209,8 +210,8 @@ def _apply_highlight(text: str, highlight_idx: int) -> str:
     highlighted = []
     for i, word in enumerate(words):
         if i == highlight_idx:
-            # Ciano com sombra magenta deslocada (aberração cromática)
-            highlighted.append(r"{\c&HFEF200&\shad3\4c&H5500FF&}" + word + r"{\r}")
+            # Ciano com contorno magenta (aberração cromática em relevo)
+            highlighted.append(r"{\c&HFEF200&\3c&H5500FF&}" + word + r"{\r}")
         else:
             highlighted.append(word)
     return " ".join(highlighted)
@@ -340,17 +341,20 @@ def _fmt_ass_ts(seconds: float) -> str:
 
 def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
                 font_size: int, margin_v: int, alignment: int = 2,
-                border_style: int = 4,
+                border_style: int = 1,
                 back_colour: str = "&H00000000",
                 fontname: str = "DejaVu Sans", bold: int = 0,
                 outline: int = SUBTITLE_OUTLINE,
-                margin_lr: int = SUBTITLE_MARGIN_LR,
-                fade_in_ms: int = SUBTITLE_FADE_IN_MS) -> str:
+                shadow: int = SUBTITLE_SHADOW,
+                margin_lr: int = SUBTITLE_MARGIN_LR) -> str:
     """ASS com PlayRes = resolução real: fonte/margem em pixels de verdade.
 
-    Caixa preta que acompanha o texto (BorderStyle 4 com Outline como padding).
-    Entrada com fade-in suave. Só apresentação — tempos, quebras e agrupamento
-    dos cues intocados.
+    Contorno 3D (BorderStyle 1: borda preta grossa + sombra deslocada),
+    sem caixa. O campo Effect fica VAZIO de propósito: o libass separa os
+    10 campos do Dialogue pelas 9 primeiras vírgulas, então qualquer
+    vírgula no Effect (ex.: o antigo `\\fad(300,0)`) deslocava o Texto e
+    queimava "0)," no início de TODAS as legendas. Só apresentação —
+    tempos, quebras e agrupamento dos cues intocados.
     """
     head = (
         "[Script Info]\n"
@@ -366,7 +370,7 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,{fontname},{font_size},&H00FFFFFF,&H000019FF,"
         f"&H00000000,{back_colour},{bold},0,0,0,100,100,0,0,{border_style},"
-        f"{outline},0,"
+        f"{outline},{shadow},"
         f"{alignment},{margin_lr},{margin_lr},{margin_v},1\n"
         "\n[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
@@ -376,12 +380,9 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
     for start, end, cue in cues:
         # Preserva tags ASS de override (ex: {\c&H...}) mas escapa caracteres perigosos
         safe = cue.replace("\n", " ")
-        # Adiciona fade-in no início de cada cue
-        start_cs = int(round(start * 100))
-        fade_start = max(0, start_cs - fade_in_ms // 10)
-        effect = f"\\fad({fade_in_ms},0)"
+        # Effect VAZIO: vírgula aqui corrompe o parse do libass (ver docstring).
         body.append(f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},"
-                    f"Default,,0,0,0,{effect},{safe}")
+                    f"Default,,0,0,0,,{safe}")
     return head + "\n".join(body) + "\n"
 
 

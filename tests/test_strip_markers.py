@@ -63,10 +63,56 @@ def test_normalize_e_cues():
     ass = cues_to_ass(build_cues(text, 30.0), 1080, 1920, 60, 180)
     for line in ass.splitlines():
         if line.startswith("Dialogue:"):
-            # NOTA: o campo Effect é sempre \fad(300,0) — contém vírgula,
-            # então o texto é o que vem após a 10ª vírgula (não a 9ª).
+            # Texto = após a 9ª vírgula (parse estilo libass); o Effect
+            # deve estar vazio (vírgula ali corrompe o parse — bug do "0),").
             body = line.split(",", 10)[-1]
             assert not re.search(r"(^|\s)\(?\d[).]", re.sub(r"\{[^}]*\}", "", body))
+
+
+def _libass_text(line: str) -> tuple[str, str]:
+    """Divide Dialogue como o libass: 9 primeiras vírgulas delimitam."""
+    parts = line.split(",", 9)
+    assert len(parts) == 10, f"Dialogue malformado: {line[:80]}"
+    return parts[8], parts[9]
+
+
+def test_ass_effect_sem_virgula_regressao_0_paren():
+    """Regressão do bug '0),' queimado em TODAS as legendas.
+
+    O campo Effect continha `\\fad(300,0)`; a vírgula deslocava o parse do
+    libass e o Texto virava `0),LEGENDA`. Effect deve ser vazio.
+    """
+    text = "Primeiro ponto. Segundo ponto!"
+    ass = cues_to_ass(build_cues(text, 30.0), 1080, 1920, 60, 180)
+    dialogues = [ln for ln in ass.splitlines() if ln.startswith("Dialogue:")]
+    assert dialogues
+    for line in dialogues:
+        effect, body = _libass_text(line)
+        assert "," not in effect, f"vírgula no Effect: {effect!r}"
+        plain = re.sub(r"\{[^}]*\}", "", body)
+        assert not plain.startswith("0)"), plain
+        assert "0)," not in plain
+
+
+def test_ass_estilo_contorno_3d_sem_caixa():
+    """BorderStyle 1 (contorno grosso + sombra), sem caixa preta."""
+    ass = cues_to_ass(build_cues("Olá mundo.", 5.0), 1080, 1920, 60, 180)
+    style = next(ln for ln in ass.splitlines() if ln.startswith("Style:"))
+    fields = style.split(",", 1)[1].split(",")
+    # ...Fontsize, Primary, Secondary, Outline, Back, Bold, Italic,
+    # Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle,
+    # Outline, Shadow, Alignment, ...
+    assert fields[14] == "1", fields  # BorderStyle
+    assert int(fields[15]) >= 6, fields  # Outline grosso
+    assert int(fields[16]) >= 3, fields  # Shadow deslocada
+
+
+def test_destaque_usa_contorno_magenta():
+    """Palavra de impacto: ciano com contorno magenta (sem vírgulas)."""
+    ass = cues_to_ass(build_cues("Palavra impacto aqui.", 5.0),
+                      1080, 1920, 60, 180)
+    assert r"{\c&HFEF200&\3c&H5500FF&}" in ass
+    assert r"\shad3\4c" not in ass
 
 
 def test_cues_from_words_descarta_tokens():

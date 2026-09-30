@@ -28,7 +28,7 @@ QUICK_TEST_IDEA = "De onde veio a palavra salário?"
 QUICK_TEST_SLUG = "teste-rapido"
 
 LLM_PROVIDERS = ("nvidia", "openrouter", "gemini", "groq")
-MEDIA_PROVIDERS = ("pixabay", "pexels", "wikimedia", "openverse")
+MEDIA_PROVIDERS = ("pixabay", "unsplash", "pexels", "nasa", "wikimedia", "openverse")
 
 
 class _TUIExit(Exception):
@@ -413,7 +413,7 @@ def _ask_llm_provider(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
 
 def _ask_media_providers(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
     # Para mídia, aceita CSV
-    print(f"\n{c['bold']}Providers de mídia (CSV, ex.: pixabay,wikimedia,openverse):{c['reset']}")
+    print(f"\n{c['bold']}Providers de mídia (CSV, ex.: pixabay,unsplash,nasa,wikimedia):{c['reset']}")
     print(f"  Atual: {cfg.media_providers}")
     choice = _ask(f"  Novo (Enter=pula): ").strip().lower()
     if not choice:
@@ -506,7 +506,7 @@ def _ask_tts(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
 
 def _ask_render(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
     print(f"\n{c['bold']}Configuração Render:{c['reset']}")
-    backend = _ask(f"  Backend [{cfg.render_backend}] (auto/vaapi/qsv/cpu): ").strip()
+    backend = _ask(f"  Backend [{cfg.render_backend}] (arc/auto/vaapi/qsv/cpu): ").strip()
     if backend:
         cfg = dataclasses.replace(cfg, render_backend=backend)
     encoder = _ask(f"  Encoder [{cfg.render_encoder}] (ex.: hevc,h264): ").strip()

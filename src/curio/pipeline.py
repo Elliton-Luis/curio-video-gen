@@ -277,6 +277,7 @@ def _manual_media_scenes(chapters: list[Chapter],
             "title": stem.replace("-", " ").replace("_", " "),
             "author": "",
             "license": "manual do usuário",
+            "license_url": "",
             "source_url": "",
             "download_url": "",
             "download_fallback_url": "",
@@ -285,6 +286,7 @@ def _manual_media_scenes(chapters: list[Chapter],
             "size_bytes": os.path.getsize(local),
             "kind": "image",
             "local_path": local,
+            "used_in": f"cena {ch.id}",
         }
         scenes.append({"chapter_id": ch.id,
                         "asset": asset,
@@ -595,7 +597,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                                        metrics)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
-    # Registra procedência das mídias no registro de fontes do projeto.
+    # Registra procedência das mídias no registro de fontes do projeto:
+    # links ANTES do uso (página, arquivo, licença) + local APÓS o uso.
     for scene in media_scenes:
         for entry in scene.get("assets") or []:
             asset = entry.get("asset") or {}
@@ -607,6 +610,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                     provider=asset.get("provider", ""),
                     author=asset.get("author", ""),
                     license=asset.get("license", ""),
+                    license_url=asset.get("license_url", ""),
+                    local_path=asset.get("local_path", ""),
+                    used_in=f"cena {scene['chapter_id']}",
                     query=entry.get("query", ""),
                     scene=f"cena {scene['chapter_id']}")
     stage_times["media"] = round(time.monotonic() - t0, 2)

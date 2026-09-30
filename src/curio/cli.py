@@ -339,8 +339,13 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("filtro libass (legendas queimadas)",
           "libass" in (ff.run(["ffmpeg", "-hide_banner", "-h", "filter=subtitles"])
                        .stdout.lower()))
-    dev = ff.vaapi_device()
-    check("VA-API (Intel Arc/discreta/iGPU)", dev is not None, dev or "vai usar CPU (libx264)")
+    dev = ff.intel_render_node()
+    hw = ff.intel_hw_encoder()
+    check("Intel Arc B580 (nó DRI)", dev is not None, dev or "sem GPU Intel")
+    check("Encode HW Intel (VA-API)", hw is not None,
+          f"{hw[1]} em {hw[0]}" if hw else "indisponível — render cai para CPU")
+    dev_any = ff.vaapi_device()
+    check("VA-API (qualquer GPU)", dev_any is not None, dev_any or "vai usar CPU (libx264)")
     check("fonte para título", ff.find_font_bold() is not None,
           ff.find_font_bold() or "título será omitido")
     # Informativo: ausência de chave NÃO falha o doctor (gerador local cobre).
@@ -363,7 +368,11 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
           f"{'— ' + cfg.whisper_model if has_fw else '— finalize indisponível; pip install faster-whisper'}")
     from .media import providers as media_prov
     print(f"[{'OK' if media_prov.check_connectivity() else '--'}] "
-          f"Wikimedia Commons (mídia: {cfg.media_providers})")
+          f"mídia ({cfg.media_providers}) — chaves: "
+          f"pixabay={'OK' if os.environ.get('PIXABAY_API_KEY') else '--'}, "
+          f"unsplash={'OK' if os.environ.get('UNSPLASH_ACCESS_KEY') else '--'}, "
+          f"pexels={'OK' if os.environ.get('PEXELS_API_KEY') else '--'}, "
+          f"nasa/wikimedia/openverse sem chave")
     print(f"\nConfig: out_dir={cfg.out_dir} tts={cfg.tts_provider}/{cfg.tts_voice} "
           f"backend={cfg.render_backend} nvidia_model={cfg.nvidia_model}")
     return 0 if ok else 1
@@ -467,7 +476,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--out-dir", default=None, help="sobrescreve diretório de saída")
     ap.add_argument("--tts", default=None, help="provedor TTS (ex.: espeak-ng)")
     ap.add_argument("--voice", default=None, help="voz TTS (ex.: pt-br)")
-    ap.add_argument("--backend", default=None, help="auto|vaapi|qsv|cpu")
+    ap.add_argument("--backend", default=None, help="arc|auto|vaapi|qsv|cpu")
     ap.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
     ap.add_argument("--queues-dir", default=None, help="pasta padrão das filas de ideias")
     sub = ap.add_subparsers(dest="cmd", required=False)

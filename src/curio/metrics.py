@@ -56,6 +56,7 @@ class RunMetrics:
         self.media_assets_reused = 0
         self.media_timeouts = 0
         self.media_retries = 0
+        self.media_synth_diagrams = 0
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -99,6 +100,9 @@ class RunMetrics:
 
     def media_record_asset_reused(self) -> None:
         self.media_assets_reused += 1
+
+    def media_record_synth(self) -> None:
+        self.media_synth_diagrams += 1
 
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1
@@ -186,6 +190,7 @@ class RunMetrics:
                     "assets_reused": self.media_assets_reused,
                     "timeouts": self.media_timeouts,
                     "retries": self.media_retries,
+                    "synth_diagrams": self.media_synth_diagrams,
                 },
                 "whisper": {"calls": self.whisper_calls,
                             "model": self.whisper_model},
