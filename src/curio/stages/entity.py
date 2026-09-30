@@ -399,6 +399,20 @@ REASON_FORBIDDEN = "fala de um homônimo conhecido do tema"
 REASON_OFFTOPIC = "baixa relevância com o tema"
 
 
+def _head_noun(phrase: str) -> str:
+    """O substantivo de um sintagma: a última palavra com letra.
+
+    "Etimologia da palavra salário" -> "salário"; "Cor azul do céu" ->
+    "céu"; "por que o céu é azul?" -> "azul". Serve para os dois idiomas
+    que o curio fala, onde o substantivo fecha o sintagma. Sintagma curto
+    é o que o estágio de entidade sempre devolve, e é por isso que a
+    posição é confiável aqui.
+    """
+    limpo = re.sub(r"[^\w\s]", " ", str(phrase or ""))
+    palavras = [p for p in limpo.split() if p]
+    return palavras[-1] if palavras else ""
+
+
 def source_verdict(source, target: TargetEntity) -> tuple[str, str]:
     """Aceita ou rejeita a fonte como fundamento do tema. (motivo, detalhe).
 
@@ -429,8 +443,28 @@ def source_verdict(source, target: TargetEntity) -> tuple[str, str]:
         if not termos:
             return REASON_OK, ""
         hay = _norm_phrase(texto)
+        # Casar a frase inteira era o filtro, e ele não tinha como
+        # funcionar: os topic_terms são frases de BUSCA, escritas para
+        # achar o artigo, e nenhum artigo se intitula "origem da palavra
+        # salário". Com o filtro inteiro, a fonte certa ("Salário", que
+        # define a palavra) era rejeitada e um tema de etimologia
+        # terminava com zero fontes — o portão virava o defeito.
+        #
+        # O que separa "Salário" de "Via Salária" e de "Pro-labore" não é
+        # a frase: é o substantivo. E o substantivo de um sintagma nominal
+        # em português e inglês é a última palavra — o estágio de entidade
+        # sempre devolve um sintagma curto, nunca uma frase.
+        #
+        # E o substantivo é procurado no TÍTULO, não em qualquer parte do
+        # texto. "Pro-labore" tem "salário" na descrição ("adiantamento
+        # de salário") e isso não faz dele um artigo sobre a palavra
+        # salário; o título é o que diz sobre o que o artigo é.
         achados = [t for t in termos
                    if _norm_phrase(t) and _norm_phrase(t) in hay]
+        if not achados:
+            cabeca = _norm_phrase(_head_noun(target.name))
+            if cabeca and cabeca in _norm_phrase(titulo):
+                achados = [_head_noun(target.name)]
         if not achados:
             return REASON_OFFTOPIC, ""
         return REASON_OK, ""

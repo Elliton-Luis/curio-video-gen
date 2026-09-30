@@ -371,3 +371,83 @@ def test_genero_muda_a_primeira_consulta_de_mesma_ideia(monkeypatch):
     alvo = TargetEntity(name="São Bento de Núrsia", is_entity=True)
     assert _queries_de(alvo, "people", monkeypatch)[0] != \
         _queries_de(alvo, "mystery", monkeypatch)[0]
+
+
+# --- o portão de relevância precisa aceitar a fonte certa --------------
+
+def _fonte(titulo, trecho):
+    from curio.stages.research import ResearchSource
+    return ResearchSource(title=titulo, url="u", snippet=trecho)
+
+
+def _alvo_etimologia():
+    from curio.stages.entity import TargetEntity
+    return TargetEntity(name="Etimologia da palavra salário", is_entity=False,
+                        topic_terms=["origem da palavra salário",
+                                     "etimologia salário",
+                                     "salário significado histórico"])
+
+
+def test_fonte_que_define_a_palavra_e_aceita():
+    """O artigo 'Salário' É a fonte de etimologia. Rejeitá-lo quebra o tema.
+
+    Os topic_terms são frases de busca, e nenhuma fonte se intitula
+    'origem da palavra salário' — exigir a frase inteira rejeitava a
+    única fonte boa e deixava o tema com zero fontes.
+    """
+    from curio.stages.entity import source_verdict
+    motivo, _ = source_verdict(
+        _fonte("Salário", "Salário é a remuneração recebida por um trabalho."),
+        _alvo_etimologia())
+    assert motivo == "ok"
+
+
+def test_fonte_que_so_parte_da_palavra_continua_barrada():
+    from curio.stages.entity import source_verdict
+    for titulo, trecho in [
+        ("Via Salária", "A Via Salária é uma rua do centro de Porto Alegre."),
+        # tem "salário" na descrição e mesmo assim não é artigo sobre a
+        # palavra — o título é que diz sobre o que o artigo é
+        ("Pro-labore", "Pro-labore é um adiantamento de salário."),
+        ("Instância (ciência da computação)",
+         "Em computação, uma instância é um objeto com dados e operações."),
+    ]:
+        motivo, _ = source_verdict(_fonte(titulo, trecho), _alvo_etimologia())
+        assert motivo == "baixa relevância com o tema", titulo
+
+
+def test_frase_inteira_continua_servindo_de_caminho():
+    from curio.stages.entity import source_verdict, TargetEntity
+    alvo = TargetEntity(name="Dispersão de Rayleigh", is_entity=False,
+                        topic_terms=["dispersão de rayleigh", "céu azul"])
+    assert source_verdict(_fonte("Dispersão de Rayleigh",
+                                 "A dispersão de Rayleigh explica o céu azul."),
+                          alvo)[0] == "ok"
+    assert source_verdict(_fonte("Céu", "O céu é azul."), alvo)[0] == \
+        "baixa relevância com o tema"
+
+
+def test_substantivo_final_ignora_ponto_e_interrogacao():
+    from curio.stages.entity import _head_noun
+    assert _head_noun("por que o céu é azul?") == "azul"
+    assert _head_noun("Cor azul do céu") == "céu"
+    assert _head_noun("") == ""
+
+
+def test_tema_sem_nome_e_sem_topic_terms_nao_bloqueia():
+    from curio.stages.entity import source_verdict, TargetEntity
+    alvo = TargetEntity(name="", is_entity=False, topic_terms=[])
+    assert source_verdict(_fonte("Qualquer", "texto"), alvo)[0] == "ok"
+
+
+def test_entidade_continua_usando_identidade_e_nao_substantivo():
+    """A folga é só para tema: nome próprio segue exigindo discriminante."""
+    from curio.stages.entity import source_verdict, TargetEntity
+    alvo = TargetEntity(name="São Bento", is_entity=True,
+                        discriminants=["Núrsia"],
+                        forbidden=["Papa Bento"])
+    assert source_verdict(_fonte("São Bento de Núrsia",
+                                 "Monge italiano do século VI."), alvo)[0] == "ok"
+    assert source_verdict(_fonte("Bento", "Um nome qualquer."), alvo)[0] != "ok"
+    assert source_verdict(_fonte("Papa Bento XVI", "Bento é um papa."),
+                          alvo)[0] == "fala de um homônimo conhecido do tema"
