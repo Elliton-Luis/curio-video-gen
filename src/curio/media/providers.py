@@ -584,3 +584,32 @@ def check_connectivity() -> bool:
             return True
     except Exception:  # noqa: BLE001 — doctor só informa
         return False
+
+
+def providers_status(cfg) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Provedores ativos e ignorados, com o motivo de cada ignorado.
+
+    `get_providers` só imprime o motivo no stderr e devolve a lista do que
+    sobrou, o que não ajuda ninguém a entender a configuração: um
+    provedor digitado errado, uma chave faltando e um provedor desativado
+    por "none" são três causas diferentes com o mesmo efeito silencioso.
+    """
+    ativos: list[tuple[str, str]] = []
+    motivos: list[tuple[str, str]] = []
+    wanted = [p.strip().lower() for p in cfg.media_providers.split(",")
+              if p.strip()]
+    if "none" in wanted:
+        return ativos, [("todos", "media_providers = none")]
+    for name in wanted:
+        cls = PROVIDERS.get(name)
+        if cls is None:
+            reasons = ", ".join(sorted(PROVIDERS)) or "nenhum"
+            motivos.append((name, f"nome desconhecido (disponíveis: {reasons})"))
+            continue
+        try:
+            cls()
+        except MediaError as exc:
+            motivos.append((name, str(exc)))
+            continue
+        ativos.append((name, "pronto"))
+    return ativos, motivos

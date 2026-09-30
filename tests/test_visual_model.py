@@ -241,3 +241,100 @@ def test_divisao_local_tambem_classifica(monkeypatch):
     tipos = {c.visual_type for c in chs}
     assert "mechanism" in tipos or "typographic" in tipos
     assert all(c.visual_type in VISUAL_TYPES for c in chs)
+
+
+# --- doctor: provedores e camadas de scoring ---------------------------
+
+def test_doctor_lista_provedores_ativos_e_ignorados():
+    """Um provedor ignorado precisa dizer POR QUÊ, não só sumir."""
+    from curio.config import CurioConfig
+    from curio.media.providers import providers_status
+    cfg = CurioConfig()
+    cfg.media_providers = "wikimedia,provedor-que-nao-existe,openverse"
+    ativos, motivos = providers_status(cfg)
+    assert [n for n, _ in ativos] == ["wikimedia", "openverse"]
+    d = dict(motivos)
+    assert "desconhecido" in d["provedor-que-nao-existe"]
+
+
+def test_doctor_reporta_chave_ausente_como_motivo(monkeypatch):
+    from curio.config import CurioConfig
+    from curio.media import providers as P
+    monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
+    cfg = CurioConfig()
+    cfg.media_providers = "pixabay"
+    ativos, motivos = P.providers_status(cfg)
+    assert not ativos
+    assert "PIXABAY_API_KEY" in motivos[0][1]
+
+
+def test_media_providers_none_desliga_tudo_com_motivo():
+    from curio.config import CurioConfig
+    from curio.media.providers import providers_status
+    cfg = CurioConfig()
+    cfg.media_providers = "none"
+    ativos, motivos = providers_status(cfg)
+    assert ativos == []
+    assert "none" in motivos[0][1]
+
+
+# --- clip é plugável e desligado por padrão ---------------------------
+
+def test_clip_desligado_por_padrao(monkeypatch):
+    from curio.stages import scoring
+    monkeypatch.delenv("CURIO_CLIP_ENABLED", raising=False)
+    assert scoring.clip_enabled() is False
+    assert scoring.clip_status() is None
+
+
+def test_clip_sem_bibliotecas_nao_quebra(monkeypatch):
+    """Habilitado mas sem torch: avisa e devolve None, não levanta."""
+    from curio.stages import scoring
+    monkeypatch.setenv("CURIO_CLIP_ENABLED", "1")
+    import importlib.util
+    monkeypatch.setattr(importlib.util, "find_spec", lambda n: None)
+    status = scoring.clip_status()
+    assert status is None or "não está instalado" in status
+
+
+def test_clip_device_sem_torch_devolve_cpu(monkeypatch):
+    import importlib.util
+    from curio.stages import scoring
+    monkeypatch.setattr(importlib.util, "find_spec", lambda n: None)
+    assert scoring.clip_device() == "cpu"
+
+
+def test_clip_device_honra_env_explicito(monkeypatch):
+    import importlib.util
+    from curio.stages import scoring
+    monkeypatch.setattr(importlib.util, "find_spec", lambda n: None)
+    monkeypatch.setenv("CURIO_CLIP_DEVICE", "xpu")
+    assert scoring.clip_device() == "xpu"
+
+
+# --- relatório de estratégia visual -----------------------------------
+
+def test_relatorio_visual_conta_estrategia_e_nao_chama_de_falha():
+    from curio.metrics import RunMetrics
+    m = RunMetrics("s", "i", "n")
+    m.media_record_visual_type("mechanism")
+    m.media_record_visual_type("literal")
+    m.media_record_fallback("diagram")
+    m.media_record_score(71.5)
+    m.media_record_rejection("nota abaixo do mínimo")
+    rel = m.media_visual_report(4)
+    assert rel["cenas"] == 4
+    assert rel["por_tipo"]["mechanism"] == 1
+    assert rel["por_estrategia"]["diagram"] == 1
+    assert rel["nota_media"] == 71.5
+    assert rel["rejeicoes"]
+    # nenhuma cena sem visual -> não é falha
+    assert rel["sem_visual"] == 0
+
+
+def test_uma_cena_sem_visual_e_a_unica_falha():
+    from curio.metrics import RunMetrics
+    m = RunMetrics("s", "i", "n")
+    m.media_record_visual_type("mechanism")
+    m.media_record_no_visual()
+    assert m.media_visual_report(2)["sem_visual"] == 1

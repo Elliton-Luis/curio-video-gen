@@ -24,6 +24,8 @@ from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
 from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
+from .stages import media_rules
+from .stages import scoring as scoring_stage
 from .stages import visual as visual_stage
 
 
@@ -525,12 +527,31 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     print(f"[{'OK' if has_fw else '--'}] faster-whisper (transcrição local) "
           f"{'— ' + cfg.whisper_model if has_fw else '— finalize indisponível; pip install faster-whisper'}")
     from .media import providers as media_prov
+    print(f"\nProvedores de mídia (configurado: {cfg.media_providers}):")
+    # Lista um por um, com o motivo de cada um estar fora. Um resumo
+    # "pixabay=OK, nasa/wikimedia/openverse sem chave" não diz o que
+    # acontece com um provedor DESCONHECIDO no config, nem se a ordem
+    # está efetiva — e a ordem é o que decide quem responde primeiro.
+    ativos, motivos = media_prov.providers_status(cfg)
+    for nome, status in ativos:
+        print(f"[OK] {nome:<12} ativo")
+    for nome, motivo in motivos:
+        print(f"[--] {nome:<12} ignorado — {motivo}")
+    if cfg.media_providers.strip().lower() == "none":
+        print("[--] nenhum provedor: as cenas vão para diagrama/cartão "
+              "(nenhuma foto será buscada)")
     print(f"[{'OK' if media_prov.check_connectivity() else '--'}] "
-          f"mídia ({cfg.media_providers}) — chaves: "
-          f"pixabay={'OK' if os.environ.get('PIXABAY_API_KEY') else '--'}, "
-          f"unsplash={'OK' if os.environ.get('UNSPLASH_ACCESS_KEY') else '--'}, "
-          f"pexels={'OK' if os.environ.get('PEXELS_API_KEY') else '--'}, "
-          f"nasa/wikimedia/openverse sem chave")
+          f"rede — Wikipedia {'alcançável' if media_prov.check_connectivity() else 'inacessível'}")
+    print(f"[--] seleção — mínimo de nota "
+          f"{scoring_stage.threshold():.0f}/100 "
+          f"(CURIO_MEDIA_SCORE_MIN), lado mínimo "
+          f"{media_rules.min_dimension()}px "
+          f"(CURIO_MEDIA_MIN_DIMENSION)")
+    _clip = clip_status()
+    if _clip is None:
+        print("[--] scoring semântico (CLIP) — desligado; usando a camada base")
+    else:
+        print(f"[--] CLIP — {_clip}")
     print(f"\nConfig: out_dir={cfg.out_dir} tts={cfg.tts_provider}/{cfg.tts_voice} "
           f"backend={cfg.render_backend} nvidia_model={cfg.nvidia_model}")
     return 0 if ok else 1

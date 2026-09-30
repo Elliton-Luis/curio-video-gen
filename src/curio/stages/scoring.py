@@ -124,6 +124,73 @@ def threshold() -> float:
         return DEFAULT_THRESHOLD
 
 
+def clip_status() -> str | None:
+    """Se a camada CLIP pode rodar, e em que device. None = indisponível.
+
+    Não baixa nada e não instala nada. Se as bibliotecas não estiverem
+    presentes, devolve None e o pipeline segue só com a base — é o
+    comportamento padrão, não um erro.
+    """
+    import importlib.util
+    if not clip_enabled():
+        return None
+    if importlib.util.find_spec("open_clip") is None:
+        return "habilitada, mas open_clip não está instalado (pip install video-gen[clip])"
+    if importlib.util.find_spec("torch") is None:
+        return "habilitada, mas torch não está instalado (pip install video-gen[clip])"
+    try:
+        import torch  # noqa: PLC0415 — importado só se habilitado
+        dev = clip_device()
+        if dev == "cpu":
+            return f"habilitada, mas sem aceleração disponível (device={dev})"
+        return f"habilitada (device={dev}, torch {torch.__version__})"
+    except Exception as exc:  # noqa: BLE001 — status nunca derruba o doctor
+        return f"habilitada, mas falhou ao inicializar: {exc}"
+
+
+def clip_enabled() -> bool:
+    """CLIP só entra se ligado no config/env. Desligado é o padrão."""
+    import os
+    raw = os.environ.get("CURIO_CLIP_ENABLED", "")
+    if raw:
+        return raw.strip().lower() in ("1", "true", "s", "sim", "on", "yes")
+    return False
+
+
+def clip_device() -> str:
+    """Device preferencial, sem CUDA como única hipótese.
+
+    `auto` procura, nesta ordem, aceleradores que existam de fato no
+    torch instalado: XPU (Intel, o caso do Arc B580 do autor), CUDA e MPS.
+    Sem nenhum, devolve `cpu` — e a camada só roda em CPU se a política
+    configurada permitir, para não transformar um vídeo rápido em lento.
+    """
+    import os
+    import importlib.util
+    # Opção explícita PRIMEIRO: quem pediu `device = "xpu"` quer xpu, e a
+    # detecção automática não tem o direito de responder "cpu" por não ter
+    # encontrado nada. Verificar o torch antes disso fazia a configuração
+    # explícita ser ignorada justamente quando ela é a que importa.
+    want = (os.environ.get("CURIO_CLIP_DEVICE", "auto") or "auto").lower()
+    if want != "auto":
+        return want
+    if importlib.util.find_spec("torch") is None:
+        return "cpu"
+    try:
+        import torch  # noqa: PLC0415 — importado só se existir
+        for attr in ("xpu", "cuda", "mps"):
+            backend = getattr(torch, attr, None)
+            is_avail = getattr(backend, "is_available", None)
+            try:
+                if backend is not None and is_avail and is_avail():
+                    return attr
+            except Exception:  # noqa: BLE001 — backend problemático = pula
+                continue
+    except Exception:  # noqa: BLE001 — torch quebrado: cai para cpu
+        pass
+    return "cpu"
+
+
 def rank_candidates(candidates: list[dict], ch) -> list[dict]:
     """Ordena candidatos por nota final (base agora; CLIP/vision depois).
 

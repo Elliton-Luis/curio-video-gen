@@ -59,7 +59,9 @@ class RunMetrics:
         self.media_synth_diagrams = 0
         self.media_rights_verify = 0
         self.media_rights_blocked = 0
-        #Seleção: candidatos vistos, mantidos, e o motivo de cada descarte.
+        # Cenas que terminaram sem nenhum visual (a única falha real).
+        self.media_scenes_no_visual = 0
+        # Seleção: candidatos vistos, mantidos, e o motivo de cada descarte.
         self.media_candidates_total = 0
         self.media_candidates_kept = 0
         self.media_rejections: dict[str, int] = {}
@@ -172,6 +174,39 @@ class RunMetrics:
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1
         self.whisper_model = model
+
+    def media_record_no_visual(self) -> None:
+        """Cena que ficou sem nenhum visual — o único caso de falha."""
+        self.media_scenes_no_visual += 1
+
+    def media_visual_report(self, n_scenes: int) -> dict:
+        """Resumo por estratégia visual (item 20 da spec).
+
+        A leitura importante: `sem_visual` e `gerado_por_codigo` NÃO são
+        falha. Uma cena com diagrama está visualizada; uma cena sem
+       Strategy nenhuma é que é problema, e é a única que aparece aqui
+        como zero.
+        """
+        total = max(1, int(n_scenes or 0))
+        # `sem_visual` é a ÚNICA métrica que é problema: uma cena sem
+        # estratégia nenhuma. Diagrama e cartão contam como visualizadas.
+        geradas = sum(self.media_visual_types.get(k, 0)
+                      for k in ("diagram", "card", "typographic_card"))
+        return {
+            "cenas": int(n_scenes or 0),
+            "por_tipo": dict(sorted(self.media_visual_types.items())),
+            "por_estrategia": dict(sorted(self.media_fallbacks.items())),
+            "gerado_por_codigo_pct": round(100.0 * geradas / total, 1),
+            "sem_visual": self.media_scenes_no_visual,
+            "candidatos_total": self.media_candidates_total,
+            "candidatos_mantidos": self.media_candidates_kept,
+            "rejeicoes": dict(sorted(self.media_rejections.items())),
+            "nota_media": (round(self.media_score_sum / self.media_scored_count, 1)
+                           if self.media_scored_count else None),
+            "nota_baixa": self.media_low_score,
+            "camadas": dict(sorted(self.media_layers_used.items())),
+            "device": self.media_layer_device or "",
+        }
 
     # -- saída --
     def to_dict(self, meta: dict, stage_times: dict, metrics_dir: str) -> dict:

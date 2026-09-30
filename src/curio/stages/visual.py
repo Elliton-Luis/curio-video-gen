@@ -881,6 +881,7 @@ def _search_scene_with_shortcircuit(
         print(f"AVISO: {msg}", file=sys.stderr)
         if metrics:
             metrics.media_record_asset_rejected()
+            metrics.media_record_no_visual()
 
     first = picked[0]["asset"] if picked else None
     scene_rejected = rejected[:REJECTED_KEPT]

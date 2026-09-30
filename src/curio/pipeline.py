@@ -912,6 +912,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "titles": [rs.title for rs in research_sources],
             "grounding": grounding,
         },
+        # Como cada cena foi visualizada e por que as outras não foram.
+        # `sem_visual` é a única métrica que é problema: diagrama e cartão
+        # contam como visual, não como falha.
+        "visual_report": metrics.media_visual_report(len(chapters)),
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,
