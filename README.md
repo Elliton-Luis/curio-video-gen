@@ -222,6 +222,43 @@ a do título, o que parece acidente em vez de decisão.
 respondeu. "Minion Pro não está instalada" é uma frase que o autor
 precisa ler antes de gastar quarenta minutos de render.
 
+A folha de contato e o `dry-run` mostram a mesma linha, com a família que
+**respondeu** e, quando foi fallback, a que foi pedida:
+
+```
+Tipografia: título: Utopia · citação: Utopia itálico (pediu Minion Pro Italic) · legenda: Archivo Black
+```
+
+Os dois leem o que está gravado no `metadata.json`, e não resolvem de
+novo: se o gravado e o resolvido divergirem, o vídeo foi montado com
+outra fonte, e a revisão é o pior lugar para esconder isso.
+
+### O par, e por que o título e a citação não saem em famílias diferentes
+
+Quando a família pedida não existe — ou existe mas não tem itálico — o
+gênero inteiro desce para a primeira da cadeia que tem **os dois rostos**.
+A alternativa ingênua resolve as duas vozes de forma independente e
+produz um título numa família e a citação em outra: uma old-style e uma
+transitional, nenhuma das duas Minion. Duas famílias no mesmo vídeo leem
+como dois vídeos colados.
+
+Na cadeia genérica, **Utopia** abre a lista de serifadas, e não por gosto:
+foi desenhada por Robert Slimbach, o mesmo da Minion Pro, e vem nos dois
+rostos nas distribuições Linux. Uma família que você fixar no
+`config.toml` é respeitada mesmo sem itálico, porque isso é escolha e não
+preferência — a regra do par existe para consertar os nossos padrões, não
+para desobedecer aos seus.
+
+### Onde a tipografia não entra
+
+Duas superfícies ficam de fora, por decisão:
+
+- **legendas queimadas** — a fonte de exibição pesada, como antes. A
+  legibilidade vem primeiro, e nenhuma configuração redireciona esse
+  papel;
+- **teleprompter** — é um arquivo de narração, não de identidade
+  editorial. Vai para um monitor onde alguém lê o texto ao vivo.
+
 ### Trocar a fonte
 
 No `config.toml`, por gênero e por intenção:

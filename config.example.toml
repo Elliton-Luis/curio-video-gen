@@ -162,3 +162,11 @@ italic = "Minion Pro Italic"
 # As legendas NÃO são redirecionadas por aqui, e isso é deliberado: a
 # fonte de exibição pesada fica, porque legibilidade vale mais que
 # estilo. A identidade entra no título, na citação, no cartão e no nome.
+# O teleprompter também fica de fora, pelo mesmo motivo — é um arquivo de
+# narração para ler ao vivo, não de identidade editorial.
+#
+# Se a família pedida não existir na máquina, o curio desce o gênero
+# inteiro para a primeira da cadeia que tem os dois rostos (reto e
+# itálico), para o título e a citação não saírem em famílias diferentes.
+# A cadeia genérica de serifadas começa por Utopia — mesmo desenhista da
+# Minion Pro. O `doctor` e a folha de contato mostram qual respondeu.
