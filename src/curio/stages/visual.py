@@ -727,8 +727,37 @@ def _search_scene_with_shortcircuit(
     warnings = []
     queries = _waterfall_queries(ch)
     blocked = media_rules.scene_blocklist(ch)
+    vtype = str(getattr(ch, "visual_type", "") or "literal")
     if metrics:
         metrics.media_queries_count += len(queries)
+
+    # Uma cena tipográfica NÃO tem foto. A ideia dela É uma palavra, e
+    # busca lexical por essa palavra traz qualquer coisa que a carregue no
+    # título: "salarium" devolve um fungo chamado Clathurella salarium e
+    # um navio-hospital. Não é um defeito do Threshold nem do filtro — é a
+    # pergunta errada. A cena vai direto para o cartão, que é o visual
+    # certo por construção.
+    if vtype == "typographic":
+        from . import visuals
+        synth = visuals.visual_for_scene(ch, cfg.cache_dir,
+                                         getattr(cfg, "language", "pt-BR"))
+        if synth is not None:
+            _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
+            if metrics:
+                metrics.media_record_visual_type(vtype)
+                metrics.media_record_fallback("card")
+                metrics.media_synth_diagrams += 1
+            return [{
+                "chapter_id": ch.id,
+                "asset": synth.to_dict(),
+                "assets": [{"asset": synth.to_dict(), "query": "",
+                            "relevance": 0, "order": 0, "from_cache": False,
+                            "score": 0.0, "strategy": "card"}],
+                "reused_from": None,
+                "rejected": [],
+                "visual_type": vtype,
+                "strategy": "card",
+            }], warnings
 
     candidates: list[dict] = []   # candidatos que passaram nos filtros
     rejected: list[dict] = []     # (motivo, título) p/ a folha de contato

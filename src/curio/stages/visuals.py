@@ -125,13 +125,42 @@ def _out(cache_dir: str, kind: str, key: str) -> str:
 
 # --- cartão tipográfico ------------------------------------------------
 
+def _card_chain(ch) -> list[str]:
+    """A cadeia do cartão: o que a cena decompõe o assunto em.
+
+    Vem das ENTIDADES da cena, não das consultas de busca. A diferença
+    importa: para "A palavra salário vem do latim salarium", as entidades
+    são `sal` e `romano` — a cadeia que o cartão deve mostrar — enquanto
+    as consultas são `salarium, roman salt`, que é o que foi digitado no
+    buscador e repetiria a palavra grande logo abaixo dela.
+
+    Qualquer termo igual ao assunto sai da cadeia: repetir "SALARIUM" em
+    corpo pequeno sob "SALARIUM" em corpo grande parece defeito, não
+    etimologia.
+    """
+    out: list[str] = []
+    visto = {str(getattr(ch, "subject", "") or "").strip().lower()}
+    for termo in list(getattr(ch, "visual_entities", []) or []):
+        s = str(termo).strip()
+        if s and s.lower() not in visto:
+            visto.add(s.lower())
+            out.append(s)
+    if not out:
+        for termo in list(getattr(ch, "context", []) or []):
+            s = str(termo).strip()
+            if s and s.lower() not in visto:
+                visto.add(s.lower())
+                out.append(s)
+    return out[:4]
+
+
 def render_card(subject: str, terms: list[str], narration: str,
                 cache_dir: str, language: str = "pt-BR",
-                scene_id: int = 0) -> object:
+                scene_id: int = 0, ch=None) -> object:
     """Cartão tipográfico: a ideia é uma palavra, então mostra-se a palavra.
 
-    Ex.: "A palavra salário vem do latim salarium" → SALARIUM / SAL /
-    SALÁRIO, em vez de uma foto de banco de moedas que não explica nada.
+    Ex.: "A palavra salário vem do latim salarium" → SALARIUM / sal /
+    salário, em vez de uma foto de banco de moedas que não explica nada.
     O texto do cartão sai do que a cena JÁ declarou (subject, entities) —
     nunca é inventado aqui.
     """
@@ -158,8 +187,9 @@ def render_card(subject: str, terms: list[str], narration: str,
         d.text((W // 2, y), line, font=f_main, fill=INK, anchor="mm")
         y += 118
 
-    # Corrente de termos: subject → entities, que é a decomposição do tema
-    chain = [str(t).strip() for t in (terms or []) if str(t).strip()][:4]
+    # Corrente: a decomposição do assunto que a cena declarou.
+    chain = _card_chain(ch) if ch is not None else [
+        str(t).strip() for t in (terms or []) if str(t).strip()][:4]
     if chain:
         f_chain = _font(46)
         y = max(y + 60, 720)
@@ -281,7 +311,7 @@ def build_visual(ch, strategy: str, cache_dir: str, language: str = "pt-BR",
     if strategy == "card":
         return render_card(subject, terms, narration or
                            str(getattr(ch, "narration", "") or ""),
-                           cache_dir, language, scene_id)
+                           cache_dir, language, scene_id, ch=ch)
     if strategy == "diagram":
         return render_diagram(subject, _diagram_steps(ch), narration or
                               str(getattr(ch, "narration", "") or ""),

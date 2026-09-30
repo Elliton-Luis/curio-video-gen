@@ -262,3 +262,68 @@ def test_cena_com_boas_imagens_escolhe_a_mais_proxima(tmp_path, monkeypatch):
     assert "g2" in escolhidos or "g3" in escolhidos
     # e a pontuação é registrada para a folha de contato
     assert all("score" in e for e in scenes[0]["assets"])
+
+
+# --- cena tipográfica não busca foto -----------------------------------
+
+def test_cena_tipografica_nao_busca_foto(tmp_path, monkeypatch):
+    """Critério de aceite 3: uma etimologia não vira fotografia.
+
+    Verificado contra a API real antes deste teste: buscar "salarium"
+    aprova "File:Clathurella salarium (MNHN-IM-2000-3235).jpeg" — um
+    fungo — e "Navy - Medicine & Surgery - Hospital Ships". Não é falha
+    de filtro nem de threshold: é a pergunta errada. A cena É uma palavra,
+    então vai direto ao cartão.
+    """
+    from types import SimpleNamespace
+    from curio.config import CurioConfig
+    from curio.metrics import RunMetrics
+    from curio.stages import visual as V
+
+    ch = SimpleNamespace(
+        id=3, narration="A palavra salário vem do latim salarium.",
+        visual_queries=["salarium", "roman salt"],
+        global_visual_queries=["salarium"],
+        visual_type="typographic", subject="salarium",
+        visual_entities=["sal", "romano"], context=[], forbidden=[])
+
+    class _Explode:
+        name = "nunca-chamado"
+
+        def search(self, *a, **k):
+            raise AssertionError("cena tipográfica não pode consultar a rede")
+
+    cfg = CurioConfig()
+    cfg.cache_dir = str(tmp_path)
+    m = RunMetrics("s", "i", "n")
+    scenes, warns = V._search_scene_with_shortcircuit(
+        ch, [_Explode()], cfg, 2, m, cfg.cache_dir)
+
+    asset = scenes[0]["asset"]
+    assert asset["provider"] == "synth"
+    assert "Card" in asset["title"]
+    assert scenes[0]["strategy"] == "card"
+    assert not warns
+    assert m.media_visual_types.get("typographic") == 1
+    assert m.media_fallbacks.get("card") == 1
+
+
+def test_cartao_mostra_a_cadeia_da_etimologia(tmp_path):
+    """A cadeia vem das ENTIDADES, não das consultas de busca.
+
+    Repetir "salarium" em corpo pequeno logo abaixo de "SALARIUM" em
+    corpo grande parece defeito, e as consultas são o que foi digitado no
+    buscador — não a decomposição do sentido.
+    """
+    from curio.stages import visuals
+    ch = Chapter(id=1, duration_estimate=8.0, visual_type="typographic",
+                 narration="A palavra salário vem do latim salarium.",
+                 subject="salarium", visual_entities=["sal", "romano"],
+                 visual_queries=["salarium", "roman salt"], context=[],
+                 forbidden=[])
+    cadeia = visuals._card_chain(ch)
+    assert cadeia == ["sal", "romano"]
+    assert "salarium" not in cadeia
+    a = visuals.render_card("salarium", ["salarium", "roman salt"],
+                            ch.narration, str(tmp_path), "pt-BR", 3, ch=ch)
+    assert os.path.getsize(a.local_path) > 10000
