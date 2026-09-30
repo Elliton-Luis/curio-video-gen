@@ -792,3 +792,61 @@ def test_papeis_que_o_perfil_NAO_distingue_continuam_iguais(tmp_path):
     for papel in ("title", "term", "person"):
         assert (T.resolve(papel, "people").intent
                 == T.resolve("term", "people").intent)
+
+
+# --- o diagrama sintético, que é reached e desenhava em uma fonte só ---
+
+def test_diagrama_sintetico_ouve_o_genero(tmp_path):
+    """`diagram.py` é reached por `visual._synth_diagram_for_scene`.
+
+    Ele desenhava a tira inteira na sans pesada, ignorando o gênero. Era
+    a última superfície de texto do pipeline que não sabia o gênero.
+    """
+    from curio.stages import diagram as D
+    real = T.Typography.pil
+    pedidos = []
+
+    def espiao(self, role="title", size=48):
+        pedidos.append(role)
+        return real(self, role, size)
+
+    T.Typography.pil = espiao
+    try:
+        D.render_strip_diagram("thermal receipt roll", str(tmp_path / "p"),
+                              "pt-BR", T.for_genre("people"))
+    finally:
+        T.Typography.pil = real
+    assert "kicker" in pedidos
+    assert "term" in pedidos
+    assert "document" in pedidos
+
+
+def test_diagrama_mesmo_termo_gêneros_diferentes_da_nao_colidir(tmp_path):
+    """O asset_id indexa o cache de mídia.
+
+    Com o id igual entre gêneros, a segunda cena receberia o PNG da
+    primeira: fonte errada na tela, sem nenhum erro. A mesma armadilha do
+    cache visual, no caminho que ninguém testava.
+    """
+    from curio.stages import diagram as D
+    ids = {g: D.render_strip_diagram("thermal receipt roll",
+                                     str(tmp_path / g), "pt-BR",
+                                     T.for_genre(g)).asset_id
+           for g in ("people", "science")}
+    sem = D.render_strip_diagram("thermal receipt roll",
+                                 str(tmp_path / "s"), "pt-BR").asset_id
+    assert len(set(ids.values()) | {sem}) == 3
+
+
+def test_diagrama_sem_genero_usa_a_fonte_de_exibicao(tmp_path):
+    """Ninguém escolheu gênero: a tira sai igual à de sempre."""
+    from curio.stages import diagram as D
+    real = T.Typography.pil
+    T.Typography.pil = lambda self, role="title", size=48: (_ for _ in ()).throw(
+        AssertionError("sem gênero não deveria pedir fonte por papel"))
+    try:
+        asset = D.render_strip_diagram("thermal receipt roll",
+                                       str(tmp_path), "pt-BR")
+    finally:
+        T.Typography.pil = real
+    assert asset is not None

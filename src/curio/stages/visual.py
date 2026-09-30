@@ -917,7 +917,7 @@ def _search_scene_with_shortcircuit(
         picked.append(entry)
 
     if not picked and _looks_mechanistic(ch, list(ch.visual_queries)):
-        synth = _synth_diagram_for_scene(ch, queries, cfg, metrics)
+        synth = _synth_diagram_for_scene(ch, queries, cfg, metrics, genre)
         if synth is not None:
             picked.append(synth)
             seen_ids.add(synth["asset"]["asset_id"])
@@ -971,10 +971,14 @@ def _search_scene_with_shortcircuit(
 
 
 def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
-                             metrics) -> dict | None:
+                             metrics, genre: str = "") -> dict | None:
     """Gera diagrama de tira de teste p/ cena de mecanismo (offline).
 
     Retorna a entrada `picked` pronta ou None (PIL ausente/falha).
+
+    O gênero entra porque a tira é desenhada por PIL com texto, e texto
+    sem papel tipográfico sai na sans pesada de sempre — que é
+    exatamente o que este projeto deixou de fazer.
     """
     try:
         from . import diagram as diagram_stage
@@ -984,9 +988,11 @@ def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
         return None
     try:
         terms = " ".join(queries[:2]) or ch.narration[:60]
+        from . import typography as typo_stage
         asset = diagram_stage.render_strip_diagram(
             terms, cfg.cache_dir,
-            language=getattr(cfg, "language", "pt-BR"))
+            language=getattr(cfg, "language", "pt-BR"),
+            typo=typo_stage.for_genre(genre))
     except Exception as exc:  # noqa: BLE001 — fallback honesto abaixo
         print(f"AVISO: diagrama sintético falhou ({exc}).", file=sys.stderr)
         return None

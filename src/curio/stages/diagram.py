@@ -39,9 +39,16 @@ def _labels(language: str) -> dict[str, str]:
     }
 
 
-def _font(size: int):
-    """DejaVu Bold do sistema; cai para a fonte padrão do PIL."""
+def _font(size: int, typo=None, role: str = ""):
+    """A fonte deste papel, quando há gênero; a de exibição, quando não.
+
+    Este módulo é reached por `visual._synth_diagram_for_scene` e desenhava
+    a tira inteira em uma sans pesada, ignorando o gênero. Sem `typo`, o
+    comportamento é idêntico ao de antes.
+    """
     from PIL import ImageFont
+    if typo is not None and role:
+        return typo.pil(role, size)
     try:
         from .. import ffmpeg as ff
         path = ff.find_font_bold()
@@ -55,24 +62,32 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
-def _key(terms: str, language: str) -> str:
-    return hashlib.sha256(f"{language}|{terms}".lower().encode()).hexdigest()[:12]
+def _key(terms: str, language: str, *extra) -> str:
+    partes = "|".join([f"{language}|{terms}".lower()]
+                      + [str(e).lower() for e in extra if e])
+    return hashlib.sha256(partes.encode()).hexdigest()[:12]
 
 
 def render_strip_diagram(terms: str, cache_dir: str,
-                         language: str = "pt-BR"):
+                         language: str = "pt-BR", typo=None):
     """Desenha a tira de teste e retorna um MediaAsset pronto (`synth`).
 
-    Reusa o PNG em cache quando os termos se repetem.
+    Reusa o PNG em cache quando os termos se repetem — e o gênero entra
+    na chave, porque a MESMA tira em `people` e em `science` tem aparência
+    diferente, e devolver o PNG do outro gênero mostraria a fonte errada
+    sem erro nenhum.
     """
     from ..media.providers import MediaAsset
 
-    key = _key(terms or "test strip", language)
+    estilo = ""
+    if typo is not None:
+        estilo = str(getattr(typo.profile, "key", "") or "")
+    key = _key(terms or "test strip", language, estilo)
     out_dir = os.path.join(cache_dir, "synth")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"strip_{key}.png")
     if os.path.isfile(out_path) and os.path.getsize(out_path) > 10000:
-        return _asset(out_path, terms, language)
+        return _asset(out_path, terms, language, estilo)
 
     from PIL import Image, ImageDraw
 
@@ -83,7 +98,7 @@ def render_strip_diagram(terms: str, cache_dir: str,
 
     # Faixa de título
     d.rectangle([0, 0, STRIP_W, 130], fill="#1F3A5F")
-    f_title = _font(46)
+    f_title = _font(46, typo, "kicker")
     d.text((STRIP_W // 2, 65), lab["title"], font=f_title,
            fill="white", anchor="mm")
 
@@ -96,7 +111,7 @@ def render_strip_diagram(terms: str, cache_dir: str,
     # Amostra (base azul) + pad de ouro (pontos dourados determinísticos)
     d.rounded_rectangle([x0 + 24, 1180, x1 - 24, 1306], radius=18,
                         fill="#CFE3FA", outline="#7FA8DC", width=3)
-    f_small = _font(27)
+    f_small = _font(27, typo, "term")
     d.text((cx, 1243), lab["sample"], font=f_small,
            fill="#1F3A5F", anchor="mm")
     for _ in range(26):
@@ -109,7 +124,7 @@ def render_strip_diagram(terms: str, cache_dir: str,
            fill="#6B5300", anchor="mm")
 
     # Seta do fluxo (líquido subindo)
-    f_flow = _font(30)
+    f_flow = _font(30, typo, "term")
     for y in (980, 830, 680):
         d.polygon([(cx - 22, y + 34), (cx + 22, y + 34), (cx, y)],
                   fill="#2E86DE")
@@ -118,16 +133,17 @@ def render_strip_diagram(terms: str, cache_dir: str,
            fill="#2E86DE", anchor="mm")
 
     # Linhas T (teste) e C (controle)
-    f_line = _font(30)
+    f_line = _font(30, typo, "document")
     for y, tag, color in ((560, "T", "#D63031"), (380, "C", "#D63031")):
         d.rectangle([x0 + 24, y - 13, x1 - 24, y + 13], fill=color)
         d.ellipse([x0 - 44, y - 30, x0 + 8, y + 30], fill=color)
-        d.text((x0 - 18, y), tag, font=_font(34), fill="white", anchor="mm")
+        d.text((x0 - 18, y), tag, font=_font(34, typo, "term"),
+               fill="white", anchor="mm")
     d.text((cx, 605), lab["test"], font=f_line, fill="#7A1F1F", anchor="mm")
     d.text((cx, 425), lab["control"], font=f_line, fill="#7A1F1F", anchor="mm")
 
     # Legenda (leitura do resultado)
-    f_leg = _font(31)
+    f_leg = _font(31, typo, "caption")
     d.rounded_rectangle([90, 1380, STRIP_W - 90, 1530], radius=20,
                         fill="#1F3A5F")
     d.text((STRIP_W // 2, 1425), lab["legend_pos"], font=f_leg,
@@ -136,16 +152,21 @@ def render_strip_diagram(terms: str, cache_dir: str,
            fill="white", anchor="mm")
 
     img.save(out_path, "PNG")
-    return _asset(out_path, terms, language)
+    return _asset(out_path, terms, language, estilo)
 
 
-def _asset(out_path: str, terms: str, language: str):
+def _asset(out_path: str, terms: str, language: str, *extra):
     from ..media.providers import MediaAsset
 
     title = f"Test strip diagram — {terms}".strip()
     return MediaAsset(
         provider="synth",
-        asset_id=f"synth-{_key(terms or 'test strip', language)}",
+        # O id leva o mesmo sufixo da chave do arquivo. Sem ele, a mesma
+        # tira em `people` e em `science` devolve o MESMO asset_id para
+        # PNGs diferentes: o cache de mídia indexa por id, e a segunda
+        # chamada receberia a imagem da primeira: a fonte errada na tela
+        # sem nenhum erro.
+        asset_id=f"synth-{_key(terms or 'test strip', language, *extra)}",
         title=title[:200],
         author="",
         license="Original (gerado por código)",
