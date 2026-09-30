@@ -43,10 +43,18 @@ class Pacing:
     replanejamento. `caption_max_words` e `caption_highlight` controlam a
     densidade e o destaque das legendas, que é a segunda coisa que o
     espectador percebe sem ver o título.
+
+    `max_scenes` é o teto de cortes e pertence ao perfil, e não é
+    redundante com `target_scene_seconds`. O teto legado é 12; um
+    perfil de 7,5 s por cena precisa passar de 12 ou o pacing deixa de
+    existir em qualquer roteiro longo — que é o "rótulo que muda o
+    texto". Ele só entra em jogo quando há gênero, e o chamador sem
+    gênero continua com o teto de sempre.
     """
     target_scene_seconds: float = 9.0
     min_scene_seconds: float = 3.0
     max_scene_seconds: float = 20.0
+    max_scenes: int = 12
     information_density: str = "medium"   # low | medium | high
     caption_max_words: int = 5
     caption_highlight: str = "word"        # word | keyword | none
@@ -104,7 +112,7 @@ HISTORY = GenreProfile(
                 "desastres contados como narrativa, não como aula.",
     pacing=Pacing(target_scene_seconds=9.0, min_scene_seconds=3.5,
                   max_scene_seconds=18.0, information_density="high",
-                  caption_max_words=5, caption_highlight="keyword"),
+                  max_scenes=12, caption_max_words=5, caption_highlight="keyword"),
     research=ResearchStyle(
         guidance="Priorize fontes históricas, documentos, arquivos e "
                  "museus. Para cada acontecimento, responda quem, quando, "
@@ -139,7 +147,7 @@ ETYMOLOGY = GenreProfile(
     description="De onde veio a palavra e como o significado se transformou.",
     pacing=Pacing(target_scene_seconds=7.5, min_scene_seconds=2.5,
                   max_scene_seconds=13.0, information_density="high",
-                  caption_max_words=4, caption_highlight="word"),
+                  max_scenes=20, caption_max_words=4, caption_highlight="word"),
     research=ResearchStyle(
         guidance="Investigue a língua de origem, as formas antigas, mudanças "
                  "fonéticas e semânticas, os primeiros registros e os "
@@ -178,7 +186,7 @@ MYTHOLOGY = GenreProfile(
     description="Mitos, lendas e tradições, distinguindo tradição de fato.",
     pacing=Pacing(target_scene_seconds=12.0, min_scene_seconds=5.0,
                   max_scene_seconds=22.0, information_density="medium",
-                  caption_max_words=6, caption_highlight="keyword"),
+                  max_scenes=12, caption_max_words=6, caption_highlight="keyword"),
     research=ResearchStyle(
         guidance="Priorize textos antigos, registros de tradição, estudos "
                  "acadêmicos e acervos culturais. Quando houver versões "
@@ -211,7 +219,7 @@ MYSTERY = GenreProfile(
     description="Um caso, suas evidências e o que continua sem resposta.",
     pacing=Pacing(target_scene_seconds=11.0, min_scene_seconds=4.0,
                   max_scene_seconds=19.0, information_density="medium",
-                  caption_max_words=5, caption_highlight="keyword"),
+                  max_scenes=14, caption_max_words=5, caption_highlight="keyword"),
     research=ResearchStyle(
         guidance="Separe rigorosamente fato documentado, testemunho, "
                  "alegação, hipótese, teoria e ponto não resolvido. Ausência "
@@ -247,7 +255,7 @@ SCIENCE = GenreProfile(
     description="Fenômeno, mecanismo, evidência e o que muda com isso.",
     pacing=Pacing(target_scene_seconds=14.0, min_scene_seconds=6.0,
                   max_scene_seconds=26.0, information_density="medium",
-                  caption_max_words=6, caption_highlight="keyword"),
+                  max_scenes=9, caption_max_words=6, caption_highlight="keyword"),
     research=ResearchStyle(
         guidance="Priorize artigos, instituições científicas, documentação "
                  "técnica e fontes primárias. Busque o mecanismo, não a "
@@ -281,7 +289,7 @@ PEOPLE = GenreProfile(
     description="A trajetória de uma pessoa e por que a vida dela importa.",
     pacing=Pacing(target_scene_seconds=13.0, min_scene_seconds=4.0,
                   max_scene_seconds=28.0, information_density="medium",
-                  caption_max_words=6, caption_highlight="keyword"),
+                  max_scenes=10, caption_max_words=6, caption_highlight="keyword"),
     research=ResearchStyle(
         guidance="Resolva primeiro QUEM é a pessoa — nome ambíguo tem "
                  "homônimos, e a biografia de outro homônimo é um erro de "
@@ -457,6 +465,7 @@ def summary(profile: GenreProfile | None) -> dict:
             "target_scene_seconds": profile.pacing.target_scene_seconds,
             "min_scene_seconds": profile.pacing.min_scene_seconds,
             "max_scene_seconds": profile.pacing.max_scene_seconds,
+            "max_scenes": profile.pacing.max_scenes,
             "information_density": profile.pacing.information_density,
             "caption_max_words": profile.pacing.caption_max_words,
             "caption_highlight": profile.pacing.caption_highlight,

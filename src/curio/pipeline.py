@@ -509,10 +509,14 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     perfil = editorial_stage.get(genre_key)
     pacing = perfil.pacing if perfil is not None else None
     alvo_cena = pacing.target_scene_seconds if pacing is not None else 9.0
+    # `None` de propósito: sem gênero, scenes_for_* usa o teto legado e o
+    # vídeo de quem não pediu nada sai com o mesmo nº de cenas de sempre.
+    teto_cena = pacing.max_scenes if pacing is not None else None
     genre_directive = editorial_stage.script_directive(perfil)
     scene_directive = editorial_stage.scene_directive(perfil)
     if perfil is not None:
         print(f"Gênero: {perfil.label} — pacing {alvo_cena:g}s/cena, "
+              f"até {teto_cena} cenas, "
               f"forma visual {', '.join(perfil.visual.preferred_forms) or '—'}")
     overlap_cap = float(cfg.visual_overlap if visual_overlap is None
                         else visual_overlap)
@@ -660,20 +664,20 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             visual_stage.validate_preserved(script_text, chapters)
     else:
         if script_mode:
-            n = visual_stage.scenes_for_script(script_text, cfg)
+            n = visual_stage.scenes_for_script(script_text, cfg, genre_key)
         elif cfg.duration_target <= 0:
             # Automático: o roteiro (não a meta) define as cenas — e o
             # pacing do gênero entra no cálculo do tamanho de cada cena.
             n = scenes_stage.scenes_for_length(len(script_text.split()),
-                                               alvo_cena)
+                                               alvo_cena, teto_cena)
         else:
             n = scenes_stage.scenes_for_duration(cfg.duration_target,
-                                                 alvo_cena)
+                                                 alvo_cena, teto_cena)
         try:
             chapters, scenes_source = scenes_stage.build_chapters(
                 script_text, cfg, n_scenes=n, metrics=metrics,
                 genre=genre_key, target_seconds=alvo_cena,
-                genre_directive=scene_directive)
+                genre_directive=scene_directive, max_scenes=teto_cena)
         except nvidia_stage.NvidiaError as exc:
             if not script_mode:
                 raise

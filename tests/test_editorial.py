@@ -49,12 +49,16 @@ def test_todo_perfil_tem_os_campos_obrigatorios():
 
 # --- pacing é número, não adjetivo ------------------------------------
 
+def _cenas(perfil, palavras: int) -> int:
+    """Conta cenas como o pipeline faz: alvo E teto do perfil."""
+    return scenes_for_length(palavras, perfil.pacing.target_scene_seconds,
+                             perfil.pacing.max_scenes)
+
+
 def test_cada_genero_produz_um_numero_de_cenas_diferente():
     """A diferença mais visível: quantas cenas o mesmo roteiro vira."""
     palavras = 298
-    contagens = {k: scenes_for_length(palavras, E.get(k).pacing.
-                                      target_scene_seconds)
-                 for k, _ in E.choices()}
+    contagens = {k: _cenas(E.get(k), palavras) for k, _ in E.choices()}
     assert len(set(contagens.values())) >= 4, contagens
     # etimologia é o mais rápido, ciência e pessoas os mais lentos
     assert contagens["etymology"] == max(contagens.values())
@@ -93,10 +97,8 @@ def test_pacing_muda_a_saida_real_das_cenas():
     # mediria o teto em vez do pacing.
     palavras = 298
     base = scenes_for_length(palavras)
-    cien = scenes_for_length(palavras, E.get("science").pacing.
-                             target_scene_seconds)
-    etim = scenes_for_length(palavras, E.get("etymology").pacing.
-                             target_scene_seconds)
+    cien = _cenas(E.get("science"), palavras)
+    etim = _cenas(E.get("etymology"), palavras)
     assert etim > base > cien
     assert len({base, cien, etim}) == 3
 
@@ -274,7 +276,7 @@ def test_mesmo_roteiro_da_planos_editoriais_distintos():
     plano = {}
 
     for nome, perfil in (("people", pessoas), ("etymology", etim)):
-        cenas = scenes_for_length(palavras, perfil.pacing.target_scene_seconds)
+        cenas = _cenas(perfil, palavras)
         ch = Chapter(id=1, narration="Uma frase de teste com conteúdo.",
                      duration_estimate=10.0, visual_type="literal",
                      subject="assunto", visual_entities=["a", "b"])
@@ -451,3 +453,70 @@ def test_entidade_continua_usando_identidade_e_nao_substantivo():
     assert source_verdict(_fonte("Bento", "Um nome qualquer."), alvo)[0] != "ok"
     assert source_verdict(_fonte("Papa Bento XVI", "Bento é um papa."),
                           alvo)[0] == "fala de um homônimo conhecido do tema"
+
+
+# --- paridade com o pipeline herdado quando não há gênero -------------
+
+def _antigo_por_tamanho(words: int) -> int:
+    """scenes_for_length como era antes dos perfis existirem."""
+    est = max(1, words) / 150 * 60
+    return max(3, min(12, round(est / 9)))
+
+
+def _antigo_por_duracao(dur: float) -> int:
+    """scenes_for_duration como era antes dos perfis existirem."""
+    return max(3, min(7, round(dur / 9)))
+
+
+@pytest.mark.parametrize("words", [40, 80, 150, 225, 298, 400, 600, 900,
+                                  1500, 3000, 8000])
+def test_sem_genero_o_tamanho_do_roteiro_da_exatamente_o_antigo(words):
+    assert scenes_for_length(words) == _antigo_por_tamanho(words)
+
+
+@pytest.mark.parametrize("dur", [0.0, 10.0, 20.0, 30.0, 45.0, 60.0, 63.0,
+                                 90.0, 120.0, 300.0])
+def test_sem_genero_a_meta_de_duracao_da_exatamente_o_antigo(dur):
+    from curio.stages.scenes import scenes_for_duration
+    assert scenes_for_duration(dur) == _antigo_por_duracao(dur)
+
+
+def test_teto_subiu_so_para_quem_tem_genero():
+    """O teto de 12 foi estendido; estender para todos mudaria o vídeo de
+    quem não pediu nada. 700 palavras/passam de 12 cenas só com perfil."""
+    from curio.stages.scenes import scenes_for_duration
+    assert scenes_for_length(700) == 12
+    etim = E.get("etymology")
+    assert scenes_for_length(700, etim.pacing.target_scene_seconds,
+                             etim.pacing.max_scenes) > 12
+    cien = E.get("science")
+    assert scenes_for_length(700, cien.pacing.target_scene_seconds,
+                             cien.pacing.max_scenes) < 12
+    assert scenes_for_duration(90.0) == 7
+    assert scenes_for_duration(90.0, etim.pacing.target_scene_seconds,
+                               etim.pacing.max_scenes) > 7
+
+
+def test_todo_genero_tem_teto_proprio():
+    for chave, _ in E.choices():
+        p = E.get(chave)
+        assert p.pacing.max_scenes >= 3, chave
+        # teto tem de ser coerente com o alvo: 12 cenas cobrem o alvo inteiro
+        alvo = p.pacing.target_scene_seconds
+        assert p.pacing.max_scenes >= 1, chave
+        assert 3 <= p.pacing.max_scenes <= 24, chave
+
+
+def test_scenes_for_script_respeita_o_genero():
+    from curio.stages.visual import scenes_for_script
+    cfg = CurioConfig()
+    cfg.duration_target = 0
+    texto = " ".join(["palavra"] * 700)
+    assert scenes_for_script(texto, cfg, "") == _antigo_por_tamanho(700)
+    etim = E.get("etymology")
+    assert scenes_for_script(texto, cfg, "etymology") == scenes_for_length(
+        700, etim.pacing.target_scene_seconds, etim.pacing.max_scenes)
+
+
+def test_teto_aparece_no_resumo_do_perfil():
+    assert E.summary(E.get("etymology"))["pacing"]["max_scenes"] == 20

@@ -31,32 +31,48 @@ TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
 
 
+LEGACY_MAX_SCENES = 12          # teto de scenes_for_length sem gênero
+LEGACY_MAX_SCENES_DURATION = 7  # teto de scenes_for_duration sem gênero
+
+
 def scenes_for_duration(duration_target: float,
-                        target_seconds: float = 9.0) -> int:
+                        target_seconds: float = 9.0,
+                        max_scenes: int | None = None) -> int:
     """~1 cena a cada `target_seconds`: 30 s→3, 45 s→5, 60 s→7 (3–7).
 
     Meta 0 (Automático) cai no piso: quem manda no nº de cenas é o
     tamanho do roteiro (ver `scenes_for_length`).
+
+    `max_scenes=None` é o teto de sempre. Passar outro valor só é feito
+    por um perfil de gênero, e é para isso que o parâmetro existe.
     """
     alvo = max(4.0, float(target_seconds or 9.0))
-    return max(3, min(9, round(duration_target / alvo)))
+    teto = LEGACY_MAX_SCENES_DURATION if max_scenes is None else int(max_scenes)
+    return max(3, min(teto, round(duration_target / alvo)))
 
 
-def scenes_for_length(words: int, target_seconds: float = 9.0) -> int:
+def scenes_for_length(words: int, target_seconds: float = 9.0,
+                      max_scenes: int | None = None) -> int:
     """Nº de cenas pelo TAMANHO do roteiro e o ALVO de segundos por cena.
 
     Usado no modo Automático e como piso no `visual.scenes_for_script`:
     roteiro longo = mais cenas, nunca corte para caber em meta.
 
-    `target_seconds` é o lever de pacing do gênero. É aqui que "cenas
-    curtas e transformações frequentes" (etimologia, 7,5 s) e "tempo
-    suficiente para o diagra ser compreendido" (ciência, 14 s) viram
-    números de cena diferentes — e não adjetivos no prompt. Um perfil que
-    não mexesse aqui seria exatamente o "rótulo que muda o texto".
+    `target_seconds` e `max_scenes` são os levers de pacing do gênero. É
+    aqui que "cenas curtas e transformações frequentes" (etimologia,
+    7,5 s) e "tempo suficiente para o diagrama ser compreendido"
+    (ciência, 14 s) viram números de cena diferentes — e não adjetivos no
+    prompt. Um perfil que não mexesse aqui seria exatamente o "rótulo que
+    muda o texto".
+
+    Sem gênero, `max_scenes=None` devolve o teto legado de 12 e o
+    resultado é idêntico ao de antes dos perfis existirem. Estender o
+    teto só para todo mundo mudaria o vídeo de quem não pediu nada.
     """
     est_seconds = max(1, words) / WORDS_PER_MINUTE * 60
     alvo = max(4.0, float(target_seconds or 9.0))
-    return max(3, min(14, round(est_seconds / alvo)))
+    teto = LEGACY_MAX_SCENES if max_scenes is None else int(max_scenes)
+    return max(3, min(teto, round(est_seconds / alvo)))
 
 
 SCENES_SYSTEM_PROMPT = (
@@ -413,11 +429,12 @@ def _payload_snippet(data, limit: int = 300) -> str:
 def build_chapters(script: str, cfg: CurioConfig,
                    n_scenes: int | None = None, metrics=None,
                    genre: str = "", target_seconds: float | None = None,
-                   genre_directive: str = "") -> tuple[list[Chapter], str]:
+                   genre_directive: str = "",
+                   max_scenes: int | None = None) -> tuple[list[Chapter], str]:
     """Retorna (capítulos, fonte). Fonte: 'openrouter:gemini-2.5-flash' | 'local'."""
     alvo = float(target_seconds) if target_seconds else None
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target,
-                                               alvo or 9.0)
+                                               alvo or 9.0, max_scenes)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
     if nvidia_stage.any_llm_available():
         english = str(cfg.language or "").lower().startswith("en")

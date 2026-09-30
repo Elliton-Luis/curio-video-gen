@@ -567,17 +567,26 @@ def read_script_file(path: str) -> str:
     return text
 
 
-def scenes_for_script(script_text: str, cfg: CurioConfig) -> int:
+def scenes_for_script(script_text: str, cfg: CurioConfig,
+                      genre: str = "") -> int:
     """Nº de cenas p/ roteiro pronto: acompanha o TAMANHO REAL do texto.
 
     Com duração escolhida, vale o maior entre meta e tamanho (nunca menos
     cenas que o conteúdo pede). No Automático, só o tamanho manda.
-    Limitado a 12 cenas para não explodir o nº de buscas de mídia.
+    Limitado a 12 cenas para não explodir o nº de buscas de mídia — teto
+    esse que é do pipeline herdado, e só um perfil de gênero o substitui.
     """
-    by_length = scenes_stage.scenes_for_length(len(script_text.split()))
+    from . import editorial as _editorial
+    perfil = _editorial.get(genre)
+    pacing = perfil.pacing if perfil is not None else None
+    alvo = pacing.target_scene_seconds if pacing is not None else 9.0
+    teto = pacing.max_scenes if pacing is not None else None
+    by_length = scenes_stage.scenes_for_length(len(script_text.split()),
+                                               alvo, teto)
     if cfg.duration_target <= 0:
         return by_length
-    return max(scenes_stage.scenes_for_duration(cfg.duration_target), by_length)
+    return max(scenes_stage.scenes_for_duration(cfg.duration_target, alvo,
+                                                teto), by_length)
 
 
 def validate_preserved(original: str, chapters) -> None:
