@@ -57,6 +57,10 @@ class RunMetrics:
         self.media_timeouts = 0
         self.media_retries = 0
         self.media_synth_diagrams = 0
+        self.media_rights_verify = 0
+        self.media_rights_blocked = 0
+        self.research_queries = 0
+        self.research_sources = 0
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -103,6 +107,18 @@ class RunMetrics:
 
     def media_record_synth(self) -> None:
         self.media_synth_diagrams += 1
+
+    def media_record_rights(self, status: str) -> None:
+        if status == "verify":
+            self.media_rights_verify += 1
+        elif status == "blocked":
+            self.media_rights_blocked += 1
+
+    def research_query(self) -> None:
+        self.research_queries += 1
+
+    def research_source(self) -> None:
+        self.research_sources += 1
 
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1
@@ -191,7 +207,11 @@ class RunMetrics:
                     "timeouts": self.media_timeouts,
                     "retries": self.media_retries,
                     "synth_diagrams": self.media_synth_diagrams,
+                    "rights_verify": self.media_rights_verify,
+                    "rights_blocked": self.media_rights_blocked,
                 },
+                "research": {"queries": self.research_queries,
+                             "sources": self.research_sources},
                 "whisper": {"calls": self.whisper_calls,
                             "model": self.whisper_model},
             },

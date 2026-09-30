@@ -77,6 +77,7 @@ class MediaSource:
     license_url: str = ""
     local_path: str = ""
     used_in: str = ""
+    rights_status: str = ""  # clear | verify | blocked
     query: str = ""
     scene: str = ""
 
@@ -88,7 +89,7 @@ class MediaSource:
         return cls(**{k: d.get(k, "") for k in
                       ("title", "origin_url", "file_url", "provider",
                        "author", "license", "license_url", "local_path",
-                       "used_in", "query", "scene")})
+                       "used_in", "rights_status", "query", "scene")})
 
 
 @dataclass
@@ -118,7 +119,7 @@ class SourceRegistry:
                   provider: str, author: str = "", license: str = "",
                   query: str = "", scene: str = "",
                   license_url: str = "", local_path: str = "",
-                  used_in: str = "") -> MediaSource:
+                  used_in: str = "", rights_status: str = "") -> MediaSource:
         """Registra procedência de mídia. Reutiliza se (title, origin_url)
         já estiver registrada (completa os campos de uso se vazios)."""
         for src in self.media:
@@ -129,11 +130,14 @@ class SourceRegistry:
                     src.used_in = used_in
                 if not src.license_url and license_url:
                     src.license_url = license_url
+                if not src.rights_status and rights_status:
+                    src.rights_status = rights_status
                 return src
         src = MediaSource(title=title, origin_url=origin_url,
                           file_url=file_url, provider=provider, author=author,
                           license=license, license_url=license_url,
                           local_path=local_path, used_in=used_in,
+                          rights_status=rights_status,
                           query=query, scene=scene)
         self.media.append(src)
         return src

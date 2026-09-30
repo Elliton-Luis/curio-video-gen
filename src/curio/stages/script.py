@@ -108,7 +108,8 @@ def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") 
     return text
 
 
-def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str]:
+def generate_script(idea: str, cfg: CurioConfig, metrics=None,
+                    research: str | None = None) -> tuple[str, str]:
     """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'gemini:...' | 'groq:...' | 'curated' | 'template'.
 
     Com duração escolhida, o tamanho é meta (corta com dignidade); no modo
@@ -124,7 +125,8 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str
             idea, cfg.nvidia_model, cfg.nvidia_base_url,
             cfg.nvidia_timeout, max_chars, metrics,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
-            extra=cfg.llm_overrides(), language=cfg.language)
+            extra=cfg.llm_overrides(), language=cfg.language,
+            research=research)
         return text, _label
 
     english = str(cfg.language or "").lower().startswith("en")

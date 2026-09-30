@@ -292,6 +292,14 @@ def _show_standby(c: dict[str, str], exc: MediaStandby) -> None:
     print("  2) Volte aqui e rode o mesmo fluxo de novo (sem refazer).")
 
 
+def _show_sources(c: dict[str, str], meta: dict) -> None:
+    research = (meta or {}).get("research") or {}
+    n = int(research.get("sources") or 0)
+    titles = [t for t in (research.get("titles") or []) if t][:3]
+    extra = f" ({'; '.join(titles)})" if titles else ""
+    print(f"Fontes: {n} [{research.get('status', '?')}]" + extra)
+
+
 def _show_verify(c: dict[str, str], mp4: str, srt: str, cfg: CurioConfig) -> bool:
     print(f"\n{c['bold']}Verificação do vídeo:{c['reset']}")
     rep = verify_mod.verify_video(mp4, srt, cfg.duration_target, cfg.width, cfg.height)
@@ -962,6 +970,7 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
         return
     print(f"\n{c['green']}Pronto!{c['reset']} Vídeo final: {meta['artifacts']['video']} "
           f"({meta['duration_actual']}s em {meta['processing_time_seconds']}s)")
+    _show_sources(c, meta)
     _show_verify(c, meta["artifacts"]["video"], meta["artifacts"]["subtitles"], cfg)
 
 
@@ -1103,6 +1112,7 @@ def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
         return
     print(f"\n{c['green']}Pronto!{c['reset']} Vídeo final: {meta['artifacts']['video']} "
           f"({meta['duration_actual']}s em {meta['processing_time_seconds']}s)")
+    _show_sources(c, meta)
     _show_verify(c, meta["artifacts"]["video"], meta["artifacts"]["subtitles"], cfg)
 
 

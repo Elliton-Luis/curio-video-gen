@@ -87,6 +87,8 @@ class CurioConfig:
     teleprompter_wpm: int = 150
     whisper_model: str = "base"
     metrics_dir: str = "metrics"
+    research_max_sources: int = 3  # fontes web exigidas p/ grounding (≥1)
+    research_timeout: int = 20  # teto por chamada da Wikipedia (s)
     visual_max_images: int = 3  # fotos por cena no modo roteiro-pronto (1–5)
     visual_overlap: float = 0.9  # sobreposição máxima (s) entre fotos
     visual_sfx: bool = True  # SFX discretos em ~1/3 das inserções
@@ -169,6 +171,13 @@ class CurioConfig:
                                            cfg.whisper_model)
         cfg.metrics_dir = os.environ.get("CURIO_METRICS_DIR",
                                            cfg.metrics_dir)
+        research = data.get("research", {}) if isinstance(data.get("research"), dict) else {}
+        cfg.research_max_sources = max(1, int(research.get("max_sources", cfg.research_max_sources)))
+        cfg.research_timeout = max(5, int(research.get("timeout", cfg.research_timeout)))
+        if os.environ.get("CURIO_RESEARCH_MAX_SOURCES"):
+            cfg.research_max_sources = max(1, int(os.environ["CURIO_RESEARCH_MAX_SOURCES"]))
+        if os.environ.get("CURIO_RESEARCH_TIMEOUT"):
+            cfg.research_timeout = max(5, int(os.environ["CURIO_RESEARCH_TIMEOUT"]))
         vis = data.get("visual", {}) if isinstance(data.get("visual"), dict) else {}
         cfg.visual_max_images = int(vis.get("max_images", cfg.visual_max_images))
         cfg.visual_overlap = float(vis.get("overlap", cfg.visual_overlap))

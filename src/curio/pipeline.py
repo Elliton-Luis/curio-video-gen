@@ -21,11 +21,12 @@ from datetime import datetime, timezone
 from . import ffmpeg as ff
 from .config import CurioConfig
 from .media import download_asset, get_providers
-from .media.providers import MediaAsset, MediaError
+from .media.providers import MediaAsset, MediaError, classify_rights
 from .metrics import RunMetrics, backfill_from_metadata
 from .slug import slugify, slugify_with_timestamp
 from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage
+from .stages import research as research_stage
 from .stages import scenes as scenes_stage
 from .stages import script as script_stage
 from .stages import subs as subs_stage
@@ -51,6 +52,7 @@ class VideoPaths:
     sources_json: str
     narration_wav: str
     words_json: str
+    research_json: str
     timeline_json: str
     visual_json: str
     subs_srt: str
@@ -75,6 +77,7 @@ def video_paths(out_dir: str, slug: str) -> VideoPaths:
         sources_json=os.path.join(root, "sources", "sources.json"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         words_json=os.path.join(root, "audio", "words.json"),
+        research_json=os.path.join(root, "sources", "research.json"),
         timeline_json=os.path.join(root, "timeline", "timeline.json"),
         visual_json=os.path.join(root, "timeline", "visual_timeline.json"),
         subs_srt=os.path.join(root, "subtitles", "subs.srt"),
@@ -462,6 +465,34 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     sources = sources_stage.SourceRegistry.load(paths.sources_json)
     sources.slug = slug
 
+    # [0/6] Pesquisa web (RAG): todo texto exige ≥1 fonte real.
+    # Roda antes de qualquer roteiro — inclusive roteiro-pronto (as fontes
+    # vão p/ o registry mesmo sem alterar o texto do usuário). Falha
+    # explícita se nada for encontrado: nunca roteiro "só IA".
+    t0 = time.monotonic()
+    emit(0, "Pesquisando fontes")
+    research_sources = research_stage.research_topic(
+        idea, cfg.language, max_sources=cfg.research_max_sources,
+        metrics=metrics, timeout=cfg.research_timeout)
+    research_status = ("confirmed" if len(research_sources) >= 2
+                       else "partial")
+    for rs in research_sources:
+        sources.add_claim(
+            claim=rs.title, title=rs.title, url=rs.url,
+            evidence=rs.snippet[:300], status=research_status,
+            notes=f"RAG web ({rs.origin})")
+    _write_json(paths.research_json, {
+        "idea": idea,
+        "queries": research_stage.extract_keywords(idea, cfg.language),
+        "sources": [rs.to_dict() for rs in research_sources],
+    })
+    research_pack = research_stage.format_for_prompt(research_sources,
+                                                     cfg.language)
+    print(f"Fontes: {len(research_sources)} "
+          f"({', '.join(rs.title[:40] for rs in research_sources)})")
+    stage_times["research"] = round(time.monotonic() - t0, 2)
+    emit(0, "Pesquisando fontes", "OK")
+
     # [1/6] Roteiro (modo roteiro-pronto: usa o texto verbatim, nunca gera)
     t0 = time.monotonic()
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro")
@@ -495,7 +526,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 fh.write(healed)
         script_text, script_source = healed, "cache"
     else:
-        script_text, script_source = script_stage.generate_script(idea, cfg, metrics)
+        script_text, script_source = script_stage.generate_script(
+            idea, cfg, metrics, research=research_pack)
         with open(paths.script_txt, "w", encoding="utf-8") as fh:
             fh.write(script_text)
     stage_times["script"] = round(time.monotonic() - t0, 2)
@@ -613,6 +645,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                     license_url=asset.get("license_url", ""),
                     local_path=asset.get("local_path", ""),
                     used_in=f"cena {scene['chapter_id']}",
+                    rights_status=asset.get("rights_status", "") or classify_rights(
+                        asset.get("license", ""), asset.get("provider", "")),
                     query=entry.get("query", ""),
                     scene=f"cena {scene['chapter_id']}")
     stage_times["media"] = round(time.monotonic() - t0, 2)
@@ -652,9 +686,18 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             and os.path.isfile(paths.words_json)):
         audio_duration = ff.probe_duration(paths.narration_wav)
         words = _read_json(paths.words_json)
-        tts_info = {"provider": cfg.tts_provider, "voice": cfg.tts_voice,
-                    "speed": cfg.tts_speed, "reused": True}
-    else:
+        if not tts_stage.tts_coverage_ok(words, script_text):
+            # Autocura: cache de uma síntese parcial (stream interrompido).
+            # Re-sintetiza em vez de produzir vídeo curto.
+            print(f"AVISO: narração em cache cobre só "
+                  f"{len(words or [])}/{len(script_text.split())} palavras — "
+                  "sintetizando de novo.", file=sys.stderr)
+            warnings.append("narração parcial em cache — refeita")
+            words = None
+        else:
+            tts_info = {"provider": cfg.tts_provider, "voice": cfg.tts_voice,
+                        "speed": cfg.tts_speed, "reused": True}
+    if words is None:
         res = tts_stage.synthesize(script_text, paths.narration_wav,
                                    cfg.tts_provider, cfg.tts_voice,
                                    cfg.tts_speed, cfg.duration_target,
@@ -779,9 +822,15 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "claims": len(sources.claims),
             "media": len(sources.media),
         },
+        "research": {
+            "sources": len(research_sources),
+            "status": research_status,
+            "titles": [rs.title for rs in research_sources],
+        },
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,
+            "research": paths.research_json,
             "chapters": paths.chapters_json,
             "media": paths.media_json,
             "audio": paths.narration_wav,

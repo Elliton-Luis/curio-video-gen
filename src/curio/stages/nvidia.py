@@ -115,9 +115,13 @@ SCRIPT_SYSTEM_PROMPT = (
     "personalidade, sem gíria e sem forçar humor; "
     "8) proibido introduções genéricas ('Olá pessoal, hoje vamos falar "
     "sobre...', 'Você sabia que' e equivalentes); "
-    "9) nunca invente fatos, datas, nomes ou citações para ficar interessante; "
-    "se algo for incerto ou disputado, diga com honestidade; "
-    "10) sem fontes falsas nem estudos inexistentes. "
+    "9) GROUNDING OBRIGATÓRIO: toda afirmação factual (datas, nomes, "
+    "números, definições, eventos, etimologias) deve vir das FONTES "
+    "FORNECIDAS junto ao pedido; é PROIBIDO afirmar qualquer fato ausente "
+    "das fontes; se algo for incerto ou não estiver nas fontes, diga a "
+    "incerteza com honestidade ou omita — nunca preencha com invenção; "
+    "10) sem fontes falsas nem estudos inexistentes; nunca invente fatos, "
+    "datas, nomes ou citações para ficar interessante; "
     "11) proibido tom de documentário institucional e conclusões artificiais "
     "('diante disso, podemos concluir', 'é importante ressaltar', 'vale "
     "destacar', moral da história ou resumo acadêmico); feche com a resposta "
@@ -175,9 +179,13 @@ SCRIPT_SYSTEM_PROMPT_EN = (
     "personality, no slang, no forced humor; "
     "8) no generic intros ('Hey guys, today we will talk about...', "
     "'Did you know that' and equivalents); "
-    "9) never invent facts, dates, names or quotes to sound interesting; "
-    "if something is uncertain or disputed, say so honestly; "
-    "10) no fake sources or nonexistent studies. "
+    "9) MANDATORY GROUNDING: every factual claim (dates, names, numbers, "
+    "definitions, events, etymologies) must come from the PROVIDED SOURCES; "
+    "it is FORBIDDEN to state any fact absent from the sources; if something "
+    "is uncertain or not in the sources, state the uncertainty honestly or "
+    "omit it — never fill gaps with invention; "
+    "10) no fake sources or nonexistent studies; never invent facts, "
+    "dates, names or quotes to sound interesting; "
     "11) no institutional documentary tone and no artificial conclusions; "
     "close with the answer or an observation that brings the topic closer "
     "to the viewer. "
@@ -691,7 +699,8 @@ def generate_script(idea: str, model: str,
                     metrics=None, or_model: str | None = None,
                     or_base_url: str | None = None,
                     extra: dict | None = None,
-                    language: str = "pt-BR") -> tuple[str, str]:
+                    language: str = "pt-BR",
+                    research: str | None = None) -> tuple[str, str]:
     """Gera o roteiro (chain com retries por provedor). Nunca silêncio.
 
     `max_chars=None` = Automático: duração livre, sem corte (só o teto de
@@ -730,6 +739,10 @@ def generate_script(idea: str, model: str,
         if english else
         f"Escreva o roteiro de narração para a ideia: {idea}"
     )
+    if (research or "").strip():
+        # RAG: fatos reais entram no pedido; o system prompt já proíbe
+        # afirmar qualquer fato fora deles.
+        user_prompt += "\n\n" + research.strip()
     messages = [
         {"role": "system",
          "content": system_prompt.format(duration_clause=duration_clause)},

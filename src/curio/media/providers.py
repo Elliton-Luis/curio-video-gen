@@ -41,6 +41,11 @@ class MediaAsset:
     kind: str = "image"  # image | video (vídeos: etapa futura)
     local_path: str = ""  # arquivo baixado (após o uso/download)
     used_in: str = ""  # onde entrou no vídeo (ex.: "cena 3")
+    rights_status: str = ""  # clear | verify | blocked (ver classify_rights)
+
+    def __post_init__(self) -> None:
+        if not self.rights_status:
+            self.rights_status = classify_rights(self.license, self.provider)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -52,7 +57,7 @@ class MediaAsset:
                    **{k: d.get(k, "") for k in
                       ("title", "author", "license", "license_url",
                        "source_url", "download_url", "download_fallback_url",
-                       "local_path", "used_in")},
+                       "local_path", "used_in", "rights_status")},
                    width=int(d.get("width", 0)), height=int(d.get("height", 0)),
                    size_bytes=int(d.get("size_bytes", 0)),
                    kind=str(d.get("kind", "image")))
@@ -69,6 +74,44 @@ def license_ok(license_text: str) -> bool:
     if re.search(r"\b\w*-ND\b|\bND\b|NODERIVS?|NO-?DERIV", t):
         return False
     return True
+
+
+# Licenças sabidamente livres p/ vídeo (usar, editar, queimar legenda).
+_CLEAR_LICENSE_HINTS = (
+    "DOMINIO PUBLICO", "PUBLIC DOMAIN", "CC0",
+    "CC BY", "CC BY-SA", "PIXABAY", "PEXELS", "UNSPLASH",
+    "ORIGINAL (GERADO", "MANUAL DO US",
+)
+
+
+def _norm_lic(text: str) -> str:
+    """Maiúsculas sem acento p/ comparar licenças (ex.: DOMÍNIO→DOMINIO)."""
+    import unicodedata
+    norm = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in norm if not unicodedata.combining(c)).upper()
+
+
+def classify_rights(license_text: str, provider: str = "") -> str:
+    """Classifica o risco de copyright: 'clear' | 'verify' | 'blocked'.
+
+    - blocked: ND ou "todos os direitos reservados"/© sem concessão livre
+      → nunca entra no vídeo;
+    - verify: desconhecida, vazia ou NC (não-comercial) → entra, mas é
+      sinalizada em warnings + métricas p/ conferência manual;
+    - clear: domínio público, CC-BY/SA, licenças dos bancos e arquivos
+      manuais/sintéticos (responsabilidade/origem própria).
+    """
+    t = (license_text or "").upper()
+    if (re.search(r"\b\w*-ND\b|\bND\b|NODERIVS?|NO-?DERIV", t)
+            or re.search(r"ALL RIGHTS RESERVED|TODOS OS DIREITOS RESERVADOS|©|\(C\)", t)):
+        return "blocked"
+    if str(provider or "").lower() in ("manual", "synth"):
+        return "clear"
+    if re.search(r"\b\w*-NC\b|\bNC\b", t):
+        return "verify"
+    if any(h in _norm_lic(t) for h in _CLEAR_LICENSE_HINTS):
+        return "clear"
+    return "verify"
 
 
 class MediaError(RuntimeError):

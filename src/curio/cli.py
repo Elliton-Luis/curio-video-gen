@@ -18,6 +18,7 @@ from .pipeline import (MediaStandby, finalize_project, run_pipeline,
                         run_script_pipeline, video_paths)
 from .slug import slugify, slugify_with_timestamp
 from .stages import nvidia as nvidia_stage
+from .stages import research as research_stage
 from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
 from .stages import visual as visual_stage
@@ -83,6 +84,9 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
                             narration=narration, on_progress=_progress)
     except MediaStandby as exc:
         return _standby_exit(exc)
+    except research_stage.ResearchError as exc:
+        return _fail("pesquisa", exc, "sem fonte real não há roteiro; "
+                                      "verifique a rede ou reformule a ideia.")
     except ValueError as exc:
         return _fail("roteiro", exc, "ideia vazia ou inválida.")
     except nvidia_stage.NvidiaError as exc:
@@ -113,10 +117,16 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     print(f"Duração: {meta['duration_actual']}s ({_duration_suffix(meta)}) | "
           f"TTS: {meta['tts_provider']} | render: {meta['render_encoder']} | "
           f"tempo: {meta['processing_time_seconds']}s")
+    _print_sources(meta)
     return 0
 
 
-def _final_progress(label: str, status: str) -> None:
+def _print_sources(meta: dict) -> None:
+    research = meta.get("research") or {}
+    n = int(research.get("sources") or 0)
+    titles = [t for t in (research.get("titles") or []) if t][:3]
+    extra = f" ({'; '.join(titles)})" if titles else ""
+    print(f"Fontes: {n} [{research.get('status', '?')}]" + extra)
     print(f"[finalize] {label}... {status}", flush=True)
 
 
@@ -143,6 +153,9 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
             on_progress=_progress)
     except MediaStandby as exc:
         return _standby_exit(exc)
+    except research_stage.ResearchError as exc:
+        return _fail("pesquisa", exc, "sem fonte real não há vídeo; "
+                                      "verifique a rede ou reformule o tema.")
     except ValueError as exc:
         return _fail("roteiro", exc, "roteiro vazio ou divisão inválida.")
     except nvidia_stage.NvidiaError as exc:
@@ -171,6 +184,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     print(f"Duração: {meta['duration_actual']}s ({_duration_suffix(meta)}) | "
           f"TTS: {meta['tts_provider']} | render: {meta['render_encoder']} | "
           f"tempo: {meta['processing_time_seconds']}s")
+    _print_sources(meta)
     return 0
 
 

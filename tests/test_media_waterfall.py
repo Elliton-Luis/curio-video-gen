@@ -15,7 +15,8 @@ def _ch(queries=(), narration="Texto da cena.", cid=1, glob=()):
 
 
 def _asset(provider="pixabay", aid="1", title="water glass laboratory",
-           url="https://cdn.x/photo.jpg", w=1920, h=1280, lic="ok"):
+           url="https://cdn.x/photo.jpg", w=1920, h=1280,
+           lic="CC BY-SA 4.0"):
     return MediaAsset(provider=provider, asset_id=aid, title=title,
                       download_url=url, width=w, height=h, license=lic)
 

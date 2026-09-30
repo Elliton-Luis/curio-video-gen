@@ -43,6 +43,7 @@ from ..media.providers import (
     MediaAsset,
     MediaError,
     MediaProvider,
+    classify_rights,
     license_ok,
 )
 from . import scenes as scenes_stage
@@ -182,6 +183,9 @@ def _validate_asset(asset: MediaAsset) -> bool:
         return False
     if not license_ok(asset.license or ""):
         return False
+    if classify_rights(asset.license or "",
+                       getattr(asset, "provider", "")) == "blocked":
+        return False  # ex.: "todos os direitos reservados"
     if asset.width > 0 and asset.height > 0:
         if min(asset.width, asset.height) < MIN_DIMENSION:
             return False
@@ -565,6 +569,16 @@ def _search_scene_with_shortcircuit(
                     if norm_title:
                         picked_titles.add(norm_title)
                     cached.used_in = f"cena {ch.id}"
+                    if not cached.rights_status:
+                        cached.rights_status = classify_rights(
+                            cached.license or "", cached.provider)
+                    if cached.rights_status == "verify":
+                        if metrics:
+                            metrics.media_record_rights("verify")
+                        msg = (f"cena {ch.id}: licença a conferir manualmente "
+                               f"({cached.provider}: {cached.license or 'desconhecida'})")
+                        warnings.append(msg)
+                        print(f"AVISO: {msg}", file=sys.stderr)
                     picked.append({
                         "asset": cached.to_dict(),
                         "query": query,
@@ -627,8 +641,18 @@ def _search_scene_with_shortcircuit(
                         metrics.media_record_asset_rejected()
                     continue
 
-                # Sucesso! Marca onde entrou e salva no cache de query
+                # Sucesso! Marca onde entrou, carimba copyright e salva.
                 asset.used_in = f"cena {ch.id}"
+                asset.rights_status = classify_rights(
+                    asset.license or "", asset.provider)
+                if asset.rights_status == "verify":
+                    if metrics:
+                        metrics.media_record_rights("verify")
+                    msg = (f"cena {ch.id}: licença a conferir manualmente "
+                           f"({asset.provider}: {asset.license or 'desconhecida'}) — "
+                           f"{asset.license_url or asset.source_url or 'sem link'}")
+                    warnings.append(msg)
+                    print(f"AVISO: {msg}", file=sys.stderr)
                 _save_to_cache(cache_dir, query, asset)
                 
                 picked_ids.add(cand.asset_id)

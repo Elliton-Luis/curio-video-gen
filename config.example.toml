@@ -65,3 +65,7 @@ auto_open = true  # false desliga; sem sessão gráfica nunca abre
 
 [transcribe]
 model = "base"  # faster-whisper local (tiny|base|small|medium)
+
+[research]
+max_sources = 3  # fontes web exigidas p/ grounding (≥1; CURIO_RESEARCH_MAX_SOURCES)
+timeout = 20  # teto por chamada da Wikipedia em segundos (CURIO_RESEARCH_TIMEOUT)

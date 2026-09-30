@@ -168,3 +168,41 @@ def test_asset_roundtrip_com_novos_campos():
     # dicts antigos (sem os campos) continuam lendo
     c = P.MediaAsset.from_dict({"provider": "x", "asset_id": "y"})
     assert c.license_url == "" and c.used_in == ""
+
+
+def test_classify_rights():
+    C = P.classify_rights
+    # bloqueadas: ND em qualquer forma + todos os direitos reservados
+    assert C("CC BY-ND 4.0") == "blocked"
+    assert C("CC BY-NC-ND 2.0") == "blocked"
+    assert C("Licença com NoDerivatives") == "blocked"
+    assert C("Todos os direitos reservados") == "blocked"
+    assert C("© 2024 Fulano") == "blocked"
+    # livres: domínio público, CC-BY/SA, bancos, manual, sintético
+    assert C("Domínio público (NASA)") == "clear"
+    assert C("Public Domain") == "clear"
+    assert C("CC0") == "clear"
+    assert C("CC BY-SA 4.0") == "clear"
+    assert C("Licença Pixabay (uso livre)", "pixabay") == "clear"
+    assert C("Licença Pexels (uso livre)", "pexels") == "clear"
+    assert C("Licença Unsplash (uso livre)", "unsplash") == "clear"
+    assert C("manual do usuário", "manual") == "clear"
+    assert C("Original (gerado por código)", "synth") == "clear"
+    # verificar: NC, desconhecida, vazia
+    assert C("CC BY-NC 4.0") == "verify"
+    assert C("ver licença na source_url") == "verify"
+    assert C("") == "verify"
+
+
+def test_asset_carimba_rights_no_post_init():
+    a = P.MediaAsset(provider="openverse", asset_id="1",
+                     license="CC BY-NC 2.0")
+    assert a.rights_status == "verify"
+    b = P.MediaAsset(provider="wikimedia", asset_id="2",
+                     license="CC BY-SA 4.0")
+    assert b.rights_status == "clear"
+    c = P.MediaAsset.from_dict({"provider": "x", "asset_id": "y"})
+    assert c.rights_status == "verify"  # licença vazia → conferir
+    d = P.MediaAsset.from_dict({"provider": "x", "asset_id": "y",
+                                "rights_status": "clear"})
+    assert d.rights_status == "clear"  # valor salvo é preservado

@@ -11,11 +11,19 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 from .. import ffmpeg as ff
 
 DEFAULT_EDGE_VOICE = "pt-BR-AntonioNeural"  # masculina, PT-BR
+
+# Cobertura mínima exigida: fração das palavras do roteiro com timestamps.
+# Divergências legítimas (tokenização edge vs split) ficam <1%; síntese
+# parcial interrompida cai para ~15% — o gate separa os dois regimes.
+TTS_MIN_COVERAGE = 0.90
+# Tentativas da voz neural antes do fallback local (causa é transitória).
+TTS_EDGE_ATTEMPTS = 3
 
 # NOTA: pausas SSML (<break>) foram avaliadas e descartadas — com entrada
 # SSML o Edge retorna boundaries dos TOKENS DO MARKUP (speak, voice, break…),
@@ -53,6 +61,33 @@ def available_providers() -> list[str]:
 def _estimate_wpm(text: str, duration: float) -> int:
     words = len(text.split())
     return round(words / max(duration, 0.1) * 60)
+
+
+def tts_coverage_ok(words: list[dict] | None, text: str) -> bool:
+    """Os timestamps cobrem o roteiro? (gate pós-síntese e do cache).
+
+    Síntese parcial (stream interrompido) retorna fração pequena das
+    palavras sem erro — sem este gate o pipeline produziria um vídeo
+    curto em silêncio parcial.
+    """
+    expected = len((text or "").split())
+    if expected <= 0 or not words:
+        return False
+    return len(words) / expected >= TTS_MIN_COVERAGE
+
+
+def _check_edge_result(words: list[dict], duration: float,
+                       text: str, voice: str) -> None:
+    """Valida síntese edge-tts completa; levanta TTSError se parcial."""
+    if not tts_coverage_ok(words, text):
+        raise TTSError(
+            f"edge-tts retornou narração parcial (voz={voice!r}): "
+            f"{len(words or [])}/{len(text.split())} palavras — "
+            "o serviço interrompeu o stream.")
+    if words and duration < words[-1]["end"] - 2.0:
+        raise TTSError(
+            f"edge-tts retornou áudio inconsistente (voz={voice!r}): "
+            f"áudio {duration:.1f}s < última palavra {words[-1]['end']:.1f}s.")
 
 
 def _synth_edge(text: str, wav_path: str, voice: str, rate: str,
@@ -157,8 +192,21 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
 
     if want_edge:
         try:
-            return _synthesize_edge(text, wav_path, voice, target_duration,
-                                    words_path, metrics)
+            last_err: Exception | None = None
+            for attempt in range(1, TTS_EDGE_ATTEMPTS + 1):
+                try:
+                    return _synthesize_edge(text, wav_path, voice,
+                                            target_duration, words_path,
+                                            metrics)
+                except TTSError as exc:
+                    last_err = exc
+                    if attempt < TTS_EDGE_ATTEMPTS:
+                        print(f"AVISO: {exc} "
+                              f"Tentativa {attempt}/{TTS_EDGE_ATTEMPTS}…",
+                              file=sys.stderr)
+                        time.sleep(2 * attempt)
+            assert last_err is not None
+            raise last_err
         except TTSError as exc:
             if shutil.which("espeak-ng") is None:
                 raise TTSError(
@@ -180,6 +228,8 @@ def _synthesize_edge(text: str, wav_path: str, voice: str,
     # Velocidade 1.25x: áudio mais rápido, vídeo acompanha automaticamente.
     words = _synth_edge(text, wav_path, voice, "+25%", words_path, metrics)
     duration = ff.probe_duration(wav_path)
+    # Gate anti-corte: stream parcial não pode virar vídeo curto em silêncio.
+    _check_edge_result(words, duration, text, voice)
 
     return TTSResult(path=wav_path, duration=duration, provider="edge-tts",
                      voice=voice, speed=_estimate_wpm(text, duration),
