@@ -9,6 +9,15 @@ out_dir = "output"
 queues_dir = "queues"  # pasta padrão das filas de ideias (CURIO_QUEUES_DIR)
 language = "pt-BR"  # pt-BR ou en-US (100% em inglês: roteiro, título, voz e legendas)
 
+# Gênero editorial. VAZIO = nenhum gênero, e o vídeo sai exatamente como
+# antes do recurso. Escolher um gênero muda o pipeline de verdade: ritmo
+# (segundos por cena), estrutura do roteiro, estratégia de pesquisa,
+# vocabulário visual da cena, medium preferido e densidade das legendas.
+# Chaves: history | etymology | mythology | mystery | science | people
+# A TUI oferece o seletor visual (← →, Enter). O env sobrescreve:
+# CURIO_GENRE=people
+genre = ""
+
 [tts]
 provider = "edge-tts"   # edge-tts (neural, grátis, sem login) | espeak-ng (local offline)
 voice = "pt-BR-AntonioNeural"  # masculina PT-BR; espeak-ng usa "pt-br"

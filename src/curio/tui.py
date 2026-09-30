@@ -93,7 +93,13 @@ def _interactive_supported() -> bool:
 
 
 def _read_key() -> str:
-    """Lê uma tecla: 'up', 'down', 'enter', 'esc', 'q' ou o caractere."""
+    """Lê uma tecla: 'up', 'down', 'left', 'right', 'enter', 'esc', 'q' ou o
+    caractere.
+
+    As setas laterais (C/D) são lidas porque o seletor de gênero é
+    horizontal; sem elas, ← → chegariam como bytes de escape soltos e o
+    menu saltaria para o topo em vez de percorrer as categorias.
+    """
     import tty
     import termios
     fd = sys.stdin.fileno()
@@ -107,6 +113,10 @@ def _read_key() -> str:
                 return "up"
             if seq == "[B":
                 return "down"
+            if seq == "[C":
+                return "right"
+            if seq == "[D":
+                return "left"
             return "esc"
         if ch in ("\r", "\n"):
             return "enter"
@@ -149,6 +159,141 @@ def _render_menu(c: dict[str, str], title: str, options: list[str],
     print(f"{c['dim']}│{c['reset']} {c['dim']}{footer}{c['reset']}"
           f"{' ' * max(1, width - len(footer) - 1)}{c['dim']}│{c['reset']}")
     print(f"{c['dim']}╰{'─' * width}╯{c['reset']}")
+
+
+def select_horizontal(c: dict[str, str], title: str, options: list[tuple[str, str]],
+                      selected: int = 0, hint: str = "") -> int | None:
+    """Seletor LATERAL: ← → percorrem, Enter confirma, Esc volta.
+
+    Mesmo esqueleto de `select_option` (caixa, banner, `_read_key`,
+    `_clear`), porque um seletor com cara diferente seria um segundo
+    componente para manter. A diferença é a navegação horizontal e a
+    descrição da categoria selecionada aparecer abaixo quando há espaço —
+    o que importa aqui é o autor entender o que cada gênero FAZ antes de
+    escolher, não só o nome dele.
+
+    `options` é [(chave, rótulo)]; devolve o índice.
+    """
+    from .stages import editorial
+    if not options:
+        return None
+    if not _interactive_supported():
+        _clear()
+        _banner(c)
+        print(f"\n{c['bold']}{title}{c['reset']}")
+        for i, (_k, label) in enumerate(options, 1):
+            desc = editorial.get(_k).description if editorial.get(_k) else ""
+            print(f"  {c['bold']}{i}){c['reset']} {label}")
+            if desc:
+                print(f"     {c['dim']}{desc[:96]}{c['reset']}")
+        raw = _ask(f"\n{c['bold']}Escolha [1-{len(options)}] (0 volta):"
+                   f"{c['reset']} ").strip()
+        if raw in ("0", "q", "Q", ""):
+            return None
+        try:
+            idx = int(raw) - 1
+        except ValueError:
+            return None
+        return idx if 0 <= idx < len(options) else None
+
+    sel = max(0, min(selected, len(options) - 1))
+    while True:
+        _clear()
+        width = 74
+        print(f"{c['dim']}╭{'─' * width}╮{c['reset']}")
+        print(f"{c['dim']}│{c['reset']} {c['bold']}{c['cyan']}CURIO"
+              f"{c['reset']}{' ' * (width - 7)}{c['dim']}│{c['reset']}")
+        if title:
+            print(f"{c['dim']}│{c['reset']} {c['bold']}{title}{c['reset']}"
+                  f"{' ' * max(1, width - len(title) - 1)}"
+                  f"{c['dim']}│{c['reset']}")
+        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+
+        # Uma faixa horizontal. Em terminal estreito ela encolhe para o que
+        # couber, com as setas indicando que há mais para os lados.
+        atual, _i = options[sel]
+        segmentos, visivel = [], 0
+        for k, (_chave, rotulo) in enumerate(options):
+            curto = rotulo if len(rotulo) <= 18 else rotulo[:17] + "…"
+            if k == sel:
+                segmentos.append(f" {c['bold']}{c['yellow']}▌{curto}▐{c['reset']} ")
+            else:
+                segmentos.append(f" {c['dim']}{curto}{c['reset']} ")
+        # Reserva a largura útil e descarta o que não couber, mantendo o
+        # selecionado visível: a faixa é navegável, tem que estar lá.
+        esq = "◀" if sel > 0 else " "
+        dir_ = "▶" if sel < len(options) - 1 else " "
+        branco = width - 6
+        if sum(len(s) for s in segmentos) > branco:
+            inicio = 0
+            while (sum(len(s) for s in segmentos[inicio:inicio + 1]) == 0
+                   or sum(len(s) for s in segmentos[inicio:]) > branco):
+                inicio += 1
+                if inicio >= sel:
+                    break
+            segmentos = segmentos[inicio:]
+        while sum(len(s) for s in segmentos) > branco and len(segmentos) > 1:
+            segmentos.pop()
+        faixa = "".join(segmentos)
+        print(f"{c['dim']}│{c['reset']} {esq} {faixa} {dir_}"
+              f"{c['dim']}{' ' * max(1, branco - len(faixa))}│{c['reset']}")
+
+        perfil = editorial.get(atual)
+        if perfil is not None:
+            print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+            for ln in _wrap_text(perfil.description, width - 4):
+                print(f"{c['dim']}│{c['reset']}   {c['dim']}{ln}{c['reset']}"
+                      f"{' ' * max(1, width - 3 - len(ln))}{c['dim']}│{c['reset']}")
+            p = perfil.pacing
+            resumo = (f"ritmo {p.target_scene_seconds:g}s/cena · "
+                      f"densidade {p.information_density} · "
+                      f"legenda {p.caption_max_words} palavras")
+            print(f"{c['dim']}│{c['reset']}   {c['cyan']}{resumo[:width - 4]}"
+                  f"{c['reset']}{' ' * max(1, width - 3 - len(resumo))}"
+                  f"{c['dim']}│{c['reset']}")
+        if hint:
+            print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+            print(f"{c['dim']}│{c['reset']} {c['dim']}{hint[:width - 2]}"
+                  f"{c['reset']}{' ' * max(1, width - 1 - len(hint))}"
+                  f"{c['dim']}│{c['reset']}")
+        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+        rodape = "← → selecionar   Enter confirmar   Esc voltar"
+        print(f"{c['dim']}│{c['reset']} {c['dim']}{rodape}{c['reset']}"
+              f"{' ' * max(1, width - len(rodape) - 1)}{c['dim']}│{c['reset']}")
+        print(f"{c['dim']}╰{'─' * width}╯{c['reset']}")
+
+        try:
+            key = _read_key()
+        except _TUIExit:
+            raise
+        except Exception:
+            return None
+        if key == "right" or key == "l":
+            sel = (sel + 1) % len(options)
+        elif key == "left" or key == "h":
+            sel = (sel - 1) % len(options)
+        elif key == "down" or key == "j":
+            sel = (sel + 1) % len(options)
+        elif key == "up" or key == "k":
+            sel = (sel - 1) % len(options)
+        elif key == "enter":
+            return sel
+        elif key in ("q", "Q", "esc"):
+            return None
+
+
+def _wrap_text(text: str, width: int) -> list[str]:
+    """Quebra em linhas que cabem (a caixa do seletor é de largura fixa)."""
+    linhas, atual = [], ""
+    for palavra in str(text or "").split():
+        if len(atual) + len(palavra) + 1 > width and atual:
+            linhas.append(atual)
+            atual = palavra
+        else:
+            atual = f"{atual} {palavra}".strip()
+    if atual:
+        linhas.append(atual)
+    return linhas
 
 
 def select_option(c: dict[str, str], title: str, options: list[str],
@@ -400,6 +545,7 @@ def _show_current_config(c: dict[str, str], cfg: CurioConfig) -> None:
     print(f"  Overlap visual: {cfg.visual_overlap}")
     print(f"  SFX visual: {cfg.visual_sfx}")
     print(f"  Whisper: {cfg.whisper_model}")
+    _show_genre(c, cfg)
 
 
 def _provider_menu(c: dict[str, str], cfg: CurioConfig, providers: tuple[str, ...],
@@ -471,9 +617,10 @@ def _config_flow(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
              "TTS (provider/voz/speed)",
              "Render (backend/encoder)",
              "Visual (inserções/max_images/overlap/SFX)",
+             "Gênero editorial (padrão de vídeo)",
              "Voltar"],
             status=_status_summary(cfg))
-        if idx is None or idx == 10:
+        if idx is None or idx == 11:
             return cfg
         if idx == 0:
             cfg = _ask_language(c, cfg)
@@ -495,6 +642,8 @@ def _config_flow(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
             cfg = _ask_render(c, cfg)
         elif idx == 9:
             cfg = _ask_visual(c, cfg)
+        elif idx == 10:
+            cfg = _ask_genre(c, cfg)
         _pause(c)
     return cfg
 
@@ -963,11 +1112,45 @@ def _help_flow(c: dict[str, str]) -> None:
 
 # ------------------------------------------------------- fluxo A (IA)
 
+def _ask_genre(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
+    """Seletor de gênero editorial, com setas ← →.
+
+    Fica antes da ideia, e não depois: o gênero muda a pesquisa, então
+    perguntar o tema primeiro levaria o usuário a escrever o tema pensando
+    no formato errado.
+    """
+    from .stages import editorial
+    opcoes = editorial.choices()
+    atual = cfg.genre
+    inicial = next((i for i, (k, _l) in enumerate(opcoes) if k == atual), 0)
+    idx = select_horizontal(
+        c, "GÊNERO DO VÍDEO", opcoes, selected=inicial,
+        hint="Cada gênero é um formato editorial: ritmo, estrutura, "
+             "pesquisa e visual próprios.")
+    if idx is None:
+        return cfg
+    return dataclasses.replace(cfg, genre=opcoes[idx][0])
+
+
+def _show_genre(c: dict[str, str], cfg: CurioConfig) -> None:
+    from .stages import editorial
+    perfil = editorial.get(cfg.genre)
+    if perfil is None:
+        print(f"  Gênero: {c['dim']}(padrão — sem gênero){c['reset']}")
+        return
+    p = perfil.pacing
+    print(f"  Gênero: {c['bold']}{perfil.label}{c['reset']}")
+    print(f"    ritmo {p.target_scene_seconds:g}s/cena · "
+          f"densidade {p.information_density} · "
+          f"legenda {p.caption_max_words} palavras")
+
+
 def _ai_flow(c: dict[str, str], cfg: CurioConfig,
              idea: str | None = None, slug: str | None = None,
              force: bool = False) -> None:
     print(f"\n{c['bold']}VÍDEO PRONTO — voz de IA, você sai com o MP4 final.{c['reset']}")
     if idea is None:
+        cfg = _ask_genre(c, cfg)
         lang_idx = select_option(
             c, "Idioma do vídeo",
             ["Português (PT-BR)", "English (EN-US) — 100% in English"],
@@ -982,7 +1165,8 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
             print("Ideia vazia — voltando ao menu.")
             return
         slug = slugify(idea)
-        print(f"Pasta do projeto: {cfg.out_dir}/{slug}/   idioma: {cfg.language}")
+        print(f"Pasta do projeto: {cfg.out_dir}/{slug}/   "
+              f"idioma: {cfg.language}   gênero: {cfg.genre or 'padrão'}")
         cfg = _ask_duration(c, cfg)
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
     try:
