@@ -1107,6 +1107,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         # `sem_visual` é a única métrica que é problema: diagrama e cartão
         # contam como visual, não como falha.
         "visual_report": metrics.media_visual_report(len(chapters)),
+        # Por provedor: candidatos achados × downloads tentados ×
+        # 403. Responde a pergunta que o log de "download falhou" deixava
+        # em aberto — o provedor está vazio ou está baixando mal?
+        "provider_downloads": metrics.media_download_report(),
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,

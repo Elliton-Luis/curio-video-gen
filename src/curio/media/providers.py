@@ -578,23 +578,75 @@ PROVIDERS: dict[str, type[MediaProvider]] = {
 }
 
 
+# Provedores que já se provaram indisponíveis NESTA execução, com o
+# motivo. É memória de processo, e é proposital: a indisponibilidade por
+# configuração — chave ausente, nome errado — não muda entre a cena 1 e a
+# cena 12, e a segunda tentativa é a mesma tentativa.
+#
+# Antes, `get_providers` era chamado por cena e cada uma imprimia
+# "AVISO: pexels: sem PEXELS_API_KEY — provedor ignorado". Doze cenas,
+# doze avisos, e o décimo segundo aviso deixa de ser aviso: vira ruído que o
+# ouvido aprende a ignorar, e um dia um aviso real passa junto sem ninguém
+# ver.
+_UNAVAILABLE: dict[str, str] = {}
+
+
+def reset_provider_health() -> None:
+    """Esquece o que foi dado como indisponível.
+
+    Só para teste e para `doctor`: mudar o ambiente no meio do processo
+    tem de fazer o curio olhar de novo, senão a memória de "indisponível"
+    vira uma mentira permanente — a mesma armadilha do cache de fontes.
+    """
+    _UNAVAILABLE.clear()
+
+
 def get_providers(cfg) -> list[MediaProvider]:
-    """Instancia os provedores configurados. Desconhecidos/sem chave: aviso."""
+    """Instancia os provedores configurados. Desconhecidos/sem chave: aviso.
+
+    A ordem de prioridade e o fallback ficam exatamente como estavam: um
+    provedor indisponível simplesmente não entra na lista, e a cascata
+    segue para o próximo. O que muda é o aviso, que sai uma vez por
+    execução em vez de uma vez por cena, e a instanciação inútil, que
+    deixa de repetir.
+    """
     wanted = [p.strip().lower() for p in cfg.media_providers.split(",") if p.strip()]
     if "none" in wanted:
         return []
     found = []
     for name in wanted:
+        if name in _UNAVAILABLE:
+            continue
         cls = PROVIDERS.get(name)
         if cls is None:
-            print(f"AVISO: provedor de mídia {name!r} desconhecido — ignorado.",
-                  file=sys.stderr)
+            _UNAVAILABLE[name] = "nome desconhecido"
+            print(f"AVISO: provedor de mídia {name!r} desconhecido — "
+                  f"ignorado.", file=sys.stderr)
             continue
         try:
             found.append(cls())
         except MediaError as exc:
-            print(f"AVISO: {exc} — provedor ignorado.", file=sys.stderr)
+            _UNAVAILABLE[name] = str(exc)
+            # A mensagem vai na forma que o autor reconhece: o nome do
+            # provedor em vez de uma exceção que já embute o nome, e o que
+            # fazer a respeito em vez de só "ignorado".
+            _print_unavailable_once(name, str(exc))
     return found
+
+
+def _print_unavailable_once(name: str, motivo: str) -> None:
+    """Uma vez por execução, e em português de quem vai configurar."""
+    m = str(motivo or "").lower()
+    if "api_key" in m or "sem " in m and "chave" in m:
+        env = {"pexels": "PEXELS_API_KEY", "pixabay": "PIXABAY_API_KEY",
+               "openverse": "OPENVERSE_API_KEY"}.get(name, "")
+        dica = f" — defina {env} no .env" if env else ""
+        print(f"AVISO: {name} ignorado nesta execução: falta a chave de "
+              f"API{dica}. As demais fontes continuam em uso.",
+              file=sys.stderr)
+    else:
+        print(f"AVISO: {name} ignorado nesta execução: {motivo}. "
+              f"As demais fontes continuam em uso.", file=sys.stderr)
 
 
 def check_connectivity() -> bool:

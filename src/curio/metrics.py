@@ -51,6 +51,17 @@ class RunMetrics:
         self.media_requests_per_provider: dict[str, int] = {}
         self.media_time_per_request: dict[str, list[float]] = {}
         self.media_results_received: dict[str, int] = {}
+        # Diagnóstico POR PROVEDOR do download. A pergunta que a execução
+        # de São Jerônimo deixou em aberto era "o Pixabay está quebrado,
+        # ou está achando candidato e falhando no download?", e as duas
+        # coisas produzem a mesma linha de log — "download falhou
+        # (HTTP 403)" — várias vezes. Só de contar as duas separadas dá
+        # para saber qual é.
+        self.media_download_attempted: dict[str, int] = {}
+        self.media_download_succeeded: dict[str, int] = {}
+        self.media_download_failed: dict[str, int] = {}
+        self.media_download_http_403: dict[str, int] = {}
+        self.media_download_other_error: dict[str, int] = {}
         self.media_cache_misses = 0
         self.media_assets_rejected = 0
         self.media_assets_reused = 0
@@ -109,6 +120,52 @@ class RunMetrics:
 
     def media_record_results(self, provider: str, count: int) -> None:
         self.media_results_received[provider] = self.media_results_received.get(provider, 0) + count
+
+    def media_download_started(self, provider: str) -> None:
+        self.media_download_attempted[provider] = (
+            self.media_download_attempted.get(provider, 0) + 1)
+
+    def media_download_ok(self, provider: str) -> None:
+        self.media_download_succeeded[provider] = (
+            self.media_download_succeeded.get(provider, 0) + 1)
+
+    def media_download_error(self, provider: str, exc: BaseException
+                             ) -> None:
+        """Conta a falha e separa o 403, que é um caso próprio.
+
+        403 do Pixabay costuma ser a URL de download exigindo requisição
+        diferente, ou o hotlink bloqueado — não é o provedor fora do ar
+        nem a chave inválida. Tratar "403" como "erro qualquer" esconde a
+        diferença entre "está Achando bom e baixando mal" e "não acha
+        nada", que são correções opostas.
+        """
+        self.media_download_failed[provider] = (
+            self.media_download_failed.get(provider, 0) + 1)
+        alvo = self.media_download_http_403
+        for parte in str(exc).split():
+            if "403" in parte:
+                alvo[provider] = alvo.get(provider, 0) + 1
+                return
+        self.media_download_other_error[provider] = (
+            self.media_download_other_error.get(provider, 0) + 1)
+
+    def media_download_report(self) -> dict:
+        """O resumo por provedor que responde "está quebrado ou vazio?"."""
+        nomes = set(self.media_download_attempted) | \
+            set(self.media_download_failed) | set(self.media_results_received)
+        out = {}
+        for nome in sorted(nomes):
+            tentados = self.media_download_attempted.get(nome, 0)
+            ok = self.media_download_succeeded.get(nome, 0)
+            out[nome] = {
+                "candidates_found": self.media_results_received.get(nome, 0),
+                "downloads_attempted": tentados,
+                "downloads_succeeded": ok,
+                "downloads_failed": self.media_download_failed.get(nome, 0),
+                "http_403": self.media_download_http_403.get(nome, 0),
+                "other_errors": self.media_download_other_error.get(nome, 0),
+            }
+        return out
 
     def media_record_timeout(self) -> None:
         self.media_timeouts += 1

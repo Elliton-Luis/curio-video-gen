@@ -58,18 +58,33 @@ def download_asset(asset: MediaAsset, cache_dir: str,
             metrics.media_download(0, True)
         return asset  # cache: zero downloads repetidos
     try:
+        if metrics is not None:
+            metrics.media_download_started(asset.provider)
         data = _fetch(asset.download_url)
     except Exception as first_exc:
+        if metrics is not None:
+            metrics.media_download_error(asset.provider, first_exc)
         if not asset.download_fallback_url:
             raise MediaError(
                 f"{asset.provider}: download falhou ({asset.asset_id}): {first_exc}"
             ) from first_exc
         try:
+            if metrics is not None:
+                metrics.media_download_started(asset.provider)
             data = _fetch(asset.download_fallback_url)
         except Exception as exc:
+            if metrics is not None:
+                metrics.media_download_error(asset.provider, exc)
             raise MediaError(
                 f"{asset.provider}: download falhou ({asset.asset_id}): {exc}"
             ) from exc
+    # O sucesso é contado AQUI, depois da cadeia inteira, e não no `else`
+    # do primeiro try: quando a URL primária falha e a de reserva funciona,
+    # os bytes chegam pelo `except`, e um `else` ali nunca rodaria. O
+    # resultado é uma tentativa que funcionou depois de uma falha contada
+    # como uma falha e um sucesso, que é o que aconteceu.
+    if metrics is not None:
+        metrics.media_download_ok(asset.provider)
     with open(dest, "wb") as fh:
         fh.write(data)
     if metrics is not None:
