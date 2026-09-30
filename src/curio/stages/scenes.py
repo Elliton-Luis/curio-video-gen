@@ -80,7 +80,8 @@ SCENES_SYSTEM_PROMPT = (
     "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
     '{{"scenes": [{{"index": 1, "narration": "...", "subject": "...", '
     '"visual_type": "literal", "visual_search_terms": ["..."], '
-    '"visual_entities": ["..."], "context": ["..."], "forbidden": ["..."]}}]}}. '
+    '"visual_entities": ["..."], "context": ["..."], "forbidden": ["..."], '
+    '"text_role": "", "text_language": ""}}]}}. '
     "Rules: "
     "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
     "or summarizing — the joined narrations must reproduce the script exactly; "
@@ -122,7 +123,17 @@ SCENES_SYSTEM_PROMPT = (
     "\"power plant\", \"steam\", \"wallpaper\", \"heat wave\"; for a saint, "
     "\"modern photography\", \"statue of liberty\"; never leave it empty when the "
     "topic has an ambiguous word. "
-    "10) Split into {n} scenes (between {lo} and {hi}). "
+    "10) text_role - the FUNCTION of the words shown on screen, never a font "
+    "name. Use it only when the scene shows somebody else's words or a "
+    "written record, and leave it empty otherwise. One of: \"quote\" (a phrase "
+    "attributed to someone), \"document\" (a text, inscription or "
+    "transcription being read), \"latin\" (a sentence in Latin), "
+    "\"person\" (the name of the person the video is about), \"date\", "
+    "\"location\", \"term\" (the word being explained), \"title\". "
+    "Set text_language to \"la\" when the quoted words are in Latin. "
+    "NEVER write a font name here: the genre decides the typeface for each "
+    "role, and a font name in the scene would break that; "
+    "11) Split into {n} scenes (between {lo} and {hi}). "
     "IMPORTANT: visual_search_terms in English only, concrete, always carrying "
     "the topic context. No verbs, no abstract concepts."
 )
@@ -132,7 +143,8 @@ SCENES_SYSTEM_PROMPT_EN = (
     "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
     '{{"scenes": [{{"index": 1, "narration": "...", "subject": "...", '
     '"visual_type": "literal", "visual_search_terms": ["..."], '
-    '"visual_entities": ["..."], "context": ["..."], "forbidden": ["..."]}}]}}. '
+    '"visual_entities": ["..."], "context": ["..."], "forbidden": ["..."], '
+    '"text_role": "", "text_language": ""}}]}}. '
     "Rules: "
     "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
     "or summarizing — the joined narrations must reproduce the script exactly; "
@@ -167,7 +179,17 @@ SCENES_SYSTEM_PROMPT_EN = (
     "9) forbidden: 2 to 5 words that would be a WRONG visual for this scene - "
     "the traps of this specific topic. Use it whenever a word of the topic has "
     "another common meaning; never leave it empty when the topic is ambiguous. "
-    "10) Split into {n} scenes (between {lo} and {hi}). "
+    "10) text_role - the FUNCTION of the words shown on screen, never a font "
+    "name. Use it only when the scene shows somebody else's words or a "
+    "written record, and leave it empty otherwise. One of: \"quote\" (a phrase "
+    "attributed to someone), \"document\" (a text, inscription or "
+    "transcription being read), \"latin\" (a sentence in Latin), "
+    "\"person\" (the name of the person the video is about), \"date\", "
+    "\"location\", \"term\" (the word being explained), \"title\". "
+    "Set text_language to \"la\" when the quoted words are in Latin. "
+    "NEVER write a font name here: the genre decides the typeface for each "
+    "role, and a font name in the scene would break that; "
+    "11) Split into {n} scenes (between {lo} and {hi}). "
     "IMPORTANT: visual_search_terms in English only, concrete, always carrying "
     "the topic context. No verbs, no abstract concepts."
 )
@@ -218,6 +240,79 @@ _TYPOGRAPHIC_HINTS = (
 )
 
 
+# Palavras que, juntas, indicam latim. Uma sozinha não prova nada — "et"
+# aparece em português em "e o et" — mas um conjunto delas numa frase curta
+# é a assinatura da língua. A direção de arte pede que a frase em latim
+# saia em itálico editorial, e sem esta detecção ela sairia na fonte da
+# narração justamente na cena que existe para contrastar com ela.
+_LATIN_HINTS = (
+    "ora et labora", "ora pro nobis", "deus", "dominus", "labora", "laborare",
+    "benedicta", "ora et", "in nomine", "ad maiorem", "gloria", "regula",
+    "pax", "in domino", "servire", "obedientia", "caritas", "humilitas",
+    "vanitas", "memento mori", "sine", "per ipsum", "ad maiora",
+    "laudetur", "benedicat", "servite", "ora pro", "in pace", "requiescat",
+    "sub lege", "sine metu", "timeo deum", "caro deo", "esto fidelis",
+)
+
+# Aspas: a cena traz uma fala de terceiro, que é voz de citação. A reta
+# entra junto porque é a que o modelo de linguagem escreve, e sem ela a
+# citação mais comum do mundo — a fala entre aspas retas — perderia o
+# papel e sairia na fonte da narração.
+_QUOTE_MARKS = ("“", "”", "«", "»", "„", '"', "\u201c")
+
+
+def looks_latin(text: str) -> bool:
+    """A frase é latim? Heurística deliberadamente conservadora."""
+    t = " ".join(str(text or "").lower().split())
+    if not t:
+        return False
+    if any(h in t for h in _LATIN_HINTS):
+        return True
+    # Três ou mais palavras de função latinas numa frase curta.
+    funcoes = {"et", "in", "ad", "cum", "de", "ex", "non", "est", "sunt",
+               "ut", "qui", "quod", "sed", "per", "pro", "cum", "deus",
+               "dominus", "ora", "labora", "domini", "enim", "ita", "sine"}
+    palavras = [p for p in t.replace(".", " ").replace(",", " ").split()
+                if p]
+    if len(palavras) > 12:
+        return False
+    return sum(1 for p in palavras if p in funcoes) >= 3
+
+
+def derive_text_role(ch) -> str:
+    """O papel tipográfico desta cena, quando ela não declarou nenhum.
+
+    Só existe por retrocompatibilidade e por prudência: um
+    `chapters.json` anterior ao recurso não tem `text_role`, e mesmo
+    regerando as cenas o modelo esquece o campo com frequência. Sem esta
+    derivação a feature-tipografia só funcionaria em projetos novos e
+    completos, que é a pior forma de ela existir.
+
+    A ordem vai do sinal mais forte ao mais fraco: aspas, latim, data,
+    lugar, e o tipo visual como último recurso.
+    """
+    texto = " ".join([
+        str(getattr(ch, "narration", "") or ""),
+        str(getattr(ch, "subject", "") or "")])
+    if any(m in texto for m in _QUOTE_MARKS):
+        return "quote"
+    idioma = str(getattr(ch, "text_language", "") or "").strip().lower()
+    if idioma in ("la", "lat", "latim", "latin"):
+        return "latin"
+    if looks_latin(texto):
+        return "latin"
+    return ""
+
+
+def text_role_for(ch, genre: str = "") -> str:
+    """Papel efetivo da cena: o declarado, ou o derivado do conteúdo."""
+    from .typography import ROLES
+    declarado = str(getattr(ch, "text_role", "") or "").strip().lower()
+    if declarado in ROLES:
+        return declarado
+    return derive_text_role(ch)
+
+
 def classify_visual_type(narration: str) -> str:
     """Tipo de visual que serve à cena, sem depender da IA.
 
@@ -257,6 +352,18 @@ class Chapter:
     visual_entities: list[str] = field(default_factory=list)
     context: list[str] = field(default_factory=list)
     forbidden: list[str] = field(default_factory=list)
+    # --- papel tipográfico (retrocompatível: tudo opcional) -------------
+    # A cena declara a FUNÇÃO do texto, nunca a fonte: `text_role="quote"`
+    # significa "isto é uma citação", e quem decide que em `people` citação
+    # é itálico serifado é o perfil, em stages/typography.py. Pedir a fonte
+    # aqui quebraria a abstração no instante em que o gênero muda, e trocar
+    # de gênero é justamente o que precisa ser barato.
+    # Vazio = a cena nao reservou papel; o papel vem da derivacao por conteudo.
+    text_role: str = ""
+    # "la" quando o texto é latim. O papel `latin` é o que entrega o
+    # itálico editorial para a frase em latim, e é o caso que a direção de
+    # arte do projeto cita primeiro.
+    text_language: str = ""
     start: float = 0.0
     end: float = 0.0
 
@@ -269,8 +376,16 @@ class Chapter:
         narration = str(d.get("narration", ""))
         if vtype not in VISUAL_TYPES:
             # chapters.json antigo (sem o campo) ou IA fora do formato:
-            # deriva do texto em vez de assumir "literal" às cegas.
+            # deriva o texto em vez de assumir "literal" às cegas.
             vtype = classify_visual_type(narration) if vtype == "" else "literal"
+        from .typography import ROLES
+        papel = str(d.get("text_role", "") or "").strip().lower()
+        if papel not in ROLES:
+            # chapters.json antigo não tem o campo, e a IA às vezes inventa
+            # um papel. Papel desconhecido é descartado, e a derivação pelo
+            # conteúdo assume — um papel errado renderiza o texto na fonte
+            # errada sem nenhuma pista de por quê.
+            papel = ""
         return cls(
             id=int(d.get("id", 0)),
             narration=narration,
@@ -283,6 +398,8 @@ class Chapter:
             visual_entities=[str(q) for q in d.get("visual_entities", [])],
             context=[str(q) for q in d.get("context", [])],
             forbidden=[str(q) for q in d.get("forbidden", [])],
+            text_role=papel,
+            text_language=str(d.get("text_language", "") or "").strip().lower(),
             start=float(d.get("start", 0.0)),
             end=float(d.get("end", 0.0)),
         )
@@ -401,6 +518,23 @@ def _genre_forbidden(terms: list[str], genre: str) -> list[str]:
     return out[:8]
 
 
+def _coerce_text_role(valor) -> str:
+    """Aceita o papel que a IA deu, desde que seja um papel de verdade.
+
+    A IA inventa nome de papel com frequência ("emphasis_quote",
+    "TEXT_ROLE"), e papel inventado que passasse adiante renderizaria o
+    texto na fonte errada sem ninguém saber por quê. Papel desconhecido
+    vira vazio e a derivação por conteúdo assume.
+    """
+    from .typography import ROLES
+    papel = str(valor or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if papel in ROLES:
+        return papel
+    # "serif_italic", "minion_pro" e afins: a IA respondeu com a RESPOSTA
+    # em vez de a PERGUNTA. Não é papel, e não deve virar fonte.
+    return ""
+
+
 def _coerce_str_list(raw: dict, key: str, limit: int) -> list[str]:
     """Lista de strings em campo que a IA pode devolver como string solta."""
     val = raw.get(key, [])
@@ -484,6 +618,8 @@ def build_chapters(script: str, cfg: CurioConfig,
                 context=_coerce_str_list(raw, "context", 3),
                 forbidden=_genre_forbidden(_coerce_str_list(raw, "forbidden", 5),
                                           genre),
+                text_role=_coerce_text_role(raw.get("text_role")),
+                text_language=str(raw.get("text_language", "") or "").strip().lower(),
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
             return chapters, provider
