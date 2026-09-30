@@ -260,3 +260,87 @@ def test_config_por_env(tmp_path, monkeypatch):
     cfg = CurioConfig.load(None)
     assert cfg.visual_insertions == 1
     assert cfg.visual_insert_gain_db == -40
+
+
+# --- registro: identidade da obra e título útil -----------------------
+
+def test_uma_obra_um_registro_mesmo_em_varias_cenas():
+    """3 imagens em 6 cenas = 3 obras a creditar, não 18."""
+    reg = S.SourceRegistry(slug="p")
+    for cena in range(1, 7):
+        for k in range(3):
+            reg.add_media(title=f"cena {cena} · assunto [pixabay_a{k}]",
+                          origin_url=f"https://p.io/{k}",
+                          file_url=f"https://p.io/{k}.jpg",
+                          provider="pixabay", asset_id=f"a{k}",
+                          used_in=f"cena {cena}")
+    assert len(reg.media) == 3
+    assert reg.media[0].used_in.count("cena") == 6
+    assert reg.media[0].asset_id == "a0"
+
+
+def test_titulo_do_registro_diz_a_cena_e_o_id():
+    t = S.media_record_title("cena 3 · rolo de papel térmico", "pixabay",
+                            "12345")
+    assert "cena 3" in t
+    assert "rolo de papel" in t
+    assert "pixabay_12345" in t
+    # nunca a tag crua do provedor
+    assert "4k" not in t and "wallpaper" not in t
+
+
+def test_titulo_sem_cena_ainda_tem_id():
+    t = S.media_record_title("", "wikimedia", "999", "flor murcha")
+    assert "wikimedia_999" in t
+    assert "flor murcha" in t
+
+
+def test_registro_antigo_sem_asset_id_ainda_carrega():
+    antigo = {"title": "t", "origin_url": "u", "provider": "p",
+              "license": "CC BY 4.0", "used_in": "cena 1"}
+    m = S.MediaSource.from_dict(antigo)
+    assert m.asset_id == "" and m.provider == "p"
+
+
+# --- atribuição -------------------------------------------------------
+
+@pytest.mark.parametrize("lic,exige", [
+    ("CC BY 4.0", True), ("CC BY-SA 4.0", True), ("CC BY-NC 2.0", True),
+    ("CC0 1.0", False), ("Public domain", False),
+    ("Licença Pixabay (uso livre)", False),
+])
+def test_exige_credito(lic, exige):
+    assert S.requires_attribution(lic) is exige
+
+
+def test_credito_tem_autor_obra_licenca_e_links():
+    c = S.credit_line("Ana", "Rolo térmico", "CC BY-SA 4.0",
+                      "https://p.io/x", "https://cc.org/by-sa/4.0")
+    assert "Ana" in c
+    assert "Rolo térmico" in c
+    assert "CC BY-SA 4.0" in c
+    assert "https://p.io/x" in c
+    assert "https://cc.org/by-sa/4.0" in c
+
+
+def test_credito_admite_autor_desconhecido():
+    """Sem autor informado, diz. Não inventa nome nem esconde a lacuna."""
+    c = S.credit_line("", "Sem autor", "CC BY 4.0")
+    assert "autor não informado" in c
+    assert "CC BY 4.0" in c
+
+
+def test_relatorio_inclui_creditos(tmp_path):
+    reg = S.SourceRegistry(slug="p")
+    reg.add_media(title="cena 1 · fresco [wikimedia_9]", origin_url="u",
+                  file_url="f", provider="wikimedia", author="Anon",
+                  license="CC BY-SA 4.0", license_url="l", used_in="cena 1",
+                  rights_status="clear", asset_id="9", query="fresco")
+    out = tmp_path / "F.md"
+    S.write_report(str(out), reg, credits=[S.credit_line("Anon", "fresco",
+                                                          "CC BY-SA 4.0")])
+    txt = out.read_text(encoding="utf-8")
+    assert "Créditos" in txt
+    assert "exigem crédito visível" in txt
+    assert "wikimedia_9" in txt
+    assert "cena 1 · fresco" in txt

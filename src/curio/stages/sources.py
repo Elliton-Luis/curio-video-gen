@@ -67,6 +67,12 @@ class MediaSource:
     Guarda o link ANTES do uso (origin_url = página da obra, file_url =
     arquivo direto, license_url = onde conferir a licença) e o local
     APÓS o uso (local_path) mais onde entrou no vídeo (used_in).
+
+    `asset_id` é a identidade da obra no acervo. Ela existe para que a
+    mesma imagem usada em várias cenas produza UM registro, não um por
+    cena: o título do registro carrega a cena (é o que o autor lê), e
+    deduplicar pelo título passou a contar cada repetição como uma obra
+    nova.
     """
     title: str
     origin_url: str = ""
@@ -80,6 +86,7 @@ class MediaSource:
     rights_status: str = ""  # clear | verify | blocked
     query: str = ""
     scene: str = ""
+    asset_id: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -89,7 +96,8 @@ class MediaSource:
         return cls(**{k: d.get(k, "") for k in
                       ("title", "origin_url", "file_url", "provider",
                        "author", "license", "license_url", "local_path",
-                       "used_in", "rights_status", "query", "scene")})
+                       "used_in", "rights_status", "query", "scene",
+                       "asset_id")})
 
 
 @dataclass
@@ -119,26 +127,41 @@ class SourceRegistry:
                   provider: str, author: str = "", license: str = "",
                   query: str = "", scene: str = "",
                   license_url: str = "", local_path: str = "",
-                  used_in: str = "", rights_status: str = "") -> MediaSource:
-        """Registra procedência de mídia. Reutiliza se (title, origin_url)
-        já estiver registrada (completa os campos de uso se vazios)."""
+                  used_in: str = "", rights_status: str = "",
+                  asset_id: str = "") -> MediaSource:
+        """Registra procedência de mídia. Uma obra = um registro.
+
+        A identidade é (asset_id, origin_url) — a obra no acervo, não a
+        cena onde ela apareceu. Reutilizada em outra cena, a entrada é
+        completada e as cenas somam em `used_in`, em vez de criar um
+        registro por aparição: 3 imagens em 6 cenas são 3 obras, e o autor
+        precisa creditar 3.
+        """
         for src in self.media:
-            if src.title == title and src.origin_url == origin_url:
-                if not src.local_path and local_path:
-                    src.local_path = local_path
-                if not src.used_in and used_in:
-                    src.used_in = used_in
-                if not src.license_url and license_url:
-                    src.license_url = license_url
-                if not src.rights_status and rights_status:
-                    src.rights_status = rights_status
-                return src
+            mesma = ((asset_id and src.asset_id == asset_id)
+                     or (origin_url and src.origin_url == origin_url))
+            if not mesma:
+                continue
+            if not src.local_path and local_path:
+                src.local_path = local_path
+            if used_in and used_in not in src.used_in:
+                src.used_in = (f"{src.used_in}, {used_in}" if src.used_in
+                               else used_in)
+            if not src.license_url and license_url:
+                src.license_url = license_url
+            if not src.rights_status and rights_status:
+                src.rights_status = rights_status
+            if not src.asset_id and asset_id:
+                src.asset_id = asset_id
+            if not src.query and query:
+                src.query = query
+            return src
         src = MediaSource(title=title, origin_url=origin_url,
                           file_url=file_url, provider=provider, author=author,
                           license=license, license_url=license_url,
                           local_path=local_path, used_in=used_in,
                           rights_status=rights_status,
-                          query=query, scene=scene)
+                          query=query, scene=scene, asset_id=asset_id)
         self.media.append(src)
         return src
 
@@ -183,11 +206,66 @@ _RIGHTS_LABEL = {
     "blocked": "BLOQUEADO (não usado no vídeo)",
 }
 
+# Licenças que exigem crédito visível. Sem isso o vídeo pode estar
+# tecnicamente livre e ainda assim violando a licença: CC BY e CC BY-SA
+# exigem atribuição, e o "livre" do classificador é sobre o direito de
+# editar, não sobre o dever de citar.
+_ATTRIBUTION_REQUIRED = ("CC BY", "CC-BY", "ATTRIBUTION", "ATRIBUIÇÃO",
+                         "BY-SA", "BY-NC")
+
+
+def requires_attribution(license_text: str) -> bool:
+    """A licença exige crédito visível?"""
+    from ..media.providers import _norm_lic
+    t = _norm_lic(license_text or "")
+    return any(h in t for h in _ATTRIBUTION_REQUIRED)
+
+
+def credit_line(author: str, title: str, license_text: str,
+                source_url: str = "", license_url: str = "") -> str:
+    """Texto de crédito pronto, a partir SÓ dos metadados do provedor.
+
+    Não promete segurança jurídica: registra as condições que o acervo
+    declarou. Se faltar autor, o crédito diz que o autor não foi informado
+    — melhor que inventar nome ou esconder a lacuna.
+    """
+    partes = []
+    quem = (author or "").strip()
+    partes.append(quem if quem else "autor não informado pelo acervo")
+    obra = (title or "").strip()
+    if obra:
+        partes.append(f"“{obra}”")
+    lic = (license_text or "").strip() or "licença não informada"
+    linha = " — ".join(partes)
+    if source_url:
+        linha += f" — {source_url}"
+    linha += f". Licença: {lic}"
+    if license_url:
+        linha += f" ({license_url})"
+    return linha
+
+
+def media_record_title(scene_label: str, provider: str, asset_id: str,
+                       fallback: str = "") -> str:
+    """Título interno do registro: a CENA + o id, nunca as tags do provedor.
+
+    O título do registro é o que o autor lê para saber do que se trata.
+    "4k wallpaper hd thermal printer technology" não diz nada; "cena 3 ·
+    rolo de papel térmico (wikimedia 12345)" diz, e ainda localiza a
+    imagem pelo id. Formato estável para o swap e para a folha de contato.
+    """
+    cena = (scene_label or "").strip()
+    ident = f"{provider or '?'}_{asset_id or '?'}".strip()
+    if cena:
+        return f"{cena} [{ident}]"
+    return f"{ident} — {fallback}".strip() if fallback else ident
+
 
 def write_report(path: str, registry: "SourceRegistry",
                  research: list | None = None,
                  grounding: dict | None = None,
-                 media_notes: list[str] | None = None) -> str:
+                 media_notes: list[str] | None = None,
+                 credits: list[str] | None = None) -> str:
     """Escreve o relatório legível de fontes na pasta de informações.
 
     `sources.json` é o dado estruturado (máquina); este é o mesmo conteúdo
@@ -266,13 +344,19 @@ def write_report(path: str, registry: "SourceRegistry",
             rights = (m.rights_status or "verify").lower()
             add(f"### {i}. {m.title or '(sem título)'}")
             add("")
+            if m.asset_id:
+                add(f"- ID no acervo: {m.provider or '?'} {m.asset_id}")
+            if m.query:
+                add(f"- Consulta que a encontrou: {m.query}")
             add(f"- Provedor: {m.provider or '—'}")
             add(f"- Autor: {m.author or '—'}")
             add(f"- Licença: {m.license or 'desconhecida'}")
             add(f"- Link da licença: {m.license_url or '—'}")
             add(f"- Página da obra: {m.origin_url or '—'}")
             add(f"- Arquivo usado: {m.local_path or '—'}")
-            add(f"- Entrou em: {m.used_in or m.scene or '—'}")
+            cenas = m.used_in or m.scene or "—"
+            n = len([c for c in cenas.split(",") if c.strip()])
+            add(f"- Entrou em: {cenas}" + (f" ({n} cenas)" if n > 1 else ""))
             add(f"- Direitos: **{_RIGHTS_LABEL.get(rights, rights)}**")
             add("")
     if media_notes:
@@ -280,6 +364,15 @@ def write_report(path: str, registry: "SourceRegistry",
         add("")
         for note in media_notes:
             add(f"- {note}")
+        add("")
+    if credits:
+        add("### Créditos (licenças que exigem atribuição)")
+        add("")
+        add("Estas imagens exigem crédito visível. Uma linha por imagem, "
+            "pronta para colocar na descrição do vídeo:")
+        add("")
+        for credito in credits:
+            add(f"- {credito}")
         add("")
 
     if grounding:
