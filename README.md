@@ -437,6 +437,15 @@ Robustez: até **6 tentativas totais** no rodízio (`CURIO_LLM_ATTEMPTS`,
 1–12) com backoff nas transitórias; 401/403/404 eliminam o provedor na
 hora. Sem nenhuma chave, vale o gerador local acima.
 
+Timeout de chamada: **15 s** é o teto (padrão e igual ao comportamento de
+antes), e ele é configurável — `[nvidia] timeout_max` na config ou
+`NVIDIA_TIMEOUT_MAX` no `.env`. É um timeout de socket (handshake +
+cada `recv`), não um orçamento total de geração: modelo que transmite
+algo de tempos em tempos não é cortado por ele. Subir o teto só faz
+sentido se o seu modelo for lento de verdade — com 15 s o rodízio cai
+no próximo provedor, que é o que aconteceu com o Nemotron na execução
+de São Jerônimo.
+
 Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 (aceita na config, usa a 1ª; **rotação ainda não implementada**).
 
