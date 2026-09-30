@@ -61,6 +61,13 @@ def _match_curated(idea: str) -> str | None:
     return None
 
 
+# Gancho final padrão (pergunta aberta não respondida + CTA de like).
+CLOSER_PT = (" Mas me conta: o que mais você quer saber sobre esse assunto? "
+             "Deixe seu like e até o próximo vídeo.")
+CLOSER_EN = (" But tell me: what else do you want to know about this? "
+             "Leave a like and see you in the next video.")
+
+
 def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") -> str:
     topic = idea.strip().rstrip("?.!").strip()
     if str(language or "").lower().startswith("en"):
@@ -72,6 +79,7 @@ def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") 
             f"So the honest answer mixes what is confirmed with what is still debated. "
             f"And perhaps that is the most interesting point: a good question does not end when the video ends. "
             f"It stays in your head, and that is already learning something."
+            f"{CLOSER_EN}"
         )
     else:
         text = (
@@ -82,9 +90,21 @@ def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") 
             f"Por isso, a resposta honesta mistura o que foi confirmado com o que segue em debate. "
             f"E talvez esse seja o ponto mais interessante: uma boa pergunta não termina quando o vídeo acaba. "
             f"Ela continua na sua cabeça, e isso já é aprender alguma coisa."
+            f"{CLOSER_PT}"
         )
     if max_chars is not None and len(text) > max_chars:
-        text = text[: max_chars - 1].rsplit(" ", 1)[0] + "."
+        # Corte com dignidade, mas preserva o gancho final sempre.
+        closer = CLOSER_EN if str(language or "").lower().startswith("en") else CLOSER_PT
+        body = text[: len(text) - len(closer)] if text.endswith(closer) else text
+        cut = body[: max(0, max_chars - len(closer))]
+        for sep in (". ", "! ", "? "):
+            idx = cut.rfind(sep)
+            if idx > len(cut) * 0.3:
+                cut = cut[: idx + 1].strip()
+                break
+        else:
+            cut = cut.rsplit(" ", 1)[0].rstrip(",;:") + "."
+        text = f"{cut}{closer}"
     return text
 
 
@@ -110,9 +130,22 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str
     english = str(cfg.language or "").lower().startswith("en")
     if not english:
         curated = _match_curated(idea)
+        if curated and not curated.rstrip().endswith("próximo vídeo."):
+            curated = curated.rstrip() + CLOSER_PT
         if curated:
-            return (curated if auto else curated[:max_chars or len(curated)],
-                    "curated")
+            if auto or max_chars is None or len(curated) <= (max_chars or 0):
+                return curated, "curated"
+            # Com meta de duração: corta o corpo, mas preserva o gancho final.
+            body = curated[: len(curated) - len(CLOSER_PT)]
+            cut = body[: max(0, max_chars - len(CLOSER_PT))]
+            for sep in (". ", "! ", "? "):
+                idx = cut.rfind(sep)
+                if idx > len(cut) * 0.3:
+                    cut = cut[: idx + 1].strip()
+                    break
+            else:
+                cut = cut.rsplit(" ", 1)[0].rstrip(",;:") + "."
+            return f"{cut}{CLOSER_PT}", "curated"
 
     return _template_script(idea, max_chars, cfg.language), "template"
 
