@@ -9,13 +9,20 @@ import sys
 import traceback
 
 from . import __version__
+from .audio.library import (AudioLibrary, AudioLibraryError, GENRES,
+                            SFX_CATEGORIES, audio_seed)
+from .audio.selection import resolve_audio
 from . import ffmpeg as ff
 from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import backfill_from_metadata
 from .pipeline import (MediaStandby, _build_silent, _build_silent_visual,
-                        _narration_with_sfx, _read, _read_json, _sfx_track_for,
+                        _apply_audio_request, _audio_events,
+                        _final_audio_fade, _genre_transitions,
+                        _mark_audio_used, _narration_with_sfx, _read, _read_json,
+                        _transition_mode, _transition_signature,
+                        _sfx_track_for,
                         _write_json, finalize_project, run_pipeline,
                         run_script_pipeline, video_paths)
 from .stages.scenes import Chapter
@@ -394,6 +401,21 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
 
     chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
     media = _read_json(paths.media_json)
+    try:
+        old_meta = _read_json(paths.metadata_json)
+    except (OSError, ValueError, json.JSONDecodeError):
+        old_meta = {}
+    previous_audio = old_meta.get("audio") or {}
+    if previous_audio:
+        _apply_audio_request(cfg, previous_audio)
+    else:
+        cfg.music_mode = "none"
+        cfg.music_transitions = "none"
+        cfg.audio_enabled = False
+        cfg.sfx_library_enabled = False
+    cfg.music_auto_fill = False
+    cfg.sfx_auto_fill = False
+    project_genre = str(old_meta.get("genre") or cfg.genre or "")
     audio_duration = ff.probe_duration(paths.narration_wav)
 
     visual_timeline = None
@@ -408,27 +430,57 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
             chapters, media, visual_timeline, cfg)
         _write_json(paths.visual_json, visual_timeline)
 
+    transition_mode = _transition_mode(cfg)
+    transitions = _genre_transitions(chapters, project_genre, transition_mode)
     if visual_timeline:
-        _build_silent_visual(chapters, visual_timeline, args.slug, cfg,
-                             paths, paths.silent_mp4)
+        _build_silent_visual(chapters, visual_timeline, args.slug, paths,
+                             cfg, paths.silent_mp4, transitions=transitions)
     else:
         durations = [max(0.5, c.end - c.start) for c in chapters]
         _build_silent(chapters, media, args.slug, durations, paths, cfg,
-                      paths.silent_mp4)
+                      paths.silent_mp4, transitions=transitions)
 
     total = round(audio_duration + 0.8, 2)
+    title = (old_meta.get("video_title") or
+             (_read(paths.title_txt).strip() if os.path.isfile(paths.title_txt) else ""))
+    script_text = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
+    events = _audio_events(visual_timeline or [])
+    audio_plan = resolve_audio(
+        cfg, project_genre, audio_seed(args.slug, title, script_text),
+        title, script_text, events, previous_audio)
     wav = paths.narration_wav
+    sfx_path = None
     if visual_timeline and cfg.visual_sfx:
-        sfx = _sfx_track_for(visual_timeline, total, paths)
-        if sfx:
-            wav = _narration_with_sfx(paths.narration_wav, sfx, total, paths)
-    title = None
-    if os.path.isfile(paths.title_txt):
-        title = _read(paths.title_txt).strip() or None
+        sfx_path = _sfx_track_for(visual_timeline, total, paths)
+        if sfx_path:
+            wav = _narration_with_sfx(paths.narration_wav, sfx_path, total, paths)
+    music_asset = audio_plan.get("music_asset")
     info = render_stage.burn_final(
         paths.silent_mp4, paths.subs_ass, wav, paths.final_mp4, cfg, total,
-        title=title,
-        title_fontfile=subs_stage.ensure_display_font(cfg.cache_dir)[2])
+        title=title or None,
+        title_fontfile=subs_stage.ensure_display_font(cfg.cache_dir)[2],
+        music_path=str(music_asset.get("path")) if music_asset else None,
+        music_gain_db=cfg.music_gain_db, music_ducking=cfg.music_ducking,
+        final_fade=_final_audio_fade(project_genre, transition_mode))
+    _mark_audio_used(cfg, audio_plan)
+    old_meta["audio"] = audio_plan["metadata"]
+    old_meta["visual_transition_signature"] = _transition_signature(
+        chapters, project_genre, transition_mode,
+        {"insertions": cfg.visual_insertions,
+         "insert_style": cfg.visual_insert_style,
+         "insert_gain_db": cfg.visual_insert_gain_db,
+         "visual_sfx": cfg.visual_sfx})
+    old_meta["visual_transitions"] = {
+        "genre": project_genre, "mode": transition_mode,
+        "boundary_durations": transitions,
+        "final_fade": _final_audio_fade(project_genre, transition_mode),
+    }
+    old_meta.setdefault("artifacts", {})["video"] = paths.final_mp4
+    if sfx_path:
+        old_meta["artifacts"]["sfx"] = sfx_path
+    if music_asset:
+        old_meta["artifacts"]["music"] = music_asset["path"]
+    _write_json(paths.metadata_json, old_meta)
     print(f"Refeito: {info['path']} ({info['duration']}s, {info['encoder']})")
     print("Narração, roteiro e legendas vieram do cache — não foram refeitos.")
     return 0
@@ -483,6 +535,60 @@ def cmd_metrics(args, cfg: CurioConfig) -> int:
 def cmd_voices(_args, _cfg) -> int:
     voices = tts_stage.available_providers()
     print("Provedores TTS disponíveis: " + (", ".join(voices) if voices else "nenhum"))
+    return 0
+
+
+def cmd_music(args, cfg: CurioConfig) -> int:
+    """Lista ou preenche a biblioteca audiovisual local."""
+    lib = AudioLibrary(cfg.audio_library_dir)
+    kind = getattr(args, "kind", "music")
+    genre = getattr(args, "genre", None)
+    if args.music_action == "list":
+        genres = [genre] if genre else list(GENRES)
+        for g in genres:
+            music = lib.assets("music", g)
+            print(f"{g}: música {len(music)}/{cfg.music_max_per_genre}")
+            for a in music:
+                print(f"  {a.get('title')} — {a.get('author') or 'autor não informado'} "
+                      f"[{a.get('license')}] usada {a.get('use_count', 0)}x")
+            categories = ([args.category] if getattr(args, "category", None)
+                          else list(SFX_CATEGORIES))
+            for category in categories:
+                items = lib.assets("sfx", g, category)
+                if items:
+                    print(f"  SFX/{category}: {len(items)}")
+        return 0
+
+    genres = [genre] if genre else ([cfg.genre] if cfg.genre else list(GENRES))
+    if kind == "sfx" and not getattr(args, "category", None):
+        print("music update --kind sfx exige --category para limitar a busca.",
+              file=sys.stderr)
+        return 2
+    try:
+        for g in genres:
+            if kind == "music":
+                report = lib.update("music", g, cfg.music_target_per_genre,
+                                    cfg.music_max_per_genre)
+                print(f"{g}: {report['before']} → "
+                      f"{report.get('after', report['before'])}; baixados "
+                      f"{report['added']}, licenças recusadas "
+                      f"{report['rejected_license']}, duplicatas {report['duplicates']}")
+            else:
+                category = args.category
+                report = lib.update("sfx", g, cfg.sfx_target_per_category,
+                                    cfg.sfx_max_per_category,
+                                    category=category)
+                print(f"{g}/{category}: {report['before']} → "
+                      f"{report.get('after', report['before'])}; baixados "
+                      f"{report['added']}, licenças recusadas "
+                      f"{report['rejected_license']}")
+            for error in report.get("errors", []):
+                print(f"  AVISO: {error}", file=sys.stderr)
+            for rejected in report.get("license_rejections", []):
+                print(f"  REJEITADO: {rejected}", file=sys.stderr)
+    except (AudioLibraryError, OSError) as exc:
+        print(f"Biblioteca não atualizada: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -706,6 +812,10 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-open", action="store_true",
                    help="não abrir pasta/gravador após o teleprompter")
     g.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
+    g.add_argument("--music-mode", choices=("auto", "none", "manual"),
+                   default=None, help="música: biblioteca local, nenhuma ou arquivo manual")
+    g.add_argument("--music-file", default=None,
+                   help="arquivo usado com --music-mode manual")
     g.set_defaults(func=cmd_generate)
 
     fin = sub.add_parser("finalize", help="unir áudio humano ao vídeo silencioso")
@@ -750,7 +860,24 @@ def build_parser() -> argparse.ArgumentParser:
     fs.add_argument("--no-open", action="store_true",
                     help="não abrir pasta/gravador após o teleprompter")
     fs.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
+    fs.add_argument("--music-mode", choices=("auto", "none", "manual"),
+                    default=None, help="música: biblioteca local, nenhuma ou arquivo manual")
+    fs.add_argument("--music-file", default=None,
+                    help="arquivo usado com --music-mode manual")
     fs.set_defaults(func=cmd_from_script)
+
+    mus = sub.add_parser("music", help="gerenciar a biblioteca audiovisual local")
+    mus_sub = mus.add_subparsers(dest="music_action", required=True)
+    mus_update = mus_sub.add_parser("update", help="baixar apenas assets que faltam")
+    mus_update.add_argument("--genre", choices=GENRES, default=None)
+    mus_update.add_argument("--kind", choices=("music", "sfx"), default="music")
+    mus_update.add_argument("--category", choices=SFX_CATEGORIES, default=None,
+                            help="categoria necessária ao atualizar SFX")
+    mus_list = mus_sub.add_parser("list", help="listar biblioteca e contadores de uso")
+    mus_list.add_argument("--genre", choices=GENRES, default=None)
+    mus_list.add_argument("--category", choices=SFX_CATEGORIES, default=None)
+    mus_list.set_defaults(kind="music")
+    mus.set_defaults(func=cmd_music)
 
     t = sub.add_parser("tui", help="interface interativa em terminal")
     t.set_defaults(func=lambda a, c: __import__("curio.tui", fromlist=["run"]).run(c))
@@ -822,6 +949,13 @@ def main(argv: list[str] | None = None) -> int:
     cfg = CurioConfig.load(args.config)
     if args.out_dir:
         cfg.out_dir = args.out_dir
+    if getattr(args, "music_mode", None):
+        cfg.music_mode = args.music_mode
+        cfg.audio_enabled = True
+    if getattr(args, "music_file", None):
+        cfg.music_file = args.music_file
+        cfg.music_mode = "manual"
+        cfg.audio_enabled = True
     if getattr(args, "tts", None):
         cfg.tts_provider = args.tts
     if getattr(args, "voice", None):

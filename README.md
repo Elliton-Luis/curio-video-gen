@@ -481,6 +481,58 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 O relatório do caso São Jerônimo, incluindo validação e limitações, está em
 [`docs/relatorios/20260930-144326_relatorio_diagnosticos-sao-jeronimo.md`](docs/relatorios/20260930-144326_relatorio_diagnosticos-sao-jeronimo.md).
 
+### Identidade audiovisual por gênero
+
+O recurso é habilitado por seções `[audio]`, `[music]` ou `[sfx]` no
+`config.toml`; configurações antigas sem essas seções mantêm a saída anterior.
+A biblioteca persistente fica em:
+
+```text
+assets/library/music/<genre>/
+assets/library/sfx/<genre>/<category>/
+```
+
+O render consulta somente esse acervo local. Quando abaixo do mínimo,
+`auto_fill` pode preenchê-lo até o alvo; com a configuração de exemplo, o
+primeiro uso pode bootstrapar o acervo. Depois de atingir o mínimo, vídeos não
+pesquisam nem baixam. Limites padrão: música 3/6/10 por gênero (mínimo/alvo/
+máximo); SFX 2/5/8 por categoria. O autopreenchimento pode ser desligado para
+exigir atualização manual.
+
+A única fonte automática inicial é a API oficial do Freesound. Defina
+`FREESOUND_API_KEY` em `.env` (chave em
+<https://freesound.org/apiv2/apply>). O Curio usa os previews oficiais e só
+aceita CC0 ou CC BY; NC, ND, SA e licenças ausentes/ambíguas são rejeitadas.
+CC BY mantém autor, origem e link da licença no metadata para atribuição. Não
+há scraping nem download do endpoint original que exige OAuth2. Arquivos
+manuais são marcados como fornecidos pelo usuário, com licença não verificada.
+
+```bash
+# atualizar música (sem --genre: gênero ativo ou todos os gêneros)
+./scripts/run.sh music update --genre people
+# atualizar uma categoria SFX
+./scripts/run.sh music update --kind sfx --genre people --category paper
+# listar acervo e contador de uso sem acessar a rede
+./scripts/run.sh music list --genre people
+
+# na geração: auto, none ou manual
+./scripts/run.sh generate "Fale sobre São Jerônimo" --music-mode none
+./scripts/run.sh generate "Fale sobre São Jerônimo" \
+  --music-mode manual --music-file "$HOME/Music/faixa.mp3"
+```
+
+A TUI expõe Automática, Nenhuma, arquivo manual e atualização da biblioteca em
+Configurações → Áudio. A seleção automática usa o gênero, favorece assets menos
+usados e desempata com seed estável do projeto; uma regeneração mantém a faixa
+gravada no metadata. A música usa ganho conservador de −30 dB, fades de
+entrada/saída e sidechain ducking sob a voz, com release para atravessar pausas.
+SFX da biblioteca substituem apenas eventos pontuais já existentes; sem asset
+local, o SFX sintético atual continua disponível. Transições de cena são
+cross-dissolves curtos ajustados por gênero/papel da cena, cortes secos em
+mudanças dramáticas e fade final. `[audio].transitions = "none"` desliga a
+camada de transição. O `metadata.json` registra faixa/licença/atribuição, SFX,
+volume, ducking e identidade de cache do áudio efetivamente renderizado.
+
 ## Roadmap
 
 - **MVP (agora):** pipeline básico provando ideia → vídeo publicável.

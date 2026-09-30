@@ -15,6 +15,8 @@ REGRAS.md
 .env
 # Cache de mídia baixada (Wikimedia etc.) — reconstruível via media.json.
 cache/
+# Biblioteca local de áudio baixado/importado (metadados ficam junto aos assets).
+/assets/library/
 # Métricas de execução (geradas; ver docs/). Não versionar.
 metrics/
 

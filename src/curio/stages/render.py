@@ -352,6 +352,62 @@ def concat_copy(paths: list[str], out_path: str, cfg: CurioConfig | None = None)
     return out_path
 
 
+def concat_with_transitions(paths: list[str], out_path: str,
+                            cfg: CurioConfig,
+                            transitions: list[float]) -> str:
+    """Concatena cenas com cross-dissolve curto sem encurtar a timeline.
+
+    A próxima entrada recebe um clone de seu primeiro frame durante o overlap;
+    assim o xfade consome o intervalo de dissolve mas mantém cada limite de
+    cena no timestamp original. Transições ≤0 continuam cortes secos.
+    """
+    if len(paths) < 2 or not any(float(x) > 0 for x in transitions):
+        return concat_copy(paths, out_path, cfg)
+    ff.require_tools()
+    durations = [ff.probe_duration(p) for p in paths]
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    for path in paths:
+        cmd += ["-i", path]
+    filters = [f"[{i}:v]settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[in{i}]"
+               for i in range(len(paths))]
+    current = "in0"
+    elapsed = durations[0]
+    for i in range(1, len(paths)):
+        requested = (float(transitions[i - 1]) if i - 1 < len(transitions)
+                     else 0.0)
+        d = min(max(0.0, requested), durations[i - 1] - 0.04,
+                durations[i] - 0.04)
+        if d <= 0:
+            # O caller normalmente escolhe cut=0; uma duração impraticável
+            # também degrada para corte, nunca falha o vídeo.
+            # Concat filter mantém a timeline e mistura este caso com a cadeia.
+            out = f"out{i}"
+            filters.append(f"[{current}][in{i}]concat=n=2:v=1:a=0[{out}]")
+            current = out
+            elapsed += durations[i]
+            continue
+        padded = f"p{i}"
+        filters.append(
+            f"[in{i}]tpad=start_mode=clone:start_duration={d:.3f}[{padded}]")
+        out = f"out{i}"
+        filters.append(
+            f"[{current}][{padded}]xfade=transition=fade:duration={d:.3f}:"
+            f"offset={max(0.0, elapsed - d):.3f}[{out}]")
+        current = out
+        elapsed += durations[i]
+    backend, encoder, vargs = _video_codec_args(cfg)
+    upload_filters: list[str] = []
+    _hw_upload(upload_filters, cmd, cfg, backend, encoder)
+    if upload_filters:
+        filters.append(f"[{current}]{','.join(upload_filters)}[vhw]")
+        current = "vhw"
+    cmd += ["-filter_complex", ";".join(filters), "-map", f"[{current}]",
+            "-an", "-r", str(cfg.fps)]
+    cmd += vargs + ["-t", f"{sum(durations):.3f}", out_path]
+    _check(ff.run(cmd), "concat-transitions")
+    return out_path
+
+
 def _needs_single_sequence(cfg: CurioConfig) -> bool:
     """O encode final vai usar VA-API? (só aí o multi-série é fatal.)"""
     try:
@@ -392,7 +448,7 @@ _NOISE_PEAK_DB = -10.1
 
 def build_sfx_track(events: list[dict], total_duration: float,
                     out_path: str, seed: int = 0) -> str | None:
-    """Trilha de SFX discretos p/ inserções (swish/tap sintetizados, sem assets).
+    """Trilha de SFX pontuais: arquivo da biblioteca ou swish/tap sintético.
 
     Cada evento {kind, at, gain_db, duration} vira um sopro curto com fades
     de entrada/saída, posicionado via adelay e completado com silêncio até o
@@ -409,19 +465,31 @@ def build_sfx_track(events: list[dict], total_duration: float,
         return None
     _os.makedirs(_os.path.dirname(out_path) or ".", exist_ok=True)
     cmd = ["ffmpeg", "-y", "-v", "error"]
+    filters = []
+    labels = []
     for idx, e in enumerate(evs):
         at_ms = int(round(float(e["at"]) * 1000))
         d = max(0.3, min(0.6, float(e.get("duration", 0.35))))
         target = float(e.get("gain_db", -30))
-        if e.get("kind") == "tap":
+        path = str(e.get("path") or "")
+        if path and os.path.isfile(path):
+            cmd += ["-i", path]
+            source = f"[{idx}:a]"
+            chain = (f"{source}atrim=duration={d:.3f},asetpts=PTS-STARTPTS,"
+                     f"volume={target:.1f}dB,afade=t=in:st=0:d=0.025,"
+                     f"afade=t=out:st={max(0.0, d - 0.12):.3f}:"
+                     f"d={min(0.12, d):.3f}")
+        elif e.get("kind") == "tap":
             # Objeto pousando no álbum: pulso grave curto, com "corpo"
             # (a queda) e cauda rápida (o impacto).
             freq = 140 + (idx % 2) * 20
             gain = target - _SINE_PEAK_DB
             src = (f"sine=frequency={freq}:duration={d:.2f}:beep_factor=1:"
-                   f"sample_rate=48000,"
-                   f"volume={gain:.1f}dB,afade=t=in:st=0:d=0.015,"
+                   f"sample_rate=48000,volume={gain:.1f}dB,"
+                   f"afade=t=in:st=0:d=0.015,"
                    f"afade=t=out:st={d * 0.35:.2f}:d={d * 0.65:.2f}")
+            cmd += ["-f", "lavfi", "-i", src]
+            source = f"[{idx}:a]"
         else:  # swish: ruído rosa filtrado (papel/folha), timbre levemente variado
             fcut = 750 + (idx % 3) * 100
             gain = target - _NOISE_PEAK_DB
@@ -430,13 +498,21 @@ def build_sfx_track(events: list[dict], total_duration: float,
                    f"lowpass=f={fcut},volume={gain:.1f}dB,"
                    f"afade=t=in:st=0:d=0.06,"
                    f"afade=t=out:st={d - 0.25:.2f}:d=0.25")
-        cmd += ["-f", "lavfi", "-i", src + f",adelay={at_ms}|{at_ms}"]
+            cmd += ["-f", "lavfi", "-i", src]
+            source = f"[{idx}:a]"
+        label = f"sfx{idx}"
+        if path and os.path.isfile(path):
+            filters.append(f"{chain},adelay={at_ms}|{at_ms}[{label}]")
+        else:
+            filters.append(f"{source}adelay={at_ms}|{at_ms}[{label}]")
+        labels.append(f"[{label}]")
     if len(evs) == 1:
-        fc = f"[0:a]apad=whole_dur={total:.2f}[aout]"
+        filters.append(f"{labels[0]}apad=whole_dur={total:.2f}[aout]")
     else:
-        ins = "".join(f"[{i}:a]" for i in range(len(evs)))
-        fc = (f"{ins}amix=inputs={len(evs)}:normalize=0,"
-              f"apad=whole_dur={total:.2f}[aout]")
+        filters.append(
+            f"{''.join(labels)}amix=inputs={len(evs)}:normalize=0,"
+            f"apad=whole_dur={total:.2f}[aout]")
+    fc = ";".join(filters)
     proc = ff.run(cmd + ["-filter_complex", fc, "-map", "[aout]",
                          "-t", f"{total:.2f}", "-ar", "48000", "-ac", "2",
                          out_path])
@@ -487,7 +563,11 @@ def _wrap_title_lines(title: str, width: int = 24,
 def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                out_path: str, cfg: CurioConfig, total: float,
                title: str | None = None,
-               title_fontfile: str | None = None) -> dict:
+               title_fontfile: str | None = None,
+               music_path: str | None = None,
+               music_gain_db: float = -30.0,
+               music_ducking: bool = True,
+               final_fade: float = 0.0) -> dict:
     """silent + legendas queimadas + áudio → MP4 final (um encode só).
 
     Com `title`, queima a pergunta de abertura nos primeiros 5 s (caixa
@@ -497,6 +577,14 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
     ff.require_tools()
     backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error", "-i", silent_path]
+    voice_idx = None
+    music_idx = None
+    if wav_path:
+        voice_idx = 1
+        cmd += ["-i", wav_path]
+    if music_path and os.path.isfile(music_path):
+        music_idx = 2 if voice_idx is not None else 1
+        cmd += ["-stream_loop", "-1", "-i", music_path]
     vf = []
     if subs_ass:
         vf.append(f"subtitles={ff.escape_sub_path(subs_ass)}")
@@ -515,17 +603,57 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                     f"shadowcolor=black@0.9:shadowx=4:shadowy=4:"
                     f"x=(w-text_w)/2:y={y0 + i * 84}:"
                     f"enable='between(t,0,5)'")
+    fade = max(0.0, min(2.0, float(final_fade or 0.0)))
+    if fade and total > fade:
+        vf.append(f"fade=t=out:st={max(0.0, total - fade):.3f}:d={fade:.3f}")
     if backend == "vaapi" or _is_vaapi(encoder):
         vf.extend(["format=nv12", "hwupload"])
         cmd += ["-vaapi_device", _hw_device()]
-    if wav_path:
-        cmd += ["-i", wav_path, "-map", "0:v", "-map", "1:a"]
+    audio_graph = None
+    if voice_idx is not None and music_idx is not None:
+        bed_filters = [
+            f"[{music_idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
+            f"volume={float(music_gain_db):.1f}dB,atrim=duration={total:.3f},"
+            f"asetpts=PTS-STARTPTS,afade=t=in:st=0:d={min(0.8, total / 4):.3f},"
+            f"afade=t=out:st={max(0.0, total - min(1.2, total / 3)):.3f}:"
+            f"d={min(1.2, total / 3):.3f}[bed]",
+            f"[{voice_idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
+            f"apad=whole_dur={total:.3f}"
+            f"{',asplit=2[voice_sc][voice]' if music_ducking else '[voice]'}",
+        ]
+        if music_ducking:
+            bed_filters.append(
+                "[bed][voice_sc]sidechaincompress=threshold=0.025:ratio=5:"
+                "attack=400:release=1100[ducked]")
+            bed_label = "ducked"
+        else:
+            bed_label = "bed"
+        bed_filters.append(
+            f"[voice][{bed_label}]amix=inputs=2:duration=first:normalize=0,"
+            f"alimiter=limit=0.97:attack=5:release=50,"
+            f"apad=whole_dur={total:.3f}[aout]")
+        audio_graph = ";".join(bed_filters)
+        cmd += ["-map", "0:v", "-map", "[aout]",
+                "-filter_complex", audio_graph]
+    elif voice_idx is not None:
+        cmd += ["-map", "0:v", "-map", f"{voice_idx}:a"]
+    elif music_idx is not None:
+        cmd += ["-map", "0:v", "-map", f"{music_idx}:a",
+                "-af", f"volume={float(music_gain_db):.1f}dB,"
+                       f"afade=t=in:st=0:d={min(0.8, total / 4):.3f},"
+                       f"afade=t=out:st={max(0.0,total-min(1.2,total/3)):.3f}:"
+                       f"d={min(1.2,total/3):.3f}"]
     if vf:
         cmd += ["-vf", ",".join(vf)]
     cmd += ["-r", str(cfg.fps), "-t", str(total)] + vargs
-    if wav_path:
-        cmd += ["-c:a", "aac", "-b:a", "128k", "-ar", "48000",
-                "-af", f"aresample=48000,apad=whole_dur={total}"]
+    if voice_idx is not None or music_idx is not None:
+        cmd += ["-c:a", "aac", "-b:a", "128k", "-ar", "48000"]
+        if voice_idx is not None and music_idx is None:
+            # Compatibilidade exata do caminho anterior: completar a cauda
+            # da narração até o limite de render, sem truncar pelo stream.
+            cmd += ["-af", f"aresample=48000,apad=whole_dur={total}"]
+        else:
+            cmd.append("-shortest")
     cmd += ["-movflags", "+faststart", out_path]
     _check(ff.run(cmd), encoder)
     actual = ff.probe_duration(out_path)

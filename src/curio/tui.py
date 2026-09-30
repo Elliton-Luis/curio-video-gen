@@ -544,6 +544,8 @@ def _show_current_config(c: dict[str, str], cfg: CurioConfig) -> None:
           f"som {cfg.visual_insert_gain_db} dB)")
     print(f"  Overlap visual: {cfg.visual_overlap}")
     print(f"  SFX visual: {cfg.visual_sfx}")
+    print(f"  Música: {cfg.music_mode} ({cfg.music_gain_db} dB) · "
+          f"ducking {cfg.music_ducking} · biblioteca {cfg.audio_library_dir}")
     print(f"  Whisper: {cfg.whisper_model}")
     _show_genre(c, cfg)
 
@@ -617,10 +619,11 @@ def _config_flow(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
              "TTS (provider/voz/speed)",
              "Render (backend/encoder)",
              "Visual (inserções/max_images/overlap/SFX)",
+             "Áudio (música/biblioteca/transições)",
              "Gênero editorial (padrão de vídeo)",
              "Voltar"],
             status=_status_summary(cfg))
-        if idx is None or idx == 11:
+        if idx is None or idx == 12:
             return cfg
         if idx == 0:
             cfg = _ask_language(c, cfg)
@@ -643,6 +646,8 @@ def _config_flow(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
         elif idx == 9:
             cfg = _ask_visual(c, cfg)
         elif idx == 10:
+            cfg = _ask_audio(c, cfg)
+        elif idx == 11:
             cfg = _ask_genre(c, cfg)
         _pause(c)
     return cfg
@@ -718,6 +723,54 @@ def _ask_visual(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
         cfg = dataclasses.replace(cfg, visual_sfx=True)
     elif sfx in ("n", "nao", "no", "false"):
         cfg = dataclasses.replace(cfg, visual_sfx=False)
+    return cfg
+
+
+def _ask_audio(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
+    from .audio.library import AudioLibrary, AudioLibraryError
+
+    choices = ["Automática (biblioteca local)", "Nenhuma música",
+               "Escolher arquivo", "Atualizar biblioteca", "Voltar"]
+    selected = {"auto": 0, "none": 1, "manual": 2}.get(cfg.music_mode, 0)
+    idx = select_option(
+        c, "MÚSICA — opcional; automática usa a biblioteca local",
+        choices, selected=selected,
+        status=[f"biblioteca: {cfg.audio_library_dir}",
+                f"gênero: {cfg.genre or 'selecione um gênero para baixar'}"])
+    if idx is None or idx == 4:
+        return cfg
+    if idx == 3:
+        cfg = dataclasses.replace(cfg, audio_enabled=True)
+        if not cfg.genre:
+            print("Escolha um gênero antes de atualizar a biblioteca.")
+        else:
+            try:
+                lib = AudioLibrary(cfg.audio_library_dir)
+                report = lib.update("music", cfg.genre,
+                                    cfg.music_target_per_genre,
+                                    cfg.music_max_per_genre)
+                print(f"{cfg.genre}: adicionadas {report['added']} faixa(s); "
+                      f"total {report.get('after', report['before'])}.")
+            except (AudioLibraryError, OSError) as exc:
+                print(f"Biblioteca não atualizada: {exc}")
+        return cfg
+    mode = ("auto", "none", "manual")[idx]
+    cfg = dataclasses.replace(cfg, music_mode=mode, audio_enabled=True)
+    if mode == "manual":
+        path = _ask("Arquivo de música (mp3/wav/ogg/flac): ").strip()
+        if path:
+            cfg = dataclasses.replace(cfg, music_file=os.path.expanduser(path))
+    gain = _ask(f"Volume musical [{cfg.music_gain_db} dB] (-40..-15, discreto): ").strip()
+    if gain:
+        try:
+            cfg = dataclasses.replace(cfg, music_gain_db=max(-40, min(-15, int(gain))))
+        except ValueError:
+            print("Volume inválido; mantendo valor anterior.")
+    duck = _ask(f"Ducking sob a narração [{cfg.music_ducking}] (s/n): ").strip().lower()
+    if duck in ("s", "sim", "y", "yes"):
+        cfg = dataclasses.replace(cfg, music_ducking=True)
+    elif duck in ("n", "nao", "não", "no"):
+        cfg = dataclasses.replace(cfg, music_ducking=False)
     return cfg
 
 

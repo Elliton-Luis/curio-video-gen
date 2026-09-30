@@ -108,6 +108,25 @@ class CurioConfig:
     visual_insertions: int = 2
     visual_insert_style: str = "drop_in"  # entrada estilo "cai do álbum"
     visual_insert_gain_db: int = -30  # som quase imperceptível da inserção
+    # Música local por gênero. Sem uma seção de áudio carregada, o pipeline
+    # mantém a saída legada; com áudio habilitado, uma biblioteca vazia ainda
+    # permite render sem trilha.
+    audio_library_dir: str = "assets/library"
+    audio_enabled: bool = False  # sem config de áudio, saída visual/audiovisual antiga
+    music_mode: str = "auto"  # auto | none | manual
+    music_file: str = ""
+    music_auto_fill: bool = True
+    music_min_per_genre: int = 3
+    music_target_per_genre: int = 6
+    music_max_per_genre: int = 10
+    music_gain_db: int = -30
+    music_ducking: bool = True
+    music_transitions: str = "auto"  # auto | none
+    sfx_library_enabled: bool = True
+    sfx_auto_fill: bool = True
+    sfx_min_per_category: int = 2
+    sfx_target_per_category: int = 5
+    sfx_max_per_category: int = 8
     file_manager: str = "dolphin"  # pasta do teleprompter pós-geração
     audio_recorder: str = "audacity"  # gravador aberto pós-teleprompter
     auto_open: bool = True  # abre apps após teleprompter (só c/ sessão gráfica)
@@ -239,6 +258,57 @@ class CurioConfig:
         # -45..-12 dB: abaixo de -45 some; acima de -12 compete com a narração.
         cfg.visual_insert_gain_db = max(-45, min(-12,
                                                  cfg.visual_insert_gain_db))
+        audio = data.get("audio", {}) if isinstance(data.get("audio"), dict) else {}
+        music = data.get("music", {}) if isinstance(data.get("music"), dict) else {}
+        music_lib = music.get("library", {}) if isinstance(music.get("library"), dict) else {}
+        sfx = data.get("sfx", {}) if isinstance(data.get("sfx"), dict) else {}
+        sfx_lib = sfx.get("library", {}) if isinstance(sfx.get("library"), dict) else {}
+        cfg.audio_enabled = any(k in data for k in ("audio", "music", "sfx"))
+        cfg.audio_library_dir = str(audio.get("library_dir", cfg.audio_library_dir))
+        if os.environ.get("CURIO_AUDIO_LIBRARY_DIR"):
+            cfg.audio_library_dir = os.environ["CURIO_AUDIO_LIBRARY_DIR"]
+        cfg.music_mode = str(music.get("mode", cfg.music_mode)).strip().lower()
+        if cfg.music_mode not in ("auto", "none", "manual"):
+            cfg.music_mode = "auto"
+        cfg.music_file = str(music.get("file", cfg.music_file))
+        cfg.music_auto_fill = _as_bool(
+            music.get("auto_fill", cfg.music_auto_fill), cfg.music_auto_fill)
+        if os.environ.get("CURIO_MUSIC_MODE"):
+            mode = os.environ["CURIO_MUSIC_MODE"].strip().lower()
+            if mode in ("auto", "none", "manual"):
+                cfg.music_mode = mode
+                cfg.audio_enabled = True
+        if os.environ.get("CURIO_MUSIC_FILE"):
+            cfg.music_file = os.environ["CURIO_MUSIC_FILE"]
+            cfg.audio_enabled = True
+        if os.environ.get("CURIO_MUSIC_AUTO_FILL") is not None:
+            cfg.music_auto_fill = _as_bool(os.environ["CURIO_MUSIC_AUTO_FILL"])
+            cfg.audio_enabled = True
+        cfg.music_max_per_genre = max(0, int(music_lib.get(
+            "max_per_genre", cfg.music_max_per_genre)))
+        cfg.music_min_per_genre = max(0, min(cfg.music_max_per_genre,
+            int(music_lib.get("min_per_genre", cfg.music_min_per_genre))))
+        cfg.music_target_per_genre = max(cfg.music_min_per_genre, min(
+            cfg.music_max_per_genre, int(music_lib.get(
+                "target_per_genre", cfg.music_target_per_genre))))
+        cfg.music_gain_db = max(-40, min(-15, int(music.get(
+            "gain_db", cfg.music_gain_db))))
+        cfg.music_ducking = _as_bool(music.get("ducking", cfg.music_ducking),
+                                     cfg.music_ducking)
+        cfg.music_transitions = str(audio.get("transitions", "auto")).lower()
+        if cfg.music_transitions not in ("auto", "none"):
+            cfg.music_transitions = "auto"
+        cfg.sfx_library_enabled = _as_bool(sfx.get(
+            "library_enabled", cfg.sfx_library_enabled), cfg.sfx_library_enabled)
+        cfg.sfx_auto_fill = _as_bool(sfx.get("auto_fill", cfg.sfx_auto_fill),
+                                    cfg.sfx_auto_fill)
+        cfg.sfx_max_per_category = max(0, int(sfx_lib.get(
+            "max_per_category", cfg.sfx_max_per_category)))
+        cfg.sfx_min_per_category = max(0, min(cfg.sfx_max_per_category,
+            int(sfx_lib.get("min_per_category", cfg.sfx_min_per_category))))
+        cfg.sfx_target_per_category = max(cfg.sfx_min_per_category, min(
+            cfg.sfx_max_per_category, int(sfx_lib.get(
+                "target_per_category", cfg.sfx_target_per_category))))
         cfg.file_manager = os.environ.get("CURIO_FILE_MANAGER",
                                           cfg.file_manager)
         cfg.audio_recorder = os.environ.get("CURIO_AUDIO_RECORDER",
@@ -325,4 +395,7 @@ class CurioConfig:
             "width": self.width,
             "height": self.height,
             "fps": self.fps,
+            "music_mode": self.music_mode,
+            "audio_library_dir": self.audio_library_dir,
+            "audio_enabled": self.audio_enabled,
         }

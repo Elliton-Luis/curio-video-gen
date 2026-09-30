@@ -109,6 +109,39 @@ insert_style = "drop_in"  # caiu do álbum; alternatives: slide_left, slide_righ
 # Abaixo de -45 some; acima de -12 briga com a voz. Faixa aceita: -45..-12.
 insert_gain_db = -30   # (CURIO_VISUAL_INSERT_GAIN_DB)
 
+# Biblioteca persistente. Só `video-gen music update` baixa assets; o render
+# normal consulta os arquivos locais e não pesquisa a cada vídeo. Para permitir
+# autopreenchimento quando abaixo do mínimo, habilite music.auto_fill.
+[audio]
+library_dir = "assets/library"  # também: CURIO_AUDIO_LIBRARY_DIR
+transitions = "auto"            # auto | none
+
+[music]
+mode = "auto"                    # auto | none | manual
+file = ""                        # caminho usado quando mode = "manual"
+gain_db = -30                     # conservador; permitido: -40..-15 dB
+ducking = true
+auto_fill = true                  # busca só quando biblioteca < mínimo
+
+[music.library]
+min_per_genre = 3
+target_per_genre = 6
+max_per_genre = 10
+
+[sfx]
+library_enabled = true            # assets locais substituem SFX sintéticos pontuais
+auto_fill = true                   # busca só quando biblioteca < mínimo
+
+[sfx.library]
+min_per_category = 2
+target_per_category = 5
+max_per_category = 8
+
+# Única fonte automática inicial: API oficial Freesound; somente previews com
+# licença CC0 ou CC BY são aceitos. CC BY exige atribuição no metadata. Cadastre
+# a chave da aplicação oficial em .env (nunca no TOML):
+# FREESOUND_API_KEY=...
+
 [teleprompter]
 wpm = 150  # palavras/minuto estimadas p/ leitura (ajuste: 130/150/170)
 file_manager = "dolphin"  # aberto na pasta do teleprompter pós-geração
