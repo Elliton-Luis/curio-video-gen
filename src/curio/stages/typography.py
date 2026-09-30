@@ -114,6 +114,22 @@ GENERIC_FALLBACK: dict[str, tuple[str, ...]] = {
 # DejaVu dá ao itálico; é um rosto real, não uma simulação.
 _SLANT_STYLES = ("italic", "oblique", "slanted")
 
+# "Minion Pro Italic" e "Liberation Serif Italic" são como as pessoas
+# escrevem o nome de um itálico, e é assim que a Adobe e o Office os
+# nomeiam. O fontconfig, porém, quer `família:italic`, e tratar o nome
+# inteiro como família devolve silêncio: a fonte existe, a resolução não
+# acha, e o resultado é a fonte do sistema para o papel mais importante
+# do recurso. Então o token de estilo é separado antes de perguntar.
+_STYLE_SUFFIXES = ("italic", "oblique", "slanted")
+
+
+def split_style(name: str) -> tuple[str, bool]:
+    """("Minion Pro Italic", True) · ("EB Garamond", False)"""
+    partes = str(name or "").strip().split()
+    if partes and partes[-1].lower() in _STYLE_SUFFIXES and len(partes) > 1:
+        return " ".join(partes[:-1]), True
+    return str(name or "").strip(), False
+
 
 @dataclass(frozen=True)
 class TypographyProfile:
@@ -387,10 +403,17 @@ def _fc_resolve(family: str, want_italic: bool) -> tuple[str, str, bool] | None:
        estilo resolvido, e rejeitamos o regular quando o itálico foi pedido;
     3. família ausente do fontconfig não é motivo de erro aqui: é motivo
        de tentar a próxima candidata.
+
+    O nome pode vir como a pessoa escreve — "Minion Pro Italic" — e aí o
+    token de estilo vira a consulta `família:italic`.
     """
+    familia, itálico_pedido = split_style(family)
+    itálico_pedido = want_italic or itálico_pedido
+    if not familia:
+        return None
     try:
         proc = subprocess.run(
-            ["fc-match", f"{family}:italic" if want_italic else family,
+            ["fc-match", f"{familia}:italic" if itálico_pedido else familia,
              "--format=%{family}|%{file}|%{style}\n"],
             capture_output=True, text=True, timeout=15, check=False)
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
@@ -401,12 +424,12 @@ def _fc_resolve(family: str, want_italic: bool) -> tuple[str, str, bool] | None:
     if len(partes) < 3:
         return None
     achada, caminho, estilo = partes[0], partes[1], partes[2]
-    if family.strip().lower() not in achada.lower():
+    if familia.strip().lower() not in achada.lower():
         return None
     if not caminho or not os.path.isfile(caminho):
         return None
     inclinada = any(s in estilo.lower() for s in _SLANT_STYLES)
-    if want_italic and not inclinada:
+    if itálico_pedido and not inclinada:
         return None
     return achada, caminho, inclinada
 
@@ -415,9 +438,12 @@ _CACHE: dict[tuple[str, bool], tuple[str, str, bool] | None] = {}
 
 
 def _fc_cached(family: str, want_italic: bool):
-    chave = (family, want_italic)
+    # A chave usa a forma já separada, para "X Italic" com e sem o token
+    # não pagarem duas consultas ao fontconfig.
+    familia, _ = split_style(family)
+    chave = (familia, want_italic)
     if chave not in _CACHE:
-        _CACHE[chave] = _fc_resolve(family, want_italic)
+        _CACHE[chave] = _fc_resolve(familia, want_italic)
     return _CACHE[chave]
 
 
@@ -437,10 +463,16 @@ def _candidates(profile: TypographyProfile, intent: str, role: str
     """
     want_italic = intent in (INTENT_SERIF_ITALIC, INTENT_SANS_ITALIC)
     especifico = profile.families.get(f"role:{role}", "").strip()
-    if especifico:
-        return [(especifico, want_italic)]
-    preferida = profile.family_for(intent).strip()
     fila = []
+    if especifico:
+        # Preferência, não sentence: se a família que o usuário apontou
+        # para este papel não existir na máquina, o papel continua
+        # resolvendo pela cadeia da intenção. Cair direto na fonte do
+        # sistema aqui significaria que um `roles.quote` com um nome
+        # errado apaga a serifa da citação, que é o oposto do que um override
+        # de configuração deveria fazer.
+        fila.append((especifico, want_italic))
+    preferida = profile.family_for(intent).strip()
     if preferida:
         fila.append((preferida, want_italic))
     if want_italic:

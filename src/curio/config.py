@@ -113,6 +113,11 @@ class CurioConfig:
     # escolhido, e aí o pipeline se comporta exatamente como antes do
     # recurso. Aceita as chaves de `editorial.GENRES`.
     genre: str = ""
+    # Tipografia por gênero: `{"people": {"primary": "Minion Pro", ...}}`.
+    # Vazio = as famílias que cada perfil pede, com o fallback automático
+    # de `stages/typography.py`. Ver `[typography.<gênero>]` no
+    # config.example.toml.
+    typography: dict = field(default_factory=dict)
     # Chaves NVIDIA NÃO vivem aqui: lidas direto do ambiente
     # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
     # para nunca vazarem em logs, erros ou metadata.
@@ -247,6 +252,26 @@ class CurioConfig:
         cfg.genre = str(data.get("genre", cfg.genre) or "").strip().lower()
         if os.environ.get("CURIO_GENRE"):
             cfg.genre = os.environ["CURIO_GENRE"].strip().lower()
+        # Tipografia: `[typography.<gênero>]` com família por INTENÇÃO
+        # (primary, italic, sans, mono, condensed, fallback) e, se
+        # preciso, por PAPEL em `[typography.<gênero>.roles]`. Fica no
+        # config.toml de sempre — o usuário troca a fonte do gênero sem
+        # tocar em código.
+        typo = data.get("typography")
+        cfg.typography = {}
+        if isinstance(typo, dict):
+            for g, tabela in typo.items():
+                if isinstance(tabela, dict):
+                    cfg.typography[str(g).strip().lower()] = {
+                        str(k): v for k, v in tabela.items()}
+        for g, tabela in cfg.typography.items():
+            env = os.environ.get(f"CURIO_TYPOGRAPHY_{g.upper()}")
+            if env:
+                # "primary=Minion Pro;italic=Minion Pro Italic"
+                for pedaco in env.split(";"):
+                    if "=" in pedaco:
+                        k, v = pedaco.split("=", 1)
+                        tabela[k.strip()] = v.strip()
         cfg.queues_dir = str(data.get("queues_dir", cfg.queues_dir))
         if os.environ.get("CURIO_QUEUES_DIR"):
             cfg.queues_dir = str(os.environ["CURIO_QUEUES_DIR"])
