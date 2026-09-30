@@ -90,7 +90,7 @@ def _media(chapters, paths):
              "reused_from": None} for c in chapters]
 
 
-def _run(tmp_path, **over):
+def _run(tmp_path, narration="ai", **over):
     out_dir = str(tmp_path / "output")
     cfg = CurioConfig()
     cfg.out_dir = out_dir
@@ -117,7 +117,8 @@ def _run(tmp_path, **over):
         p.start()
     try:
         return run_pipeline("por que marte e vermelho", cfg,
-                            slug="teste-integracao", max_images=3), out_dir
+                            slug="teste-integracao", max_images=3,
+                            narration=narration), out_dir
     finally:
         for p in patches:
             p.stop()
@@ -210,3 +211,109 @@ def test_sfx_desligado_mantem_a_insercao(tmp_path):
     assert len(ins) == 2, "sem SFX a foto ainda entra"
     assert all(im["sfx"] is None for im in ins)
     assert meta["visual"]["sfx"] is False
+
+
+def test_musica_manual_e_transicoes_de_genero_chegam_ao_video(tmp_path):
+    """Mix real com trilha fornecida pelo usuário; sem download no render."""
+    music = tmp_path / "user-theme.wav"
+    subprocess.run([
+        "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        "sine=frequency=220:duration=30", "-c:a", "pcm_s16le", str(music)],
+        check=True)
+    meta, _out_dir = _run(
+        tmp_path, genre="people", music_mode="manual", music_file=str(music),
+        visual_sfx=False)
+    assert meta["audio"]["music"]["mode"] == "manual"
+    assert meta["audio"]["music"]["track"]["path"] == str(music)
+    assert meta["audio"]["music"]["ducking"] is True
+    assert meta["visual_transitions"]["genre"] == "people"
+    assert meta["artifacts"]["music"] == str(music)
+    assert os.path.isfile(meta["artifacts"]["video"])
+
+
+def test_auto_usa_trilhas_locais_especificas_por_genero(tmp_path):
+    """Dois renders FFmpeg reais escolhem assets locais de pastas distintas."""
+    library = tmp_path / "assets" / "library" / "music"
+    for genre, freq in (("people", 220), ("science", 880)):
+        folder = library / genre
+        folder.mkdir(parents=True)
+        track = folder / "fixture.wav"
+        subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+            f"sine=frequency={freq}:duration=30", "-c:a", "pcm_s16le",
+            str(track)], check=True)
+        (folder / "fixture.json").write_text(json.dumps({
+            "asset_id": f"fixture:{genre}", "source_asset_id": genre,
+            "title": f"fixture-{genre}", "author": "Curio test fixture",
+            "source": "manual", "source_url": "", "license": "CC0",
+            "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+            "downloaded_at": "test", "genres": [genre], "mood": [genre],
+            "duration": 30, "filename": track.name, "use_count": 0,
+        }), encoding="utf-8")
+
+    outputs = {}
+    for genre in ("people", "science"):
+        case = tmp_path / f"case-{genre}"
+        case.mkdir()
+        meta, _ = _run(case, genre=genre, music_mode="auto",
+                       audio_enabled=True,
+                       music_auto_fill=False, sfx_auto_fill=False,
+                       audio_library_dir=str(tmp_path / "assets" / "library"))
+        outputs[genre] = meta
+    people = outputs["people"]["audio"]["music"]["track"]
+    science = outputs["science"]["audio"]["music"]["track"]
+    assert people["title"] == "fixture-people"
+    assert science["title"] == "fixture-science"
+    assert people["path"] != science["path"]
+    assert os.path.isfile(outputs["people"]["artifacts"]["video"])
+    assert os.path.isfile(outputs["science"]["artifacts"]["video"])
+
+
+def test_fluxo_humano_guarda_audio_request_para_finalize(tmp_path):
+    music = tmp_path / "human-theme.wav"
+    subprocess.run([
+        "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        "sine=frequency=330:duration=30", "-c:a", "pcm_s16le", str(music)],
+        check=True)
+    meta, _ = _run(tmp_path, narration="human", genre="people",
+                    audio_enabled=True, music_mode="manual",
+                    music_file=str(music), visual_sfx=False)
+    assert meta["narration"] == "human-pending"
+    assert meta["audio_request"]["music"]["mode"] == "manual"
+    assert meta["audio_request"]["music"]["track"]["path"] == str(music)
+    assert "audio" not in meta  # trilha ainda não foi mixada até finalize
+
+
+def test_finalize_humano_aplica_trilha_salva_no_audio_request(tmp_path, monkeypatch):
+    from curio.pipeline import finalize_project, video_paths
+    from curio.stages import transcribe as transcribe_stage
+
+    music = tmp_path / "human-final-theme.wav"
+    subprocess.run([
+        "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        "sine=frequency=330:duration=30", "-c:a", "pcm_s16le", str(music)],
+        check=True)
+    meta, out_dir = _run(tmp_path, narration="human", genre="people",
+                         audio_enabled=True, music_mode="manual",
+                         music_file=str(music), visual_sfx=False)
+    paths = video_paths(out_dir, "teste-integracao")
+    duration = subprocess.run([
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=nw=1:nk=1", paths.silent_mp4],
+        check=True, capture_output=True, text=True)
+    seconds = float(duration.stdout.strip())
+    voice = tmp_path / "human.wav"
+    subprocess.run([
+        "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        f"sine=frequency=440:duration={max(3.0, seconds - 0.05):.3f}",
+        "-c:a", "pcm_s16le", str(voice)], check=True)
+    monkeypatch.setattr(transcribe_stage, "transcribe", lambda *a, **k: [
+        {"text": "voz", "start": 0.2, "end": 0.8}])
+    final = finalize_project("teste-integracao", str(voice),
+                            CurioConfig(out_dir=out_dir,
+                                        render_backend="cpu",
+                                        audio_library_dir=str(tmp_path / "assets/library")))
+    assert final["audio"]["music"]["mode"] == "manual"
+    assert final["audio"]["music"]["track"]["path"] == str(music)
+    assert final["artifacts"]["music"] == str(music)
+    assert os.path.isfile(final["artifacts"]["video"])
