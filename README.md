@@ -96,6 +96,104 @@ Progresso esperado:
 Output: output/salario/render/final.mp4
 ```
 
+## Escolha visual: como cada cena é visualizada
+
+O requisito não é que a cena tenha uma **fotografia** — é que ela tenha
+**um visual final**. Quando a foto não serve ao conteúdo, trocar de
+medium é a resposta certa, e uma imagem genérica "só para preencher" nunca
+entra.
+
+Cada cena declara, na etapa de cenas, o que precisa mostrar e como:
+
+| `visual_type` | Quando | Estratégia |
+|---|---|---|
+| `literal` | dá para fotografar (objeto, lugar, animal) | foto → arte → cartão |
+| `mechanism` | a cena explica **como** algo funciona | **diagrama** → cartão |
+| `historical_art` | santos, antiquity, religião, mitologia | **arte de domínio público** → foto → cartão |
+| `typographic` | a ideia **é uma palavra** (etimologia, termo, data) | **cartão** |
+| `conceptual` | abstrato demais para fotografar | cartão → diagrama |
+
+Fluxo da decisão:
+
+```text
+cena → o que precisa ser mostrado → visual_type → estratégia
+     → busca → filtros eliminatórios → nota → visual final
+```
+
+Diagrama e cartão são gerados por código (Pillow, já usado no projeto),
+sem rede e sem licença de terceiros. Nenhum deles inventa conteúdo: as
+palavras vêm do que a cena declarou.
+
+**Filtros eliminatórios** rejeitam: licença bloqueada ou incompatível com
+edição de vídeo, resolução menor que 1080 px no lado curto, arquivo
+acima do teto, e títulos com termo decorativo (`wallpaper`, `4k`,
+`background`, `mockup`, `template`, `logo`…) ou com um termo que a própria
+cena declarou proibido — foi assim que "térmico" parou de puxar usina
+termelétrica e "tinta" parou de puxar uva.
+
+**Nota de relevância** (0–100) = cobertura do assunto (até 75) + bônus
+pelas entidades pedidas na cena (até 25). Lê o **título** da imagem, nunca
+as tags do provedor: tag é palpite de quem doou o acervo, e é
+justamente ela que traz "wallpaper, 4k" para uma cena de conteúdo. Abaixo
+do mínimo, a cena **não** fica com a imagem "menos ruim" — ela troca de
+estratégia.
+
+Provedores sem chave não quebram o fluxo: `video-gen doctor` lista cada
+um e o motivo de cada exclusão.
+
+## Revisão humana
+
+```bash
+video-gen review --slug <slug>              # abre review/contact_sheet.html
+video-gen review --slug <slug> --dry-run    # a decisão por cena, em texto
+video-gen swap --slug <slug> --scene 3 --pick 1
+video-gen rerender --slug <slug>
+```
+
+A folha de contato é um HTML estático com uma linha por cena: o texto, o
+tipo de visual, a imagem escolhida com nota, provedor e licença, e **os
+motivos das principais rejeições**. É o que permite revisar um vídeo em
+~1 minuto e corrigir o tema em vez de adivinhar.
+
+`swap` troca a imagem de uma cena; `rerender` refaz o vídeo e as legendas
+a partir do que mudou — **sem** re-sintetizar a narração, sem re-pesquisar
+e sem chamar o LLM.
+
+## Configuração
+
+Copie `config.example.toml` para `config.toml` e ajuste (duração-alvo, voz,
+backend de render `auto|vaapi|qsv|cpu`, resolução, legendas). Variáveis de
+ambiente (`CURIO_OUT_DIR`, `CURIO_TTS`, `CURIO_BACKEND`, …) sobrescrevem o
+arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
+(gitignored; veja `.env.example`).
+
+### Seleção de mídia
+
+| Chave (config) | Variável | Padrão | O que faz |
+|---|---|---|---|
+| `[media] providers` | `CURIO_MEDIA_PROVIDERS` | `pixabay,unsplash,pexels,nasa,wikimedia` | ordem de tentativa; `none` desliga |
+| — | `CURIO_MEDIA_SCORE_MIN` | `34` | nota mínima (0–100); `0` desliga o corte |
+| — | `CURIO_MEDIA_MIN_DIMENSION` | `1080` | lado mínimo em px |
+
+### Pontuação semântica (opcional, desligada)
+
+A camada `base` (lexical) é a padrão e **não** precisa de nada além do
+projeto. A camada CLIP existe como ponto de extensão e é **desligada por
+padrão** — o `curio` não instala nem baixa torch, `open_clip` ou pesos de
+modelo:
+
+```bash
+CURIO_CLIP_ENABLED=1     # liga (exige torch + open_clip instalados à mão)
+CURIO_CLIP_DEVICE=auto  # auto | xpu | cuda | mps | cpu
+```
+
+Com `auto`, o projeto procura aceleradores de verdade no torch
+instalado — `xpu` (Intel, o caso do Arc B580), `cuda`, `mps` — e só
+recua para `cpu` se nenhum existir. `video-gen doctor` informa o estado
+da camada e o device. CLIP entra **depois** dos filtros e da nota base,
+só nos melhores candidatos, porque inferência pesada em todos eles
+transformaria um vídeo rápido em lento.
+
 ## Estrutura de saída
 
 ```text
@@ -106,19 +204,13 @@ output/<slug>/
 ├── audio/narration.wav + words.json (IA) / human.wav (sua voz)
 │   └── sfx.wav + mixed.wav (SFX discretos, só roteiro-pronto com inserções)
 ├── sources/sources.json (claims factuais + procedência de mídia)
+│   └── FONTES.md (o mesmo em texto claro: fontes, imagens, créditos)
+├── review/contact_sheet.html (revisão visual por cena)
 ├── teleprompter/teleprompter.mp4 (fluxo humano: fonte grande, marca a virada de cena)
 ├── subtitles/subs.srt + subs.ass
 ├── render/silent.mp4 + final.mp4
-└── metadata.json (capítulos, assets, licenças, tempos)
+└── metadata.json (capítulos, assets, licenças, tempos, visual_report)
 ```
-
-## Configuração
-
-Copie `config.example.toml` para `config.toml` e ajuste (duração-alvo, voz,
-backend de render `auto|vaapi|qsv|cpu`, resolução, legendas). Variáveis de
-ambiente (`CURIO_OUT_DIR`, `CURIO_TTS`, `CURIO_BACKEND`, …) sobrescrevem o
-arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
-(gitignored; veja `.env.example`).
 
 ## Roteiros via LLM (chain com rodízio)
 
@@ -154,8 +246,9 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 | Etapa | Implementação MVP |
 |---|---|
 | Roteiro | chain LLM (NVIDIA → OpenRouter → Gemini → Groq) em rodízio com retries; tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
-| Cenas | divisão semântica via LLM do chain (JSON) ou local; consultas visuais em inglês |
-| Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia; CLI `sources`; registro automático de mídia ao baixar; URLs exatas da pesquisa |
+| Cenas | divisão semântica via LLM do chain (JSON) ou local; cada cena declara `visual_type`, assunto, entidades, contexto e termos proibidos |
+| Mídia | consulta vários provedores, filtra com motivo, pontua por relevância sobre o assunto e corta abaixo do mínimo; sem foto boa a cena vira diagrama ou cartão, nunca imagem genérica |
+| Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia por obra; CLI `sources`; `FONTES.md` com fontes, imagens e créditos prontos; URLs exatas da pesquisa |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
 | Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base, Archivo Black com caixa preta sólida |
 | Título | pergunta curta gerada pela IA a partir do roteiro (metadados `video_title`), queimada nos primeiros 5 s |
