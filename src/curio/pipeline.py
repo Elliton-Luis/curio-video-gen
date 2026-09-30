@@ -556,6 +556,12 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     perfil = editorial_stage.get(genre_key)
     pacing = perfil.pacing if perfil is not None else None
     alvo_cena = pacing.target_scene_seconds if pacing is not None else 9.0
+    # Tratamento da legenda: caixa alta, relevo, destaque por palavra. É
+    # apresentação e mora no perfil TIPOGRÁFICO, não no editorial — a
+    # fonte de exibição continua a mesma por legibilidade, e a
+    # sincronia não é tocada. `None` sem gênero = comportamento antigo.
+    from .stages import typography as _typo_stage
+    cap_style = _typo_stage.profile_for(genre_key).captions
     # `None` de propósito: sem gênero, scenes_for_* usa o teto legado e o
     # vídeo de quem não pediu nada sai com o mesmo nº de cenas de sempre.
     teto_cena = pacing.max_scenes if pacing is not None else None
@@ -962,6 +968,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     t0 = time.monotonic()
     emit(5, "Sincronizando legendas")
     prev_ass = _read(paths.subs_ass) if os.path.isfile(paths.subs_ass) else ""
+    # O TRATAMENTO da legenda vem do perfil tipográfico, não do editorial:
+    # caixa alta e relevo são apresentação, e a fonte de exibição já está
+    # garantida por legibilidade. Um vídeo sem gênero recebe `None` e sai
+    # exatamente como antes.
     cue_count = subs_stage.write_subtitles(
         script_text, audio_duration, paths.subs_srt, paths.subs_ass,
         cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
@@ -969,7 +979,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         cache_dir=cfg.cache_dir,
         max_words=(pacing.caption_max_words if pacing is not None
                    else subs_stage.MAX_WORDS_PER_CUE),
-        highlight=(pacing.caption_highlight if pacing is not None else "word"))
+        highlight=(pacing.caption_highlight if pacing is not None else "word"),
+        **({"upper": cap_style.upper, "karaoke": cap_style.karaoke,
+            "outline": cap_style.outline, "shadow": cap_style.shadow}
+           if cap_style is not None else {}))
     subs_changed = _read(paths.subs_ass) != prev_ass
     if subs_changed and not force and os.path.isfile(paths.final_mp4):
         print("AVISO: texto das legendas mudou — refazendo o MP4 final "

@@ -137,6 +137,36 @@ def split_style(name: str) -> tuple[str, bool]:
 
 
 @dataclass(frozen=True)
+class CaptionStyle:
+    """Como a legenda deste gênero é desenhada.
+
+    Não é a FONTE — a fonte de exibição é a mesma para todos, por
+    legibilidade. É o TRATAMENTO: caixa, contorno e o destaque por
+    palavra.
+
+    Existe porque a direção de arte pediu para afastar a estética de
+    Shorts/TikTok, e o item mais forte dessa estética era a legenda:
+    caixa alta, contorno em relevo e a palavra*a* acendendo a cada
+    sílaba. Um vídeo de História de Pessoas com essa legenda continua
+    sendo um vídeo de Shorts por dentro, mesmo com Minion no cartão.
+
+    A legibilidade não é o que muda: a fonte continua pesada, o
+    contraste continua alto e a sincronia não é tocada. O que sai é o
+    relevo a mais e o movimento.
+    """
+
+    upper: bool = True          # caixa alta
+    karaoke: bool = True        # destaque por palavra dentro do cue
+    outline: int = 7            # espessura do contorno
+    shadow: int = 4             # deslocamento da sombra
+
+
+# O tratamento "de livro": sem caixa alta, sem palavra a acender, com
+# menos relevo. Continua sendo a mesma fonte pesada sobre o mesmo fundo.
+BOOK_CAPTIONS = CaptionStyle(upper=False, karaoke=False, outline=4, shadow=1)
+
+
+@dataclass(frozen=True)
 class TypographyProfile:
     """A direção tipográfica de um gênero.
 
@@ -160,6 +190,10 @@ class TypographyProfile:
     # vale mesmo sem itálico: o par automático existe para consertar a
     # NOSSA preferência, não para desobedecer à DELE.
     pinned: bool = False
+    # Tratamento da legenda queimada. Vazio = o de sempre (caixa alta,
+    # relevo, destaque por palavra), que é o que um vídeo sem gênero
+    # precisa continuar sendo.
+    captions: CaptionStyle | None = None
 
     def intent_for(self, role: str) -> str:
         return self.roles.get(role, INTENT_SANS)
@@ -203,7 +237,8 @@ PEOPLE = TypographyProfile(
            ROLE_DOCUMENT: 0.9, ROLE_LATIN: 0.94, ROLE_CAPTION: 1.0,
            ROLE_KICKER: 0.62, ROLE_DATE: 0.72, ROLE_LOCATION: 0.72},
     direction="Livro de biografia. Serifada de leitura para a voz que "
-              "narra; itálico serifado reservado para a voz que cita.")
+              "narra; itálico serifado reservado para a voz que cita.",
+    captions=BOOK_CAPTIONS)
 
 HISTORY = TypographyProfile(
     key="history",
@@ -222,7 +257,8 @@ HISTORY = TypographyProfile(
     scale={ROLE_TITLE: 1.1, ROLE_QUOTE: 0.94, ROLE_KICKER: 0.6,
            ROLE_DATE: 0.7, ROLE_LOCATION: 0.7},
     direction="Documental e histórico, com título mais forte. Itálico para "
-              "documento e citação. Nada de estética de rede social.")
+              "documento e citação. Nada de estética de rede social.",
+    captions=BOOK_CAPTIONS)
 
 ETYMOLOGY = TypographyProfile(
     key="etymology",
@@ -245,7 +281,8 @@ ETYMOLOGY = TypographyProfile(
            ROLE_QUOTE: 0.96, ROLE_KICKER: 0.6},
     direction="A palavra é o gráfico. Termo no corpo de destaque, forma "
               "antiga em itálico, a seta de transformação como elemento "
-              "tipográfico e não como seta desenhada.")
+              "tipográfico e não como seta desenhada.",
+    captions=BOOK_CAPTIONS)
 
 MYSTERY = TypographyProfile(
     key="mystery",
@@ -268,7 +305,8 @@ MYSTERY = TypographyProfile(
     scale={ROLE_KICKER: 0.66, ROLE_DATE: 0.74, ROLE_LOCATION: 0.74,
            ROLE_QUOTE: 0.96, ROLE_TITLE: 1.04},
     direction="Arquivo. Sans condensada; mono para data, lugar e "
-              "identificador, para separar fato de testemunho na tela.")
+              "identificador, para separar fato de testemunho na tela.",
+    captions=BOOK_CAPTIONS)
 
 MYTHOLOGY = TypographyProfile(
     key="mythology",
@@ -287,7 +325,8 @@ MYTHOLOGY = TypographyProfile(
     scale={ROLE_PERSON: 1.08, ROLE_KICKER: 0.68, ROLE_QUOTE: 0.96,
            ROLE_TITLE: 1.05},
     direction="Tradição. Serifada literária; itálico para o nome do mito e "
-              "para a tradição citada. Ornamento com moderação.")
+              "para a tradição citada. Ornamento com moderação.",
+    captions=BOOK_CAPTIONS)
 
 SCIENCE = TypographyProfile(
     key="science",
@@ -309,7 +348,8 @@ SCIENCE = TypographyProfile(
     scale={ROLE_TERM: 1.1, ROLE_TITLE: 1.02, ROLE_KICKER: 0.6,
            ROLE_DATE: 0.76},
     direction="Técnica. Sans limpa, hierarquia por tamanho e espaço, "
-              "mono para medida e unidade. Nada de ornamento.")
+              "mono para medida e unidade. Nada de ornamento.",
+    captions=BOOK_CAPTIONS)
 
 # Sem gênero escolhido: a fonte de exibição que o projeto já usava. Não é
 # um perfil editorial, é o absence de um — e precisa resolver para o mesmo
@@ -320,6 +360,7 @@ DEFAULT = TypographyProfile(
     families={INTENT_SERIF: "", INTENT_SERIF_ITALIC: "",
               INTENT_SANS: "", INTENT_MONO: ""},
     roles={r: INTENT_SANS for r in ROLES},
+    captions=None,
     direction="Sem gênero: a fonte de exibição legível de sempre.")
 
 

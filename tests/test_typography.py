@@ -962,3 +962,97 @@ def test_legenda_e_teleprompter_compartilham_a_mesma_decisao():
     from curio.stages import teleprompter as TP
     assert TP.TELE_FAMILY not in [T.PROFILES[g].family_for(T.INTENT_SERIF)
                                   for g in T.PROFILES]
+
+
+# --- o tratamento da legenda por gênero -------------------------------
+
+def _legenda(genre, texto, tmp_path, total=10.0):
+    from curio.config import CurioConfig
+    from curio.stages import subs as S
+    from curio.stages import typography as T
+    cap = T.profile_for(genre).captions
+    kw = ({"upper": cap.upper, "karaoke": cap.karaoke,
+           "outline": cap.outline, "shadow": cap.shadow}
+          if cap is not None else {})
+    n = S.write_subtitles(texto, total, str(tmp_path / "s.srt"),
+                          str(tmp_path / "s.ass"), 1080, 1920, 74, 320,
+                          cache_dir=str(tmp_path), **kw)
+    return n, (tmp_path / "s.ass").read_text(encoding="utf-8"), kw
+
+
+TEXTO = ("São Bento de Núrsia nasceu por volta de 480. A fórmula que ele "
+         "repetia era simples: ora et labora.")
+
+
+def test_genero_de_livro_tira_a_caixa_alta_da_legenda(tmp_path):
+    _, ass, _ = _legenda("people", TEXTO, tmp_path)
+    assert "ORA ET LABORA" not in ass
+    assert "São Bento de Núrsia" in ass
+
+
+def test_genero_de_livro_tira_o_karaoke(tmp_path):
+    """Nem toda legenda de gênero tem que acender uma palavra por cue.
+
+    O item mais forte da estética que a direção de arte pediu para
+    afastar era a legenda com a palavra*a* mudando de cor. A fonte
+    pesada, o contraste e a sincronia continuam; o movimento sai.
+    """
+    _, ass, _ = _legenda("people", TEXTO, tmp_path)
+    assert "\\c&H" not in ass
+    assert "\\3c" not in ass
+
+
+def test_genero_de_livro_reduz_o_relevo(tmp_path):
+    _, ass, _ = _legenda("people", TEXTO, tmp_path)
+    linha = [ln for ln in ass.splitlines() if ln.startswith("Style:")][0]
+    campos = linha.split(",")
+    # BorderStyle(16) Outline(17) Shadow(18) na ordem do cabeçalho ASS
+    assert int(campos[17]) < 7
+    assert int(campos[18]) < 4
+
+
+def test_sem_genero_a_legenda_sai_exatamente_como_antes(tmp_path):
+    """O vídeo de quem não escolheu gênero não muda de cara."""
+    n, ass, kw = _legenda("", TEXTO, tmp_path)
+    assert kw == {}
+    assert "\\c&H" in ass
+    assert "SÃO BENTO" in ass or "NASCEU" in ass
+
+
+def test_nome_proprio_sobrevive_a_caixa_de_frase(tmp_path):
+    """O corretor de "maiúsculas aleatórias" comia nome próprio.
+
+    "São Bento de Núrsia" passava por "Bento" numa regra que só fazia
+    sentido quando tudo virava caixa alta. Com caixa de frase, a regra
+    produzia "São bento de Núrsia" — nome próprio em minúscula numa
+    legenda de biografia.
+    """
+    _, ass, _ = _legenda("people", TEXTO, tmp_path)
+    assert "São bento" not in ass
+    assert "São Bento" in ass
+
+
+def test_regua_de_livro_na_legenda_dos_seis_generos():
+    from curio.stages import typography as T
+    for g in ("people", "history", "etymology", "mythology", "mystery",
+              "science"):
+        cap = T.profile_for(g).captions
+        assert cap is not None, g
+        assert cap.upper is False and cap.karaoke is False, g
+
+
+def test_sincronia_nao_muda_com_o_tratamento():
+    """Muda como o texto se parece, nunca quando ele aparece."""
+    from curio.stages import subs as S
+    a = S.build_cues(TEXTO, 10.0)
+    b = S.build_cues(TEXTO, 10.0, upper=False, karaoke=False)
+    assert len(a) == len(b)
+    assert [round(c[0], 3) for c in a] == [round(c[0], 3) for c in b]
+    assert [round(c[1], 3) for c in a] == [round(c[1], 3) for c in b]
+
+
+def test_a_fonte_da_legenda_continua_a_de_exibicao(tmp_path):
+    """O tratamento mudou; a fonte não. Legibilidade primeiro."""
+    from curio.stages.subs import ensure_display_font
+    _, ass, _ = _legenda("people", TEXTO, tmp_path)
+    assert ensure_display_font()[0] in ass

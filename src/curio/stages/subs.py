@@ -128,7 +128,18 @@ def strip_list_markers(text: str) -> str:
     return _LIST_MARKER_LEAD_JUNK.sub("", text)
 
 
-def _normalize_subtitle_text(text: str) -> str:
+def _case(txt: str, upper: bool) -> str:
+    """Caixa alta só quando o tratamento pede.
+
+    A caixa alta era aplicada dentro da normalização, sem parâmetro, e por
+    isso era impossível desligá-la sem reescrever o normalizador inteiro.
+    A forma é minúscula: `str.upper()` em vez de `.title()`, porque
+    título em "de Da Nurcia" e "E A Regra" fica pior do que caixa alta.
+    """
+    return str(txt or "").upper() if upper else str(txt or "")
+
+
+def _normalize_subtitle_text(text: str, upper: bool = True) -> str:
     """Normaliza texto da legenda: corrige pontuação, capitalização, interrogações."""
     if not text:
         return text
@@ -137,8 +148,16 @@ def _normalize_subtitle_text(text: str) -> str:
     text = strip_list_markers(text)
     # Normaliza espaços
     text = re.sub(r"\s+", " ", text.strip())
-    # Corrige letras maiúsculas aleatórias no meio da frase
-    text = re.sub(r"(?<=[a-z])\s+([A-Z])(?=[a-z])", lambda m: " " + m.group(1).lower(), text)
+    if upper:
+        # Só no caminho de caixa alta. Este ajuste existe para
+        # "a PALAVRA é assim" que o modelo às vezes devolve, e ele é um
+        # no-op quando tudo vira caixa alta logo abaixo. Em caixa de
+        # frase ele é DESTRUTIVO: "São Bento de Núrsia" vira "São bento
+        # de Núrsia", porque "Bento" segue uma letra minúscula e é
+        # seguido de outra. Nome próprio em minúscula numa legenda de
+        # biografia é pior que a sujeira que a regra pretendia limpar.
+        text = re.sub(r"(?<=[a-z])\s+([A-Z])(?=[a-z])",
+                      lambda m: " " + m.group(1).lower(), text)
     # Heurística simples para perguntas: palavras interrogativas no início (PT + EN)
     interrogatives = (r"^(?:o que|o que e|por que|porque|como|quando|onde|quem|qual|quais|"
                       r"quanto|quantos|what|why|how|when|where|who|which|whom|whose)")
@@ -152,9 +171,8 @@ def _normalize_subtitle_text(text: str) -> str:
         # Se parece pergunta mas não tem ?, adiciona
         if re.match(interrogatives, s, re.IGNORECASE) and not s.rstrip().endswith(("?", "？")):
             s = s.rstrip(".!.") + "?"
-        # Garante primeira letra maiúscula
         if s:
-            s = s.upper()
+            s = _case(s, upper)
         normalized.append(s)
     return " ".join(normalized)
 
@@ -218,13 +236,21 @@ def _apply_highlight(text: str, highlight_idx: int) -> str:
 
 
 def build_cues(text: str, total_duration: float, lead: float = 0.15,
-               max_words: int = MAX_WORDS_PER_CUE) -> list[tuple[float, float, str]]:
+               max_words: int = MAX_WORDS_PER_CUE,
+               upper: bool = True,
+               karaoke: bool = True) -> list[tuple[float, float, str]]:
     """Divide em cues curtos com tempos proporcionais. Coração da sincronia.
-    
+
     Limita a MAX_WORDS_PER_CUE palavras por cue, 1 palavra de destaque por cue.
-    Normaliza o texto (maiúsculas, pontuação) antes de processar.
+    Normaliza o texto (caixa, pontuação) antes de processar.
+
+    `upper` e `karaoke` vêm do tratamento de legenda do gênero. A
+    SINCRONIA é a mesma nos dois casos: isto mexe em como o texto se
+    parece, nunca em quando ele aparece. Com `karaoke=False` não há
+    destaque por palavra — a cor, o contorno e a sombra continuam
+    garantindo o contraste, e é isso que sustenta a legibilidade.
     """
-    text = _normalize_subtitle_text(text)
+    text = _normalize_subtitle_text(text, upper)
     words = _words(text)
     if not words:
         raise ValueError("roteiro vazio — nada para legendar")
@@ -244,9 +270,12 @@ def build_cues(text: str, total_duration: float, lead: float = 0.15,
         if end - start < 1.0 and i != len(chunks) - 1:
             end = min(total_duration, start + 1.0)
         # Aplica destaque na palavra de impacto
-        words_in_cue = cue.split()
-        highlight_idx = _select_highlight_word(words_in_cue)
-        cue_styled = _apply_highlight(cue, highlight_idx)
+        if karaoke:
+            words_in_cue = cue.split()
+            highlight_idx = _select_highlight_word(words_in_cue)
+            cue_styled = _apply_highlight(cue, highlight_idx)
+        else:
+            cue_styled = cue
         cues.append((start, end, cue_styled))
         cursor = end
     return cues
@@ -405,7 +434,10 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
                     fontname: str | None = None, bold: int | None = None,
                     cache_dir: str = "cache",
                     max_words: int = MAX_WORDS_PER_CUE,
-                    highlight: str = "word") -> int:
+                    highlight: str = "word",
+                    upper: bool = True, karaoke: bool = True,
+                    outline: int = SUBTITLE_OUTLINE,
+                    shadow: int = SUBTITLE_SHADOW) -> int:
     """Gera SRT + ASS. Com `words` (timestamps reais), sem offset artificial;
     sem eles, cai no modo proporcional legado.
 
@@ -413,6 +445,12 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
     título: a densidade da legenda e o que nela acende. Etimologia corta
     de 4 em 4 e acende a palavra; ciência corta de 6 em 6 e acenta o termo.
     Karaokê em tudo vira ruído, então `highlight="none"` desliga.
+
+    `upper`, `karaoke`, `outline` e `shadow` são o TRATAMENTO, e chegam
+    do perfil tipográfico do gênero: caixa alta, relevo e destaque por
+    palavra são exatamente o que a direção de arte pediu para afastar.
+    O padrão é o comportamento histórico, para que um vídeo sem gênero
+    saia byte a byte igual ao de antes.
 
     A fonte do ASS é escalada pela altura (base calibrada para 1920),
     em pixels reais — PlayRes do ASS = resolução do vídeo. Fonte pesada
@@ -425,11 +463,16 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
         fontname = resolved if fontname is None else fontname
         bold = resolved_bold if bold is None else bold
     font_size = max(20, round(base_font_size * height / 1920))
+    if not karaoke:
+        highlight = "none"
     cues = (cues_from_words(words, max_words=max_words, highlight=highlight)
-            if words else build_cues(text, total_duration, max_words=max_words))
+            if words else build_cues(text, total_duration,
+                                     max_words=max_words, upper=upper,
+                                     karaoke=karaoke))
     with open(srt_path, "w", encoding="utf-8") as fh:
         fh.write(cues_to_srt(cues))
     with open(ass_path, "w", encoding="utf-8") as fh:
         fh.write(cues_to_ass(cues, width, height, font_size, margin_v,
-                             fontname=fontname, bold=bold))
+                             fontname=fontname, bold=bold,
+                             outline=outline, shadow=shadow))
     return len(cues)
