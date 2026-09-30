@@ -664,3 +664,58 @@ def test_import_de_python_311_nao_quebra():
     saida = subprocess.run([sys.executable, "-c", codigo],
                            capture_output=True, text=True, check=True)
     assert saida.stdout.strip() == T.INTENT_SERIF_ITALIC
+
+
+# --- o que sai no metadata -------------------------------------------
+
+def test_metadata_guarda_a_tipografia_resolvida():
+    """Sem isto, a única forma de saber a fonte do vídeo é rerenderizar."""
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    r = _typography_report(CurioConfig(), "people")
+    assert r["key"] == "people"
+    assert r["roles"]["quote"]["italic"] is True
+    assert r["roles"]["quote"]["requested"] == "Minion Pro Italic"
+    assert r["roles"]["title"]["intent"] == T.INTENT_SERIF
+
+
+def test_metadata_registra_o_fallback_que_respondeu():
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    T.clear_cache()
+    try:
+        papel = _typography_report(CurioConfig(), "people")["roles"]["quote"]
+        if papel["fallback"]:
+            assert papel["family"] != "Minion Pro Italic"
+            assert papel["family"]          # respondeu alguma coisa
+    finally:
+        T.clear_cache()
+
+
+def test_metadata_diz_a_fonte_real_da_legenda():
+    """A legenda queima na fonte de exibição, e o metadata diz isso.
+
+    Reportar "Noto Sans" para uma legenda em Archivo Black é pior que
+    não reportar: é uma informação errada com cara de autoritativa.
+    """
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    from curio.stages.subs import ensure_display_font
+    papel = _typography_report(CurioConfig(), "people")["roles"]["caption"]
+    assert papel["family"] == ensure_display_font()[0]
+    assert papel["legibility"] is True
+    assert papel["italic"] is False
+
+
+def test_metadata_vazio_sem_genero():
+    """Treze papéis com o mesmo valor em todo projeto antigo é ruído."""
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    assert _typography_report(CurioConfig(), "") == {}
+
+
+def test_metadata_do_genero_desconhecido_nao_quebra():
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    r = _typography_report(CurioConfig(), "inexistente")
+    assert r["key"] == ""

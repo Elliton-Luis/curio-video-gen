@@ -720,10 +720,29 @@ class Typography:
         return r.path or _legacy_path()
 
     def report(self) -> dict:
-        """O que foi resolvido, papel a papel. Vai para o metadata."""
+        """O que foi resolvido, papel a papel. Vai para o metadata.
+
+        Para a legenda, o relatório diz a fonte de EXIBIÇÃO, que é o que
+        o render realmente usa, e não a sans do perfil. Um metadata que
+        afirma "Noto Sans" para uma legenda queimada em Archivo Black
+        seria pior do não ter metadata: dá ao autor uma informação errada
+        com aparência de autoritativa.
+        """
         out = {"key": self.profile.key, "label": self.profile.label,
                "direction": self.profile.direction, "roles": {}}
         for papel in ROLES:
+            if papel in LEGIBILITY_ROLES:
+                familia, _bold, caminho = self.ass(papel)
+                out["roles"][papel] = {
+                    "intent": INTENT_SANS,
+                    "family": familia,
+                    "italic": False,
+                    "requested": "fonte de exibição (legibilidade)",
+                    "fallback": False,
+                    "path": caminho or "",
+                    "legibility": True,
+                }
+                continue
             r = resolve(papel, self.genre, self.overrides)
             out["roles"][papel] = {
                 "intent": r.intent,
@@ -731,6 +750,7 @@ class Typography:
                 "italic": r.italic,
                 "requested": r.requested,
                 "fallback": r.is_fallback,
+                "path": r.path or "",
             }
         return out
 

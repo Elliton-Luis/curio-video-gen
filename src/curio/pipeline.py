@@ -397,6 +397,28 @@ def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
     return subs_stage.ensure_display_font(cfg.cache_dir)[2]
 
 
+def _typography_report(cfg: CurioConfig, genre_key: str = "") -> dict:
+    """O que a tipografia RESOLVEU, papel a papel, para o metadata.json.
+
+    Sem isto, a única forma de saber com que fonte o vídeo saiu é
+    rerenderizar e comparar. E há um caso em que isso não basta: uma
+    família que responde em itálico mas não em reto, ou um par que o
+    módulo escolheu por coerência em vez de por preferência. O autor
+    precisa ler "quote: pedido Minion Pro Italic, respondeu Utopia
+    Italic" no arquivo do próprio projeto, do mesmo jeito que lê as
+    fontes da pesquisa.
+
+    Só entra no metadata quando há gênero: sem ele a resposta é sempre a
+    fonte de exibição, e um bloco de treze papéis com o mesmo valor
+    dentro de todo projeto antigo é ruído.
+    """
+    from .stages import typography as typo_stage
+    if not genre_key:
+        return {}
+    return typo_stage.for_genre(
+        genre_key, (cfg.typography or {}).get(genre_key)).report()
+
+
 def _build_silent(chapters: list[Chapter], media_scenes: list[dict], idea: str,
                    durations: list[float], paths: VideoPaths,
                    cfg: CurioConfig, out_path: str) -> str:
@@ -998,6 +1020,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     metadata.update({
         "genre": genre_key,
         "genre_profile": editorial_stage.summary(perfil),
+        "typography": _typography_report(cfg, genre_key),
         "narration": "ai",
         "mode": "script" if script_mode else "idea",
         "video_title": video_title,
@@ -1169,6 +1192,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     metadata.update({
         "genre": genre_key,
         "genre_profile": genre_profile or editorial_stage.summary(None),
+        "typography": _typography_report(cfg, genre_key),
         "narration": "human-pending",
         "mode": "script" if script_mode else "idea",
         "video_title": video_title,
