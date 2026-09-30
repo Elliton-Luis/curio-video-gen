@@ -81,6 +81,10 @@ class CurioConfig:
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
     nvidia_timeout: int = 15  # timeout estrito para chamadas LLM
+    # Teto do mesmo timeout. Antes era 15 e rígido; agora é configurável
+    # para que um modelo grande e lento tenha orçamento, e 15 continua
+    # sendo o padrão. Ver nvidia.call_timeout_max.
+    nvidia_timeout_max: int = 15
     openrouter_model: str = "google/gemini-2.5-flash"  # modelo padrão via OpenRouter
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     gemini_model: str = "gemini-2.5-flash"  # Gemini direto (GEMINI_API_KEY)
@@ -151,6 +155,8 @@ class CurioConfig:
         cfg.nvidia_base_url = str(nvidia.get("base_url", cfg.nvidia_base_url))
         cfg.nvidia_model = str(nvidia.get("model", cfg.nvidia_model))
         cfg.nvidia_timeout = int(nvidia.get("timeout", cfg.nvidia_timeout))
+        cfg.nvidia_timeout_max = int(
+            nvidia.get("timeout_max", cfg.nvidia_timeout_max))
         orouter = data.get("openrouter", {}) if isinstance(data.get("openrouter"), dict) else {}
         cfg.openrouter_model = str(orouter.get("model", cfg.openrouter_model))
         cfg.openrouter_base_url = str(orouter.get("base_url", cfg.openrouter_base_url))
@@ -174,6 +180,8 @@ class CurioConfig:
         cfg.nvidia_base_url = os.environ.get("NVIDIA_BASE_URL", cfg.nvidia_base_url)
         if os.environ.get("NVIDIA_TIMEOUT"):
             cfg.nvidia_timeout = int(os.environ["NVIDIA_TIMEOUT"])
+        if os.environ.get("NVIDIA_TIMEOUT_MAX"):
+            cfg.nvidia_timeout_max = int(os.environ["NVIDIA_TIMEOUT_MAX"])
         cfg.openrouter_model = os.environ.get("OPENROUTER_MODEL",
                                               cfg.openrouter_model)
         cfg.openrouter_base_url = os.environ.get("OPENROUTER_BASE_URL",

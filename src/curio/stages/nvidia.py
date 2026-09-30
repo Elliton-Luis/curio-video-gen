@@ -505,8 +505,80 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
 # cospe raciocínio junto, quebrando o parse.
 JSON_FIRST_ORDER = ("openrouter", "gemini", "groq", "nvidia")
 
-# Teto rígido por chamada HTTP LLM (s): nem .env nem config passam disso.
+# Teto por chamada HTTP LLM (s).
+#
+# Antes era 15 e RÍGIDO: nem .env nem config passavam disso, o que
+# significava que um modelo grande e lento no NIM não tinha como ser
+# usado — o teto matava a chamada e o rodízio caía no próximo provedor
+# sem que ninguém pudesse aumentar o orçamento. O padrão continua 15 e o
+# comportamento de hoje é idêntico; o que muda é que o teto agora é
+# CONFIGURÁVEL, porque a escolha de valor é de quem opera, e não há
+# evidência aqui para escolher por ele.
+#
+# `[nvidia] timeout_max` no config.toml, ou NVIDIA_TIMEOUT_MAX no .env.
 LLM_CALL_TIMEOUT_MAX = 15
+
+# Timeout por PROVEDOR, quando a resposta deste é mais lenta que a dos
+# outros. Mesma regra: vazio = o teto global, sem diferença nenhuma. Um
+# modelo de 550B parâmetros que precisa de 40 s não vira o problema dos
+# provedores rápidos, e um único número para todos obriga a escolher entre
+# "um teto alto para todos" e "um teto baixo para todos".
+LLM_PROVIDER_TIMEOUT: dict[str, int] = {}
+
+# O QUE ESTE TIMEOUT É, E O QUE ELE NÃO É
+#
+# Investigation before changing it. A execução de São Jerônimo mostrou
+# "[NVIDIA] tentativa 1/6 falhou (timeout): etapa NVIDIA: timeout após 15s
+# com o modelo nvidia/nemotron-3-ultra-550b-a55b", seguido de um
+# fallback que funcionou. A pergunta era: o modelo é lento demais, ou o
+# prazo é curto demais?
+#
+# O que existe hoje é UM número, e ele é um timeout de SOCKET:
+# `urlopen(timeout=...)` vale para o handshake e para cada recv. Isso
+# significa que um modelo que leva 40 s mas transmite algo de tempos em
+# tempos NÃO é cortado — o que mata é silêncio no socket. O que não
+# existe é a separação pedida em três nomes:
+#
+#   connect timeout  — quanto tempo esperar pelo handshake TLS/API.
+#   read timeout     — quanto tempo aceitar silêncio entre pacotes.
+#   generation budget — quanto tempo a GERAÇÃO inteira pode levar.
+#
+# Só o segundo é observável hoje, porque os três viram o mesmo parâmetro.
+# Separá-los exigiria trocar a camada HTTP (http.client com timeout
+# distinto no socket após o connect, ou uma biblioteca), e essa é uma
+# reengenharia de provider — fora do escopo desta tarefa, e sem medição
+# que justificasse o risco.
+#
+# Nenhum valor novo foi escolhido aqui. Não há medição de quanto o
+# nemotron-3-ultra leva de verdade nesta máquina, e inventar 90 s seria
+# chutar. O que ficou pronto é a MECÂNICA: o teto é configurável e
+# pode ser dado por provedor. Quem medir, configura; quem não, o
+# comportamento é o de sempre.
+
+
+def call_timeout_max(configured: int | None = None) -> int:
+    """O teto de chamada, na ordem: config, env, padrão.
+
+    Existe para que "aumentar o tempo do modelo lento" seja uma linha de
+    configuração em vez de uma edição de código. Nenhuma evidência
+    justifica um valor maior que 15, então o padrão é 15.
+    """
+    if configured is not None:
+        try:
+            v = int(configured)
+            if v > 0:
+                return v
+        except (TypeError, ValueError):
+            pass
+    env = os.environ.get("NVIDIA_TIMEOUT_MAX", "").strip()
+    if env:
+        try:
+            v = int(env)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return LLM_CALL_TIMEOUT_MAX
 
 
 def _rotation(pids: list[str], interleave_nvidia: bool = True):
@@ -542,7 +614,8 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
           model: str, base_url: str, timeout: int,
           or_model: str | None = None, or_base_url: str | None = None,
           metrics=None, extra: dict | None = None, json_mode: bool = False,
-          prefer: tuple[str, ...] | None = None) -> tuple[dict, str]:
+          prefer: tuple[str, ...] | None = None,
+          timeout_max: int | None = None) -> tuple[dict, str]:
     """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
 
     Cada tentativa vai ao próximo da rotação; erro definitivo (401/403/404)
@@ -551,12 +624,14 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
     levantamento completo: tentativas, últimos erros e chaves ausentes.
 
     `prefer` reordena o rodízio sem intercalar a NVIDIA (para JSON).
-    O timeout por chamada é limitado a LLM_CALL_TIMEOUT_MAX segundos.
+    O timeout por chamada é limitado ao teto configurado (15 s por
+    padrão), e um provedor pode ter teto próprio via
+    LLM_PROVIDER_TIMEOUT. Nenhum dos dois muda o comportamento padrão.
     """
     try:
-        timeout = max(1, min(int(timeout), LLM_CALL_TIMEOUT_MAX))
+        timeout = max(1, min(int(timeout), call_timeout_max(timeout_max)))
     except (TypeError, ValueError):
-        timeout = LLM_CALL_TIMEOUT_MAX
+        timeout = call_timeout_max(None)
     extra = extra or {}
     resolved: dict[str, tuple[str, str]] = {
         "nvidia": (model, base_url),
@@ -586,10 +661,19 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         om, ob = resolved[pid]
         dft_model, dft_base = llm_settings(pid)
         use_model, use_base = om or dft_model, ob or dft_base
+        # O teto deste provedor pode ser maior que o global. A razão de
+        # existir é o caso observado: um modelo grande no NIM precisa de
+        # mais que 15 s, e aumentar o global obriga a aumentar para
+        # todos — inclusive para os provedores rápidos, que passam a
+        # esperar mais para falhar. Vazio = usa o global, sem diferença.
+        teto_pid = timeout
+        if pid in LLM_PROVIDER_TIMEOUT:
+            teto_pid = max(timeout, int(LLM_PROVIDER_TIMEOUT[pid]))
         try:
             key = CREDENTIALS[pid].from_env().active_key
-            body = _post_with_retries(messages, key, use_model, use_base, timeout,
-                                      max_tokens, temperature, pid, json_mode)
+            body = _post_with_retries(messages, key, use_model, use_base,
+                                      teto_pid, max_tokens, temperature, pid,
+                                      json_mode)
         except NvidiaError as exc:
             attempts[pid] = attempts.get(pid, 0) + 1
             last_err[pid] = str(exc)
@@ -702,7 +786,8 @@ def generate_script(idea: str, model: str,
                     language: str = "pt-BR",
                     research: str | None = None,
                     genre_directive: str | None = None,
-                    entity_context: str | None = None) -> tuple[str, str]:
+                    entity_context: str | None = None,
+                    timeout_max: int | None = None) -> tuple[str, str]:
     """Gera o roteiro (chain com retries por provedor). Nunca silêncio.
 
     `max_chars=None` = Automático: duração livre, sem corte (só o teto de
@@ -768,7 +853,8 @@ def generate_script(idea: str, model: str,
     body, label, max_tokens = None, "", 1500
     for _ in range(2):
         body, label = _chat(messages, max_tokens, 0.7, model, base_url,
-                            timeout, or_model, or_base_url, metrics, extra)
+                            timeout, or_model, or_base_url, metrics, extra,
+                            timeout_max=timeout_max)
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 3000

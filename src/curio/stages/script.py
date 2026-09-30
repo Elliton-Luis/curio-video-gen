@@ -129,7 +129,8 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
             extra=cfg.llm_overrides(), language=cfg.language,
             research=research, genre_directive=genre_directive,
-            entity_context=entity_context)
+            entity_context=entity_context,
+            timeout_max=getattr(cfg, "nvidia_timeout_max", None))
         return text, _label
 
     english = str(cfg.language or "").lower().startswith("en")
