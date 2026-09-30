@@ -422,7 +422,7 @@ cp .env.example .env
 ```
 
 Ordem do rodízio: NVIDIA → OpenRouter → Gemini → Groq. A NVIDIA falhou
-1x, já troca (intercalado com retries); erro definitivo (401/403/404)
+1x, já troca (intercalado com retries); erro definitivo (401/402/403/404)
 tira o provedor do rodízio; no fim sai um levantamento do que foi
 tentado. `video-gen doctor` mostra o status de cada um. Sem nenhuma
 chave, o pipeline usa o gerador local (base curada + template, custo
