@@ -3,7 +3,7 @@
 - **Data:** 2026-09-30 18:34 (-03:00)
 - **Tipo:** relatorio
 - **Escopo:** últimos-provider viable, timeout NVIDIA, retries HTTP internos e orçamento global do rodízio.
-- **Commit(s):** `dab03b2` (`fix(llm): retry NVIDIA without timeout when it is the last provider`), `d699409` (`test(llm): cover last-provider fallback and retry accounting`); documentação: pendente.
+- **Commit(s):** `dab03b2` (`fix(llm): retry NVIDIA without timeout when it is the last provider`), `d699409` (`test(llm): cover last-provider fallback and retry accounting`), `fdafdcd` (`docs: record resilient NVIDIA fallback`).
 - **Origem:** solicitação de correção do fallback LLM após NVIDIA ser descartada por timeout.
 
 ## 1. O que foi pedido
