@@ -21,8 +21,16 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 
 W, H = 1200, 1600
+
+# Piso de tamanho para considerar um PNG "pronto". Não é 10 KB: um
+# gradiente escuro com uma palavra só (spotlight, cena sem entidades)
+# comprime para pouco menos disso e é uma imagem válida — com o piso
+# alto, essas cenas eram redesenhadas a cada execução, sem necessidade.
+# 4 KB ainda rejeita arquivo truncado ou escrita pela metade.
+MIN_PNG_BYTES = 4000
 
 # A escada por tipo. A ordem importa e muda com o tipo: para uma cena de
 # mecanismo, um diagrama vem ANTES de qualquer foto, porque foto de
@@ -154,6 +162,281 @@ def _card_chain(ch) -> list[str]:
     return out[:4]
 
 
+# --- formas de visual --------------------------------------------------
+# Um template só para tudo produz um vídeo em que seis cenas conceituais
+# são a mesma tela com palavras diferentes — foi o que aconteceu com o
+# vídeo de São Bento, em que 9 de 12 cenas viraram card e várias eram
+# "São Bento name origin question" / "mystery" / "speculation": mesma
+# forma, mesmo texto quase igual, nada a ver.
+#
+# A forma é escolhida pelo que a cena precisa COMUNICAR, não pelo seu
+# tipo. Duas cenas do mesmo tipo podem (e devem) sair diferentes.
+
+FORM_SPOTLIGHT = "spotlight"   # um termo, nada mais
+FORM_DEFINITION = "definition"  # assunto + o que se decompõe
+FORM_ENUM = "enumeration"       # assunto + lista de itens
+FORM_CONTRAST = "contrast"     # X e Y lado a lado
+FORM_QUOTE = "quote"           # a frase da cena, em destaque
+
+FORMS = (FORM_SPOTLIGHT, FORM_DEFINITION, FORM_ENUM, FORM_CONTRAST,
+         FORM_QUOTE)
+
+_FORM_FOR_TYPE = {
+    "typographic": FORM_DEFINITION,
+    "mechanism": FORM_ENUM,
+    "conceptual": FORM_DEFINITION,
+    "historical_art": FORM_SPOTLIGHT,
+    "literal": FORM_ENUM,
+}
+
+
+def _contrast_pair(ch) -> tuple[str, str] | None:
+    """Detecta "X e não Y"/"X versus Y" na cena: vira um visual de contraste.
+
+    Cenas como "Michel Temer não tem relação com São Bento" pedem
+    explicitamente uma negativa, e um cartão de definição mente sobre
+    elas: mostra as duas coisas como se fossem equivalentes.
+    """
+    subj = str(getattr(ch, "subject", "") or "")
+    ents = [str(e).strip() for e in (getattr(ch, "visual_entities", []) or [])
+            if str(e).strip()]
+    if len(ents) >= 2 and re.search(
+            r"\b(no|nao|não|not|without|versus|vs)\b",
+            (subj + " " + " ".join(ents)).lower()):
+        return ents[0], ents[1]
+    return None
+
+
+def _quote_line(narration: str) -> str:
+    """A frase mais marcante da cena, para um visual de citação.
+
+    Pega a primeira frase com tamanho de fala real e corta em um limite
+    de palavra. Sem isso, a forma `quote` não teria o que mostrar.
+    """
+    for sent in re.split(r"(?<=[.!?…])\s+", (narration or "").strip()):
+        sent = sent.strip()
+        if len(sent.split()) >= 4:
+            palavras = sent.split()
+            return " ".join(palavras[:12]) + ("…" if len(palavras) > 12 else "")
+    return ""
+
+
+class VisualState:
+    """O que o vídeo já usou, para a próxima cena não repetir.
+
+    Duas peças: as FORMAS já exibidas e os ASSUNTOS já exibidos. Um
+    assunto quase igual ao de uma cena anterior não pode receber a mesma
+    forma — é aí que dois "name origin" viram duas telas com a mesma
+    cara. Nestas, a forma vira `spotlight` de propósito: mínima, honesta
+    e visualmente distinta.
+    """
+
+    # Um "não" no começo muda o sentido, não o assunto. "São Bento name
+    # origin question" e "Lack of São Bento name origin information" são
+    # o mesmo assunto visto de dois jeitos, e comparar os token inteiros
+    # dá 0,5 de similaridade — logo abaixo do corte, e as duas cenas
+    # saíam com o mesmo layout.
+    _NEGACOES = {"lack", "falta", "missing", "absence", "no", "nao", "não",
+                 "nothing", "nada", "sem"}
+
+    def __init__(self) -> None:
+        self.forms: list[str] = []
+        self.subjects: list[str] = []
+
+    @staticmethod
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+    @classmethod
+    def _core(cls, s: str) -> set[str]:
+        toks = [t for t in cls._norm(s).split() if t not in cls._NEGACOES]
+        return set(toks)
+
+    def subject_repeated(self, subject: str) -> bool:
+        """O assunto desta cena já apareceu, palavra a palavra?"""
+        novo = self._norm(subject)
+        if not novo:
+            return False
+        for visto in self.subjects:
+            if novo == visto:
+                return True
+            a, b = self._core(subject), set(visto.split())
+            if a and b and len(a & b) / len(a | b) >= 0.5:
+                return True
+        return False
+
+    def record(self, subject: str, form: str) -> None:
+        if form and form not in self.forms:
+            self.forms.append(form)
+        s = self._norm(subject)
+        if s and s not in self.subjects:
+            self.subjects.append(s)
+
+    def form_used(self, form: str) -> int:
+        return self.forms.count(form) if self.forms.count(form) else 0
+
+
+def choose_form(ch, state: "VisualState | None" = None) -> str:
+    """A forma que esta cena deve usar, dada o que o vídeo já mostrou."""
+    vtype = str(getattr(ch, "visual_type", "") or "literal")
+    sujeito = str(getattr(ch, "subject", "") or "")
+    narration = str(getattr(ch, "narration", "") or "")
+    ents = [e for e in (getattr(ch, "visual_entities", []) or [])
+            if str(e).strip()]
+
+    # 1) a cena pede explicitamente uma negativa → contraste
+    if _contrast_pair(ch) is not None:
+        base = FORM_CONTRAST
+    # 2) assunto repetido → spotlight, para não virar cópia da anterior
+    elif state is not None and state.subject_repeated(sujeito):
+        base = FORM_SPOTLIGHT
+    # 3) o tipo tem forma preferida
+    else:
+        base = _FORM_FOR_TYPE.get(vtype, FORM_DEFINITION)
+
+    # 4) subjectively poor and the type already saturated: try another form
+    #    that is valid for this scene, preferring one not yet used.
+    if state is not None and base != FORM_SPOTLIGHT:
+        candidatos = [base]
+        if not ents:
+            candidatos.append(FORM_SPOTLIGHT)
+        else:
+            candidatos += [f for f in (FORM_ENUM, FORM_DEFINITION)
+                           if f not in candidatos]
+        if _quote_line(narration):
+            candidatos.append(FORM_QUOTE)
+        for cand in candidatos:
+            if cand not in state.forms:
+                return cand
+    return base
+
+
+def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR") -> object:
+    """Desenha a forma pedida. Cacheado por (forma, assunto, conteúdo)."""
+    sujeito = str(getattr(ch, "subject", "") or "")
+    narration = str(getattr(ch, "narration", "") or "")
+    entities = [str(e).strip() for e in (getattr(ch, "visual_entities", []) or [])
+                if str(e).strip()]
+    context = [str(e).strip() for e in (getattr(ch, "context", []) or [])
+               if str(e).strip()]
+    scene_id = int(getattr(ch, "id", 0) or 0)
+    key = _key(form, sujeito, entities, context, narration, language)
+    out = _out(cache_dir, form, key)
+    if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
+        return _asset(out, f"{form} — {sujeito or 'cena'}", form, scene_id)
+
+    from PIL import ImageDraw
+    img = _canvas()
+    d = ImageDraw.Draw(img)
+    english = str(language or "").lower().startswith("en")
+
+    if form == FORM_SPOTLIGHT:
+        _draw_spotlight(d, sujeito, narration, english)
+    elif form == FORM_ENUM:
+        _draw_enum(d, sujeito, entities, narration, english)
+    elif form == FORM_CONTRAST:
+        par = _contrast_pair(ch)
+        _draw_contrast(d, par[0] if par else sujeito, par[1] if par else "",
+                       narration, english)
+    elif form == FORM_QUOTE:
+        _draw_quote(d, _quote_line(narration) or sujeito, english)
+    else:
+        return render_card(sujeito, entities + context, narration, cache_dir,
+                           language, scene_id, ch=ch)
+    img.save(out, "PNG")
+    return _asset(out, f"{form} — {sujeito or 'cena'}", form, scene_id)
+
+
+def _footer(d, narration: str, linhas: int = 2) -> None:
+    """A frase da cena, discreta, sem virar legenda (a do TTS fica intacta)."""
+    f = _font(30)
+    frase = " ".join(str(narration or "").split())
+    for i, line in enumerate(_wrap(d, frase, f, W - 160)[:linhas]):
+        d.text((W // 2, H - 150 + i * 42), line, font=f,
+               fill=(120, 128, 150), anchor="mm")
+
+
+def _draw_spotlight(d, sujeito: str, narration: str, english: bool) -> None:
+    """Um termo, enorme, e quase nada mais. A forma mais silenciosa.
+
+    Existe para as cenas cujo assunto já apareceu: repetir o layout
+    completo duas vezes seguidas lê como erro de render, enquanto uma
+    tela de uma palavra lê como decisão editorial.
+    """
+    f_kick = _font(30)
+    d.text((W // 2, 520), "THE SUBJECT" if english else "O ASSUNTO",
+           font=f_kick, fill=ACCENT_2, anchor="mm")
+    f_main = _font(112)
+    linhas = _wrap(d, str(sujeito or "—").upper(), f_main, W - 160)[:4]
+    y = 720 - (len(linhas) - 1) * 68
+    for line in linhas:
+        d.text((W // 2, y), line, font=f_main, fill=INK, anchor="mm")
+        y += 136
+    d.line([(W // 2 - 90, y - 40), (W // 2 + 90, y - 40)], fill=ACCENT, width=5)
+    _footer(d, narration, 2)
+
+
+def _draw_enum(d, sujeito: str, entities: list[str], narration: str,
+               english: bool) -> None:
+    """Assunto + lista numerada. Para cenas que enumeram qualidades ou itens."""
+    f_head = _font(38)
+    d.text((W // 2, 210), str(sujeito or "").upper()[:34], font=f_head,
+           fill=INK, anchor="mm")
+    itens = entities or []
+    if not itens:
+        itens = [str(narration or "—").strip()[:40]]
+    f_item = _font(46)
+    top, gap = 380, 190
+    for i, item in enumerate(itens[:4]):
+        y = top + i * gap
+        d.ellipse([150, y - 34, 218, y + 34], fill=ACCENT)
+        d.text((184, y), str(i + 1), font=_font(36), fill="#0f1117", anchor="mm")
+        for j, line in enumerate(_wrap(d, item, f_item, W - 340)[:2]):
+            d.text((250, y - 18 + j * 56), line, font=f_item, fill=INK_SOFT,
+                   anchor="lm")
+    _footer(d, narration, 2)
+
+
+def _draw_contrast(d, left: str, right: str, narration: str,
+                   english: bool) -> None:
+    """Duas colunas e uma divisória: isto NÃO é aquilo.
+
+    Cenas negativas ("não tem relação com") precisam de um layout que
+    não as apresente como equivalentes: um cartão de definição diria o
+    contrário do que a cena afirma.
+    """
+    f_kick = _font(30)
+    d.text((W // 2, 230), "THIS IS NOT" if english else "ISTO NÃO É",
+           font=f_kick, fill=ACCENT_2, anchor="mm")
+    f_side = _font(52)
+    meio = W // 2
+    d.line([(meio, 340), (meio, 1120)], fill=(70, 78, 102), width=4)
+    for x0, x1, texto, cor, marca in (
+            (110, meio - 40, left, INK, "✕"),
+            (meio + 40, W - 110, right, INK_SOFT, "≠")):
+        d.text(((x0 + x1) // 2, 430), marca, font=_font(44), fill=ACCENT,
+               anchor="mm")
+        y = 540
+        for line in _wrap(d, str(texto or "—"), f_side, x1 - x0)[:4]:
+            d.text(((x0 + x1) // 2, y), line, font=f_side, fill=cor, anchor="mm")
+            y += 70
+    _footer(d, narration, 2)
+
+
+def _draw_quote(d, frase: str, english: bool) -> None:
+    """A frase da cena em destaque, entre aspas. Para a fala que importa."""
+    f_mark = _font(150)
+    d.text((W // 2, 430), "“", font=f_mark, fill=ACCENT, anchor="mm")
+    f_quote = _font(50)
+    linhas = _wrap(d, frase, f_quote, W - 260)[:6]
+    y = 640 - (len(linhas) - 1) * 34
+    for line in linhas:
+        d.text((W // 2, y), line, font=f_quote, fill=INK, anchor="mm")
+        y += 68
+    d.text((W // 2, min(y + 30, H - 420)), "”", font=f_mark, fill=ACCENT,
+           anchor="mm")
+
+
 def render_card(subject: str, terms: list[str], narration: str,
                 cache_dir: str, language: str = "pt-BR",
                 scene_id: int = 0, ch=None) -> object:
@@ -166,7 +449,7 @@ def render_card(subject: str, terms: list[str], narration: str,
     """
     key = _key(subject, terms, language)
     out = _out(cache_dir, "card", key)
-    if os.path.isfile(out) and os.path.getsize(out) > 10000:
+    if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"Card — {subject or 'cena'}", "card", scene_id)
 
     from PIL import ImageDraw
@@ -226,7 +509,7 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     """
     key = _key(subject, steps, language)
     out = _out(cache_dir, "diagram", key)
-    if os.path.isfile(out) and os.path.getsize(out) > 10000:
+    if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"Diagrama — {subject or 'cena'}", "diagram", scene_id)
 
     from PIL import ImageDraw
@@ -319,15 +602,30 @@ def build_visual(ch, strategy: str, cache_dir: str, language: str = "pt-BR",
     return None
 
 
-def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR") -> object | None:
+def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR",
+                     state: "VisualState | None" = None) -> object | None:
     """Primeira estratégia que este módulo sabe produzir para a cena.
 
-    Só as estratégias de código (cartão, diagrama). Arte de domínio
-    público e fotografia são busca de outra etapa: esta devolve None para
-    elas, e a cena sobe/desce na escada até alguém entregar um visual.
+    Só as estratégias de código (cartão, diagrama, e as formas visuais
+   各种). Arte de domínio público e fotografia são busca de outra etapa:
+    esta devolve None para elas, e a cena sobe/desce na escada até
+    alguém entregar um visual.
+
+    `state` carrega o que o vídeo já mostrou, para que a forma escolhida
+    não repita a da cena anterior quando o assunto também repete.
     """
     for strategy in strategies_for(ch):
+        if strategy in FORMS:
+            forma = choose_form(ch, state)
+            asset = render_form(ch, forma, cache_dir, language)
+            if asset is not None:
+                if state is not None:
+                    state.record(str(getattr(ch, "subject", "") or ""), forma)
+                return asset
+            continue
         asset = build_visual(ch, strategy, cache_dir, language)
         if asset is not None:
+            if state is not None:
+                state.record(str(getattr(ch, "subject", "") or ""), strategy)
             return asset
     return None

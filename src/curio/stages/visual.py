@@ -714,6 +714,7 @@ def _search_scene_with_shortcircuit(
     max_images: int,
     metrics,
     cache_dir: str,
+    visual_state=None,
 ) -> tuple[list[dict], list[str]]:
     """Busca mídia de uma cena: COLETA candidatos, depois FILTRA e PONTUA.
 
@@ -744,7 +745,8 @@ def _search_scene_with_shortcircuit(
     if vtype == "typographic":
         from . import visuals
         synth = visuals.visual_for_scene(ch, cfg.cache_dir,
-                                         getattr(cfg, "language", "pt-BR"))
+                                         getattr(cfg, "language", "pt-BR"),
+                                         visual_state)
         if synth is not None:
             _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
             if metrics:
@@ -917,15 +919,18 @@ def _search_scene_with_shortcircuit(
         # como estratégia, não como falha.
         from . import visuals
         synth = visuals.visual_for_scene(ch, cfg.cache_dir,
-                                         getattr(cfg, "language", "pt-BR"))
+                                         getattr(cfg, "language", "pt-BR"),
+                                         visual_state)
         if synth is not None:
             _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
             picked.append({"asset": synth.to_dict(),
                            "query": queries[0] if queries else "",
                            "relevance": 0, "order": 0, "from_cache": False,
                            "score": 0.0, "strategy": "synth"})
-            strategy_used = ("diagram" if "Diagrama" in synth.title
-                             else "card")
+            from . import visuals as _v
+            strategy_used = ("diagram"
+                             if synth.title.startswith("Diagrama")
+                             else synth.title.split(" — ")[0].lower())
             if metrics:
                 metrics.media_record_fallback(strategy_used)
                 metrics.media_synth_diagrams += 1
@@ -1013,10 +1018,15 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     
     all_warnings = []
     scenes = []
-    
+    # O estado de variedade atravessa as cenas: é ele que impede seis cenas
+    # conceituais de virarem seis cards idênticos.
+    from . import visuals as _visuals
+    visual_state = _visuals.VisualState()
+
     for ch in chapters:
         scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
-            ch, providers, cfg, max_images, metrics, cfg.cache_dir
+            ch, providers, cfg, max_images, metrics, cfg.cache_dir,
+            visual_state=visual_state,
         )
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)

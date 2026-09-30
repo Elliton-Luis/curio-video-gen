@@ -323,3 +323,123 @@ def test_needs_single_sequence_depende_do_encoder(tmp_path):
     assert R._needs_single_sequence(CurioConfig(render_backend="vaapi"))
     assert R._needs_single_sequence(CurioConfig(render_backend="arc"))
     assert not R._needs_single_sequence(CurioConfig(render_backend="cpu"))
+
+
+# --- variedade: fallback ≠ card genérico repetido ----------------------
+# O vídeo de São Bento saiu com 9 de 12 cenas viradas em card, e várias
+# eram "São Bento name origin question" / "mystery" / "speculation": a
+# mesma forma, com o mesmo texto quase igual, N vezes seguidas.
+
+def _ch2(vtype="conceptual", subject="assunto", entities=(), narration="Uma "
+         "frase de narração com pelo menos quatro palavras para o rodapé.",
+         context=()):
+    return Chapter(id=1, narration=narration, duration_estimate=6.0,
+                   visual_type=vtype, subject=subject,
+                   visual_entities=list(entities), context=list(context),
+                   visual_queries=[])
+
+
+def test_cada_forma_e_visualmente_diferente(tmp_path):
+    """Cinco formas, cinco arquivos, cinco conteúdos distintos."""
+    vistos = set()
+    for forma in visuals.FORMS:
+        ch = _ch2(entities=["USP campus", "PUC building", "law books"],
+                  narration="Ele se formou em Direito pela USP em 1963.")
+        a = visuals.render_form(ch, forma, str(tmp_path), "pt-BR")
+        assert a is not None and os.path.getsize(a.local_path) > 10000
+        vistos.add(a.local_path)
+    assert len(vistos) == len(visuals.FORMS)
+
+
+def test_forma_depende_do_que_a_cena_comunica():
+    assert visuals.choose_form(_ch2("typographic", "salarium",
+                                    ["sal", "romano"])) == visuals.FORM_DEFINITION
+    assert visuals.choose_form(_ch2("mechanism", "thermal paper",
+                                    ["heat", "dye"])) == visuals.FORM_ENUM
+    # negativa explícita pede contraste, não definição
+    assert visuals.choose_form(
+        _ch2("conceptual", "A não tem relação com B", ["A", "B"])
+    ) == visuals.FORM_CONTRAST
+
+
+def test_assunto_repetido_vira_spotlight():
+    """A forma de uma cena cujo assunto já apareceu não pode ser a mesma."""
+    st = visuals.VisualState()
+    primeira = _ch2("conceptual", "São Bento name origin question")
+    f1 = visuals.choose_form(primeira, st)
+    st.record(primeira.subject, f1)
+    segunda = _ch2("conceptual", "São Bento name origin mystery")
+    f2 = visuals.choose_form(segunda, st)
+    assert f1 != f2
+    assert f2 == visuals.FORM_SPOTLIGHT
+
+
+def test_negacao_no_assunto_nao_esconde_a_repeticao():
+    """"Lack of X information" é o mesmo assunto com um 'não' na frente."""
+    st = visuals.VisualState()
+    st.record("São Bento name origin question", "definition")
+    assert st.subject_repeated("Lack of São Bento name origin information")
+    assert st.subject_repeated("São Bento name origin speculation")
+
+
+def test_um_video_de_6_cenas_iguais_nao_repete_forma():
+    """O caso real: seis cenas quase iguais, seis visuais distintos."""
+    st = visuals.VisualState()
+    assuntos = [
+        "Serra Gaúcha characteristics",
+        "Serra Gaúcha cultural and economic identity",
+        "Serra Gaúcha tourism and wine",
+        "Serra Gaúcha location and borders",
+        "Serra Gaúcha history of settlement",
+        "Serra Gaúcha current population",
+    ]
+    formas = []
+    for a in assuntos:
+        ch = _ch2("literal", a, ["primeiro item", "segundo item"])
+        f = visuals.choose_form(ch, st)
+        formas.append(f)
+        st.record(a, f)
+    assert len(set(formas)) >= 2, formas
+    # e nenhuma das repetições é a forma mais usada no vídeo
+    assert formas.count(max(set(formas), key=formas.count)) <= 3, formas
+
+
+def test_o_estado_registra_o_que_foi_mostrado():
+    st = visuals.VisualState()
+    st.record("assunto um", "spotlight")
+    st.record("assunto dois", "definition")
+    assert st.forms == ["spotlight", "definition"]
+    assert st.subject_repeated("assunto um")
+    assert not st.subject_repeated("outro tema")
+
+
+def test_cena_negativa_nao_vira_cartao_de_definicao():
+    """Um cartão de definição diria o contrário do que a cena afirma."""
+    ch = _ch2("conceptual", "Michel Temer não tem relação com São Bento",
+              ["Michel Temer", "São Bento"])
+    assert visuals.choose_form(ch) == visuals.FORM_CONTRAST
+    a = visuals.render_form(ch, visuals.FORM_CONTRAST, "/tmp/opencode/x", "pt-BR")
+    assert os.path.getsize(a.local_path) > 10000
+
+
+def test_visual_for_scene_passa_o_estado_e_registra(tmp_path):
+    st = visuals.VisualState()
+    ch = _ch2("conceptual", "primeiro assunto", ["a", "b"])
+    a1 = visuals.visual_for_scene(ch, str(tmp_path), "pt-BR", st)
+    assert a1 is not None
+    assert st.forms, "o estado não registrou a forma usada"
+    assert st.subjects
+
+
+def test_todas_as_formas_aceitam_cena_vazia(tmp_path):
+    """Cena sem assunto nem entidades não pode quebrar nenhum layout."""
+    for forma in visuals.FORMS:
+        ch = _ch2("conceptual", "", [], narration="")
+        a = visuals.render_form(ch, forma, str(tmp_path), "pt-BR")
+        assert a is not None, forma
+        # confere a imagem de verdade, não o tamanho: uma cena quase vazia
+        # gera um PNG legítimo e pequeno
+        from PIL import Image
+        with Image.open(a.local_path) as im:
+            assert im.size == (visuals.W, visuals.H), forma
+            assert im.format == "PNG", forma
