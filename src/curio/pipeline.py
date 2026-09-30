@@ -372,6 +372,31 @@ def _scene_segment(ch: Chapter, asset_dict: dict | None, idea: str,
         duration, seg, cfg, render_stage._wrap_title(idea))
 
 
+def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
+    """A fonte do título queimado, para este gênero.
+
+    Sem gênero, é a fonte de exibição de sempre — o vídeo de quem não
+    pediu nada não pode mudar de cara. Com gênero, é o papel `title` do
+    perfil, resolvido: em `people` e `history` isso é uma serifada de
+    leitura, e é a primeira coisa que separa "livro" de "post" num
+    vídeo de 8 segundos que abre o quadro.
+
+    O fallback entra sem consulta: se Minion Pro não está instalado, o
+    título sai na serifada genérica da máquina, e isso é o combinado. O
+    que não pode é voltar para a sans pesada e chamar isso de identidade.
+    A fonte de exibição continua reservada às legendas, onde a
+    legibilidade manda e o estilo não.
+    """
+    from .stages import typography as typo_stage
+    if not genre_key:
+        return subs_stage.ensure_display_font(cfg.cache_dir)[2]
+    r = typo_stage.resolve(typo_stage.ROLE_TITLE, genre_key,
+                           (cfg.typography or {}).get(genre_key))
+    if r.path:
+        return r.path
+    return subs_stage.ensure_display_font(cfg.cache_dir)[2]
+
+
 def _build_silent(chapters: list[Chapter], media_scenes: list[dict], idea: str,
                    durations: list[float], paths: VideoPaths,
                    cfg: CurioConfig, out_path: str) -> str:
@@ -959,10 +984,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if sfx_path:
             narration_wav = _narration_with_sfx(paths.narration_wav, sfx_path,
                                                 total, paths)
-        title_fontfile = subs_stage.ensure_display_font(cfg.cache_dir)[2]
         render_info = render_stage.burn_final(
             silent, paths.subs_ass, narration_wav, paths.final_mp4,
-            cfg, total, title=video_title, title_fontfile=title_fontfile)
+            cfg, total, title=video_title,
+            title_fontfile=_title_fontfile(cfg, genre_key))
         video_duration = render_info["duration"]
     stage_times["render"] = round(time.monotonic() - t0, 2)
     emit(6, "Montando vídeo", "OK")
@@ -1299,10 +1324,13 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     except (json.JSONDecodeError, FileNotFoundError):
         _meta_prev = {}
     video_title = (_meta_prev.get("video_title") or "").strip() or None
-    title_fontfile = subs_stage.ensure_display_font(cfg.cache_dir)[2]
+    # O gênero vem do metadata do projeto: um projeto antigo não tem a
+    # chave, e aí o título sai na fonte de sempre.
     render_info = render_stage.burn_final(
         silent, paths.subs_ass, human_wav, paths.final_mp4, cfg, total,
-        title=video_title, title_fontfile=title_fontfile)
+        title=video_title,
+        title_fontfile=_title_fontfile(cfg,
+                                       str(_meta_prev.get("genre") or "")))
     emit("Merge final", "OK")
 
     try:

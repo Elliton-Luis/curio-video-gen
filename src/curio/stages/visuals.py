@@ -52,23 +52,53 @@ BG_TOP, BG_BOTTOM = (20, 24, 44), (34, 20, 62)
 INK, INK_SOFT, ACCENT, ACCENT_2 = (245, 246, 250), (168, 176, 198), (86, 182, 255), (255, 190, 92)
 
 
+def _role(ch, padrao: str) -> str:
+    """O papel tipográfico de um elemento desta cena.
+
+    O papel DECLARADO pela cena vence o papel que a forma sugere. A forma
+    de citação já sugere `quote`, então uma cena que declarou `latin`
+    entra em itálico serifado como latim — que é o mesmo desenho, mas com
+    o nome certo no metadata e no relatório. A forma só define o papel
+    quando a cena não disse nada, e é por isso que uma cena de capítulos
+    antigos (sem `text_role`) ainda sai em itálico.
+    """
+    try:
+        from .scenes import text_role_for
+        return text_role_for(ch) or padrao
+    except Exception:  # noqa: BLE001 — papel nunca é fatal para o render
+        return padrao
+
+
 def _key(*parts) -> str:
     return hashlib.sha256("|".join(str(p or "") for p in parts).lower().encode()).hexdigest()[:12]
 
 
-def _font(size: int):
+def _font(size: int, typo=None, role: str = ""):
+    """A fonte deste PAPEL, na fonte da voz principal quando não há papel.
+
+    `typo` é o handle de `stages/typography.py` e chega pelo gênero; sem
+    ele, o comportamento é exatamente o de antes: uma sans pesada para
+    tudo. É o que mantém `render_form(ch, form, cache_dir)` funcionando
+    igual em quem não usa o recurso.
+
+    O corpo é escalado pelo perfil, porque a mesma frase em itálico
+    serifado ocupa menos linha do que em sans pesada, e um cartão de
+    citação com o corpo do título estoura o quadro.
+    """
     from PIL import ImageFont
-    try:
-        from .. import ffmpeg as ff
-        path = ff.find_font_bold()
-        if path and os.path.isfile(path):
-            return ImageFont.truetype(path, size)
-    except Exception:  # noqa: BLE001 — fonte nunca é fatal
-        pass
-    try:
-        return ImageFont.load_default(size=size)
-    except TypeError:
-        return ImageFont.load_default()
+    if typo is None or not role:
+        try:
+            from .. import ffmpeg as ff
+            path = ff.find_font_bold()
+            if path and os.path.isfile(path):
+                return ImageFont.truetype(path, size)
+        except Exception:  # noqa: BLE001 — fonte nunca é fatal
+            pass
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
+    return typo.pil(role, size)
 
 
 def _canvas():
@@ -316,8 +346,14 @@ def choose_form(ch, state: "VisualState | None" = None,
     return base
 
 
-def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR") -> object:
-    """Desenha a forma pedida. Cacheado por (forma, assunto, conteúdo)."""
+def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR",
+                typo=None) -> object:
+    """Desenha a forma pedida. Cacheado por (forma, assunto, conteúdo, fonte).
+
+    `typo` é opcional e fica no fim da assinatura de propósito: quem já
+    chamava `render_form(ch, form, cache_dir)` continua funcionando com a
+    fonte de sempre, sem gênero.
+    """
     sujeito = str(getattr(ch, "subject", "") or "")
     narration = str(getattr(ch, "narration", "") or "")
     entities = [str(e).strip() for e in (getattr(ch, "visual_entities", []) or [])
@@ -325,7 +361,13 @@ def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR") -> objec
     context = [str(e).strip() for e in (getattr(ch, "context", []) or [])
                if str(e).strip()]
     scene_id = int(getattr(ch, "id", 0) or 0)
-    key = _key(form, sujeito, entities, context, narration, language)
+    # O gênero entra na chave do cache: o MESMO assunto desenhado em
+    # `people` e em `science` têm aparência diferente, e devolver o PNG
+    # cacheado do outro gênero mostraria a fonte errada sem erro nenhum.
+    estilo = ""
+    if typo is not None:
+        estilo = str(getattr(typo.profile, "key", "") or "")
+    key = _key(form, sujeito, entities, context, narration, language, estilo)
     out = _out(cache_dir, form, key)
     if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"{form} — {sujeito or 'cena'}", form, scene_id)
@@ -336,103 +378,120 @@ def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR") -> objec
     english = str(language or "").lower().startswith("en")
 
     if form == FORM_SPOTLIGHT:
-        _draw_spotlight(d, sujeito, narration, english)
+        _draw_spotlight(d, sujeito, narration, english, typo)
     elif form == FORM_ENUM:
-        _draw_enum(d, sujeito, entities, narration, english)
+        _draw_enum(d, sujeito, entities, narration, english, typo)
     elif form == FORM_CONTRAST:
         par = _contrast_pair(ch)
         _draw_contrast(d, par[0] if par else sujeito, par[1] if par else "",
-                       narration, english)
+                       narration, english, typo)
     elif form == FORM_QUOTE:
-        _draw_quote(d, _quote_line(narration) or sujeito, english)
+        _draw_quote(d, _quote_line(narration) or sujeito, english, typo,
+                    _role(ch, "quote"))
     else:
         return render_card(sujeito, entities + context, narration, cache_dir,
-                           language, scene_id, ch=ch)
+                           language, scene_id, ch=ch, typo=typo)
     img.save(out, "PNG")
     return _asset(out, f"{form} — {sujeito or 'cena'}", form, scene_id)
 
 
-def _footer(d, narration: str, linhas: int = 2) -> None:
-    """A frase da cena, discreta, sem virar legenda (a do TTS fica intacta)."""
-    f = _font(30)
+def _footer(d, narration: str, linhas: int = 2, typo=None) -> None:
+    """A frase da cena, discreta, sem virar legenda (a do TTS fica intacta).
+
+    Papel `date`/`location` por herança: é texto de apoio, não narração,
+    e é onde a direção de arte pede "metadado em variação discreta".
+    """
+    f = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
     for i, line in enumerate(_wrap(d, frase, f, W - 160)[:linhas]):
         d.text((W // 2, H - 150 + i * 42), line, font=f,
                fill=(120, 128, 150), anchor="mm")
 
 
-def _draw_spotlight(d, sujeito: str, narration: str, english: bool) -> None:
+def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
+                    typo=None) -> None:
     """Um termo, enorme, e quase nada mais. A forma mais silenciosa.
 
     Existe para as cenas cujo assunto já apareceu: repetir o layout
     completo duas vezes seguidas lê como erro de render, enquanto uma
     tela de uma palavra lê como decisão editorial.
     """
-    f_kick = _font(30)
+    f_kick = _font(30, typo, "kicker")
     d.text((W // 2, 520), "THE SUBJECT" if english else "O ASSUNTO",
            font=f_kick, fill=ACCENT_2, anchor="mm")
-    f_main = _font(112)
+    f_main = _font(112, typo, "term")
     linhas = _wrap(d, str(sujeito or "—").upper(), f_main, W - 160)[:4]
     y = 720 - (len(linhas) - 1) * 68
     for line in linhas:
         d.text((W // 2, y), line, font=f_main, fill=INK, anchor="mm")
         y += 136
     d.line([(W // 2 - 90, y - 40), (W // 2 + 90, y - 40)], fill=ACCENT, width=5)
-    _footer(d, narration, 2)
+    _footer(d, narration, 2, typo)
 
 
 def _draw_enum(d, sujeito: str, entities: list[str], narration: str,
-               english: bool) -> None:
+               english: bool, typo=None) -> None:
     """Assunto + lista numerada. Para cenas que enumeram qualidades ou itens."""
-    f_head = _font(38)
+    f_head = _font(38, typo, "term")
     d.text((W // 2, 210), str(sujeito or "").upper()[:34], font=f_head,
            fill=INK, anchor="mm")
     itens = entities or []
     if not itens:
         itens = [str(narration or "—").strip()[:40]]
-    f_item = _font(46)
+    f_item = _font(46, typo, "term")
     top, gap = 380, 190
     for i, item in enumerate(itens[:4]):
         y = top + i * gap
         d.ellipse([150, y - 34, 218, y + 34], fill=ACCENT)
-        d.text((184, y), str(i + 1), font=_font(36), fill="#0f1117", anchor="mm")
+        d.text((184, y), str(i + 1), font=_font(36, typo, "term"),
+               fill="#0f1117", anchor="mm")
         for j, line in enumerate(_wrap(d, item, f_item, W - 340)[:2]):
             d.text((250, y - 18 + j * 56), line, font=f_item, fill=INK_SOFT,
                    anchor="lm")
-    _footer(d, narration, 2)
+    _footer(d, narration, 2, typo)
 
 
 def _draw_contrast(d, left: str, right: str, narration: str,
-                   english: bool) -> None:
+                   english: bool, typo=None) -> None:
     """Duas colunas e uma divisória: isto NÃO é aquilo.
 
     Cenas negativas ("não tem relação com") precisam de um layout que
     não as apresente como equivalentes: um cartão de definição diria o
     contrário do que a cena afirma.
     """
-    f_kick = _font(30)
+    f_kick = _font(30, typo, "kicker")
     d.text((W // 2, 230), "THIS IS NOT" if english else "ISTO NÃO É",
            font=f_kick, fill=ACCENT_2, anchor="mm")
-    f_side = _font(52)
+    f_side = _font(52, typo, "term")
     meio = W // 2
     d.line([(meio, 340), (meio, 1120)], fill=(70, 78, 102), width=4)
     for x0, x1, texto, cor, marca in (
             (110, meio - 40, left, INK, "✕"),
             (meio + 40, W - 110, right, INK_SOFT, "≠")):
-        d.text(((x0 + x1) // 2, 430), marca, font=_font(44), fill=ACCENT,
-               anchor="mm")
+        d.text(((x0 + x1) // 2, 430), marca, font=_font(44, typo, "term"),
+               fill=ACCENT, anchor="mm")
         y = 540
         for line in _wrap(d, str(texto or "—"), f_side, x1 - x0)[:4]:
             d.text(((x0 + x1) // 2, y), line, font=f_side, fill=cor, anchor="mm")
             y += 70
-    _footer(d, narration, 2)
+    _footer(d, narration, 2, typo)
 
 
-def _draw_quote(d, frase: str, english: bool) -> None:
-    """A frase da cena em destaque, entre aspas. Para a fala que importa."""
-    f_mark = _font(150)
+def _draw_quote(d, frase: str, english: bool, typo=None, papel: str = "") -> None:
+    """A frase da cena em destaque, entre aspas. Para a fala que importa.
+
+    `papel` é o papel tipográfico do texto entre aspas. Quem chama passa
+    o da cena quando ela declarou um, e `quote` quando não declarou: a
+    forma DE CITAÇÃO já é a declaração de que aquele texto é voz de
+    terceiro, e é isso que a coloca em itálico serifado num vídeo de
+    História de Pessoas. Sem este caminho, o projeto antigo — cujas cenas
+    não têm `text_role` — perderia justamente o itálico que torna a
+    citação legível como citação.
+    """
+    papel = papel or "quote"
+    f_mark = _font(150, typo, papel)
     d.text((W // 2, 430), "“", font=f_mark, fill=ACCENT, anchor="mm")
-    f_quote = _font(50)
+    f_quote = _font(50, typo, papel)
     linhas = _wrap(d, frase, f_quote, W - 260)[:6]
     y = 640 - (len(linhas) - 1) * 34
     for line in linhas:
@@ -444,15 +503,25 @@ def _draw_quote(d, frase: str, english: bool) -> None:
 
 def render_card(subject: str, terms: list[str], narration: str,
                 cache_dir: str, language: str = "pt-BR",
-                scene_id: int = 0, ch=None) -> object:
+                scene_id: int = 0, ch=None, typo=None) -> object:
     """Cartão tipográfico: a ideia é uma palavra, então mostra-se a palavra.
 
     Ex.: "A palavra salário vem do latim salarium" → SALARIUM / sal /
     salário, em vez de uma foto de banco de moedas que não explica nada.
     O texto do cartão sai do que a cena JÁ declarou (subject, entities) —
     nunca é inventado aqui.
+
+    A cadeia é o lugar onde a tipografia vira explicação, e não enfeite:
+    as formas históricas recebem o tratamento documental (itálico nos
+    gêneros editoriais) e a forma atual fica no corpo de destaque. É a
+    transformação da palavra mostrada com o desenho mudando, que é o que
+    a direção de arte pede para Etimologia — e não a mesma fonte repetida
+    em corpo menor, que é o que cartão sempre fez.
     """
-    key = _key(subject, terms, language)
+    estilo = ""
+    if typo is not None:
+        estilo = str(getattr(typo.profile, "key", "") or "")
+    key = _key(subject, terms, language, estilo)
     out = _out(cache_dir, "card", key)
     if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"Card — {subject or 'cena'}", "card", scene_id)
@@ -462,12 +531,12 @@ def render_card(subject: str, terms: list[str], narration: str,
     d = ImageDraw.Draw(img)
     english = str(language or "").lower().startswith("en")
 
-    f_kicker = _font(30)
+    f_kicker = _font(30, typo, "kicker")
     d.text((W // 2, 250), "ORIGEM" if english else "A PALAVRA VEM DE",
            font=f_kicker, fill=ACCENT_2, anchor="mm")
 
     # A palavra principal, grande, quebrada se preciso
-    f_main = _font(96)
+    f_main = _font(96, typo, "term")
     principal = str(subject or "").strip() or "—"
     lines = _wrap(d, principal.upper(), f_main, W - 180)[:4]
     y = 420
@@ -479,18 +548,25 @@ def render_card(subject: str, terms: list[str], narration: str,
     chain = _card_chain(ch) if ch is not None else [
         str(t).strip() for t in (terms or []) if str(t).strip()][:4]
     if chain:
-        f_chain = _font(46)
+        f_chain = _font(46, typo, "document")
+        f_atual = _font(46, typo, "term")
         y = max(y + 60, 720)
         d.line([(W // 2, y - 46), (W // 2, y - 18)], fill=ACCENT, width=5)
         d.polygon([(W // 2 - 20, y - 20), (W // 2 + 20, y - 20), (W // 2, y + 14)],
                   fill=ACCENT)
-        for term in chain:
-            d.text((W // 2, y + 62), term, font=f_chain, fill=INK_SOFT, anchor="mm")
+        ultimo = len(chain) - 1
+        for i, term in enumerate(chain):
+            # A última é a forma que a cadeia desemboca — a palavra de
+            # hoje, ligada à grande de cima. As anteriores são o caminho
+            # histórico, e é nele que o itálico editorial entra.
+            d.text((W // 2, y + 62), term,
+                   font=f_atual if i == ultimo else f_chain,
+                   fill=INK if i == ultimo else INK_SOFT, anchor="mm")
             y += 96
 
     # Rodapé: a frase da cena, truncada. Dá contexto sem virar legenda
     # (a legenda queimada continua sendo a do TTS, intocada).
-    f_foot = _font(30)
+    f_foot = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
     for i, line in enumerate(_wrap(d, frase, f_foot, W - 160)[:3]):
         d.text((W // 2, H - 210 + i * 42), line, font=f_foot,
@@ -504,7 +580,7 @@ def render_card(subject: str, terms: list[str], narration: str,
 
 def render_diagram(subject: str, steps: list[str], narration: str,
                    cache_dir: str, language: str = "pt-BR",
-                   scene_id: int = 0) -> object:
+                   scene_id: int = 0, typo=None) -> object:
     """Fluxo vertical: a transformação, passo a passo.
 
     Cobre "flow", "process", "cause→effect", "before→after" e "layers" com
@@ -512,7 +588,10 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     entre esses tipos é o TEXTO dos passos, que vem da cena — não são
     cinco renderizadores para manter.
     """
-    key = _key(subject, steps, language)
+    estilo = ""
+    if typo is not None:
+        estilo = str(getattr(typo.profile, "key", "") or "")
+    key = _key(subject, steps, language, estilo)
     out = _out(cache_dir, "diagram", key)
     if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"Diagrama — {subject or 'cena'}", "diagram", scene_id)
@@ -522,11 +601,11 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     d = ImageDraw.Draw(img)
     english = str(language or "").lower().startswith("en")
 
-    f_head = _font(34)
+    f_head = _font(34, typo, "kicker")
     d.text((W // 2, 170), "HOW IT HAPPENS" if english else "COMO ACONTECE",
            font=f_head, fill=ACCENT, anchor="mm")
 
-    f_step = _font(42)
+    f_step = _font(42, typo, "term")
     passos = [str(s).strip() for s in (steps or []) if str(s).strip()][:4]
     if not passos:
         # Sem passos declarados, o diagrama mostra o assunto: ainda é um
@@ -559,7 +638,7 @@ def render_diagram(subject: str, steps: list[str], narration: str,
             d.text((W // 2, cy - 18 + j * 52), line, font=f_step,
                    fill=INK, anchor="mm")
 
-    f_foot = _font(30)
+    f_foot = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
     for i, line in enumerate(_wrap(d, frase, f_foot, W - 160)[:2]):
         d.text((W // 2, H - 150 + i * 42), line, font=f_foot,
@@ -607,7 +686,7 @@ def _diagram_steps(ch) -> list[str]:
 
 
 def build_visual(ch, strategy: str, cache_dir: str, language: str = "pt-BR",
-                 narration: str = "") -> object | None:
+                 narration: str = "", typo=None) -> object | None:
     """Produz o visual pedido. None se não souber fazer esse tipo."""
     subject = str(getattr(ch, "subject", "") or "")
     terms = list(getattr(ch, "visual_queries", []) or [])
@@ -615,11 +694,11 @@ def build_visual(ch, strategy: str, cache_dir: str, language: str = "pt-BR",
     if strategy == "card":
         return render_card(subject, terms, narration or
                            str(getattr(ch, "narration", "") or ""),
-                           cache_dir, language, scene_id, ch=ch)
+                           cache_dir, language, scene_id, ch=ch, typo=typo)
     if strategy == "diagram":
         return render_diagram(subject, _diagram_steps(ch), narration or
                               str(getattr(ch, "narration", "") or ""),
-                              cache_dir, language, scene_id)
+                              cache_dir, language, scene_id, typo=typo)
     return None
 
 
@@ -636,16 +715,23 @@ def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR",
     `state` carrega o que o vídeo já mostrou, para que a forma escolhida
     não repita a da cena anterior quando o assunto também repete.
     """
+    # O gênero já chega neste ponto, então o handle de tipografia nasce
+    # aqui e não precisa atravessar o pipeline. `genre=""` devolve um
+    # handle sem perfil, que resolve para a fonte de sempre: um vídeo sem
+    # gênero sai com a mesma cara de antes.
+    from . import typography as _typo
+    typo = _typo.for_genre(genre)
+
     for strategy in strategies_for(ch, genre):
         if strategy in FORMS:
             forma = choose_form(ch, state, genre)
-            asset = render_form(ch, forma, cache_dir, language)
+            asset = render_form(ch, forma, cache_dir, language, typo)
             if asset is not None:
                 if state is not None:
                     state.record(str(getattr(ch, "subject", "") or ""), forma)
                 return asset
             continue
-        asset = build_visual(ch, strategy, cache_dir, language)
+        asset = build_visual(ch, strategy, cache_dir, language, typo=typo)
         if asset is not None:
             if state is not None:
                 state.record(str(getattr(ch, "subject", "") or ""), strategy)

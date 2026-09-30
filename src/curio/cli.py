@@ -516,9 +516,27 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("fonte para título", ff.find_font_bold() is not None,
           ff.find_font_bold() or "título será omitido")
     # Informativo: ausência de chave NÃO falha o doctor (gerador local cobre).
-    # A Wikimedia não tem chave, mas tem exigência: sem contato no
-    # User-Agent ela responde 429 e a pesquisa inteira cai. Não é FALHA
-    # porque a geração local segue, mas precisa estar escrito.
+    # A tipografia é configuração, não download: o doctor diz qual fonte
+    # CADA papel vai usar e, quando não é a pedida, diz isso. Um vídeo que
+    # saiu com a serifada errada sem ninguém avisar é pior do que um vídeo
+    # que não saiu, e "Minion Pro não está instalada" é uma frase que o
+    # autor precisa ler antes de montar 40 minutos de vídeo.
+    from .stages import typography as typo_stage
+    _perfil = typo_stage.profile_for(cfg.genre)
+    if not cfg.genre:
+        print("[--] Tipografia — sem gênero: fonte de exibição de sempre")
+    else:
+        _quedas = []
+        for _papel in (typo_stage.ROLE_TITLE, typo_stage.ROLE_QUOTE,
+                       typo_stage.ROLE_LATIN, typo_stage.ROLE_CAPTION):
+            _r = typo_stage.resolve(_papel, cfg.genre,
+                                    (cfg.typography or {}).get(cfg.genre))
+            if _r.is_fallback and _r.requested:
+                _quedas.append(f"{_papel}: {_r.requested} → {_r.family}")
+        _detalhe = f"{_perfil.label} — {_perfil.direction}"
+        print(f"[{'--' if _quedas else 'OK'}] Tipografia — {_detalhe}")
+        for _q in _quedas:
+            print(f"       fonte ausente, usando {_q}")
     from .ua import aviso_contato, user_agent
     _aviso_ua = aviso_contato()
     print(f"[{'OK' if not _aviso_ua else '--'}] User-Agent Wikimedia"
