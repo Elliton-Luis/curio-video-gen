@@ -696,7 +696,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         # ela provavelmente não bate. O gate é o mesmo de antes — a
         # contagem e a cobertura saem inalteradas.
         _det = grounding.get("unverified_display") or []
-        msg = (f"{len(grounding['unverified'])} afirmação(ões) do roteiro sem "
+        _n = len(grounding["unverified"])
+        msg = (f"{_n} {'afirmações' if _n > 1 else 'afirmação'} do roteiro sem "
                f"correspondência nas fontes")
         warnings.append(msg)
         print(f"AVISO: {msg}:", file=sys.stderr)
@@ -705,8 +706,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             print(f"      possível causa: {_d['cause']}", file=sys.stderr)
         _mais = len(_det) - 8
         if _mais > 0:
-            print(f"  ... e {_mais} outra(s). Ver o relatório completo.",
-                  file=sys.stderr)
+            print(f"  ... e {_mais} {'outras' if _mais > 1 else 'outra'}. "
+                  f"Ver o relatório completo.", file=sys.stderr)
         print(f"  Fontes avaliadas: "
               f"{', '.join(grounding.get('sources_checked', [])[:6])}",
               file=sys.stderr)
