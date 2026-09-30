@@ -443,3 +443,119 @@ def test_todas_as_formas_aceitam_cena_vazia(tmp_path):
         with Image.open(a.local_path) as im:
             assert im.size == (visuals.W, visuals.H), forma
             assert im.format == "PNG", forma
+
+
+# --- a forma "dated": nome + datas, o exemplo de direção de arte ------
+
+def _ch_pessoa(sujeito, datas=None, papel="person", extra_ctx=("mosteiro",),
+               **kw):
+    """Cena de pessoa. Sem papel nem data por padrão, para os casos
+    negativos não serem vencidos por uma declaração explícita."""
+    from curio.stages.scenes import Chapter
+    ctx = ([datas] if datas else []) + list(extra_ctx)
+    return Chapter(id=1, narration="Uma frase sobre a pessoa.",
+                   duration_estimate=13.0, visual_type="historical_art",
+                   subject=sujeito, context=ctx, text_role=papel, **kw)
+
+
+def test_nome_com_datas_usa_a_forma_dated():
+    ch = _ch_pessoa("São Bento de Núrsia", "c. 480 — 547")
+    assert visuals.choose_form(ch, None, "people") == visuals.FORM_DATED
+
+
+def test_sao_jeronimo_e_reconhecido_como_pessoa():
+    """O caso real que motivou a forma."""
+    ch = _ch_pessoa("São Jerônimo", "c. 347 — 420")
+    assert visuals._looks_person(ch, "people")
+    assert visuals.choose_form(ch, None, "people") == visuals.FORM_DATED
+
+
+def test_forma_latina_longa_tambem_e_pessoa():
+    ch = _ch_pessoa("Eusebius Sophronius Hieronymus", "séc. IV")
+    assert visuals.choose_form(ch, None, "people") == visuals.FORM_DATED
+
+
+def test_instituicao_nao_e_pessoa_mesmo_com_data():
+    """O falso positivo óbvio: duas palavras capitalizadas não é pessoa."""
+    for sujeito in ("Império Romano", "Concílio de Éfeso", "Guerra Civil",
+                   "Reino do Sol", "Ordem de São Bento"):
+        # sem papel declarado: aqui o que decide é a heurística
+        ch = _ch_pessoa(sujeito, "séc. V", papel="")
+        assert not visuals._looks_person(ch, "people"), sujeito
+        assert visuals.choose_form(ch, None, "people") != visuals.FORM_DATED
+
+
+def test_conceito_com_data_nao_vira_ficha_de_pessoa():
+    ch = _ch_pessoa("Salário", "séc. I a.C.", papel="", extra_ctx=())
+    assert visuals.choose_form(ch, None, "etymology") != visuals.FORM_DATED
+
+
+def test_datas_reconhecidas_em_varios_formatos():
+    from curio.stages.scenes import Chapter
+    for bruto, esperado in (("c. 480 — 547", "c. 480 — 547"),
+                            ("480-547", "480-547"),
+                            ("347 ao 420", "347 ao 420"),
+                            ("séc. VI", "séc. VI"),
+                            # De um campo declarado, um ano solto é data.
+                            # O que entra na tela é o ANO, não a frase: o
+                            # cartão mostra "480", não "nasceu em 480".
+                            ("nascida em 480", "480")):
+        ch = Chapter(id=1, narration="x", duration_estimate=9.0,
+                     subject="São Bento", context=[bruto])
+        assert visuals._date_range(ch) == esperado, bruto
+
+
+def test_sem_data_a_forma_dated_nao_dispara():
+    ch = _ch_pessoa("São Bento de Núrsia", None)
+    assert visuals.choose_form(ch, None, "people") != visuals.FORM_DATED
+
+
+def test_a_data_vem_do_declarado_antes_da_narracao():
+    """A narração diz 'por volta de 480'; a fonte de tela é a declaration."""
+    from curio.stages.scenes import Chapter
+    ch = Chapter(id=1, narration="nasceu por volta de 480 em Núrsia",
+                 duration_estimate=9.0, subject="São Bento",
+                 context=["c. 480 — 547"], text_role="person")
+    assert visuals._date_range(ch) == "c. 480 — 547"
+
+
+def test_forma_dated_desenha_nome_e_data(tmp_path):
+    ch = _ch_pessoa("São Bento de Núrsia", "c. 480 — 547")
+    a = visuals.render_form(ch, visuals.FORM_DATED, str(tmp_path), "pt-BR")
+    assert a is not None
+    assert os.path.getsize(a.local_path) > 10000
+
+
+def test_forma_dated_usa_papeis_diferentes_para_nome_e_data(tmp_path):
+    """Nome na serifada principal, data discreta: são papéis distintos."""
+    from curio.stages import typography as T
+    real = T.Typography.pil
+    pedidos = []
+
+    def espiao(self, role="title", size=48):
+        pedidos.append(role)
+        return real(self, role, size)
+
+    T.Typography.pil = espiao
+    try:
+        ch = _ch_pessoa("São Bento de Núrsia", "c. 480 — 547")
+        visuals.render_form(ch, visuals.FORM_DATED, str(tmp_path), "pt-BR",
+                            T.for_genre("people"))
+    finally:
+        T.Typography.pil = real
+    assert "person" in pedidos
+    assert "date" in pedidos
+
+
+def test_forma_dated_esta_em_todas_as_formas_visiveis():
+    assert visuals.FORM_DATED in visuals.FORMS
+
+
+def test_ano_que_so_na_narracao_nao_vira_ficha_de_data():
+    """"em 480 cenas" não é uma data, e a narração é texto falado."""
+    from curio.stages.scenes import Chapter
+    ch = Chapter(id=1, narration="O sal foi medido em 480 gramas.",
+                 duration_estimate=9.0, subject="Salário",
+                 text_role="person")
+    assert visuals._date_range(ch) == ""
+    assert visuals.choose_form(ch, None, "people") != visuals.FORM_DATED

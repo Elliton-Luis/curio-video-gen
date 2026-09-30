@@ -207,9 +207,109 @@ FORM_DEFINITION = "definition"  # assunto + o que se decompõe
 FORM_ENUM = "enumeration"       # assunto + lista de itens
 FORM_CONTRAST = "contrast"     # X e Y lado a lado
 FORM_QUOTE = "quote"           # a frase da cena, em destaque
+FORM_DATED = "dated"           # nome + datas, para biografia de pessoa
 
 FORMS = (FORM_SPOTLIGHT, FORM_DEFINITION, FORM_ENUM, FORM_CONTRAST,
-         FORM_QUOTE)
+         FORM_QUOTE, FORM_DATED)
+
+# Um intervalo de datas tem forma própria, e uma só. O padrão aqui é o
+# que as fontes de biografia realmente escrevem: "c. 480 - 547",
+# "480 — 547", "séc. VI", "nascida em 480". Exigir a barra em vez de
+# qualquer um deles faria a forma disparar em menos cenas do que deveria,
+# e uma forma que quase nunca aparece é uma forma morta.
+_DATE_RANGE = re.compile(
+    r"(?:\bc\.?\s*)?\d{3,4}\s*(?:-{1,2}|–|—|ao?\s+|até)\s*"
+    r"(?:\d{3,4}|presente|atual)"
+    r"|\bc\.?\s*\d{3,4}\b"
+    r"|\bsec\.?\s*[ivxlc]+\b"
+    r"|\bséc\.?\s*[ivxlc]+\b",
+    re.IGNORECASE)
+
+# Um ano sozinho ("nasceu em 480") só conta em campo DECLARADO. Na
+# narração, um número de três ou quatro dígitos aparece em "em 480
+# cenas" e "durou 1500 anos"; aceitar bare year ali transformaria
+# qualquer frase quantificada em ficha de data. Em `context` e `visual_entities` o
+# ano solto é informação e não pode.
+_BARE_YEAR = re.compile(r"\b\d{3,4}\b")
+
+# Prefixos que, em português, indicam que o sujeito é uma pessoa e não um
+# conceito. "São Bento de Núrsia" é pessoa; "Sacro Império" não é.
+_PERSON_PREFIXES = ("são ", "santa ", "d. ", "dom ", "irmã ", "frei ",
+                    "papa ", "s.pb. ")
+
+# Instituições, guerras e eventos: duas palavras capitalizadas não
+# significa pessoa. "Império Romano" e "Guerra Civil" são os falsos
+# positivos que a regra das duas palavras capitalizadas produz, e eles
+# aparecem em vídeo de biografia o tempo todo, porque é o contexto do
+# personagem. Lista curta e declarada como heurística: o custo de errar
+# aqui é um cartão de nome-e-data para uma instituição, que continua sendo
+# um cartão legível — o custo de NÃO-listar é esse mesmo cartão para
+# "Concílio de Éfeso", que parece um bispo.
+_NON_PERSON_MARKERS = (
+    "império", "reino", "guerra", "cruzada", "concílio", "concilio",
+    "ordem ", "abadia", "universidade", "igreja ", "capela", "diocese",
+    "era ", "época", "epoca", "reforma", "tratado", "conciliação",
+    "empire", "kingdom", "war ", "crusade", "council", "order ", "era ",
+    "period", "reformation")
+
+
+def _looks_person(ch, genre: str = "") -> bool:
+    """O sujeito desta cena é uma pessoa?
+
+    O gênero estreita a heurística: em `people` o sujeito de uma cena com
+    datas normalmente É a pessoa, e vale arriscar; nos outros gêneros só
+    valem o prefixo e o papel declarado, porque "Império Romano" e
+    "Reino do Sol" são assunto legítimo e não são biografia.
+    """
+    papel = str(getattr(ch, "text_role", "") or "").strip().lower()
+    if papel == "person":
+        return True
+    bruto = str(getattr(ch, "subject", "") or "").strip()
+    # A capitalização é o sinal, então ela é lida no texto ORIGINAL.
+    # Testar isupper() na versão em minúsculas nunca casa — foi o que
+    # fez "Jerônimo de Estrídia" sair classificado como conceito.
+    sujeito = bruto.lower()
+    if not sujeito or len(sujeito) > 60:
+        return False
+    if sujeito.startswith(_PERSON_PREFIXES):
+        return True
+    if any(m in sujeito for m in _NON_PERSON_MARKERS):
+        return False
+    if str(genre or "").strip().lower() not in ("people", "history"):
+        return False
+    # Duas ou mais palavras capitalizadas, com partícula de nome no meio:
+    # "Jerônimo de Estrídia", "Eusebius Sophronius Hieronymus". Uma
+    # palavra isolada seria conceito ("Salário"), e não pessoa.
+    palavras = bruto.split()
+    particulas = ("de", "do", "da", "dos", "das", "van", "von", "di",
+                  "of", "the")
+    return len(palavras) >= 2 and all(
+        (p[:1].isupper() and p.lower() not in particulas)
+        or p.lower() in particulas for p in palavras)
+
+
+def _date_range(ch) -> str:
+    """A faixa de datas que a cena carrega, ou "" se não houver.
+
+    Procura primeiro no que a cena DECLAROU (contexto, entidades), porque
+    a narração é o texto que vai ser falado e costuma dizer "por volta de
+    480" em vez de "c. 480 - 547". Declarado é mais confiável para
+    desenhar; a narração é o plano B.
+    """
+    declarados = [str(x) for x in (
+        list(getattr(ch, "context", []) or [])
+        + list(getattr(ch, "visual_entities", []) or []))]
+    for texto in declarados:
+        achado = _DATE_RANGE.search(texto or "")
+        if achado:
+            return achado.group(0).strip()
+    for texto in declarados:
+        achado = _BARE_YEAR.search(texto or "")
+        if achado:
+            return achado.group(0).strip()
+    narracao = str(getattr(ch, "narration", "") or "")
+    achado = _DATE_RANGE.search(narracao)
+    return achado.group(0).strip() if achado else ""
 
 _FORM_FOR_TYPE = {
     "typographic": FORM_DEFINITION,
@@ -320,7 +420,14 @@ def choose_form(ch, state: "VisualState | None" = None,
     # 1) a cena pede explicitamente uma negativa → contraste
     if _contrast_pair(ch) is not None:
         base = FORM_CONTRAST
-    # 2) assunto repetido → spotlight, para não virar cópia da anterior
+    # 2) nome + datas: a forma que o exemplo de direção de arte pede —
+    #    "SÃO BENTO DE NÚRSIA / c. 480 — 547", o nome na serifada
+    #    principal e a data numa variação discreta. Fica acima do
+    #    spotlight-repetido porque a data é informação nova: repetir o
+    #    assunto sem ela perderia a ecronologia da tela.
+    elif _looks_person(ch, genre) and _date_range(ch):
+        base = FORM_DATED
+    # 3) assunto repetido → spotlight, para não virar cópia da anterior
     elif state is not None and state.subject_repeated(sujeito):
         base = FORM_SPOTLIGHT
     # 3) o perfil do gênero tem forma preferida; senão, a do tipo
@@ -329,8 +436,8 @@ def choose_form(ch, state: "VisualState | None" = None,
     else:
         base = _FORM_FOR_TYPE.get(vtype, FORM_DEFINITION)
 
-    # 4) subjectively poor and the type already saturated: try another form
-    #    that is valid for this scene, preferring one not yet used.
+    # 5) assunto pobre e o tipo já saturado: tenta outra forma que sirva a
+    #    esta cena, preferindo uma ainda não usada.
     if state is not None and base != FORM_SPOTLIGHT:
         candidatos = [base]
         if not ents:
@@ -340,6 +447,8 @@ def choose_form(ch, state: "VisualState | None" = None,
                            if f not in candidatos]
         if _quote_line(narration):
             candidatos.append(FORM_QUOTE)
+        if _looks_person(ch, genre) and _date_range(ch):
+            candidatos.append(FORM_DATED)
         for cand in candidatos:
             if cand not in state.forms:
                 return cand
@@ -395,6 +504,9 @@ def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR",
     elif form == FORM_QUOTE:
         _draw_quote(d, _quote_line(narration) or sujeito, english, typo,
                     _role(ch, "quote"))
+    elif form == FORM_DATED:
+        _draw_dated(d, sujeito or _person_name(ch), _date_range(ch), english,
+                    typo)
     else:
         return render_card(sujeito, entities + context, narration, cache_dir,
                            language, scene_id, ch=ch, typo=typo)
@@ -510,6 +622,55 @@ def _draw_quote(d, frase: str, english: bool, typo=None, papel: str = "") -> Non
         y += 68
     d.text((W // 2, min(y + 30, H - 420)), "”", font=f_mark, fill=ACCENT,
            anchor="mm")
+
+
+def _person_name(ch) -> str:
+    """O nome da pessoa, quando a cena tem um e o subject não é ele.
+
+    A cena de uma pessoa costuma ter `subject` no nome mesmo; quando tem
+    outra coisa (a obra, o lugar, a data), o nome vem do contexto, e
+    desenhar o subject no lugar do nome inverteria a ficha da pessoa.
+    """
+    for fonte in (list(getattr(ch, "context", []) or []),
+                  list(getattr(ch, "visual_entities", []) or [])):
+        for item in fonte:
+            if _looks_person_simples(str(item)):
+                return str(item)
+    return str(getattr(ch, "subject", "") or "")
+
+
+def _looks_person_simples(texto: str) -> bool:
+    t = str(texto or "").strip().lower()
+    return bool(t) and t.startswith(_PERSON_PREFIXES) and len(t) <= 60
+
+
+def _draw_dated(d, nome: str, datas: str, english: bool, typo=None) -> None:
+    """O nome na serifada principal e a data embaixo, discreta.
+
+    É a forma que a direção de arte pede para biografia:
+
+        SÃO BENTO DE NÚRSIA
+        c. 480 — 547
+
+    Os dois textos são da MESMA família, e é a hierarquia que separa, não
+    a fonte: o nome no papel `person` e a data no papel `date`, que nos
+    gêneros editoriais é uma sans menor. Trocar a família entre os dois
+    produziria um nome em serifa e uma data em itálico, e a data pararia
+    de parecer metadado para parecer outra citação.
+    """
+    f_nome = _font(96, typo, "person")
+    nome_txt = str(nome or "—").upper()
+    linhas = _wrap(d, nome_txt, f_nome, W - 180)[:3]
+    y = 600 - (len(linhas) - 1) * 62
+    for line in linhas:
+        d.text((W // 2, y), line, font=f_nome, fill=INK, anchor="mm")
+        y += 124
+    d.line([(W // 2 - 110, y - 30), (W // 2 + 110, y - 30)], fill=ACCENT,
+           width=5)
+    if datas:
+        f_data = _font(46, typo, "date")
+        d.text((W // 2, y + 74), str(datas), font=f_data, fill=ACCENT_2,
+               anchor="mm")
 
 
 def render_card(subject: str, terms: list[str], narration: str,
