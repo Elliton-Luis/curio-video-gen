@@ -303,3 +303,71 @@ def test_genero_nao_altera_projetos_antigos(tmp_path):
     from curio.stages import editorial
     meta = {"title": "x", "duration_actual": 10}
     assert editorial.get(meta.get("genre", "")) is None
+
+
+# --- estratégia de consulta (a parte que a Wikipedia devolve) --------
+
+def _queries_de(alvo, genre, monkeypatch):
+    """Roda a pesquisa com a rede desligada e devolve as queries tentadas."""
+    from curio.stages import research as R
+    vistas = []
+
+    def fake(q, lang, timeout=None):
+        vistas.append(q)
+        return []
+
+    monkeypatch.setattr(R, "wikipedia_search", fake)
+    monkeypatch.setattr(R, "duckduckgo_abstract", lambda *a, **k: None)
+    from curio.stages import entity as EN
+    monkeypatch.setattr(EN, "resolve_entity", lambda *a, **k: alvo)
+    with pytest.raises(R.ResearchError):
+        R.research_topic("qualquer ideia de teste", "pt-BR", max_sources=1,
+                         cfg=CurioConfig(), genre=genre)
+    return vistas
+
+
+def test_consulta_de_entidade_une_o_nome_ao_termo_do_genero(monkeypatch):
+    from curio.stages.entity import TargetEntity
+    alvo = TargetEntity(name="São Bento de Núrsia", is_entity=True)
+    qs = _queries_de(alvo, "people", monkeypatch)
+    assert qs[0] == "São Bento de Núrsia biografia"
+    assert "São Bento de Núrsia obras" in qs
+    assert "São Bento de Núrsia legado" in qs
+
+
+def test_consulta_de_tema_usa_os_topic_terms_do_estagio_de_entidade(
+        monkeypatch):
+    from curio.stages.entity import TargetEntity
+    alvo = TargetEntity(name="Cor azul do céu", is_entity=False,
+                        topic_terms=["por que o céu é azul?", "cor do céu",
+                                     "dispersão de rayleigh"])
+    qs = _queries_de(alvo, "science", monkeypatch)
+    assert qs[:3] == ["por que o céu é azul?", "cor do céu",
+                      "dispersão de rayleigh"]
+
+
+def test_consulta_de_tema_nao_pendura_o_termo_na_pergunta(monkeypatch):
+    """'por que o céu é azul? mecanismo' não é uma query, é um Frankenstein."""
+    from curio.stages.entity import TargetEntity
+    alvo = TargetEntity(name="por que o céu é azul?", is_entity=False,
+                        topic_terms=["por que o céu é azul?", "cor do céu",
+                                     "dispersão de rayleigh"])
+    qs = _queries_de(alvo, "science", monkeypatch)
+    assert not any("?" in q and "mecanismo" in q for q in qs)
+    assert "céu azul mecanismo" in qs or "cor do céu mecanismo" in qs
+
+
+def test_consulta_nao_repete_termo_que_ja_esta_no_nome(monkeypatch):
+    from curio.stages.entity import TargetEntity
+    alvo = TargetEntity(name="etimologia salário", is_entity=False,
+                        topic_terms=["etimologia salário"])
+    qs = _queries_de(alvo, "etymology", monkeypatch)
+    assert "etimologia salário etimologia" not in qs
+    assert "etimologia salário cognato" in qs
+
+
+def test_genero_muda_a_primeira_consulta_de_mesma_ideia(monkeypatch):
+    from curio.stages.entity import TargetEntity
+    alvo = TargetEntity(name="São Bento de Núrsia", is_entity=True)
+    assert _queries_de(alvo, "people", monkeypatch)[0] != \
+        _queries_de(alvo, "mystery", monkeypatch)[0]

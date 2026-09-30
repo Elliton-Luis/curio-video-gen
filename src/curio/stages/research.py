@@ -247,6 +247,16 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             seen_q.add(q.lower())
             queries.append(q)
 
+    def _contido(termo: str, base: str) -> bool:
+        """O termo do gênero já está no nome do alvo?
+
+        "Etimologia da palavra salário" + "etimologia" seria uma query que
+        repete a mesma palavra duas vezes, e a busca da Wikipedia pune
+        isso. Só a palavra inteira conta: "origem da palavra" NÃO está
+        contida em "Etimologia da palavra salário" e continua valendo.
+        """
+        return any(p in base.lower() for p in termo.lower().split())
+
     # O gênero entra ANTES da busca, não depois: um perfil de etimologia
     # precisa perguntar "cognato" e "forma antiga", e um de pessoa precisa
     # perguntar "biografia" e "obras". Aplicar a estratégia só no roteiro
@@ -254,8 +264,28 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
     from . import editorial as _editorial
     perfil = _editorial.get(genre)
     if perfil is not None:
+        # Para uma ENTIDADE, a query é o nome mais o termo do gênero:
+        # "São Bento de Núrsia biografia" é uma boa query da Wikipedia.
+        #
+        # Para uma PERGUNTA DE TEMA o caso é outro. O nome do alvo costuma
+        # ser a pergunta reescrita, e pendurar o termo do gênero nela dá
+        # "por que o céu é azul? mecanismo", que não é nada. O estágio de
+        # entidade já devolveu topic_terms prontos e específicos; uso o
+        # MAIS CURTO deles como cabeça, que é o substantivo de verdade, e o resto
+        # entra como query solo.
+        base = (target.name or "").strip()
+        if not target.is_entity and target.topic_terms:
+            cabeca = min(target.topic_terms, key=len)
+            for t in target.topic_terms:
+                _add(t)
+            base = cabeca
         for q in perfil.research.queries:
-            _add(f"{target.name or idea.strip()} {q}" if target.name else q)
+            if not base:
+                _add(q)
+                continue
+            if _contido(q, base):
+                continue
+            _add(f"{base} {q}")
     for q in target.search_queries:
         _add(q)
     _add(idea.strip())
