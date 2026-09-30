@@ -477,14 +477,25 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
     raise last  # inalcançável (loop sempre retorna ou levanta)
 
 
-def _rotation(pids: list[str]):
-    """Ordem do rodízio: NVIDIA intercalada entre os fallbacks.
+# Ordem preferida para respostas JSON: modelos rápidos e disciplinados
+# (Gemini Flash via OpenRouter) antes do Nemotron 550B — que é lento e
+# cospe raciocínio junto, quebrando o parse.
+JSON_FIRST_ORDER = ("openrouter", "gemini", "groq", "nvidia")
 
-    Com todos os 4: N, OpenRouter, N, Gemini, N, Groq, N, OpenRouter…
-    Sem NVIDIA: rodízio simples dos fallbacks. Infinito (o budget corta).
+# Teto rígido por chamada HTTP LLM (s): nem .env nem config passam disso.
+LLM_CALL_TIMEOUT_MAX = 15
+
+
+def _rotation(pids: list[str], interleave_nvidia: bool = True):
+    """Ordem do rodízio.
+
+    Com interleave (padrão, texto livre): NVIDIA intercalada entre os
+    fallbacks — N, OpenRouter, N, Gemini, N, Groq, N, OpenRouter…
+    Sem interleave (JSON): ciclo simples na ordem recebida em `pids`.
+    Infinito (o budget corta).
     """
     others = [p for p in pids if p != "nvidia"]
-    if "nvidia" in pids and others:
+    if interleave_nvidia and "nvidia" in pids and others:
         i = 0
         while True:
             yield "nvidia" if i % 2 == 0 else others[(i // 2) % len(others)]
@@ -496,17 +507,33 @@ def _rotation(pids: list[str]):
             i += 1
 
 
+def _order_live(live: list[str], prefer: tuple[str, ...] | None) -> list[str]:
+    """Reordena provedores ativos pela preferência (estável p/ o resto)."""
+    if not prefer:
+        return list(live)
+    rank = {pid: i for i, pid in enumerate(prefer)}
+    return sorted(live, key=lambda p: rank.get(p, len(rank)))
+
+
 def _chat(messages: list[dict], max_tokens: int, temperature: float,
           model: str, base_url: str, timeout: int,
           or_model: str | None = None, or_base_url: str | None = None,
-          metrics=None, extra: dict | None = None, json_mode: bool = False) -> tuple[dict, str]:
+          metrics=None, extra: dict | None = None, json_mode: bool = False,
+          prefer: tuple[str, ...] | None = None) -> tuple[dict, str]:
     """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
 
     Cada tentativa vai ao próximo da rotação; erro definitivo (401/403/404)
     elimina o provedor do rodízio. Retorna (body, rótulo-do-provedor).
     Esgotado o budget (ou os provedores), levanta NvidiaError com o
     levantamento completo: tentativas, últimos erros e chaves ausentes.
+
+    `prefer` reordena o rodízio sem intercalar a NVIDIA (para JSON).
+    O timeout por chamada é limitado a LLM_CALL_TIMEOUT_MAX segundos.
     """
+    try:
+        timeout = max(1, min(int(timeout), LLM_CALL_TIMEOUT_MAX))
+    except (TypeError, ValueError):
+        timeout = LLM_CALL_TIMEOUT_MAX
     extra = extra or {}
     resolved: dict[str, tuple[str, str]] = {
         "nvidia": (model, base_url),
@@ -516,6 +543,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         resolved[pid] = extra.get(pid, (None, None))
     live = [pid for pid in PROVIDER_ORDER
             if CREDENTIALS[pid].from_env().available]
+    live = _order_live(live, prefer)
     skipped = [f"{PROVIDER_SPECS[pid]['display']} pulado "
                f"(sem {PROVIDER_SPECS[pid]['key_envs'][0]})"
                for pid in PROVIDER_ORDER if pid not in live]
@@ -526,7 +554,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
     budget, made = max_attempts(), 0
     attempts: dict[str, int] = {}
     last_err: dict[str, str] = {}
-    for pid in _rotation(list(live)):
+    for pid in _rotation(list(live), interleave_nvidia=not prefer):
         if made >= budget or not live:
             break
         if pid not in live:
@@ -582,7 +610,15 @@ def _survey(budget: int, made: int, attempts: dict, last_err: dict,
 
 def _extract_json(text: str) -> dict:
     """Extrai o JSON mesmo com cercas/preâmbulo/epílogo ao redor."""
-    cleaned = re.sub(r"```(?:json)?", "", text).strip().strip("`").strip()
+    cleaned = re.sub(r"```(?:json)?", "", text or "").strip().strip("`").strip()
+    # 1) o texto inteiro já é JSON (caso do response_format: json_object)
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # 2) heurística legado: do primeiro `{` ao último `}`
     start, end = cleaned.find("{"), cleaned.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("sem objeto JSON na resposta")
@@ -598,7 +634,8 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
 
     Retorna (dados, rótulo "provedor:modelo"). Falhas levantam NvidiaError
     resumindo pulos e tentativas no chain.
-    Usa response_format: json_object para garantir JSON válido.
+    Usa response_format: json_object e tenta os provedores rápidos
+    (OpenRouter/Gemini/Groq) antes da NVIDIA.
     """
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}]
@@ -606,7 +643,7 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
     for _ in range(2):  # roteiros longos (60 s+) estouram 2000 tokens pensando
         body, label = _chat(messages, max_tokens, 0.3, model, base_url,
                             timeout, or_model, or_base_url, metrics, extra,
-                            json_mode=True)
+                            json_mode=True, prefer=JSON_FIRST_ORDER)
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 4000

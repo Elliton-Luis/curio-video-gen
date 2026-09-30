@@ -30,7 +30,7 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # [nvidia]
 # base_url = "https://integrate.api.nvidia.com/v1"
 # model = "nvidia/nemotron-3-ultra-550b-a55b"
-# timeout = 120
+# timeout = 15  # teto rígido por chamada LLM (o código limita a 15s de todo jeito)
 
 # Fallback automático quando a NVIDIA falha (roteiro e cenas).
 # Chave via .env (OPENROUTER_API_KEY); aqui só modelo/base.

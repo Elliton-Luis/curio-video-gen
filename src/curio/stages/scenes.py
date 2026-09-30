@@ -151,6 +151,54 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
     return chapters
 
 
+def _coerce_scene_list(data) -> list[dict]:
+    """Extrai a lista de cenas de envelopes variados (nunca levanta KeyError).
+
+    Aceita topo em lista ou dict com chaves `scenes` | `chapters` | `items`;
+    ignora entradas que não sejam dict.
+    """
+    if isinstance(data, list):
+        candidates = data
+    elif isinstance(data, dict):
+        candidates = None
+        for key in ("scenes", "chapters", "items"):
+            val = data.get(key)
+            if isinstance(val, list) and val:
+                candidates = val
+                break
+        if candidates is None:
+            return []
+    else:
+        return []
+    return [r for r in candidates if isinstance(r, dict)]
+
+
+def _coerce_visual_terms(raw: dict) -> tuple[list[str], str]:
+    """Normaliza os termos visuais: string 'term1 term2', lista ou legado."""
+    terms = raw.get("visual_search_terms", "")
+    if isinstance(terms, list):
+        terms_str = " ".join(str(t) for t in terms).strip()
+    else:
+        terms_str = str(terms or "").strip()
+    if not terms_str:
+        legacy = raw.get("visual_queries", [])
+        if isinstance(legacy, list):
+            terms_str = " ".join(str(t) for t in legacy).strip()
+        else:
+            terms_str = str(legacy or "").strip()
+    return terms_str.split()[:2], terms_str
+
+
+def _payload_snippet(data, limit: int = 300) -> str:
+    """Resumo seguro do payload p/ diagnóstico (sem segredos: só saída do modelo)."""
+    import json as _json
+    try:
+        text = _json.dumps(data, ensure_ascii=False)[:limit]
+    except (TypeError, ValueError):
+        text = str(data)[:limit]
+    return text
+
+
 def build_chapters(script: str, cfg: CurioConfig,
                    n_scenes: int | None = None, metrics=None) -> tuple[list[Chapter], str]:
     """Retorna (capítulos, fonte). Fonte: 'openrouter:gemini-2.5-flash' | 'local'."""
@@ -171,16 +219,19 @@ def build_chapters(script: str, cfg: CurioConfig,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
             extra=cfg.llm_overrides())
         provider = label.split(":")[0]
+        raw_list = _coerce_scene_list(data)
+        if not raw_list:
+            print(f"AVISO: cenas {provider} vieram sem lista válida "
+                  f"(payload: {_payload_snippet(data)}) — usando divisão local.",
+                  file=sys.stderr)
         chapters = []
-        for i, raw in enumerate(data.get("scenes", []), 1):
+        for i, raw in enumerate(raw_list, 1):
             narration = str(raw.get("narration", "")).strip()
             if not narration:
                 continue
-            # visual_search_terms vem como "term1 term2" - divide em lista
-            terms_str = str(raw.get("visual_search_terms", "")).strip()
-            visual_queries = terms_str.split()[:2] if terms_str else []
+            visual_queries, terms_str = _coerce_visual_terms(raw)
             chapters.append(Chapter(
-                id=i,
+                id=int(raw.get("index", raw.get("id", i)) or i),
                 narration=narration,
                 duration_estimate=estimate_duration(narration),
                 visual_queries=visual_queries,
@@ -189,8 +240,9 @@ def build_chapters(script: str, cfg: CurioConfig,
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
             return chapters, provider
-        print(f"AVISO: cenas {provider} não reproduzem o roteiro literal — "
-              "usando divisão local.", file=sys.stderr)
+        print(f"AVISO: cenas {provider} não reproduzem o roteiro literal "
+              f"(payload: {_payload_snippet(data)}) — usando divisão local.",
+              file=sys.stderr)
     else:
         print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
     return _local_chapters(script, n_scenes), "local"
