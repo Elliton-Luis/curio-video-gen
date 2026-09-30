@@ -347,6 +347,7 @@ _real_urlopen, _real_sleep = _urlreq.urlopen, N.time.sleep
 N.time.sleep = lambda s: None  # backoff sem espera no teste
 _calls = {"n": 0}
 _urls = []
+_timeouts = []
 _BEHAVIOR = {"mode": "ok-after-2"}
 
 
@@ -354,6 +355,7 @@ def _fake_urlopen(req, timeout=None):
     _calls["n"] += 1
     url = req.full_url if hasattr(req, "full_url") else str(req)
     _urls.append(url)
+    _timeouts.append(timeout)
     if _BEHAVIOR["mode"] == "timeout-always":
         raise _sock.timeout("timed out")
     if _BEHAVIOR["mode"] == "all-down":
@@ -366,8 +368,10 @@ def _fake_urlopen(req, timeout=None):
             raise _urlerr.HTTPError(url, 401, "Unauthorized", {},
                                     _io.BytesIO(b'{"error":"bad key"}'))
         raise _sock.timeout("timed out")
-    if _BEHAVIOR["mode"] == "ok-after-2" and _calls["n"] < 3:
-        raise _sock.timeout("timed out")
+    if _BEHAVIOR["mode"] in ("ok-after-2", "503-always") and (
+            _BEHAVIOR["mode"] == "503-always" or _calls["n"] < 3):
+        raise _urlerr.HTTPError(url, 503, "Service Unavailable", {},
+                                _io.BytesIO(b'{"error":"busy"}'))
     if _BEHAVIOR["mode"] == "gemini-up":
         if "generativelanguage" in url:
             body = {"choices": [{"message": {"content": "via gemini"},
@@ -395,9 +399,10 @@ def _host(u):
 
 _urlreq.urlopen = _fake_urlopen
 _saved_env = {k: _os.environ.get(k) for k in
-              ("NVIDIA_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
+              ("NVIDIA_API_KEY", "NVIDIA_API_KEYS", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
                "GOOGLE_API_KEY", "GROQ_API_KEY", "CURIO_LLM_ATTEMPTS")}
 _os.environ["NVIDIA_API_KEY"] = "fake-nvidia"
+_os.environ.pop("NVIDIA_API_KEYS", None)
 _os.environ["OPENROUTER_API_KEY"] = "fake-or"
 _os.environ["CURIO_LLM_ATTEMPTS"] = "5"
 for _k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"):
@@ -406,7 +411,7 @@ try:
     _calls["n"] = 0
     _BEHAVIOR["mode"] = "ok-after-2"
     N._post_with_retries([], "k", "m", "https://x", 5, 10, 0.1, "nvidia")
-    check("retry: 2 timeouts + sucesso na 3ª", _calls["n"] == 3)
+    check("retry HTTP 503: 2 falhas + sucesso na 3ª", _calls["n"] == 3)
     _calls["n"] = 0
     _BEHAVIOR["mode"] = "unauthorized"
     try:
@@ -419,10 +424,19 @@ try:
     _os.environ["CURIO_LLM_ATTEMPTS"] = "3"
     try:
         N._post_with_retries([], "k", "m", "https://x", 5, 10, 0.1, "nvidia")
-        check("esgotamento levanta com contagem", False)
+        check("timeout normal fast-fail (sem retry interno)", False)
     except N.NvidiaError as exc:
-        check("esgotamento levanta com contagem",
-              _calls["n"] == 3 and "após 3 tentativas" in str(exc))
+        check("timeout normal fast-fail (sem retry interno)",
+              _calls["n"] == 1 and getattr(exc, "fast_fail", False))
+    _calls["n"] = 0
+    _BEHAVIOR["mode"] = "503-always"
+    try:
+        N._post_with_retries([], "k", "m", "https://x", 5, 10, 0.1, "nvidia")
+        check("retry 503 esgota orçamento HTTP", False)
+    except N.NvidiaError as exc:
+        check("retry 503 esgota orçamento HTTP",
+              _calls["n"] == 3 and getattr(exc, "retry_exhausted", False)
+              and getattr(exc, "http_attempts", 0) == 3)
     _os.environ["CURIO_LLM_ATTEMPTS"] = "5"
     _calls["n"] = 0
     _urls.clear()
@@ -452,6 +466,7 @@ try:
     _os.environ["CURIO_LLM_ATTEMPTS"] = "6"
     _calls["n"] = 0
     _urls.clear()
+    _timeouts.clear()
     _BEHAVIOR["mode"] = "all-down"
     try:
         N._chat([{"role": "user", "content": "oi"}], 50, 0.1,
@@ -459,13 +474,16 @@ try:
         check("rodízio intercala NVIDIA entre fallbacks", False)
     except N.NvidiaError as exc:
         check("rodízio intercala NVIDIA entre fallbacks",
-              [_host(u) for u in _urls] == ["nv.local", "openrouter.local",
-                                            "nv.local", "generativelanguage",
-                                            "nv.local", "groq"]
-              and "após 6/6 tentativa(s)" in str(exc)
-              and "último erro" in str(exc))
+              [_host(u) for u in _urls[:6]] == ["nv.local", "openrouter.local",
+                                                "nv.local", "generativelanguage",
+                                                "nv.local", "groq"]
+              and [_host(u) for u in _urls[6:]] == ["nv.local"] * 5
+              and _timeouts[6:] == [None] * 5
+              and "após 6/6 rodada(s) globais" in str(exc)
+              and "NVIDIA fallback resiliente: 5/5" in str(exc))
     # Erro definitivo (401) elimina o provedor do rodízio.
     _os.environ.pop("OPENROUTER_API_KEY", None)
+    _os.environ.pop("GEMINI_API_KEY", None)
     _os.environ.pop("GROQ_API_KEY", None)
     _calls["n"] = 0
     _urls.clear()
@@ -477,9 +495,10 @@ try:
     except N.NvidiaError as exc:
         check("401 elimina do rodízio (NVIDIA 1x só)",
               sum(1 for u in _urls if "nv.local" in u) == 1
-              and "NVIDIA: 1 tentativa(s)" in str(exc))
+              and "NVIDIA fallback resiliente: 1/5" in str(exc))
     # Só Gemini com chave: assume de 1ª + rótulo com default.
     _os.environ.pop("NVIDIA_API_KEY", None)
+    _os.environ["GEMINI_API_KEY"] = "fake-gemini"
     _calls["n"] = 0
     _BEHAVIOR["mode"] = "gemini-up"
     body, label = N._chat([{"role": "user", "content": "oi"}], 50, 0.1,

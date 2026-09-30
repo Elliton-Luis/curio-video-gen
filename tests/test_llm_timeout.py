@@ -89,7 +89,7 @@ def test_o_teto_configurado_chega_na_chamada(monkeypatch):
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k2")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("GROQ_API_KEY", "")
     vistos = {}
@@ -111,7 +111,7 @@ def test_teto_padrao_ainda_limita_a_15(monkeypatch):
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k2")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("GROQ_API_KEY", "")
     vistos = {}
