@@ -530,9 +530,13 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # explícita se nada for encontrado: nunca roteiro "só IA".
     t0 = time.monotonic()
     emit(0, "Pesquisando fontes")
-    research_sources = research_stage.research_topic(
+    research = research_stage.research_topic(
         idea, cfg.language, max_sources=cfg.research_max_sources,
-        metrics=metrics, timeout=cfg.research_timeout)
+        metrics=metrics, timeout=cfg.research_timeout, cfg=cfg)
+    research_sources = list(research)
+    research_target = getattr(research, "target", None)
+    research_rejected = list(getattr(research, "rejected", []))
+    research_queries = list(getattr(research, "tried_queries", []))
     research_status = ("confirmed" if len(research_sources) >= 2
                        else "partial")
     for rs in research_sources:
@@ -542,8 +546,15 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             notes=f"RAG web ({rs.origin})")
     _write_json(paths.research_json, {
         "idea": idea,
-        "queries": research_stage.extract_keywords(idea, cfg.language),
+        # A entidade-alvo fica no arquivo: sem ela não há como auditar,
+        # depois, por que uma fonte sobre "Serra Gaúcha" entrou num vídeo
+        # sobre um santo do século VI.
+        "target_entity": (research_target.to_dict()
+                          if research_target is not None else None),
+        "queries": research_queries,
         "sources": [rs.to_dict() for rs in research_sources],
+        "rejected": [{"title": s.title, "url": s.url, "reason": m,
+                      "detail": d} for s, m, d in research_rejected],
     })
     research_pack = research_stage.format_for_prompt(research_sources,
                                                      cfg.language)
@@ -970,6 +981,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "status": research_status,
             "titles": [rs.title for rs in research_sources],
             "grounding": grounding,
+            "target_entity": (research_target.to_dict()
+                              if research_target is not None else None),
+            "rejected": [{"title": s.title, "reason": m}
+                         for s, m, _d in research_rejected],
         },
         # Como cada cena foi visualizada e por que as outras não foram.
         # `sem_visual` é a única métrica que é problema: diagrama e cartão

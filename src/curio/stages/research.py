@@ -181,24 +181,98 @@ def duckduckgo_abstract(query: str) -> ResearchSource | None:
                           origin="duckduckgo")
 
 
-def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
-                   metrics=None, timeout: int = WIKI_TIMEOUT) -> list[ResearchSource]:
-    """Pesquisa a ideia na web. Exige ≥1 fonte ou levanta ResearchError.
+class ResearchResult:
+    """Fontes aceitas, as rejeitadas e por quê, e a entidade-alvo.
 
-    Ordem: ideia verbatim → palavras-chave → DDG (complemento).
-    Dedup por URL. Registra contadores em metrics quando presente.
+    Não é só uma lista de fontes: é a resposta à pergunta "por que estas
+    fontes e não outras?". Sem a parte rejeitada com motivo, um desvio de
+    entidade é invisível — foi assim que "Serra Gaúcha" e "Michel Temer"
+    entraram como fundamentação para a história de um santo do século VI.
     """
+
+    def __init__(self, target, sources: list[ResearchSource],
+                 rejected: list[tuple[ResearchSource, str, str]] | None = None,
+                 tried_queries: list[str] | None = None):
+        self.target = target
+        self.sources = sources
+        self.rejected = rejected or []
+        self.tried_queries = tried_queries or []
+
+    def __iter__(self):
+        # Compatibilidade com quem só quer a lista de fontes.
+        return iter(self.sources)
+
+    def __len__(self):
+        return len(self.sources)
+
+    def __getitem__(self, i):
+        return self.sources[i]
+
+
+def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
+                   metrics=None, timeout: int = WIKI_TIMEOUT,
+                   cfg=None, require_relevance: bool = True) -> ResearchResult:
+    """Pesquisa a ideia, ACEITANDO SÓ fontes sobre o referente pretendido.
+
+    A ordem importa:
+
+    1. resolve a entidade-alvo (quem o vídeo é sobre, e o que a distingue
+       de homônimos);
+    2. consulta a Wikipedia primeiro com as queries do alvo, depois com a
+       ideia verbatim e as palavras-chave;
+    3. cada fonte passa pelo portão de relevância antes de contar;
+    4. se nada passar, levanta ResearchError explaining o motivo.
+
+    Passo 3 é o que faltava. Antes, qualquer artigo que citasse a
+    palavra do tema era aceito: o grounding confirmava a fidelidade do
+    roteiro a fontes que já estavam erradas, e o sistema se autovalidia em
+    cima do próprio desvio.
+    """
+    from . import entity as entity_stage
+
     if not (idea or "").strip():
         raise ValueError("ideia vazia — nada para pesquisar")
-    queries = [idea.strip()]
-    queries += extract_keywords(idea, language)
+
+    target = entity_stage.resolve_entity(idea, cfg=cfg, language=language,
+                                         metrics=metrics)
+    queries: list[str] = []
+    seen_q: set[str] = set()
+
+    def _add(q: str) -> None:
+        q = (q or "").strip()
+        if q and q.lower() not in seen_q:
+            seen_q.add(q.lower())
+            queries.append(q)
+
+    for q in target.search_queries:
+        _add(q)
+    _add(idea.strip())
+    for kw in extract_keywords(idea, language):
+        _add(kw)
+
     seen_urls: set[str] = set()
     sources: list[ResearchSource] = []
-    n_queries = 0
+    rejected: list[tuple[ResearchSource, str, str]] = []
+
+    def _consider(src: ResearchSource, query: str) -> None:
+        """Portão de relevância. Só daqui para baixo a fonte é groundwork."""
+        if not src.snippet or src.url in seen_urls:
+            return
+        if require_relevance:
+            motivo, detalhe = entity_stage.source_verdict(src, target)
+            if motivo != entity_stage.REASON_OK:
+                rejected.append((src, motivo, detalhe))
+                if metrics is not None:
+                    metrics.research_record_rejection(motivo)
+                return
+        seen_urls.add(src.url)
+        sources.append(src)
+        if metrics is not None:
+            metrics.research_source()
+
     for query in queries:
         if len(sources) >= max_sources:
             break
-        n_queries += 1
         if metrics is not None:
             metrics.research_query()
         try:
@@ -217,28 +291,45 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
                                         timeout=timeout)
             except ResearchError:
                 continue
-            if not src.snippet or src.url in seen_urls:
-                continue
-            seen_urls.add(src.url)
-            sources.append(src)
-            if metrics is not None:
-                metrics.research_source()
+            _consider(src, query)
+
     if len(sources) < max_sources:
-        n_queries += 1
         if metrics is not None:
             metrics.research_query()
         ddg = duckduckgo_abstract(idea.strip())
-        if ddg and ddg.url not in seen_urls:
-            seen_urls.add(ddg.url)
-            sources.append(ddg)
-            if metrics is not None:
-                metrics.research_source()
+        if ddg is not None:
+            _consider(ddg, "duckduckgo")
+
     if not sources:
-        raise ResearchError(
-            f"nenhuma fonte encontrada p/ {idea.strip()[:80]!r}. "
-            "Sem fonte real o roteiro não é gerado (exige ≥1 fonte). "
-            "Verifique a rede ou reformule a ideia com termos buscáveis.")
-    return sources[:max_sources]
+        raise ResearchError(_no_usable_source_message(idea, target, rejected))
+
+    print(entity_stage.explain(target, sources, rejected))
+    return ResearchResult(target, sources[:max_sources], rejected, queries)
+
+
+def _no_usable_source_message(idea: str, target, rejected) -> str:
+    """A falha precisa dizer QUAL foi a falha: não achou, ou achou errado."""
+    base = (f"nenhuma fonte utilizável p/ {idea.strip()[:80]!r}. ")
+    if not rejected:
+        return (base + "A pesquisa não retornou nada (verifique a rede ou "
+                "reformule a ideia com termos buscáveis).")
+    motivos: dict[str, int] = {}
+    for _src, motivo, _det in rejected:
+        motivos[motivo] = motivos.get(motivo, 0) + 1
+    resumo = ", ".join(f"{n}× {m}" for m, n in motivos.items())
+    # Citar os títulos é o que permite ao autor reconhecer o desvio: sem
+    # eles a mensagem diz quantas fontes caíram, mas não sobre o quê.
+    alguns = "; ".join(str(s.title)[:50] for s, _m, _d in rejected[:4])
+    return (
+        base + f"A pesquisa achou {len(rejected)} fonte(s), mas nenhuma "
+        f"falava do referente pretendido ({resumo}). "
+        f"Descartadas: {alguns}. "
+        f"Entidade-alvo: {target.name or 'não identificada'}"
+        + (f" (termos que a distinguem: {', '.join(target.discriminants)})"
+           if target.discriminants else "")
+        + ". Sem fonte do tema certo o roteiro não é gerado: um vídeo "
+        "fundamentado em fontes de outro sujeito é pior do que nenhum "
+        "vídeo. Reformule a ideia com o nome completo do sujeito.")
 
 
 def format_for_prompt(sources: list[ResearchSource],
