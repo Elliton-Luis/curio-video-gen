@@ -142,6 +142,9 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     max_images = getattr(args, "max_images", None)
     if max_images is not None:
         cfg.visual_max_images = max(1, min(5, int(max_images)))
+    insertions = getattr(args, "insertions", None)
+    if insertions is not None:
+        cfg.visual_insertions = max(0, min(5, int(insertions)))
     try:
         script_text = visual_stage.read_script_file(args.script)
     except (FileNotFoundError, ValueError) as exc:
@@ -544,6 +547,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
     fs.add_argument("--max-images", type=int, default=None,
                     help="fotos por cena com sobreposição 1-5 (padrão: config)")
+    fs.add_argument("--insertions", type=int, default=None,
+                    help="fotos complementares que caem sobre o fundo, no "
+                         "TOTAL do vídeo, 0-5 (1-2 o ideal; padrão: config). "
+                         "0 = cada cena mostra só a imagem de fundo")
     fs.add_argument("--no-open", action="store_true",
                     help="não abrir pasta/gravador após o teleprompter")
     fs.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")

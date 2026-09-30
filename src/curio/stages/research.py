@@ -257,3 +257,106 @@ def format_for_prompt(sources: list[ResearchSource],
         parts.append(chunk)
         used += len(chunk)
     return "\n".join(parts)
+
+
+# --- Verificação de fundamentação (a IA não inventa) -------------------
+# O prompt manda a IA não inventar, prompt não é garantia. Aqui o número
+# é conferido: toda data, medida, quantidade e percentual afirmado na
+# narração precisa aparecer em alguma fonte. O que não bate é listado
+# como "não verificado" e vai para o relatório — não é apagado do texto
+# (a decisão editorial é do autor), mas fica visível e não se apresenta
+# como confirmado.
+
+# Unidades reconhecidas: PT e EN. Sem unidade, só entram anos de 4 dígitos
+# e decimais — assim "1" ou "2" de uma contagem de capítulos não vira falso
+# positivo.
+_UNITS = (
+    r"%|por\s?cento|porcento|per\s?cent|percent|anos?|years?|dias?|days?|"
+    r"meses|months?|anos|séculos?|seculos?|centuries|almil|mil|million|milhão|"
+    r"milhões|millions|bilhão|billions|trilhão|trilhões|"
+    r"km|quilômetro|quilômetros|quilos?|kg|gramas?|g|miligrama|mg|"
+    r"ml|mililitro|litros?|l|metros?|m|cm|mm|quilômetros|"
+    r"graus?|°|°c|°f|hz|khz|mhz|ghz|nm|µm|um|micra|microns|"
+    r"times|vezes|people|pessoas|habitantes|habitantes|cidades|aldeias|"
+    r"espécies|species|asteroides|planetas|continentes"
+)
+_FACT_RE = re.compile(
+    r"(?<![\w.])"
+    r"(\d{1,3}(?:[.\s]\d{3})+|\d+(?:[.,]\d+)?)"  # 1.500 | 3,5 | 42
+    r"(\s*(?:" + _UNITS + r"))?",
+    re.IGNORECASE,
+)
+
+# Números que aparecem em qualquer texto sem serem afirmação factual.
+_TRIVIAL = {"0", "1", "2", "3", "4", "5", "10", "100", "1000", "mil"}
+
+
+def _norm_number(raw: str) -> str:
+    """Normaliza p/ comparar: '1.500' e '1500' viram a mesma coisa."""
+    digits = raw.replace(".", "").replace(" ", "").replace(" ", "")
+    if "," in digits:
+        digits = digits.replace(",", ".")
+    digits = digits.rstrip("0").rstrip(".") if "." in digits else digits
+    return digits
+
+
+def _fact_tokens(text: str) -> set[str]:
+    """Fatos verificáveis de um texto.
+
+    Entra tudo que é conferível: número de 2+ dígitos ("900 crateras"),
+    decimal ("3,5"), ano de 4 dígitos, e qualquer número com unidade
+    ("687 dias", "40%"). Fica de fora o número solto de um dígito
+    ("1", "7") e a contagem genérica que a IA usa para pontuar o texto —
+    checá-los geraria ruído suficiente para o relatório ser ignorado.
+    Números por extenso ("dois", "três") não são extraídos: não têm
+    forma canônica para comparar com a fonte.
+    """
+    out: set[str] = set()
+    for num, unit in _FACT_RE.findall(text or ""):
+        norm = _norm_number(num)
+        if not norm or norm in _TRIVIAL:
+            continue
+        is_year = bool(re.fullmatch(r"\d{4}", norm))
+        is_decimal = ("," in num) or ("." in num and len(num) > 4)
+        if not (unit or is_year or is_decimal or len(norm) >= 2):
+            continue
+        out.add(norm)
+        if unit:
+            out.add(f"{norm} {re.sub(r'\\s+', ' ', unit.strip().lower())}")
+    return out
+
+
+def verify_grounding(script_text: str, sources: list[ResearchSource],
+                     language: str = "pt-BR") -> dict:
+    """Confere se os fatos do roteiro estão nas fontes (anti-invenção).
+
+    Devolve {"checked": n, "grounded": [...], "unverified": [...],
+    "coverage": 0.0–1.0}. `unverified` são os fatos que o texto afirma e
+    nenhuma fonte sustenta — é o mecanismo que torna a promessa "a IA
+    nunca inventa" auditável em vez de só prometida no prompt.
+
+    É conferência de números, não prova semântica: um texto pode parafrasear
+    um fato sem repetir o mesmo numeral. Por isso o relatório é
+    informativo e a cobertura vai para o metadata/relatório do projeto.
+    """
+    script_facts = _fact_tokens(script_text)
+    if not script_facts:
+        return {"checked": 0, "grounded": [], "unverified": [],
+                "coverage": 1.0, "language": language}
+    haystack = " ".join(f"{s.title} {s.snippet} {s.url}" for s in sources)
+    source_facts = _fact_tokens(haystack)
+    # Formas alternativas: ano "44" casa com "44 a.C." e com "44".
+    grounded, unverified = [], []
+    for fact in sorted(script_facts):
+        if fact in source_facts or fact.split()[0] in source_facts:
+            grounded.append(fact)
+        else:
+            unverified.append(fact)
+    checked = len(grounded) + len(unverified)
+    return {
+        "checked": checked,
+        "grounded": grounded,
+        "unverified": unverified,
+        "coverage": round(len(grounded) / checked, 3) if checked else 1.0,
+        "language": language,
+    }

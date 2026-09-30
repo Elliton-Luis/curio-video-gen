@@ -57,6 +57,20 @@ max_images = 3  # fotos por cena no modo roteiro-pronto (1-5; CURIO_VISUAL_MAX_I
 overlap = 0.9   # sobreposição máxima (s) entre fotos (CURIO_VISUAL_OVERLAP)
 sfx = true      # SFX discretos em ~1/3 das inserções (CURIO_VISUAL_SFX=0 desliga)
 
+# Inserções esparsas: fotos COMPLEMENTARES que caem por cima da imagem de
+# fundo. O orçamento é do VÍDEO INTEIRO (não por cena): 1–2 é o ponto ideal,
+# mais que isso vira slideshow. 0 = cada cena mostra só o fundo.
+# As cenas escolhidas ficam no miolo do vídeo — a abertura e o fecho ficam
+# limpos — e cada inserção tem um toque de som discreto no instante exato
+# em que a foto entra. As legendas não são tocadas.
+insertions = 2         # 0-5 (CURIO_VISUAL_INSERTIONS)
+insert_style = "drop_in"  # caiu do álbum; alternatives: slide_left, slide_right,
+                          # fade, scale_in, tilt_in (CURIO_VISUAL_INSERT_STYLE)
+# Pico alvo do som da inserção, em dBFS (negativo = mais baixo).
+# -30 = cerca de 24 dB abaixo da narração: presente, não compete.
+# Abaixo de -45 some; acima de -12 briga com a voz. Faixa aceita: -45..-12.
+insert_gain_db = -30   # (CURIO_VISUAL_INSERT_GAIN_DB)
+
 [teleprompter]
 wpm = 150  # palavras/minuto estimadas p/ leitura (ajuste: 130/150/170)
 file_manager = "dolphin"  # aberto na pasta do teleprompter pós-geração

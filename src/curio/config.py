@@ -22,6 +22,12 @@ def _as_bool(value, default: bool = True) -> bool:
 
 DURATION_AUTO = 0.0  # Automático/Ilimitado: o conteúdo determina a duração.
 
+# Estilos de entrada válidos para as inserções esparsas. Mesmos nomes de
+# `stages.visual.ENTRY_STYLES` (+ o legado "fade_scale"), declarados aqui
+# para a config validar sem importar o pacote de estágios (evita ciclo).
+ALLOWED_INSERT_STYLES = ("drop_in", "slide_left", "slide_right", "fade",
+                         "scale_in", "tilt_in", "fade_scale")
+
 
 def normalize_language(raw) -> str:
     """Normaliza idioma do vídeo: 'pt-BR' (padrão) ou 'en-US'."""
@@ -92,6 +98,12 @@ class CurioConfig:
     visual_max_images: int = 3  # fotos por cena no modo roteiro-pronto (1–5)
     visual_overlap: float = 0.9  # sobreposição máxima (s) entre fotos
     visual_sfx: bool = True  # SFX discretos em ~1/3 das inserções
+    # Inserções esparsas: fotos COMPLEMENTARES que caem por cima da imagem
+    # de fundo, no total do vídeo (não por cena). 1–2 é o ponto ideal: mais
+    # que isso vira slideshow. 0 = nunca insere (só a foto de fundo por cena).
+    visual_insertions: int = 2
+    visual_insert_style: str = "drop_in"  # entrada estilo "cai do álbum"
+    visual_insert_gain_db: int = -30  # som quase imperceptível da inserção
     file_manager: str = "dolphin"  # pasta do teleprompter pós-geração
     audio_recorder: str = "audacity"  # gravador aberto pós-teleprompter
     auto_open: bool = True  # abre apps após teleprompter (só c/ sessão gráfica)
@@ -190,6 +202,26 @@ class CurioConfig:
                                   cfg.visual_sfx)
         if os.environ.get("CURIO_VISUAL_SFX") is not None:
             cfg.visual_sfx = _as_bool(os.environ["CURIO_VISUAL_SFX"], True)
+        cfg.visual_insertions = int(vis.get("insertions",
+                                            cfg.visual_insertions))
+        cfg.visual_insert_style = str(vis.get("insert_style",
+                                              cfg.visual_insert_style)).strip()
+        cfg.visual_insert_gain_db = int(vis.get("insert_gain_db",
+                                                cfg.visual_insert_gain_db))
+        if os.environ.get("CURIO_VISUAL_INSERTIONS"):
+            cfg.visual_insertions = int(os.environ["CURIO_VISUAL_INSERTIONS"])
+        if os.environ.get("CURIO_VISUAL_INSERT_STYLE"):
+            cfg.visual_insert_style = os.environ["CURIO_VISUAL_INSERT_STYLE"]
+        if os.environ.get("CURIO_VISUAL_INSERT_GAIN_DB"):
+            cfg.visual_insert_gain_db = int(
+                os.environ["CURIO_VISUAL_INSERT_GAIN_DB"])
+        # 0–5: acima de 5 deixa de ser "complemento" e vira slideshow.
+        cfg.visual_insertions = max(0, min(5, cfg.visual_insertions))
+        if cfg.visual_insert_style not in ALLOWED_INSERT_STYLES:
+            cfg.visual_insert_style = "drop_in"
+        # -45..-12 dB: abaixo de -45 some; acima de -12 compete com a narração.
+        cfg.visual_insert_gain_db = max(-45, min(-12,
+                                                 cfg.visual_insert_gain_db))
         cfg.file_manager = os.environ.get("CURIO_FILE_MANAGER",
                                           cfg.file_manager)
         cfg.audio_recorder = os.environ.get("CURIO_AUDIO_RECORDER",

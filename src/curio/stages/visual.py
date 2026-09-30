@@ -66,6 +66,62 @@ SFX_KINDS = ("swish", "tap")
 SFX_GAIN_DB = -26
 SFX_DURATION = 0.35
 
+# --- Inserções esparsas (o modo padrão) -------------------------------
+# A imagem de fundo ocupa a cena inteira; a foto COMPLEMENTAR cai por
+# cima dela como um cartão de álbum e fica. O usuário pediu
+# "não ficar fazendo toda hora": o orçamento é do VÍDEO inteiro, não da
+# cena. Uma a duas no vídeo é o ponto ideal — acima disso vira slideshow.
+# O SFX é propositalmente quase imperceptível: existe para marcar a
+# diferença da foto que entra, não para chamar atenção.
+INSERT_SFX_KIND = "tap"  # toque grave curto = objeto pousando no álbum
+INSERT_SFX_DURATION = 0.4
+
+
+def insertion_scenes(n_scenes: int, budget: int) -> set[int]:
+    """Cenas (0-based) que recebem UMA inserção, espalhadas no vídeo.
+
+    Determinístico: as posições saem igualmente espaçadas entre as cenas
+    do miolo — a abertura (índice 0) nunca recebe inserção (é o gancho,
+    a primeira imagem precisa entrar limpa) nem o fecho (última cena,
+    que carrega a resposta). Sem aleatoriedade: o mesmo tema gera o mesmo
+    vídeo, e a escolha continua previsível para quem revisa o roteiro.
+    """
+    if budget <= 0 or n_scenes < 2:
+        return set()
+    budget = min(budget, n_scenes - 1)
+    inner = list(range(1, n_scenes - 1))  # ignora abertura e fecho
+    slots = len(inner)
+    if slots <= 0:
+        return set()
+    positions: list[int] = []
+    for k in range(1, budget + 1):
+        # Centros igualmente espaçados: (k-0.5)/budget evita o viés de ancorar
+        # a primeira inserção no começo (que colaria as duas).
+        pos = min(slots - 1, max(0, round((k - 0.5) * slots / budget)))
+        # Colisão (budget alto p/ poucas cenas): desloca p/ a direita e,
+        # se não couber, p/ a esquerda.
+        while pos in positions and pos + 1 < slots:
+            pos += 1
+        if pos in positions:
+            pos = min(positions) - 1 if min(positions) > 0 else 0
+            while pos in positions and pos > 0:
+                pos -= 1
+        if pos not in positions:
+            positions.append(pos)
+    return {inner[p] for p in positions}
+
+
+def cap_scene_images(entries: list, want_insertion: bool) -> list:
+    """Limita a cena ao orçamento de fotos: 1 fundo + 1 inserção (ou só o fundo).
+
+    Sem isto, uma cena com 5 imagens viraria um slideshow e furaria o
+    orçamento de "1–2 por vídeo". A foto de fundo é sempre a ordem 0 —
+    nunca trocada nem deslocada pela complementar.
+    """
+    limit = 2 if want_insertion else 1
+    return entries[:limit]
+
+
 # Pequenas diferenças de composição entre fotos sobrepostas (álbum natural).
 # Índices por ordem da imagem na cena.
 ROTATIONS_DEG = (-5.0, 4.0, -3.0, 6.0, -4.0)
@@ -957,29 +1013,48 @@ def _assign_sfx(images: list[dict], scene_start: float,
 
 def build_visual_timeline(chapters, media_scenes: list[dict],
                           overlap_cap: float = 0.9, seed: str = "",
-                          sfx: bool = True) -> list[dict]:
+                          sfx: bool = True,
+                          insertions: int | None = None,
+                          insert_style: str = "drop_in",
+                          insert_gain_db: int = -30) -> list[dict]:
     """Timeline visual renderizável: um trecho por cena com suas imagens.
 
     Cada trecho carrega texto/narração original, início/fim, imagens em
     ordem (com consulta que a encontrou), duração, transição e geometria
     de sobreposição. Capítulos precisam ter `start/end` já definidos
-    (WordBoundary reais ou estimativa WPM) antes desta chamada. A sequência
-    de transições atravessa o vídeo sem repetição consecutiva (ordem
-    embaralhada com `seed`); SFX discretos marcam ~1/3 das inserções.
+    (WordBoundary reais ou estimativa WPM) antes desta chamada.
+
+    `insertions` é o orçamento de fotos COMPLEMENTARES do VÍDEO inteiro
+    (padrão 2, `None` mantém o álbum por cena sem limite). As cenas
+    escolhidas por `insertion_scenes` recebem 1 cartaz a mais, sempre com
+    `insert_style` (padrão: caiu do álbum) e um toque de som discreto no
+    instante exato da entrada — as outras cenas ficam só com o fundo.
     """
     by_chapter = {s["chapter_id"]: s for s in media_scenes}
     styles = _shuffled_styles(seed)
+    sparse = insertions is not None
+    insert_at = insertion_scenes(len(chapters), insertions or 0) if sparse else set()
     overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
     timeline = []
-    for ch in chapters:
+    for idx, ch in enumerate(chapters):
         scene = by_chapter.get(ch.id, {})
         start, end = round(float(ch.start), 3), round(float(ch.end), 3)
         dur = max(0.5, end - start)
-        images, consumed = _spec_images(list(scene.get("assets") or []), dur,
+        entries = list(scene.get("assets") or [])
+        if sparse:
+            entries = cap_scene_images(entries, idx in insert_at)
+        images, consumed = _spec_images(entries, dur,
                                        overlap_cap, styles, style_pos)
-        style_pos += consumed
-        overlay_counter, sfx_ordinal = _assign_sfx(
-            images, start, overlay_counter, sfx_ordinal, sfx)
+        if sparse:
+            # No modo esparso toda foto extra É uma inserção: entra no
+            # ritmo de álbum e sempre marca com som, independentemente da
+            # cadência ~1/3 do modo álbum cheio. `style_pos` não anda:
+            # a sequência variada pertence só ao álbum cheio.
+            _mark_insertion(images, start, insert_style, insert_gain_db, sfx)
+        else:
+            style_pos += consumed
+            overlay_counter, sfx_ordinal = _assign_sfx(
+                images, start, overlay_counter, sfx_ordinal, sfx)
         timeline.append({
             "chapter_id": ch.id,
             "narration": ch.narration,  # original, intocado
@@ -990,6 +1065,29 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             "reused_from": scene.get("reused_from"),
         })
     return timeline
+
+
+def _mark_insertion(images: list[dict], scene_start: float, style: str,
+                    gain_db: int, sfx: bool) -> None:
+    """Força o estilo de queda e marca o SFX discreto da foto complementar.
+
+    Só toca nas fotos de ordem > 0 (a de fundo é a base em tela cheia e
+    nunca vira cartão). `at` é absoluto (cena + offset) para o render
+    alinhar o som com o instante em que a foto entra.
+    """
+    for img in images:
+        if img.get("order", 0) == 0:
+            continue
+        img["transition"] = style
+        if sfx:
+            img["sfx"] = {
+                "kind": INSERT_SFX_KIND,
+                "at": round(scene_start + img.get("start", 0.0), 3),
+                "gain_db": gain_db,
+                "duration": INSERT_SFX_DURATION,
+            }
+        else:
+            img["sfx"] = None
 
 
 def retime_visual_timeline(visual_timeline: list[dict],

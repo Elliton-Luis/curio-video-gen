@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from curio.config import CurioConfig
 from curio.pipeline import MediaStandby, manual_media_dir, run_pipeline
+from curio.stages.research import ResearchSource
 from curio.stages.scenes import Chapter
 
 
@@ -80,8 +81,15 @@ def test_resume_com_foto_manual(tmp_path):
     def _boom(*a, **k):
         raise RuntimeError("CHEGOU_NO_TTS")
 
+    def _fonte(*a, **k):
+        return [ResearchSource(title="Teste", url="https://exemplo.org/t",
+                               snippet="trecho de teste", origin="mock")]
+
+    # A pesquisa também vai para a rede: stubada para o teste não depender
+    # da Wikipedia (429 intermitente deixava a suíte instável).
     with patch("curio.stages.visual.fetch_media_multi",
                side_effect=AssertionError("não deve buscar: há foto manual")), \
+         patch("curio.stages.research.research_topic", side_effect=_fonte), \
          patch("curio.stages.tts.synthesize", side_effect=_boom):
         try:
             run_pipeline("ideia teste", cfg, slug="teste-standby",

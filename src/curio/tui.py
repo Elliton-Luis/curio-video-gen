@@ -18,6 +18,7 @@ import sys
 import time
 
 from . import verify as verify_mod
+from .config import ALLOWED_INSERT_STYLES as INSERT_STYLES
 from .config import CurioConfig, parse_duration
 from .pipeline import MediaStandby, run_pipeline, video_paths
 from .slug import slugify
@@ -393,6 +394,9 @@ def _show_current_config(c: dict[str, str], cfg: CurioConfig) -> None:
     print(f"  Render: {cfg.render_backend} / {cfg.render_encoder}")
     print(f"  Mídia providers: {cfg.media_providers}")
     print(f"  Imagens por cena: {cfg.visual_max_images}")
+    print(f"  Inserções por vídeo: {cfg.visual_insertions} "
+          f"(estilo {cfg.visual_insert_style}, "
+          f"som {cfg.visual_insert_gain_db} dB)")
     print(f"  Overlap visual: {cfg.visual_overlap}")
     print(f"  SFX visual: {cfg.visual_sfx}")
     print(f"  Whisper: {cfg.whisper_model}")
@@ -466,7 +470,7 @@ def _config_flow(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
              "Duração-alvo",
              "TTS (provider/voz/speed)",
              "Render (backend/encoder)",
-             "Visual (max_images/overlap/SFX)",
+             "Visual (inserções/max_images/overlap/SFX)",
              "Voltar"],
             status=_status_summary(cfg))
         if idx is None or idx == 10:
@@ -531,6 +535,29 @@ def _ask_visual(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
             cfg = dataclasses.replace(cfg, visual_max_images=max(1, min(5, int(mi))))
         except ValueError:
             print(f"{c['red']}Inválido{c['reset']}")
+    ins = _ask(f"  Inserções por vídeo [{cfg.visual_insertions}] (0-5, 1-2 o ideal): ").strip()
+    if ins:
+        try:
+            cfg = dataclasses.replace(cfg, visual_insertions=max(0, min(5, int(ins))))
+        except ValueError:
+            print(f"{c['red']}Inválido{c['reset']}")
+    if cfg.visual_insertions > 0:
+        style = _ask(f"  Estilo da inserção [{cfg.visual_insert_style}] "
+                     f"({'|'.join(INSERT_STYLES)}): ").strip().lower()
+        if style:
+            if style in INSERT_STYLES:
+                cfg = dataclasses.replace(cfg, visual_insert_style=style)
+            else:
+                print(f"{c['red']}Estilo inválido. Use: "
+                      f"{'|'.join(INSERT_STYLES)}{c['reset']}")
+        gain = _ask(f"  Volume do som [{cfg.visual_insert_gain_db}] dB "
+                    f"(-45..-12, -30 discreto): ").strip()
+        if gain:
+            try:
+                cfg = dataclasses.replace(
+                    cfg, visual_insert_gain_db=max(-45, min(-12, int(gain))))
+            except ValueError:
+                print(f"{c['red']}Inválido{c['reset']}")
     ov = _ask(f"  Overlap cap [{cfg.visual_overlap}] (0-1): ").strip()
     if ov:
         try:

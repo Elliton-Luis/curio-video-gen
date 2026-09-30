@@ -110,6 +110,31 @@ def render_image_segment(img_path: str, duration: float, out_path: str,
     return out_path
 
 
+def _drop_in_y(start: float, entry: float, y0: str) -> str:
+    """Y da foto que CAI do álbum: queda desacelerada + assentamento.
+
+    Três tempos, para não parecer animação de PowerPoint:
+    1) antes de `start`: fora do quadro (y = -h), invisível;
+    2) durante `entry`: cai da altura com desaceleração (ease-out
+       cúbico) — a foto chega "pesada", não deslizando em linha reta;
+    3) depois: micro-quique amortecido (2 travas de ~6 px que somem),
+       como papel que pousa e assenta sobre as outras fotos.
+
+    Tudo dentro de `entry` (~0.6 s): é complemento da narração, não um
+    efeito para chamar atenção. As expressões vêm entre aspas simples
+    porque o parser do ffmpeg usa a vírgula como separador de filtro.
+    """
+    end_e = start + entry
+    settle = 0.18  # duração do assentamento
+    p = f"clip((t-{start:.3f})/{entry:.3f},0,1)"
+    ease = f"(1-pow(1-{p},3))"
+    fall = f"(-h+({y0}+h)*{ease})"
+    q = f"clip((t-{end_e:.3f})/{settle:.3f},0,1)"
+    bounce = f"(({y0})+6*sin(PI*{q})*(1-{q}))"
+    return (f"'if(lt(t,{start:.3f}),-h,"
+            f"if(lt(t,{end_e:.3f}),{fall},{bounce}))'")
+
+
 def render_collage_segment(images: list[dict], duration: float,
                            out_path: str, cfg: CurioConfig,
                            variant: int = 0) -> str:
@@ -192,9 +217,7 @@ def render_collage_segment(images: list[dict], duration: float,
         tr = im.get("transition", "fade")
         if tr == "drop_in":
             x = f"'{x0}'"
-            y = (f"'if(lt(t,{start:.3f}),-h,"
-                 f"if(lt(t,{end_e:.3f}),-h+({y0}+h)*(t-{start:.3f})/{entry:.3f},"
-                 f"{y0}))'")
+            y = _drop_in_y(start, entry, y0)
         elif tr == "slide_left":
             x = (f"'if(lt(t,{start:.3f}),-w,"
                  f"if(lt(t,{end_e:.3f}),-w+({x0}+w)*(t-{start:.3f})/{entry:.3f},"
@@ -296,14 +319,24 @@ def concat_copy(paths: list[str], out_path: str) -> str:
     return out_path
 
 
+# Nível dos SFX. Os geradores do ffmpeg não saem em 0 dBFS: `sine` com
+# beep_factor=1 mede -11.5 dBFS de pico e o pink filtrado ~-10 dBFS. Sem
+# esta calibração, "volume=-30dB" significaria -30 dB *sobre* o pico do
+# gerador, ou seja, -40 dBFS — inaudível, o oposto de "discreto, mas que
+# está lá". Com ela, `gain_db` passa a ser o PICO ALVO em dBFS, número
+# que dá para comparar com o da narração (-24 dB abaixo da fala comum).
+_SINE_PEAK_DB = -11.5
+_NOISE_PEAK_DB = -10.1
+
+
 def build_sfx_track(events: list[dict], total_duration: float,
                     out_path: str, seed: int = 0) -> str | None:
     """Trilha de SFX discretos p/ inserções (swish/tap sintetizados, sem assets).
 
     Cada evento {kind, at, gain_db, duration} vira um sopro curto com fades
     de entrada/saída, posicionado via adelay e completado com silêncio até o
-    total. Ganho baixo por construção (~-26 dB): complementa a entrada da
-    foto sem competir com a narração. Sem eventos, retorna None.
+    total. `gain_db` é o pico alvo em dBFS (ver _SINE_PEAK_DB): -30 é
+    "presente sem competir". Sem eventos, retorna None.
     """
     import os as _os
     total = max(0.5, float(total_duration))
@@ -318,17 +351,22 @@ def build_sfx_track(events: list[dict], total_duration: float,
     for idx, e in enumerate(evs):
         at_ms = int(round(float(e["at"]) * 1000))
         d = max(0.3, min(0.6, float(e.get("duration", 0.35))))
-        gain = float(e.get("gain_db", -26))
+        target = float(e.get("gain_db", -30))
         if e.get("kind") == "tap":
+            # Objeto pousando no álbum: pulso grave curto, com "corpo"
+            # (a queda) e cauda rápida (o impacto).
             freq = 140 + (idx % 2) * 20
-            src = (f"sine=frequency={freq}:duration={d:.2f}:sample_rate=48000,"
-                   f"volume={gain - 4:.0f}dB,afade=t=in:st=0:d=0.02,"
-                   f"afade=t=out:st=0:d={d:.2f}")
+            gain = target - _SINE_PEAK_DB
+            src = (f"sine=frequency={freq}:duration={d:.2f}:beep_factor=1:"
+                   f"sample_rate=48000,"
+                   f"volume={gain:.1f}dB,afade=t=in:st=0:d=0.015,"
+                   f"afade=t=out:st={d * 0.35:.2f}:d={d * 0.65:.2f}")
         else:  # swish: ruído rosa filtrado (papel/folha), timbre levemente variado
             fcut = 750 + (idx % 3) * 100
+            gain = target - _NOISE_PEAK_DB
             src = (f"anoisesrc=color=pink:duration={d + 0.15:.2f}:"
                    f"seed={seed + idx + 1}:sample_rate=48000,"
-                   f"lowpass=f={fcut},volume={gain:.0f}dB,"
+                   f"lowpass=f={fcut},volume={gain:.1f}dB,"
                    f"afade=t=in:st=0:d=0.06,"
                    f"afade=t=out:st={d - 0.25:.2f}:d=0.25")
         cmd += ["-f", "lavfi", "-i", src + f",adelay={at_ms}|{at_ms}"]

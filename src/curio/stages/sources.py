@@ -175,3 +175,147 @@ class SourceRegistry:
             return reg
         except (json.JSONDecodeError, KeyError, TypeError):
             return cls(slug="")
+
+
+_RIGHTS_LABEL = {
+    "clear": "livre (uso comercial permitido)",
+    "verify": "REVISAR (licença incerta ou não-comercial)",
+    "blocked": "BLOQUEADO (não usado no vídeo)",
+}
+
+
+def write_report(path: str, registry: "SourceRegistry",
+                 research: list | None = None,
+                 grounding: dict | None = None,
+                 media_notes: list[str] | None = None) -> str:
+    """Escreve o relatório legível de fontes na pasta de informações.
+
+    `sources.json` é o dado estruturado (máquina); este é o mesmo conteúdo
+    em português claro, para quem vai conferir se a imagem pode ser usada e
+    de onde veio cada informação — as duas coisas juntas, na mesma pasta.
+
+    Não inventa: escreve o que está no registro. Licença sem informação
+    aparece como "desconhecida", nunca como "livre".
+    """
+    lines: list[str] = []
+    add = lines.append
+    add(f"# Fontes — {registry.slug or 'projeto'}")
+    add("")
+    add(f"Gerado em {_now()}. Este arquivo é gerado pelo pipeline: "
+        "não editar à mão.")
+    add("")
+
+    add("## Informações usadas no roteiro")
+    add("")
+    if not registry.claims:
+        add("_Nenhuma afirmação registrada._")
+    else:
+        add("Toda afirmação factual do texto precisa de uma linha aqui. "
+            "O status diz o quanto a fonte sustenta a afirmação:")
+        add("")
+        add("- `confirmado` — sustentada pelas fontes abaixo")
+        add("- `parcial` — só uma fonte, ou a fonte cobre a afirmação "
+            "pela metade")
+        add("- `contestado` — fontes divergem entre si")
+        add("- `não verificado` — sem fonte; não deveria virar fato no texto")
+        add("")
+        for i, c in enumerate(registry.claims, 1):
+            status = {"confirmed": "confirmado", "partial": "parcial",
+                      "contested": "contestado",
+                      "unverified": "não verificado"}.get(c.status, c.status)
+            add(f"### {i}. {c.claim}")
+            add("")
+            add(f"- Fonte: {c.title or '(sem título)'}")
+            add(f"- Link: {c.url or '(sem link)'}")
+            add(f"- Status: **{status}**")
+            if c.author or c.date:
+                add(f"- Autor/data: {c.author or '—'} / {c.date or '—'}")
+            if c.evidence:
+                trecho = c.evidence.strip()
+                add(f"- Trecho: {trecho[:400]}"
+                    + ("…" if len(trecho) > 400 else ""))
+            if c.notes:
+                add(f"- Notas: {c.notes}")
+            add(f"- Consultado em: {c.consulted_at or '—'}")
+            add("")
+
+    if research:
+        add("## Pesquisa realizada")
+        add("")
+        add(f"Termos buscados e o que voltou de cada fonte "
+            f"({len(research)} fonte(s)):")
+        add("")
+        for i, r in enumerate(research, 1):
+            origin = getattr(r, "origin", "") or "web"
+            url = getattr(r, "url", "")
+            title = getattr(r, "title", "")
+            add(f"{i}. **{title}** — {origin}")
+            add(f"   - {url}")
+        add("")
+
+    add("## Imagens do vídeo (direitos autorais)")
+    add("")
+    if not registry.media:
+        add("_Nenhuma imagem registrada._")
+    else:
+        add("Toda imagem usada no vídeo aparece aqui com autor, licença e "
+            "link de conferência. Licença desconhecida **não** é liberada "
+            "automaticamente: fica marcada para revisão.")
+        add("")
+        for i, m in enumerate(registry.media, 1):
+            rights = (m.rights_status or "verify").lower()
+            add(f"### {i}. {m.title or '(sem título)'}")
+            add("")
+            add(f"- Provedor: {m.provider or '—'}")
+            add(f"- Autor: {m.author or '—'}")
+            add(f"- Licença: {m.license or 'desconhecida'}")
+            add(f"- Link da licença: {m.license_url or '—'}")
+            add(f"- Página da obra: {m.origin_url or '—'}")
+            add(f"- Arquivo usado: {m.local_path or '—'}")
+            add(f"- Entrou em: {m.used_in or m.scene or '—'}")
+            add(f"- Direitos: **{_RIGHTS_LABEL.get(rights, rights)}**")
+            add("")
+    if media_notes:
+        add("### Observações de direitos autorais")
+        add("")
+        for note in media_notes:
+            add(f"- {note}")
+        add("")
+
+    if grounding:
+        add("## Conferência anti-invenção")
+        add("")
+        checked = int(grounding.get("checked", 0) or 0)
+        coverage = grounding.get("coverage")
+        add(f"Verificados **{checked}** dado(s) numérico(s) do roteiro contra "
+            "as fontes. Todo número, data, medida e percentual afirmado no "
+            "texto é comparado com o que a pesquisa trouxe.")
+        add("")
+        if checked and coverage is not None:
+            pct = round(float(coverage) * 100)
+            add(f"Cobertura: **{pct}%**")
+            add("")
+        unverified = list(grounding.get("unverified") or [])
+        if unverified:
+            add("### Não encontrados nas fontes")
+            add("")
+            add("Aparecem no texto mas nenhuma fonte consultada traz esse "
+                "valor. Pode ser paráfrase, arredondamento ou invenção — "
+                "confira antes de publicar:")
+            add("")
+            for fact in unverified:
+                add(f"- `{fact}`")
+            add("")
+        grounded = list(grounding.get("grounded") or [])
+        if grounded:
+            add("### Confirmados nas fontes")
+            add("")
+            add(", ".join(f"`{g}`" for g in grounded))
+            add("")
+
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines).rstrip() + "\n")
+    return path

@@ -50,6 +50,7 @@ class VideoPaths:
     title_txt: str
     media_json: str
     sources_json: str
+    sources_report: str
     narration_wav: str
     words_json: str
     research_json: str
@@ -75,6 +76,7 @@ def video_paths(out_dir: str, slug: str) -> VideoPaths:
         title_txt=os.path.join(root, "script", "title.txt"),
         media_json=os.path.join(root, "media", "media.json"),
         sources_json=os.path.join(root, "sources", "sources.json"),
+        sources_report=os.path.join(root, "sources", "FONTES.md"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         words_json=os.path.join(root, "audio", "words.json"),
         research_json=os.path.join(root, "sources", "research.json"),
@@ -157,6 +159,20 @@ def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
         # Gate de relevância: escore 0 = título sem nada da consulta
         # (ex.: foto aleatória) — fallback honesto em vez de associação falsa.
         ranked = [r for r in ranked if r[0] > 0]
+        # Gate de direitos: nunca baixa ativo com licença bloqueada
+        # ("todos os direitos reservados", NoDerivatives). O verificador
+        # também roda depois do download, quando a dims é conferida.
+        blocked = [r for r in ranked
+                   if classify_rights(r[2].license or "", r[2].provider)
+                   == "blocked"]
+        for _score, _q, cand in blocked:
+            msg = (f"cena {ch.id}: '{cand.title[:50]}' descartado — licença "
+                   f"bloqueada ({cand.license or 'sem licença'})")
+            warnings.append(msg)
+            print(f"AVISO: {msg}", file=sys.stderr)
+        ranked = [r for r in ranked
+                  if classify_rights(r[2].license or "", r[2].provider)
+                  != "blocked"]
         asset = None
         for _score, _q, cand in ranked:
             try:
@@ -384,12 +400,23 @@ def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
 
 def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],
                            paths: VideoPaths, slug: str,
-                           overlap_cap: float, sfx: bool) -> list[dict]:
-    vt = visual_stage.build_visual_timeline(chapters, media_scenes,
-                                            overlap_cap, seed=slug, sfx=sfx)
+                           overlap_cap: float, sfx: bool,
+                           insertions: int | None = None,
+                           insert_style: str = "drop_in",
+                           insert_gain_db: int = -30) -> list[dict]:
+    vt = visual_stage.build_visual_timeline(
+        chapters, media_scenes, overlap_cap, seed=slug, sfx=sfx,
+        insertions=insertions, insert_style=insert_style,
+        insert_gain_db=insert_gain_db)
     _write_json(paths.visual_json, vt)
     print(f"Timeline visual: {visual_stage.visual_summary(vt)}")
     return vt
+
+
+def count_insertions(visual_timeline: list[dict]) -> int:
+    """Fotos complementares do vídeo (as que caem por cima do fundo)."""
+    return sum(1 for t in visual_timeline for im in t.get("images", [])
+               if im.get("order", 0) > 0)
 
 
 def _sfx_track_for(visual_timeline: list[dict], total: float,
@@ -451,6 +478,12 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     max_images = max(1, min(5, int(max_images or 1)))
     overlap_cap = float(cfg.visual_overlap if visual_overlap is None
                         else visual_overlap)
+    # Fotos complementares: o orçamento é do VÍDEO (1–2), não da cena. Com
+    # inserções ligadas a cena precisa de 2 fotos (fundo + uma complementar):
+    # busca 2, exibe 2. Mais que isso é baixar material que nunca entra.
+    insert_budget = int(cfg.visual_insertions)
+    if insert_budget > 0:
+        max_images = 2
 
     def emit(idx: int, label: str, status: str = "…") -> None:
         if on_progress:
@@ -532,6 +565,22 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             fh.write(script_text)
     stage_times["script"] = round(time.monotonic() - t0, 2)
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro", "OK")
+
+    # Conferência anti-invenção: os números do roteiro são comparados com o
+    # que a pesquisa trouxe. O que não bate fica registrado como não
+    # verificado no relatório de fontes — não some do texto (a decisão é do
+    # autor), mas não se apresenta como confirmado.
+    grounding = research_stage.verify_grounding(script_text, research_sources,
+                                                cfg.language)
+    if grounding["unverified"]:
+        msg = (f"{len(grounding['unverified'])} dado(s) do roteiro sem "
+               f"correspondência nas fontes: "
+               f"{', '.join(grounding['unverified'][:6])}")
+        warnings.append(msg)
+        print(f"AVISO: {msg} — ver sources/FONTES.md", file=sys.stderr)
+    elif grounding["checked"]:
+        print(f"Fundamentação: {grounding['checked']} dado(s) conferidos, "
+              f"todos nas fontes.")
 
     # Título-pergunta (IA a partir do roteiro; nunca entra na narração).
     if not force_after_script and os.path.isfile(paths.title_txt):
@@ -631,24 +680,39 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.media_json, media_scenes)
     # Registra procedência das mídias no registro de fontes do projeto:
     # links ANTES do uso (página, arquivo, licença) + local APÓS o uso.
+    # `media_rights_notes` alimenta o relatório: licença incerta não passa
+    # em silêncio — ela vira aviso explícito na pasta de informações.
+    media_rights_notes: list[str] = []
     for scene in media_scenes:
         for entry in scene.get("assets") or []:
             asset = entry.get("asset") or {}
-            if asset.get("local_path"):
-                sources.add_media(
-                    title=asset.get("title", ""),
-                    origin_url=asset.get("source_url", ""),
-                    file_url=asset.get("download_url", ""),
-                    provider=asset.get("provider", ""),
-                    author=asset.get("author", ""),
-                    license=asset.get("license", ""),
-                    license_url=asset.get("license_url", ""),
-                    local_path=asset.get("local_path", ""),
-                    used_in=f"cena {scene['chapter_id']}",
-                    rights_status=asset.get("rights_status", "") or classify_rights(
-                        asset.get("license", ""), asset.get("provider", "")),
-                    query=entry.get("query", ""),
-                    scene=f"cena {scene['chapter_id']}")
+            if not asset.get("local_path"):
+                continue
+            rights = asset.get("rights_status", "") or classify_rights(
+                asset.get("license", ""), asset.get("provider", ""))
+            asset["rights_status"] = rights
+            sources.add_media(
+                title=asset.get("title", ""),
+                origin_url=asset.get("source_url", ""),
+                file_url=asset.get("download_url", ""),
+                provider=asset.get("provider", ""),
+                author=asset.get("author", ""),
+                license=asset.get("license", ""),
+                license_url=asset.get("license_url", ""),
+                local_path=asset.get("local_path", ""),
+                used_in=f"cena {scene['chapter_id']}",
+                rights_status=rights,
+                query=entry.get("query", ""),
+                scene=f"cena {scene['chapter_id']}")
+            if rights == "verify":
+                note = (f"Cena {scene['chapter_id']}: "
+                        f"'{asset.get('title', '')[:60]}' entrou no vídeo com "
+                        f"licença a conferir "
+                        f"({asset.get('provider', '')}: "
+                        f"{asset.get('license') or 'desconhecida'}) — confira "
+                        f"em {asset.get('license_url') or asset.get('source_url') or 'sem link'}")
+                if note not in media_rights_notes:
+                    media_rights_notes.append(note)
     stage_times["media"] = round(time.monotonic() - t0, 2)
     emit(3, "Buscando mídia",
          "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")
@@ -657,6 +721,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if _count_assets(media_scenes) == 0:
         _manual_readme(manual_dir, slug, len(chapters))
         sources.save(paths.sources_json)
+        sources_stage.write_report(paths.sources_report, sources,
+                                   research=research_sources, grounding=grounding)
         _write_json(paths.metadata_json, {
             "slug": slug,
             "idea": idea,
@@ -676,7 +742,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            chapters, scenes_source, media_scenes, warnings,
                            stage_times, started, emit, metrics,
                            script_mode=script_mode, max_images=max_images,
-                           overlap_cap=overlap_cap)
+                           overlap_cap=overlap_cap,
+                           insert_budget=insert_budget)
 
     # [4/6] Narração (IA) — timestamps reais via WordBoundary
     t0 = time.monotonic()
@@ -732,10 +799,15 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         prev.end = nxt.start = mid
     chapters[-1].end = round(audio_duration, 3)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
-    visual_timeline = (_write_visual_timeline(chapters, media_scenes, paths,
-                                              slug, overlap_cap,
-                                              cfg.visual_sfx)
-                       if max_images > 1 else [])
+    visual_timeline = (_write_visual_timeline(
+        chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
+        insertions=insert_budget, insert_style=cfg.visual_insert_style,
+        insert_gain_db=cfg.visual_insert_gain_db)
+        if max_images > 1 else [])
+    if visual_timeline:
+        print(f"Inserções: {count_insertions(visual_timeline)} foto(s) "
+              f"complementar(es) caindo sobre o fundo "
+              f"(estilo {cfg.visual_insert_style}).")
 
     # [5/6] Legendas (reais quando há boundaries). Sempre regeneradas:
     # é barato, determinístico (roteiro+áudio em cache) e autocura legendas
@@ -817,15 +889,23 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "max_images": max_images,
             "overlap_cap": overlap_cap,
             "sfx": bool(sfx_path),
+            "insertions": count_insertions(visual_timeline),
+            "insert_budget": insert_budget,
+            "insert_style": cfg.visual_insert_style,
+            "insert_gain_db": cfg.visual_insert_gain_db,
         } if max_images > 1 else None),
         "sources": {
             "claims": len(sources.claims),
             "media": len(sources.media),
+            "report": paths.sources_report,
+            "blocked_media": sum(1 for m in sources.media
+                                 if m.rights_status == "blocked"),
         },
         "research": {
             "sources": len(research_sources),
             "status": research_status,
             "titles": [rs.title for rs in research_sources],
+            "grounding": grounding,
         },
         "artifacts": {
             "script": paths.script_txt,
@@ -847,6 +927,11 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     })
     _write_json(paths.metadata_json, metadata)
     sources.save(paths.sources_json)
+    # Pasta de informações: o mesmo conteúdo do sources.json em texto claro,
+    # com as fontes do texto E as imagens com seus direitos autorais.
+    sources_stage.write_report(paths.sources_report, sources,
+                               research=research_sources, grounding=grounding,
+                               media_notes=media_rights_notes)
     stage_times["finalize"] = 0.0
     metadata["stage_times"] = stage_times
     metadata["metrics_file"] = metrics.save(metadata, stage_times,
@@ -886,7 +971,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                 scenes_source: str, media_scenes: list[dict],
                 warnings: list[str], stage_times: dict, started: float,
                 emit, metrics, script_mode: bool = False,
-                max_images: int = 1, overlap_cap: float = 0.9) -> dict:
+                max_images: int = 1, overlap_cap: float = 0.9,
+                insert_budget: int = 0) -> dict:
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
     emit(4, "Estimando timeline")
@@ -898,10 +984,11 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         cursor = ch.end
     estimated_total = round(cursor, 2)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
-    visual_timeline = (_write_visual_timeline(chapters, media_scenes, paths,
-                                              slug, overlap_cap,
-                                              cfg.visual_sfx)
-                       if max_images > 1 else [])
+    visual_timeline = (_write_visual_timeline(
+        chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
+        insertions=insert_budget, insert_style=cfg.visual_insert_style,
+        insert_gain_db=cfg.visual_insert_gain_db)
+        if max_images > 1 else [])
     stage_times["timeline"] = round(time.monotonic() - t0, 2)
     emit(4, "Estimando timeline", "OK")
 
