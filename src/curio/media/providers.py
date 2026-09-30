@@ -405,10 +405,20 @@ class UnsplashProvider(MediaProvider):
 
     Fotos sem marca d'água, Licença Unsplash (uso livre, inclusive
     comercial; atribuição apreciada, não obrigatória).
+
+    Fica por ÚLTIMO na ordem de tentativa e tem orçamento próprio: a cota
+    demo é de 50 requisições/hora, e um vídeo com 12 cenas × 8 consultas ×
+    6 provedores passa disso com folga. Sem teto, um vídeo consumia a cota
+    inteira na busca e as cenas seguintes saíam sem candidato nenhum — o
+    provedor de maior qualidade visual virando o que mais derruba o
+    vídeo. Por isso `MAX_REQUESTS` e a posição no fim da fila andam
+    juntos: só é consultado quando os acervos mais específicos falharam,
+    e nunca mais que o orçamento.
     """
 
     name = "unsplash"
     API = "https://api.unsplash.com/search/photos"
+    MAX_REQUESTS = 15
 
     def __init__(self) -> None:
         import os as _os
@@ -416,8 +426,18 @@ class UnsplashProvider(MediaProvider):
         if not key:
             raise MediaError("unsplash: sem UNSPLASH_ACCESS_KEY no ambiente")
         self.key = key
+        self.requests_used = 0
+
+    def _exhausted(self) -> bool:
+        if self.requests_used >= self.MAX_REQUESTS:
+            raise MediaError(
+                f"unsplash: orçamento de {self.MAX_REQUESTS} requisições "
+                f"esgotado nesta execução (cota demo). Seguindo com os "
+                f"outros provedores.")
+        self.requests_used += 1
 
     def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
+        self._exhausted()
         params = {
             "query": query,
             "per_page": str(min(limit, 20)),

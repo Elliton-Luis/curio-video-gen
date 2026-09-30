@@ -204,10 +204,14 @@ MAX_CONCURRENT_DOWNLOADS = int(_os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS",
 SEARCH_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
 DOWNLOAD_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
 
-# Hierarquia de provedores (ordem de prioridade): com chave e alta
-# qualidade primeiro; acervos abertos (NASA, Wikimedia) depois.
-PROVIDER_PRIORITY = ("pixabay", "unsplash", "pexels", "nasa",
-                     "wikimedia", "openverse")
+# Hierarquia de provedores (ordem de prioridade). Do mais específico para
+# o mais genérico: primeiro os bancos de foto com chave, depois os acervos
+# abertos, e o Unsplash por ÚLTIMO — é a foto mais bonita e a que mais
+# foge do assunto, então só entra quando nada mais serviu, e com orçamento
+# próprio de 15 requisições (a cota demo dele é 50/hora e um vídeo estoura
+# isso em duas cenas).
+PROVIDER_PRIORITY = ("pixabay", "pexels", "nasa",
+                     "wikimedia", "openverse", "unsplash")
 
 # Cache local de mídia por termo de busca
 MEDIA_CACHE_DIR = "cache/media_query"

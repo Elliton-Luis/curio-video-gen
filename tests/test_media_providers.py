@@ -206,3 +206,38 @@ def test_asset_carimba_rights_no_post_init():
     d = P.MediaAsset.from_dict({"provider": "x", "asset_id": "y",
                                 "rights_status": "clear"})
     assert d.rights_status == "clear"  # valor salvo é preservado
+
+
+# --- Unsplash: último recurso e com orçamento --------------------------
+
+def test_unsplash_tem_teto_de_requisições(monkeypatch):
+    """A cota demo é 50/h; um vídeo com 12 cenas passaria dela fácil."""
+    from curio.media import providers as P
+    monkeypatch.setenv("UNSPLASH_ACCESS_KEY", "fake")
+    prov = P.UnsplashProvider()
+    assert P.UnsplashProvider.MAX_REQUESTS == 15
+    for i in range(P.UnsplashProvider.MAX_REQUESTS):
+        prov._exhausted()
+    assert prov.requests_used == P.UnsplashProvider.MAX_REQUESTS
+    with pytest.raises(P.MediaError, match="orçamento"):
+        prov._exhausted()
+    assert prov.requests_used == P.UnsplashProvider.MAX_REQUESTS, "estourou o teto"
+
+
+def test_unsplash_esgotado_nao_derruba_o_provedor(monkeypatch):
+    """O erro é MediaError comum: o chamador segue para o próximo."""
+    from curio.media import providers as P
+    monkeypatch.setenv("UNSPLASH_ACCESS_KEY", "fake")
+    prov = P.UnsplashProvider()
+    prov.requests_used = P.UnsplashProvider.MAX_REQUESTS
+    with pytest.raises(P.MediaError):
+        prov.search("qualquer coisa")
+
+
+def test_unsplash_e_ultimo_na_ordem_de_prioridade():
+    """Foto bonita que foge do assunto é o último recurso, não o primeiro."""
+    from curio.stages.visual import PROVIDER_PRIORITY
+    assert PROVIDER_PRIORITY[-1] == "unsplash"
+    # e os acervos abertos, que são os mais específicos, vêm antes dele
+    for aberto in ("wikimedia", "openverse", "nasa"):
+        assert PROVIDER_PRIORITY.index(aberto) < PROVIDER_PRIORITY.index("unsplash")
