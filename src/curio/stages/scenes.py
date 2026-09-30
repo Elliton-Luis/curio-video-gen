@@ -71,6 +71,27 @@ SCENES_SYSTEM_PROMPT = (
     "No Portuguese, no verbs, no abstract concepts, no descriptive phrases."
 )
 
+SCENES_SYSTEM_PROMPT_EN = (
+    "You split educational video scripts into visual scenes. "
+    "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
+    '{"scenes": [{"index": 1, "narration": "...", "visual_search_terms": "water glass"}]}. '
+    "Rules: "
+    "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
+    "or summarizing — the joined narrations must reproduce the script exactly; "
+    "2) Each scene is a semantic moment (not arbitrary cuts); "
+    "3) narration in American English; "
+    "4) visual_search_terms: EXACTLY 2 English words (two simple nouns or "
+    "one visual adjective + one noun) — concrete, searchable in photo banks "
+    "(objects, places, eras — NEVER abstract concepts); "
+    "5) Examples of ACCEPTABLE terms: \"water glass\", \"snake skin\", \"plant seedling\", "
+    "\"soap bubbles\", \"roman helmet\", \"ocean wave\", \"coffee bean\", \"microscope slide\"; "
+    "6) Examples of FORBIDDEN terms: \"how soap works\", \"chemical molecules reacting\", "
+    "\"cinematic close-up 4k\", \"beautiful landscape\", \"scientific explanation\"; "
+    "7) Split into {n} scenes (between {lo} and {hi}). "
+    "IMPORTANT: visual_search_terms must be exactly 2 English words, concrete nouns/adjectives. "
+    "No verbs, no abstract concepts, no descriptive phrases."
+)
+
 
 @dataclass
 class Chapter:
@@ -136,9 +157,15 @@ def build_chapters(script: str, cfg: CurioConfig,
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
     if nvidia_stage.any_llm_available():
+        english = str(cfg.language or "").lower().startswith("en")
+        system_prompt = (SCENES_SYSTEM_PROMPT_EN if english
+                         else SCENES_SYSTEM_PROMPT)
+        user_prompt = (f"Split this script into scenes:\n\n{script}"
+                       if english else
+                       f"Divida este roteiro em cenas:\n\n{script}")
         data, label = nvidia_stage.complete_json(
-            SCENES_SYSTEM_PROMPT.format(n=n_scenes, lo=lo, hi=hi),
-            f"Divida este roteiro em cenas:\n\n{script}",
+            system_prompt.format(n=n_scenes, lo=lo, hi=hi),
+            user_prompt,
             cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout,
             metrics,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,

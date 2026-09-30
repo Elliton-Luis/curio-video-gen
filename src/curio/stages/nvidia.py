@@ -152,6 +152,56 @@ TITLE_SYSTEM_PROMPT = (
     "para viralizar."
 )
 
+SCRIPT_SYSTEM_PROMPT_EN = (
+    "You write short, engaging educational video scripts in American English. "
+    "The script will be read aloud, {duration_clause}. "
+    "Mandatory storytelling rules: "
+    "1) start with an intriguing question, statement or problem; "
+    "2) every question you raise must be answered at some point; "
+    "3) raise new questions along the way to sustain curiosity; "
+    "4) each part leads naturally to the next, with progression — never dump "
+    "everything at once; "
+    "5) prioritize the most interesting and surprising; cut whatever does not "
+    "serve the story; be concise; "
+    "6) end by answering the main idea from the beginning; "
+    "7) write like someone telling a friend something interesting, not like "
+    "reading an article: short spoken sentences with rhythm; rhetorical "
+    "questions, simple comparisons and small surprises are welcome; a touch of "
+    "personality, no slang, no forced humor; "
+    "8) no generic intros ('Hey guys, today we will talk about...', "
+    "'Did you know that' and equivalents); "
+    "9) never invent facts, dates, names or quotes to sound interesting; "
+    "if something is uncertain or disputed, say so honestly; "
+    "10) no fake sources or nonexistent studies. "
+    "11) no institutional documentary tone and no artificial conclusions; "
+    "close with the answer or an observation that brings the topic closer "
+    "to the viewer. "
+    "12) explain complex concepts in simple words: whenever you mention "
+    "something technical, explain it on the spot with an analogy or a direct "
+    "definition; never use unexplained jargon. "
+    "OUTPUT FORMAT (mandatory): answer ONLY with the narration text. "
+    "FORBIDDEN: titles, 'Scene 1', 'Narrator:', bracketed stage directions, "
+    "markdown, lists, dialogue quotes, emojis, preambles like 'Here is' "
+    "or any explanation about the script. If you need to reason, do it "
+    "only in internal reasoning, never in the final text. "
+    "Editorial principle: simplify to make accessible, never falsify to "
+    "go viral."
+)
+
+TITLE_SYSTEM_PROMPT_EN = (
+    "You create a video title from an already finished educational script, "
+    "in American English. Answer ONLY with valid JSON, no markdown "
+    "or explanations: {\"title\": \"...\"}. Mandatory rules: "
+    "1) the title is ALWAYS a question ending with '?'; "
+    "2) it represents the main curiosity the video answers (NEVER copy "
+    "the first sentence of the script); "
+    "3) short: at most 55 characters; "
+    "4) sounds natural when spoken aloud; "
+    "5) sparks curiosity without clickbait: no exaggeration, fake mystery "
+    "or promises the video does not keep; "
+    "6) no quotes, markdown, emojis, hashtags or explanations."
+)
+
 
 class NvidiaError(RuntimeError):
     """Falha na etapa LLM. Mensagens nunca contêm API keys."""
@@ -583,7 +633,8 @@ def generate_script(idea: str, model: str,
                     base_url: str, timeout: int, max_chars: int | None,
                     metrics=None, or_model: str | None = None,
                     or_base_url: str | None = None,
-                    extra: dict | None = None) -> tuple[str, str]:
+                    extra: dict | None = None,
+                    language: str = "pt-BR") -> tuple[str, str]:
     """Gera o roteiro (chain com retries por provedor). Nunca silêncio.
 
     `max_chars=None` = Automático: duração livre, sem corte (só o teto de
@@ -601,19 +652,31 @@ def generate_script(idea: str, model: str,
         )
     auto = max_chars is None
     ceiling = AUTO_MAX_CHARS if auto else max_chars
+    english = str(language or "").lower().startswith("en")
     if auto:
         duration_clause = (
+            "no fixed duration: cover the subject with beginning, middle and end, "
+            f"no padding and no cutting (technical ceiling of {ceiling} characters)"
+        ) if english else (
             "sem duração fixa: complete o assunto com começo, meio e fim, "
             f"sem enrolar nem cortar (teto técnico de {ceiling} caracteres)")
     else:
         duration_clause = (
+            f"about {ceiling / 13.5:.0f} seconds long "
+            f"(at most {ceiling} characters; target, never a hard cut)"
+        ) if english else (
             f"com duração aproximada de {ceiling / 13.5:.0f} segundos "
             f"(no máximo {ceiling} caracteres; meta, não corte seco)")
+    system_prompt = (SCRIPT_SYSTEM_PROMPT_EN if english else SCRIPT_SYSTEM_PROMPT)
+    user_prompt = (
+        f"Write the narration script for this idea: {idea}"
+        if english else
+        f"Escreva o roteiro de narração para a ideia: {idea}"
+    )
     messages = [
         {"role": "system",
-         "content": SCRIPT_SYSTEM_PROMPT.format(duration_clause=duration_clause)},
-        {"role": "user",
-         "content": f"Escreva o roteiro de narração para a ideia: {idea}"},
+         "content": system_prompt.format(duration_clause=duration_clause)},
+        {"role": "user", "content": user_prompt},
     ]
     # Modelos de raciocínio gastam tokens pensando: orçamento folgado e,
     # se truncar (finish_reason=length), UMA escalada antes de desistir.
@@ -650,8 +713,8 @@ def _sanitize(text: str, max_chars: int) -> str:
     text = re.sub(r"think.*?end", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
     text = re.sub(r"\[[^\]\n]*\]", "", text)  # [Cena 1: ...], [trilha]...
-    text = re.sub(r"(?im)^\s*(narrador|narração|roteiro)\s*:\s*", "", text)
-    text = re.sub(r"(?i)^(aqui está[^:]*|roteiro[^:]*|claro!?)\s*:?\s*", "", text.strip())
+    text = re.sub(r"(?im)^\s*(narrador|narração|roteiro|narrator|script)\s*:\s*", "", text)
+    text = re.sub(r"(?i)^(aqui está[^:]*|roteiro[^:]*|claro!?|here is[^:]*|here's[^:]*|sure!?|of course!?)\s*:?\s*", "", text.strip())
     # Remove prefixos numerados "0) ", "1) ", etc. em qualquer posição
     text = re.sub(r"(^|\.\s+)\d+\)\s*", r"\1", text)
     text = text.replace("*", "").replace("#", "").replace('"', "")

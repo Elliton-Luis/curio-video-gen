@@ -6,6 +6,8 @@
 duration_target = 0  # 0 = Automático/Ilimitado (padrão: o conteúdo manda);
 # ou meta em segundos (30/45/60/90/120/180 ou 5..600) — meta, nunca corte
 out_dir = "output"
+queues_dir = "queues"  # pasta padrão das filas de ideias (CURIO_QUEUES_DIR)
+language = "pt-BR"  # pt-BR ou en-US (100% em inglês: roteiro, título, voz e legendas)
 
 [tts]
 provider = "edge-tts"   # edge-tts (neural, grátis, sem login) | espeak-ng (local offline)

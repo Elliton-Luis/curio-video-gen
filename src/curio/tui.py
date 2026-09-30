@@ -77,7 +77,183 @@ def _ask(prompt: str) -> str:
 
 
 def _pause(c: dict[str, str]) -> None:
-    _ask(f"\n{c['dim']}Enter para voltar ao menu...{c['reset']}")
+    _ask(f"\n{c['dim']}Enter para voltar...{c['reset']}")
+
+
+# --------------------------------------------- motor interativo (teclado)
+# Menus navegáveis com ↑↓ + Enter, sem digitar números. stdlib apenas.
+# Fora de TTY (pipe/teste), cai para seleção numerada simples.
+
+def _interactive_supported() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except Exception:
+        return False
+
+
+def _read_key() -> str:
+    """Lê uma tecla: 'up', 'down', 'enter', 'esc', 'q' ou o caractere."""
+    import tty
+    import termios
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            seq = sys.stdin.read(2)
+            if seq == "[A":
+                return "up"
+            if seq == "[B":
+                return "down"
+            return "esc"
+        if ch in ("\r", "\n"):
+            return "enter"
+        if ch == "\x03":
+            raise _TUIExit()
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _render_menu(c: dict[str, str], title: str, options: list[str],
+                 selected: int, status: list[str] | None = None,
+                 footer: str = "↑↓ navegar   Enter selecionar   Q sair   Esc voltar") -> None:
+    _clear()
+    width = 46
+    print(f"{c['dim']}╭{'─' * width}╮{c['reset']}")
+    print(f"{c['dim']}│{c['reset']} {c['bold']}{c['cyan']}CURIO{c['reset']}"
+          f"{' ' * (width - 7)}{c['dim']}│{c['reset']}")
+    if title:
+        print(f"{c['dim']}│{c['reset']} {c['dim']}{title}{c['reset']}"
+              f"{' ' * max(1, width - len(title) - 1)}{c['dim']}│{c['reset']}")
+    print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+    for i, label in enumerate(options):
+        mark = "›" if i == selected else " "
+        if i == selected:
+            line = f"  {mark} {label}"
+            print(f"{c['dim']}│{c['reset']}{c['bold']}{line}"
+                  f"{' ' * max(1, width - len(line))}{c['reset']}{c['dim']}│{c['reset']}")
+        else:
+            line = f"  {mark} {label}"
+            print(f"{c['dim']}│{c['reset']}{c['dim']}{line}"
+                  f"{' ' * max(1, width - len(line))}{c['reset']}{c['dim']}│{c['reset']}")
+    if status:
+        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+        for s in status[:4]:
+            s = s[: width - 1]
+            print(f"{c['dim']}│{c['reset']} {c['dim']}{s}{c['reset']}"
+                  f"{' ' * max(1, width - len(s) - 1)}{c['dim']}│{c['reset']}")
+    print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+    print(f"{c['dim']}│{c['reset']} {c['dim']}{footer}{c['reset']}"
+          f"{' ' * max(1, width - len(footer) - 1)}{c['dim']}│{c['reset']}")
+    print(f"{c['dim']}╰{'─' * width}╯{c['reset']}")
+
+
+def select_option(c: dict[str, str], title: str, options: list[str],
+                  status: list[str] | None = None) -> int | None:
+    """Menu navegável. Retorna o índice ou None (sair/voltar).
+
+    Fora de TTY, usa fallback numerado para não travar pipes/testes.
+    """
+    if not options:
+        return None
+    if not _interactive_supported():
+        _clear()
+        _banner(c)
+        if title:
+            print(f"\n{c['bold']}{title}{c['reset']}")
+        if status:
+            for s in status:
+                print(f"{c['dim']}{s}{c['reset']}")
+        for i, label in enumerate(options, 1):
+            print(f"  {c['bold']}{i}){c['reset']} {label}")
+        raw = _ask(f"\n{c['bold']}Escolha [1-{len(options)}] (0 volta):{c['reset']} ").strip()
+        if raw in ("0", "q", "Q", ""):
+            return None
+        try:
+            idx = int(raw) - 1
+        except ValueError:
+            return None
+        return idx if 0 <= idx < len(options) else None
+    selected = 0
+    while True:
+        _render_menu(c, title, options, selected, status)
+        try:
+            key = _read_key()
+        except _TUIExit:
+            raise
+        except Exception:
+            return None
+        if key == "up" or key == "k":
+            selected = (selected - 1) % len(options)
+        elif key == "down" or key == "j":
+            selected = (selected + 1) % len(options)
+        elif key == "enter":
+            return selected
+        elif key in ("q", "Q"):
+            return None
+        elif key == "esc":
+            return None
+
+
+def _status_summary(cfg: CurioConfig) -> list[str]:
+    """Linha de status sempre visível: projetos, filas, idioma, mídia."""
+    try:
+        n_projects = sum(1 for e in os.listdir(cfg.out_dir)
+                         if os.path.isdir(os.path.join(cfg.out_dir, e))) if os.path.isdir(cfg.out_dir) else 0
+    except OSError:
+        n_projects = 0
+    try:
+        from .queue import default_queues_dir, list_queue_files
+        qdir = default_queues_dir(cfg)
+        n_queues = len(list_queue_files(qdir)) if os.path.isdir(qdir) else 0
+    except Exception:
+        n_queues = 0
+        qdir = cfg.queues_dir
+    lang = "EN" if str(cfg.language).lower().startswith("en") else "PT"
+    return [f"projetos: {n_projects}   filas: {n_queues}   idioma: {lang}   mídia: {cfg.media_providers}",
+            f"out: {cfg.out_dir}   filas em: {qdir}"]
+
+
+def browse_path(c: dict[str, str], start: str, title: str = "Escolher local",
+                dirs_only: bool = False) -> str | None:
+    """Navegador simples de arquivos/diretórios com o mesmo menu navegável.
+
+    Evita digitar caminhos manualmente. Retorna o caminho ou None.
+    """
+    cur = os.path.abspath(os.path.expanduser(start or "."))
+    while True:
+        try:
+            entries = sorted(os.listdir(cur))
+        except OSError:
+            entries = []
+        opts = [".. (subir um nível)"]
+        for e in entries:
+            full = os.path.join(cur, e)
+            if os.path.isdir(full):
+                opts.append(f"{e}/")
+            elif not dirs_only:
+                opts.append(e)
+        opts.append("✔ Usar esta pasta" if dirs_only else "✔ Usar este local")
+        opts.append("Cancelar")
+        idx = select_option(c, f"{title} — {cur}", opts,
+                            status=[f"{len(entries)} itens em {cur}"])
+        if idx is None:
+            return None
+        if idx == 0:
+            cur = os.path.dirname(cur) or "/"
+            continue
+        if idx == len(opts) - 1:
+            return None
+        if idx == len(opts) - 2:
+            return cur
+        chosen = entries[idx - 1]
+        full = os.path.join(cur, chosen)
+        if os.path.isdir(full):
+            cur = full
+        else:
+            return full
 
 
 def _ask_duration(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
@@ -138,9 +314,55 @@ def _project_status(cfg: CurioConfig, slug: str) -> tuple[str, dict]:
 
 
 # ------------------------------------------------------- configuração avançada
+def _apply_language(cfg: CurioConfig, lang: str) -> CurioConfig:
+    """Aplica o idioma ao cfg, ajustando a voz padrão junto."""
+    from .config import normalize_language
+    lang = normalize_language(lang)
+    cfg = dataclasses.replace(cfg, language=lang)
+    if lang == "en-US" and cfg.tts_voice == "pt-BR-AntonioNeural":
+        cfg = dataclasses.replace(cfg, tts_voice="en-US-GuyNeural")
+    elif lang == "pt-BR" and cfg.tts_voice == "en-US-GuyNeural":
+        cfg = dataclasses.replace(cfg, tts_voice="pt-BR-AntonioNeural")
+    return cfg
+
+
+def _ask_language(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
+    """Seletor de idioma do vídeo: PT-BR ou EN-US (100% inglês)."""
+    from .config import normalize_language
+    idx = select_option(
+        c, "Idioma do vídeo",
+        ["Português (PT-BR) — roteiro, título, narração e legendas em português",
+         "English (EN-US) — 100% in English: script, title, voice and captions"],
+        status=[f"atual: {cfg.language}   voz: {cfg.tts_voice}"])
+    if idx is None:
+        return cfg
+    cfg = _apply_language(cfg, "en-US" if idx == 1 else "pt-BR")
+    print(f"Idioma: {cfg.language}   voz: {cfg.tts_voice}")
+    return cfg
+
+
+def _ask_queues_dir(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
+    idx = select_option(
+        c, "Pasta padrão das filas",
+        ["Usar pasta padrão (queues/)",
+         "Escolher outro caminho",
+         "Cancelar"],
+        status=[f"atual: {cfg.queues_dir}"])
+    if idx is None or idx == 2:
+        return cfg
+    if idx == 0:
+        return dataclasses.replace(cfg, queues_dir="queues")
+    picked = browse_path(c, cfg.queues_dir or ".", "Pasta das filas", dirs_only=True)
+    if picked:
+        return dataclasses.replace(cfg, queues_dir=picked)
+    return cfg
+
+
 def _show_current_config(c: dict[str, str], cfg: CurioConfig) -> None:
     print(f"\n{c['bold']}Configuração atual:{c['reset']}")
+    print(f"  Idioma do vídeo: {cfg.language} (voz: {cfg.tts_voice})")
     print(f"  Diretório de saída: {cfg.out_dir}")
+    print(f"  Pasta das filas: {cfg.queues_dir}")
     print(f"  Cache: {cfg.cache_dir}")
     print(f"  LLM: {cfg.nvidia_model} (base: {cfg.nvidia_base_url})")
     print(f"  OpenRouter: {cfg.openrouter_model} (base: {cfg.openrouter_base_url})")
@@ -212,37 +434,42 @@ def _config_flow(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
         _clear()
         _banner(c)
         _show_current_config(c, cfg)
-        print(f"\n{c['bold']}O que ajustar?{c['reset']}")
-        print(f"  {c['bold']}1){c['reset']} Provider LLM")
-        print(f"  {c['bold']}2){c['reset']} Providers de mídia")
-        print(f"  {c['bold']}3){c['reset']} Diretório de cache")
-        print(f"  {c['bold']}4){c['reset']} Diretório de saída")
-        print(f"  {c['bold']}5){c['reset']} Duração-alvo")
-        print(f"  {c['bold']}6){c['reset']} TTS (provider/voz/speed)")
-        print(f"  {c['bold']}7){c['reset']} Render (backend/encoder)")
-        print(f"  {c['bold']}8){c['reset']} Visual (max_images/overlap/SFX)")
-        print(f"  {c['bold']}9){c['reset']} Voltar")
-        choice = _ask(f"\n{c['bold']}Escolha [1-9]:{c['reset']} ").strip()
-        if choice == "1":
-            cfg = _ask_llm_provider(c, cfg)
-        elif choice == "2":
-            cfg = _ask_media_providers(c, cfg)
-        elif choice == "3":
-            cfg = _ask_cache_dir(c, cfg)
-        elif choice == "4":
-            cfg = _ask_output_dir(c, cfg)
-        elif choice == "5":
-            cfg = _ask_duration(c, cfg)
-        elif choice == "6":
-            cfg = _ask_tts(c, cfg)
-        elif choice == "7":
-            cfg = _ask_render(c, cfg)
-        elif choice == "8":
-            cfg = _ask_visual(c, cfg)
-        elif choice == "9":
+        idx = select_option(
+            c, "Configurações — o que ajustar?",
+            ["Idioma do vídeo (PT-BR / EN-US)",
+             "Provider LLM",
+             "Providers de mídia",
+             "Diretório de cache",
+             "Diretório de saída (projetos)",
+             "Pasta padrão das filas",
+             "Duração-alvo",
+             "TTS (provider/voz/speed)",
+             "Render (backend/encoder)",
+             "Visual (max_images/overlap/SFX)",
+             "Voltar"],
+            status=_status_summary(cfg))
+        if idx is None or idx == 10:
             return cfg
-        else:
-            print("Opção inválida.")
+        if idx == 0:
+            cfg = _ask_language(c, cfg)
+        elif idx == 1:
+            cfg = _ask_llm_provider(c, cfg)
+        elif idx == 2:
+            cfg = _ask_media_providers(c, cfg)
+        elif idx == 3:
+            cfg = _ask_cache_dir(c, cfg)
+        elif idx == 4:
+            cfg = _ask_output_dir(c, cfg)
+        elif idx == 5:
+            cfg = _ask_queues_dir(c, cfg)
+        elif idx == 6:
+            cfg = _ask_duration(c, cfg)
+        elif idx == 7:
+            cfg = _ask_tts(c, cfg)
+        elif idx == 8:
+            cfg = _ask_render(c, cfg)
+        elif idx == 9:
+            cfg = _ask_visual(c, cfg)
         _pause(c)
     return cfg
 
@@ -368,33 +595,28 @@ def _clear_project(c: dict[str, str], cfg: CurioConfig) -> None:
 
 def _cleanup_flow(c: dict[str, str], cfg: CurioConfig) -> None:
     while True:
-        _clear()
-        _banner(c)
-        print(f"\n{c['bold']}LIMPEZA E MANUTENÇÃO{c['reset']}")
-        print(f"  {c['bold']}1){c['reset']} Limpar cache (imagens, fontes)")
-        print(f"  {c['bold']}2){c['reset']} Limpar projeto específico")
-        red = c['red']
-        reset = c['reset']
-        print(f"  {c['bold']}3){c['reset']} LIMPAR TUDO (cache + output) — {red}IRREVERSÍVEL{reset}")
-        print(f"  {c['bold']}4){c['reset']} Ver tamanho do cache e output")
-        print(f"  {c['bold']}5){c['reset']} Voltar")
-        choice = _ask(f"\n{c['bold']}Escolha [1-5]:{c['reset']} ").strip()
-        if choice == "1":
+        idx = select_option(
+            c, "Limpeza e manutenção",
+            ["Limpar cache (imagens, fontes)",
+             "Limpar projeto específico",
+             "LIMPAR TUDO (cache + output) — IRREVERSÍVEL",
+             "Ver tamanho do cache e output",
+             "Voltar"],
+            status=_status_summary(cfg))
+        if idx is None or idx == 4:
+            return
+        if idx == 0:
             _clear_cache(c, cfg)
-        elif choice == "2":
+        elif idx == 1:
             _clear_project(c, cfg)
-        elif choice == "3":
+        elif idx == 2:
             if _confirm_twice(f"{c['red']}APAGAR CACHE + OUTPUT TODOS?{c['reset']}", "SIM APAGUE TUDO"):
                 _clear_cache(c, cfg)
                 _clear_output(c, cfg)
             else:
                 print("Cancelado.")
-        elif choice == "4":
+        elif idx == 3:
             _show_sizes(c, cfg)
-        elif choice == "5":
-            return
-        else:
-            print("Opção inválida.")
         _pause(c)
 
 
@@ -419,68 +641,232 @@ def _show_sizes(c: dict[str, str], cfg: CurioConfig) -> None:
     print(f"  Total: {cache_mb + output_mb:.1f} MB")
 
 
-# ------------------------------------------------------- fila de vídeos
-def _queue_flow(c: dict[str, str], cfg: CurioConfig) -> None:
-    from .queue import VideoQueue, process_queue
-    print(f"\n{c['bold']}FILA DE VÍDEOS — processa várias ideias sequencialmente{c['reset']}")
-    print("Cada item vira um projeto independente com pipeline completo.")
-    
-    queue = VideoQueue()
-    
-    # Como adicionar itens
-    print(f"\n  {c['bold']}1){c['reset']} Adicionar ideias agora (uma por linha, Enter vazio para terminar)")
-    print(f"  {c['bold']}2){c['reset']} Carregar de arquivo (.txt, uma ideia por linha)")
-    print(f"  {c['bold']}3){c['reset']} Voltar")
-    choice = _ask(f"\n{c['bold']}Escolha [1-3]:{c['reset']} ").strip()
-    
-    if choice == "1":
-        print("Digite as ideias (linha vazia = terminar):")
-        while True:
-            idea = _ask("  > ").strip()
-            if not idea:
-                break
-            queue.add(idea)
-        print(f"Adicionados {len(queue.items)} itens.")
-    elif choice == "2":
-        path = _ask("Caminho do arquivo .txt: ").strip()
-        if path and os.path.isfile(path):
-            queue.add_from_file(path)
-            print(f"Carregados {len(queue.items)} itens.")
-        else:
-            print(f"{c['red']}Arquivo não encontrado.{c['reset']}")
-            return
-    else:
+# ------------------------------------------------------- fila de ideias
+def _queue_status_lines(queue) -> list[str]:
+    from .queue import QueueItemStatus
+    icons = {QueueItemStatus.WAITING: "○", QueueItemStatus.PROCESSING: "▶",
+             QueueItemStatus.COMPLETED: "✓", QueueItemStatus.ERROR: "✗",
+             QueueItemStatus.PAUSED: "⏸", QueueItemStatus.CANCELLED: "⊘"}
+    lines = [queue.progress_str()]
+    for it in queue.items:
+        err = f" — {it.error[:60]}" if it.error else ""
+        lines.append(f"{icons.get(it.status, '?')} {it.idea[:60]}{err}")
+    return lines
+
+
+def _queue_choose_save_path(c, cfg, default_name: str) -> str | None:
+    from .queue import ensure_queues_dir
+    idx = select_option(
+        c, "Onde deseja salvar a fila?",
+        ["Usar pasta padrão", "Escolher outro caminho", "Cancelar"],
+        status=[f"pasta padrão: {cfg.queues_dir}"])
+    if idx is None or idx == 2:
+        return None
+    name = _ask(f"Nome do arquivo [{default_name}]: ").strip() or default_name
+    if not name.lower().endswith((".txt", ".json")):
+        name += ".json"
+    if idx == 0:
+        ensure_queues_dir(cfg)
+        return os.path.join(cfg.queues_dir, os.path.basename(name))
+    picked_dir = browse_path(c, cfg.queues_dir or ".", "Pasta da fila", dirs_only=True)
+    if picked_dir is None:
+        return None
+    return os.path.join(picked_dir, os.path.basename(name))
+
+
+def _queue_create(c, cfg) -> None:
+    from .queue import VideoQueue, ensure_queues_dir
+    from datetime import datetime
+    name_default = f"ideias-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    print(f"\n{c['bold']}Nova fila — digite as ideias (linha vazia termina).{c['reset']}")
+    ideas: list[str] = []
+    while True:
+        idea = _ask("  > ").strip()
+        if not idea:
+            break
+        ideas.append(idea)
+    if not ideas:
+        print("Nenhuma ideia — fila não criada.")
         return
-    
+    queue = VideoQueue()
+    queue.add_from_list(ideas)
+    save_path = _queue_choose_save_path(c, cfg, name_default)
+    if save_path is None:
+        print("Criação cancelada (ideias descartadas).")
+        return
+    queue.save(save_path)
+    print(f"{c['green']}Fila salva:{c['reset']} {save_path} ({len(ideas)} ideias)")
+    _queue_detail(c, cfg, save_path)
+
+
+def _queue_open(c, cfg) -> None:
+    from .queue import VideoQueue, ensure_queues_dir, list_queue_files
+    ensure_queues_dir(cfg)
+    files = list_queue_files(cfg.queues_dir)
+    opts = [f"{os.path.basename(f)}" for f in files] + ["Procurar em outro caminho", "Voltar"]
+    idx = select_option(c, "Abrir fila existente", opts,
+                        status=[f"pasta padrão: {cfg.queues_dir}",
+                                f"{len(files)} fila(s) encontrada(s)"])
+    if idx is None or idx == len(opts) - 1:
+        return
+    if idx == len(opts) - 2:
+        picked = browse_path(c, cfg.queues_dir or ".", "Abrir fila")
+        if picked is None:
+            return
+        path = picked
+    else:
+        path = files[idx]
+    _queue_detail(c, cfg, path)
+
+
+def _queue_detail(c, cfg, path: str) -> None:
+    from .queue import (VideoQueue, process_queue, retry_failed,
+                        cancel_item, reorder_items, remove_item)
+    try:
+        queue = VideoQueue.load(path)
+    except Exception as exc:
+        print(f"{c['red']}Não foi possível abrir {path}: {exc}{c['reset']}")
+        _pause(c)
+        return
+    while True:
+        counts = queue.progress_str()
+        idx = select_option(
+            c, f"Fila: {os.path.basename(path)}",
+            ["Processar fila", "Adicionar ideias", "Remover ideia",
+             "Reordenar ideia", "Repetir itens com erro", "Ver status detalhado",
+             "Voltar"],
+            status=_queue_status_lines(queue)[:5] + [counts, f"arquivo: {path}"])
+        if idx is None or idx == 6:
+            try:
+                queue.save(path)
+            except Exception:
+                pass
+            return
+        if idx == 0:
+            _queue_run(c, cfg, queue, path)
+        elif idx == 1:
+            print("Digite as novas ideias (linha vazia termina):")
+            added = 0
+            while True:
+                idea = _ask("  > ").strip()
+                if not idea:
+                    break
+                queue.add(idea)
+                added += 1
+            queue.save(path)
+            print(f"{added} ideia(s) adicionada(s).")
+            _pause(c)
+        elif idx == 2:
+            cand = [f"{it.idea[:70]}" for it in queue.items] + ["Voltar"]
+            pick = select_option(c, "Remover ideia", cand)
+            if pick is None or pick == len(cand) - 1:
+                continue
+            if remove_item(queue, pick):
+                queue.save(path)
+                print("Ideia removida.")
+            else:
+                print(f"{c['yellow']}Só é possível remover itens ainda não processados.{c['reset']}")
+            _pause(c)
+        elif idx == 3:
+            cand = [f"{it.idea[:70]}" for it in queue.items] + ["Voltar"]
+            pick = select_option(c, "Mover qual ideia?", cand)
+            if pick is None or pick == len(cand) - 1:
+                continue
+            dest_raw = _ask(f"Nova posição [1-{len(queue.items)}]: ").strip()
+            try:
+                dest = int(dest_raw) - 1
+            except ValueError:
+                print("Posição inválida.");
+                _pause(c)
+                continue
+            if reorder_items(queue, pick, dest):
+                queue.save(path)
+                print("Ideia reordenada.")
+            else:
+                print(f"{c['yellow']}Só é possível reordenar itens aguardando.{c['reset']}")
+            _pause(c)
+        elif idx == 4:
+            n = retry_failed(queue)
+            queue.save(path)
+            print(f"{n} item(ns) com erro voltaram para aguardando.")
+            _pause(c)
+        elif idx == 5:
+            _clear()
+            _banner(c)
+            for line in queue.status_lines():
+                print(line)
+            print(f"\narquivo: {path}")
+            _pause(c)
+
+
+def _queue_run(c, cfg, queue, path: str) -> None:
+    import time as _time
+    from .queue import process_queue
     if not queue.items:
         print("Fila vazia.")
+        _pause(c)
         return
-    
-    # Salva fila se quiser
-    if _ask("Salvar fila em JSON para retomar depois? [s/N]: ").strip().lower().startswith("s"):
-        save_path = _ask(f"Caminho [queue.json]: ").strip() or "queue.json"
-        queue.queue_file = save_path
-        queue.save(save_path)
-        print(f"Fila salva em {save_path}")
-    
-    # Confirma processamento
-    print(f"\n{c['bold']}Fila pronta:{c['reset']}")
-    queue.print_status()
-    
-    if not _ask(f"\nIniciar processamento de {len(queue.items)} vídeos? [S/n]: ").strip().lower().startswith("n"):
-        print(f"\nProcessando... (Ctrl+C pausa, itens concluídos são salvos)")
-        process_queue(
-            queue, cfg, cfg.out_dir,
-            on_item_start=lambda item: print(f"\n▶ [{item.slug}] {item.idea}"),
-            on_item_complete=lambda item, ok: print(
-                f"\n{'✓' if ok else '✗'} [{item.slug}] "
-                f"{'OK' if ok else f'ERRO: {item.error}'} ({item.duration_seconds:.1f}s)"
-            ),
-            on_progress=lambda q: q.print_status(),
-        )
-    
-    print(f"\n{c['bold']}Resultado final:{c['reset']}")
-    queue.print_status()
+    n_wait = sum(1 for it in queue.items if str(it.status) == "waiting")
+    if n_wait == 0:
+        print("Nada aguardando (use 'Repetir itens com erro' se precisar).")
+        _pause(c)
+        return
+    go = select_option(c, f"Processar {n_wait} vídeo(s)?",
+                       ["Iniciar agora", "Cancelar"],
+                       status=_queue_status_lines(queue)[:6])
+    if go != 0:
+        return
+    started = _time.monotonic()
+    state: dict = {"stage": "", "last_error": ""}
+
+    def on_start(item):
+        print(f"\n▶ {item.idea}")
+
+    def on_done(item, ok: bool):
+        if ok:
+            print(f"✓ {item.idea} ({item.duration_seconds:.0f}s) → {item.video_path}")
+        else:
+            state["last_error"] = item.error
+            print(f"{c['red']}✗ {item.idea}: {item.error}{c['reset']}")
+            print("Continuando para o próximo item...")
+
+    def on_progress(q):
+        elapsed = _time.monotonic() - started
+        done = sum(1 for it in q.items if str(it.status) in ("completed", "error", "cancelled"))
+        print(f"— {q.progress_str()}   decorrido: {elapsed:.0f}s   "
+              f"restam: {len(q.items) - done}")
+
+    queue.save(path)
+    try:
+        process_queue(queue, cfg, cfg.out_dir,
+                      on_item_start=on_start, on_item_complete=on_done,
+                      on_progress=on_progress)
+    except Exception as exc:
+        print(f"{c['red']}ERRO na fila: {exc}{c['reset']}")
+    queue.save(path)
+    _clear()
+    _banner(c)
+    print(f"\n{c['bold']}CURIO — FILA (resultado){c['reset']}")
+    for line in queue.status_lines():
+        print(line)
+    ok_n = sum(1 for it in queue.items if str(it.status) == "completed")
+    err_n = sum(1 for it in queue.items if str(it.status) == "error")
+    print(f"\nConcluídos: {ok_n}   erros: {err_n}   projetos em: {cfg.out_dir}/")
+    _pause(c)
+
+
+def _queue_flow(c: dict[str, str], cfg: CurioConfig) -> None:
+    while True:
+        idx = select_option(
+            c, "Fila de ideias — cada ideia vira um projeto independente",
+            ["Criar nova fila", "Abrir fila existente", "Voltar"],
+            status=_status_summary(cfg))
+        if idx is None or idx == 2:
+            return
+        if idx == 0:
+            _queue_create(c, cfg)
+        else:
+            _queue_open(c, cfg)
 
 
 # ---------------------------------------------------------------- ajuda
@@ -534,12 +920,21 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
              force: bool = False) -> None:
     print(f"\n{c['bold']}VÍDEO PRONTO — voz de IA, você sai com o MP4 final.{c['reset']}")
     if idea is None:
-        idea = _ask("Ideia do vídeo (ex.: De onde veio a palavra salário?): ").strip()
+        lang_idx = select_option(
+            c, "Idioma do vídeo",
+            ["Português (PT-BR)", "English (EN-US) — 100% in English"],
+            status=[f"atual: {cfg.language}"])
+        if lang_idx is not None:
+            cfg = _apply_language(cfg, "en-US" if lang_idx == 1 else "pt-BR")
+        prompt = ("Video idea (e.g.: How does fiber internet cross the ocean?): "
+                  if str(cfg.language).lower().startswith("en") else
+                  "Ideia do vídeo (ex.: De onde veio a palavra salário?): ")
+        idea = _ask(prompt).strip()
         if not idea:
             print("Ideia vazia — voltando ao menu.")
             return
         slug = slugify(idea)
-        print(f"Pasta do projeto: {cfg.out_dir}/{slug}/")
+        print(f"Pasta do projeto: {cfg.out_dir}/{slug}/   idioma: {cfg.language}")
         cfg = _ask_duration(c, cfg)
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
     try:
@@ -724,6 +1119,85 @@ def _verify_flow(c: dict[str, str], cfg: CurioConfig) -> None:
     _show_verify(c, paths.final_mp4, paths.subs_srt, cfg)
 
 
+# ------------------------------------------------------- projetos (navegável)
+
+def _projects_flow(c: dict[str, str], cfg: CurioConfig) -> None:
+    while True:
+        if not os.path.isdir(cfg.out_dir):
+            print("Nenhum projeto ainda — comece por 'Criar vídeo'.")
+            _pause(c)
+            return
+        entries = sorted(e for e in os.listdir(cfg.out_dir)
+                         if os.path.isdir(os.path.join(cfg.out_dir, e)))
+        if not entries:
+            print("Nenhum projeto ainda — comece por 'Criar vídeo'.")
+            _pause(c)
+            return
+        labels = []
+        for entry in entries:
+            status, _meta = _project_status(cfg, entry)
+            mark = "○" if "aguardando" in status else "●"
+            labels.append(f"{mark} {entry} — {status}")
+        labels.append("Voltar")
+        idx = select_option(c, "Projetos", labels, status=_status_summary(cfg))
+        if idx is None or idx == len(labels) - 1:
+            return
+        slug = entries[idx]
+        act = select_option(
+            c, f"Projeto: {slug}",
+            ["Verificar vídeo", "Ver detalhes", "Apagar projeto", "Voltar"])
+        if act is None or act == 3:
+            continue
+        if act == 0:
+            _verify_project(c, cfg, slug)
+            _pause(c)
+        elif act == 1:
+            _show_project(c, cfg, slug)
+            _pause(c)
+        elif act == 2:
+            _delete_project(c, cfg, slug)
+            _pause(c)
+
+
+def _verify_project(c: dict[str, str], cfg: CurioConfig, slug: str) -> None:
+    status, _meta = _project_status(cfg, slug)
+    if "aguardando sua voz" in status:
+        print(f"'{slug}' ainda não tem vídeo final — finalize primeiro.")
+        return
+    paths = video_paths(cfg.out_dir, slug)
+    if not os.path.isfile(paths.final_mp4):
+        print(f"{c['red']}Projeto '{slug}': {status}; sem MP4 final.{c['reset']}")
+        return
+    _show_verify(c, paths.final_mp4, paths.subs_srt, cfg)
+
+
+def _show_project(c: dict[str, str], cfg: CurioConfig, slug: str) -> None:
+    status, meta = _project_status(cfg, slug)
+    print(f"\n{c['bold']}{slug}{c['reset']}: {status}")
+    if not meta:
+        return
+    for key in ("video_title", "duration_actual", "tts_provider", "tts_voice",
+                "render_encoder", "subtitle_cues", "processing_time_seconds"):
+        if meta.get(key) is not None:
+            print(f"  {key}: {meta.get(key)}")
+    arts = meta.get("artifacts", {}) or {}
+    for key in ("video", "subtitles", "audio"):
+        if arts.get(key):
+            print(f"  {key}: {arts.get(key)}")
+
+
+def _delete_project(c: dict[str, str], cfg: CurioConfig, slug: str) -> None:
+    proj_path = os.path.join(cfg.out_dir, slug)
+    if _confirm_twice(f"Apagar projeto '{slug}'?", slug.upper()):
+        try:
+            shutil.rmtree(proj_path)
+            print(f"{c['green']}Projeto removido.{c['reset']}")
+        except Exception as exc:
+            print(f"{c['red']}Erro: {exc}{c['reset']}")
+    else:
+        print("Cancelado.")
+
+
 # ------------------------------------------------------- menu
 
 def run(cfg: CurioConfig | None = None) -> int:
@@ -731,61 +1205,72 @@ def run(cfg: CurioConfig | None = None) -> int:
     c = _colors()
     try:
         while True:
-            _clear()
-            _banner(c)
-            print(f"{c['dim']}O que você quer fazer?{c['reset']}")
-            print(f"\n  {c['bold']}QUERO UM VÍDEO PRONTO (voz de IA){c['reset']}")
-            print(f"  {c['bold']}1){c['reset']} Criar vídeo com voz de IA")
-            print(f"\n  {c['bold']}QUERO NARRAR EU MESMO (2 passos){c['reset']}")
-            print(f"  {c['bold']}2){c['reset']} Passo 1: preparar base (silencioso + teleprompter)")
-            print(f"  {c['bold']}3){c['reset']} Passo 2: finalizar com minha voz")
-            print(f"\n  {c['bold']}ROTEIRO PRONTO (suas palavras){c['reset']}")
-            print(f"  {c['bold']}4){c['reset']} Criar vídeo de roteiro pronto (sem reescrever)")
-            print(f"\n  {c['bold']}MEUS PROJETOS{c['reset']}")
-            print(f"  {c['bold']}5){c['reset']} Listar projetos (com situação)")
-            print(f"  {c['bold']}6){c['reset']} Verificar um vídeo")
-            print(f"\n  {c['bold']}CONFIGURAÇÃO AVANÇADA{c['reset']}")
-            print(f"  {c['bold']}7){c['reset']} Configurar (LLM, mídia, TTS, render, visual, paths)")
-            print(f"\n  {c['bold']}LIMPEZA E MANUTENÇÃO{c['reset']}")
-            print(f"  {c['bold']}8){c['reset']} Limpeza (cache, projeto, tudo, ver tamanhos)")
-            print(f"\n  {c['bold']}FILA DE VÍDEOS{c['reset']}")
-            print(f"  {c['bold']}9){c['reset']} Processar fila (várias ideias sequenciais)")
-            print(f"\n  {c['bold']}AJUDA E SISTEMA{c['reset']}")
-            print(f"  {c['bold']}10){c['reset']} Como funciona (ajuda)")
-            print(f"  {c['bold']}11){c['reset']} Teste rápido (gera exemplo e verifica)")
-            print(f"  {c['bold']}12){c['reset']} Checar ambiente (doctor)")
-            print(f"  {c['bold']}13){c['reset']} Sair")
-            choice = _ask(f"\n{c['bold']}Escolha [1-13]:{c['reset']} ").strip()
-            if choice == "1":
-                _ai_flow(c, cfg)
-            elif choice == "2":
-                _human_flow(c, cfg)
-            elif choice == "3":
-                _human_step2(c, cfg)
-            elif choice == "4":
-                _script_flow(c, cfg)
-            elif choice == "5":
-                _list_flow(c, cfg)
-            elif choice == "6":
-                _verify_flow(c, cfg)
-            elif choice == "7":
-                cfg = _config_flow(c, cfg)
-            elif choice == "8":
-                _cleanup_flow(c, cfg)
-            elif choice == "9":
-                _queue_flow(c, cfg)
-            elif choice == "10":
-                _help_flow(c)
-            elif choice == "11":
-                _quick_test_flow(c, cfg)
-            elif choice == "12":
-                from .cli import cmd_doctor
-                cmd_doctor(argparse.Namespace(), cfg)
-            elif choice == "13":
+            idx = select_option(
+                c, "O que você quer fazer?",
+                ["Criar vídeo",
+                 "Narrar eu mesmo (2 passos)",
+                 "Roteiro pronto (sem reescrever)",
+                 "Fila de ideias",
+                 "Projetos",
+                 "Configurações",
+                 "Diagnóstico",
+                 "Ajuda",
+                 "Sair"],
+                status=_status_summary(cfg))
+            if idx is None or idx == 8:
                 print("Até logo!")
                 return 0
-            else:
-                print("Opção inválida.")
+            if idx == 0:
+                sub = select_option(
+                    c, "Criar vídeo",
+                    ["Voz de IA (MP4 final)",
+                     "Passo 1: preparar base (silencioso + teleprompter)",
+                     "Passo 2: finalizar com minha voz",
+                     "Teste rápido",
+                     "Voltar"],
+                    status=_status_summary(cfg))
+                if sub is None or sub == 4:
+                    continue
+                if sub == 0:
+                    _ai_flow(c, cfg)
+                elif sub == 1:
+                    _human_flow(c, cfg)
+                elif sub == 2:
+                    _human_step2(c, cfg)
+                elif sub == 3:
+                    _quick_test_flow(c, cfg)
+            elif idx == 1:
+                _human_flow(c, cfg)
+            elif idx == 2:
+                _script_flow(c, cfg)
+            elif idx == 3:
+                _queue_flow(c, cfg)
+            elif idx == 4:
+                _projects_flow(c, cfg)
+            elif idx == 5:
+                cfg = _config_flow(c, cfg)
+            elif idx == 6:
+                sub = select_option(
+                    c, "Diagnóstico",
+                    ["Checar ambiente (doctor)",
+                     "Verificar um vídeo",
+                     "Ver tamanhos (cache/output)",
+                     "Limpeza e manutenção",
+                     "Voltar"],
+                    status=_status_summary(cfg))
+                if sub is None or sub == 4:
+                    continue
+                if sub == 0:
+                    from .cli import cmd_doctor
+                    cmd_doctor(argparse.Namespace(), cfg)
+                elif sub == 1:
+                    _verify_flow(c, cfg)
+                elif sub == 2:
+                    _show_sizes(c, cfg)
+                elif sub == 3:
+                    _cleanup_flow(c, cfg)
+            elif idx == 7:
+                _help_flow(c)
             _pause(c)
     except _TUIExit:
         print("\nAté logo!")

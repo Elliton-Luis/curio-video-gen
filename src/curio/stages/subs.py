@@ -112,8 +112,9 @@ def _normalize_subtitle_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text.strip())
     # Corrige letras maiúsculas aleatórias no meio da frase
     text = re.sub(r"(?<=[a-z])\s+([A-Z])(?=[a-z])", lambda m: " " + m.group(1).lower(), text)
-    # Heurística simples para perguntas: palavras interrogativas no início
-    interrogatives = r"^(?:o que|o que e|por que|porque|como|quando|onde|quem|qual|quais|quanto|quantos|qual)"
+    # Heurística simples para perguntas: palavras interrogativas no início (PT + EN)
+    interrogatives = (r"^(?:o que|o que e|por que|porque|como|quando|onde|quem|qual|quais|"
+                      r"quanto|quantos|what|why|how|when|where|who|which|whom|whose)")
     # Divide em sentenças e normaliza cada uma
     sentences = re.split(r"(?<=[.!?…])\s+", text)
     normalized = []

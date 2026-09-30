@@ -804,8 +804,10 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
 
     emit("Transcrevendo")
     if force or not os.path.isfile(paths.transcription_json):
+        whisper_lang = "en" if str(cfg.language or "").lower().startswith("en") else "pt"
         words = transcribe_stage.transcribe(paths.human_wav,
-                                            cfg.whisper_model, metrics=metrics)
+                                            cfg.whisper_model, metrics=metrics,
+                                            language=whisper_lang)
         _write_json(paths.transcription_json, words)
     else:
         words = _read_json(paths.transcription_json)

@@ -114,7 +114,17 @@ class VideoQueue:
             print(line)
 
     def save(self, path: str) -> None:
+        """Salva a fila. `.txt` = uma ideia por linha; `.json` = estado completo."""
         self.queue_file = path
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        if path.lower().endswith(".txt"):
+            with open(path, "w", encoding="utf-8") as f:
+                for item in self.items:
+                    if item.idea.strip():
+                        f.write(item.idea.strip() + "\n")
+            return
         data = {
             "items": [asdict(item) for item in self.items],
             "current_index": self.current_index,
@@ -127,16 +137,42 @@ class VideoQueue:
 
     @classmethod
     def load(cls, path: str) -> "VideoQueue":
+        """Carrega `.json` (estado) ou `.txt` (uma ideia por linha)."""
+        if path.lower().endswith(".txt"):
+            queue = cls(queue_file=path)
+            queue.add_from_file(path)
+            return queue
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+        raw_items = data.get("items", [])
+        items = []
+        for raw in raw_items:
+            raw = dict(raw)
+            status = raw.get("status", QueueItemStatus.WAITING)
+            if not isinstance(status, QueueItemStatus):
+                try:
+                    raw["status"] = QueueItemStatus(str(status))
+                except ValueError:
+                    raw["status"] = QueueItemStatus.WAITING
+            items.append(QueueItem(**raw))
         queue = cls(
-            items=[QueueItem(**item) for item in data.get("items", [])],
+            items=items,
             current_index=data.get("current_index", -1),
             paused=data.get("paused", False),
             cancelled=data.get("cancelled", False),
             queue_file=path,
         )
         return queue
+
+    def remove(self, index: int) -> bool:
+        """Remove um item ainda não processado da fila."""
+        if 0 <= index < len(self.items):
+            if self.items[index].status in (QueueItemStatus.WAITING,
+                                            QueueItemStatus.ERROR,
+                                            QueueItemStatus.CANCELLED):
+                del self.items[index]
+                return True
+        return False
 
 
 def process_queue(
@@ -184,30 +220,28 @@ def process_queue(
             if on_progress:
                 on_progress(queue)
 
-            # Configura projeto específico
-            project_dir = os.path.join(output_dir, item.slug)
-            os.makedirs(project_dir, exist_ok=True)
-            item.project_dir = project_dir
-
-            # Aplica overrides de config
+            # Cada ideia vira um projeto independente sob output_dir/<slug>.
             item_cfg = CurioConfig()
             for key, value in cfg.__dict__.items():
                 setattr(item_cfg, key, value)
             for key, value in item.config_overrides.items():
                 if hasattr(item_cfg, key):
                     setattr(item_cfg, key, value)
-
-            item_cfg.output_dir = project_dir
+            item_cfg.out_dir = output_dir
 
             try:
-                # Executa pipeline completo
-                result = run_pipeline(item.idea, item_cfg)
-                
+                # Executa pipeline completo (mesmo pipeline do modo individual).
+                result = run_pipeline(item.idea, item_cfg, slug=item.slug)
+                artifacts = result.get("artifacts", {}) or {}
+                video_path = str(artifacts.get("video", ""))
+                project_root = os.path.dirname(os.path.dirname(video_path)) if video_path else os.path.join(output_dir, item.slug)
+                item.project_dir = project_root
+                item.video_path = video_path
+                item.metadata_path = os.path.join(project_root, "metadata.json")
+
                 item.status = QueueItemStatus.COMPLETED
                 item.finished_at = datetime.now(timezone.utc).isoformat()
                 item.duration_seconds = round(time.monotonic() - start_time, 2)
-                item.video_path = result.get("artifacts", {}).get("video", "")
-                item.metadata_path = result.get("artifacts", {}).get("video", "").replace(".mp4", "_metadata.json")
                 
                 if on_item_complete:
                     on_item_complete(item, True)
@@ -282,3 +316,32 @@ def cancel_queue(queue: VideoQueue) -> None:
     current = queue.get_current()
     if current and current.status == QueueItemStatus.PROCESSING:
         current.status = QueueItemStatus.CANCELLED
+
+
+def default_queues_dir(cfg: CurioConfig) -> str:
+    """Pasta padrão das filas, consistente com o restante da configuração."""
+    return cfg.queues_dir or "queues"
+
+
+def ensure_queues_dir(cfg: CurioConfig) -> str:
+    path = default_queues_dir(cfg)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def list_queue_files(queues_dir: str) -> list[str]:
+    """Lista arquivos de fila (.txt e .json) na pasta padrão."""
+    if not os.path.isdir(queues_dir):
+        return []
+    out = []
+    for entry in sorted(os.listdir(queues_dir)):
+        if entry.lower().endswith((".txt", ".json")):
+            full = os.path.join(queues_dir, entry)
+            if os.path.isfile(full):
+                out.append(full)
+    return out
+
+
+def remove_item(queue: VideoQueue, index: int) -> bool:
+    """Remove um item ainda não processado (atalho para VideoQueue.remove)."""
+    return queue.remove(index)

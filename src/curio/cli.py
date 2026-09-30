@@ -453,6 +453,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tts", default=None, help="provedor TTS (ex.: espeak-ng)")
     ap.add_argument("--voice", default=None, help="voz TTS (ex.: pt-br)")
     ap.add_argument("--backend", default=None, help="auto|vaapi|qsv|cpu")
+    ap.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
+    ap.add_argument("--queues-dir", default=None, help="pasta padrão das filas de ideias")
     sub = ap.add_subparsers(dest="cmd", required=False)
 
     g = sub.add_parser("generate", help="gerar vídeo a partir de uma ideia")
@@ -466,6 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="ai = vídeo final com Edge TTS; human = silencioso + teleprompter")
     g.add_argument("--no-open", action="store_true",
                    help="não abrir pasta/gravador após o teleprompter")
+    g.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
     g.set_defaults(func=cmd_generate)
 
     fin = sub.add_parser("finalize", help="unir áudio humano ao vídeo silencioso")
@@ -505,6 +508,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="fotos por cena com sobreposição 1-5 (padrão: config)")
     fs.add_argument("--no-open", action="store_true",
                     help="não abrir pasta/gravador após o teleprompter")
+    fs.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
     fs.set_defaults(func=cmd_from_script)
 
     t = sub.add_parser("tui", help="interface interativa em terminal")
@@ -562,6 +566,13 @@ def main(argv: list[str] | None = None) -> int:
         cfg.tts_voice = args.voice
     if getattr(args, "backend", None):
         cfg.render_backend = args.backend
+    if getattr(args, "language", None):
+        from .config import normalize_language
+        cfg.language = normalize_language(args.language)
+        if cfg.language == "en-US" and cfg.tts_voice == "pt-BR-AntonioNeural":
+            cfg.tts_voice = "en-US-GuyNeural"
+    if getattr(args, "queues_dir", None):
+        cfg.queues_dir = args.queues_dir
     if args.cmd is None:
         # Sem subcomando: abre a interface visual (TUI) — ex.: ./scripts/run.sh
         from .tui import run as run_tui

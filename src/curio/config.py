@@ -23,6 +23,18 @@ def _as_bool(value, default: bool = True) -> bool:
 DURATION_AUTO = 0.0  # Automático/Ilimitado: o conteúdo determina a duração.
 
 
+def normalize_language(raw) -> str:
+    """Normaliza idioma do vídeo: 'pt-BR' (padrão) ou 'en-US'."""
+    text = str(raw or "").strip().lower().replace("_", "-")
+    if text in ("en", "en-us", "english", "inglês", "ingles"):
+        return "en-US"
+    return "pt-BR"
+
+
+def is_english(language: str) -> bool:
+    return normalize_language(language) == "en-US"
+
+
 def parse_duration(raw) -> float:
     """Duração desejada em segundos; 0.0 = Automático/Ilimitado.
 
@@ -71,6 +83,7 @@ class CurioConfig:
     groq_base_url: str = "https://api.groq.com/openai/v1"
     media_providers: str = "pixabay,pexels,wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
+    queues_dir: str = "queues"  # pasta padrão das filas de ideias
     teleprompter_wpm: int = 150
     whisper_model: str = "base"
     metrics_dir: str = "metrics"
@@ -175,10 +188,17 @@ class CurioConfig:
         if os.environ.get("CURIO_AUTO_OPEN") is not None:
             cfg.auto_open = os.environ["CURIO_AUTO_OPEN"].strip().lower() not in (
                 "0", "false", "no", "n")
-        cfg.language = os.environ.get("CURIO_LANGUAGE", cfg.language)
-        lang = data.get("language", cfg.language)
-        if lang:
-            cfg.language = str(lang)
+        lang_toml = data.get("language", None)
+        if lang_toml:
+            cfg.language = str(lang_toml)
+        if os.environ.get("CURIO_LANGUAGE"):
+            cfg.language = str(os.environ["CURIO_LANGUAGE"])
+        cfg.language = normalize_language(cfg.language)
+        if is_english(cfg.language) and cfg.tts_voice == "pt-BR-AntonioNeural":
+            cfg.tts_voice = "en-US-GuyNeural"
+        cfg.queues_dir = str(data.get("queues_dir", cfg.queues_dir))
+        if os.environ.get("CURIO_QUEUES_DIR"):
+            cfg.queues_dir = str(os.environ["CURIO_QUEUES_DIR"])
         return cfg
 
     def llm_overrides(self) -> dict:
@@ -195,6 +215,8 @@ class CurioConfig:
         return {
             "duration_target": self.duration_target,
             "out_dir": self.out_dir,
+            "queues_dir": self.queues_dir,
+            "language": self.language,
             "tts_provider": self.tts_provider,
             "tts_voice": self.tts_voice,
             "tts_speed": self.tts_speed,

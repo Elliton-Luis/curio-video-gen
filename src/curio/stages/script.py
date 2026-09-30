@@ -61,17 +61,28 @@ def _match_curated(idea: str) -> str | None:
     return None
 
 
-def _template_script(idea: str, max_chars: int | None) -> str:
+def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") -> str:
     topic = idea.strip().rstrip("?.!").strip()
-    text = (
-        f"{topic}. Parece uma pergunta simples, e é justamente por isso que ela é boa. "
-        f"Para responder, é preciso separar o que se sabe do que só se repete por aí. "
-        f"A história registra fragmentos: documentos, objetos, palavras que mudaram de sentido. "
-        f"Cada fragmento conta uma parte, mas nenhum conta tudo sozinho. "
-        f"Por isso, a resposta honesta mistura o que foi confirmado com o que segue em debate. "
-        f"E talvez esse seja o ponto mais interessante: uma boa pergunta não termina quando o vídeo acaba. "
-        f"Ela continua na sua cabeça, e isso já é aprender alguma coisa."
-    )
+    if str(language or "").lower().startswith("en"):
+        text = (
+            f"{topic}. It sounds like a simple question, and that is exactly why it is good. "
+            f"To answer it, we need to separate what is known from what is merely repeated. "
+            f"History keeps fragments: documents, objects, words that changed meaning. "
+            f"Each fragment tells a part, but none tells everything alone. "
+            f"So the honest answer mixes what is confirmed with what is still debated. "
+            f"And perhaps that is the most interesting point: a good question does not end when the video ends. "
+            f"It stays in your head, and that is already learning something."
+        )
+    else:
+        text = (
+            f"{topic}. Parece uma pergunta simples, e é justamente por isso que ela é boa. "
+            f"Para responder, é preciso separar o que se sabe do que só se repete por aí. "
+            f"A história registra fragmentos: documentos, objetos, palavras que mudaram de sentido. "
+            f"Cada fragmento conta uma parte, mas nenhum conta tudo sozinho. "
+            f"Por isso, a resposta honesta mistura o que foi confirmado com o que segue em debate. "
+            f"E talvez esse seja o ponto mais interessante: uma boa pergunta não termina quando o vídeo acaba. "
+            f"Ela continua na sua cabeça, e isso já é aprender alguma coisa."
+        )
     if max_chars is not None and len(text) > max_chars:
         text = text[: max_chars - 1].rsplit(" ", 1)[0] + "."
     return text
@@ -93,15 +104,17 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None) -> tuple[str, str
             idea, cfg.nvidia_model, cfg.nvidia_base_url,
             cfg.nvidia_timeout, max_chars, metrics,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
-            extra=cfg.llm_overrides())
+            extra=cfg.llm_overrides(), language=cfg.language)
         return text, _label
 
-    curated = _match_curated(idea)
-    if curated:
-        return (curated if auto else curated[:max_chars or len(curated)],
-                "curated")
+    english = str(cfg.language or "").lower().startswith("en")
+    if not english:
+        curated = _match_curated(idea)
+        if curated:
+            return (curated if auto else curated[:max_chars or len(curated)],
+                    "curated")
 
-    return _template_script(idea, max_chars), "template"
+    return _template_script(idea, max_chars, cfg.language), "template"
 
 
 TITLE_MAX_CHARS = 90  # limite duro de validação (prompt pede ≤55)
@@ -151,9 +164,14 @@ def generate_title(script_text: str, idea: str, cfg: CurioConfig,
     """
     if nvidia_stage.any_llm_available():
         try:
+            english = str(cfg.language or "").lower().startswith("en")
+            system_prompt = (nvidia_stage.TITLE_SYSTEM_PROMPT_EN if english
+                             else nvidia_stage.TITLE_SYSTEM_PROMPT)
+            user_prompt = (f"Create the title for this script:\n\n{script_text}"
+                           if english else
+                           f"Crie o título para este roteiro:\n\n{script_text}")
             data, label = nvidia_stage.complete_json(
-                nvidia_stage.TITLE_SYSTEM_PROMPT,
-                f"Crie o título para este roteiro:\n\n{script_text}",
+                system_prompt, user_prompt,
                 cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout,
                 metrics, or_model=cfg.openrouter_model,
                 or_base_url=cfg.openrouter_base_url,
