@@ -96,6 +96,52 @@ Progresso esperado:
 Output: output/salario/render/final.mp4
 ```
 
+## Gêneros editoriais
+
+A TUI pergunta o gênero **antes** da ideia, com um seletor horizontal
+(`← →`, `Enter`, `Esc`): a escolha muda a pesquisa, então pedir o tema
+primeiro seria escrever contra o formato errado. O `dry-run` e a folha de
+contato mostram o gênero escolhido e os números que ele produziu.
+
+O gênero não é um prompt com outro texto em cima. Ele é um perfil
+que age em seis etapas:
+
+| Etapa | O que o perfil decide |
+|---|---|
+| **pesquisa** | os termos que entram **antes** das keywords genéricas, e o que as fontes precisam distinguir (numa etimologia, origem documentada de hipótese e de etimologia popular) |
+| **roteiro** | a estrutura narrativa a seguir e o que não escrever (biografia não é hagiografia; resumo histórico não é cronologia seca) |
+| **cenas** | quantas cenas o mesmo roteiro vira, e os segundos de cada uma |
+| **visual** | a escada de meio (etimologia põe tipografia antes de foto; ciência põe diagrama antes de foto decorativa) |
+| **legendas** | densidade e destaque, que é a segunda coisa que se percebe sem ver o título |
+| **metadados** | `genre` e `genre_profile` no `metadata.json` |
+
+### Os seis perfis
+
+| chave | ritmo | legenda | o que o torna ele |
+|---|---|---|---|
+| `history` | 9,0 s | 5 palavras | quedas de impérios, crimes e desastres como narrativa, nunca como aula |
+| `etymology` | 7,5 s | 4 | a palavra hoje, a forma antiga, a transformação; tipografia é parte da composição |
+| `mythology` | 12,0 s | 6 | o mito como produto humano do seu tempo, com a tradição de lado |
+| `mystery` | 11,0 s | 5 | fato e hipótese mantidos separados; nunca resolve o que as fontes não resolvem |
+| `science` | 14,0 s | 6 | tempo para o diagrama ser compreendido; nunca laboratório decorativo |
+| `people` | 13,0 s | 6 | primeiro resolve **quem** é a pessoa, depois a trajetória e o legado |
+
+O mesmo roteiro de 298 palavras vira 16 cenas em etimologia, 12 em
+história, 11 em mistério, 10 em mitologia e 9 em ciência e pessoas.
+
+### Sem gênero, nada muda
+
+`genre = ""` (o padrão) não é um perfil: é a ausência dele. O teto de
+cenas volta a ser 12, o pacing 9,0 s e a legenda 5 palavras — os mesmos
+números de antes do recurso, verificados por teste. `history` é o perfil
+que reproduz o comportamento antigo **de propósito**, para quem quiser
+escolhê-lo explicitamente.
+
+Um projeto gerado antes do recurso não tem `genre` no `metadata.json`, e a
+revisão o lê sem reclamar.
+
+Via CLI, use `CURIO_GENRE` ou `genre` no `config.toml`.
+
 ## Escolha visual: como cada cena é visualizada
 
 O requisito não é que a cena tenha uma **fotografia** — é que ela tenha
