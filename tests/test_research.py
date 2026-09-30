@@ -42,6 +42,18 @@ def _wiki_search_payload(*titles):
     return {"query": {"search": [{"title": t} for t in titles]}}
 
 
+# Artigos sobre MAR: o portão de pertinência exige sobreposição com o
+# tema, então o mock precisa devolver conteúdo do assunto. Antes, o mock
+# devolvia "Sal"/"Mar" para qualquer consulta e o teste afirmava que
+# qualquer artigo servia — que é exatamente o contrato removido.
+_ARTIGOS_MAR = {
+    "Mar": "O mar é uma grande massa de água salgada que cobre 71% da "
+           "superfície terrestre.",
+    "Salinidade": "A salinidade do mar é a quantidade de sais dissolvidos "
+                  "na água do oceano.",
+}
+
+
 def _wiki_extract_payload(title, extract):
     return {"query": {"pages": {"1": {"title": title, "extract": extract}}}}
 
@@ -49,11 +61,15 @@ def _wiki_extract_payload(title, extract):
 def _fake_get_json_factory():
     def fake(url, timeout=20):
         if "list=search" in url:
-            return _wiki_search_payload("Sal", "Mar")
+            return _wiki_search_payload(*_ARTIGOS_MAR)
         if "prop=extracts" in url:
-            if "titles=Sal" in url:
-                return _wiki_extract_payload("Sal", "O sal é cloreto de sódio. Usado há milênios.")
-            return _wiki_extract_payload("Mar", "O mar cobre 71% da superfície da Terra.")
+            import urllib.parse as up
+            q = up.parse_qs(up.urlparse(url).query)
+            titulo = (q.get("titles") or [""])[0]
+            trecho = _ARTIGOS_MAR.get(titulo)
+            if not trecho:
+                return {"query": {"pages": {}}}
+            return _wiki_extract_payload(titulo, trecho)
         if "api.duckduckgo.com" in url:
             return {"AbstractText": "", "AbstractURL": ""}
         raise AssertionError(f"URL inesperada: {url}")
@@ -147,8 +163,10 @@ def test_research_pula_artigo_com_falha(monkeypatch):
         if "titles=Ruim" in url:
             raise OSError("429 throttled")
         return {"query": {"pages": {"1": {"title": "Bom",
-                                          "extract": "Texto bom com fatos suficientes aqui."}}}}
+                                          "extract": "Texto bom sobre o "
+                                          "tema do teste com mar e fatos "
+                                          "suficientes aqui."}}}}
 
     monkeypatch.setattr(mod, "_get_json", fake)
-    srcs = R.research_topic("teste", "pt-BR", max_sources=1)
+    srcs = R.research_topic("teste com mar", "pt-BR", max_sources=1)
     assert len(srcs) == 1 and srcs[0].title == "Bom"
