@@ -52,11 +52,21 @@ Os testes de update usam uma fonte fake para controlar conteúdo/licença. Foram
 - `video-gen music update --genre people` terminou com código 1 e a mensagem `FREESOUND_API_KEY ausente`; o fallback de vídeo permanece válido. Não há `FREESOUND_API_KEY` no ambiente nem entrada correspondente no `.env` desta execução.
 - As integrações de dois gêneros renderizaram vídeos reais com FFmpeg e trilhas locais geradas para teste (tons de frequências distintas), não com música artística baixada. Portanto validam seleção/metadata/mix/cache, não uma avaliação auditiva da direção musical.
 
-## 4. Status vs PRD §19
+## 4. Tentativas, erros e correções durante a implementação
+
+1. **Primeiro teste do cross-dissolve:** FFmpeg rejeitou o filter graph (`xfade` com saída não conectada). A causa foi colisão entre labels dos streams de entrada e saída. Renomeei os labels; a tentativa seguinte mostrou a entrada de `format` sem consumidor, corrigida para o próximo segmento entrar no `tpad`. O teste real passou e confirmou a duração total preservada.
+2. **Primeira mixagem com ducking:** FFmpeg informou `Stream specifier 'voice' ... matches no streams`. O mesmo output da voz era consumido pelo sidechain e pelo mix final. Separei os ramos com `asplit`; isso revelou um ramo não conectado quando ducking está desligado, então o split passou a ser condicional. Testes com ducking ligado/desligado e render real passaram.
+3. **Primeira medição de ducking:** a janela de análise incluía o fade-in da trilha, então a comparação da execução sem ducking falhava mesmo sem redução por sidechain. Ajustei a análise para trechos estáveis: a medição agora compara a componente musical durante voz e pausa, e confirma que a voz segue mais alta.
+4. **Suíte completa durante o desenvolvimento:** duas regressões em `tests/test_tts_coverage.py` fizeram FFmpeg tentar ler WAVs de fixture inválidos. A nova assinatura de áudio estava forçando rebuild de vídeos legados sem configuração de áudio. Corrigi o cache legado para reutilizar o render anterior quando áudio/transições novos estão desabilitados; os 10 testes de cobertura TTS passaram e a suíte final passou integralmente.
+5. **Integração de finalize humano:** a primeira fixture de transcrição retornava lista vazia, que corretamente causa `ValueError: roteiro vazio — nada para legendar`. Troquei a fixture por uma palavra transcrita; a preparação e o finalize humano passaram com a faixa salva no `audio_request`.
+6. **Licença/chave externa:** `music update` foi testado sem `FREESOUND_API_KEY` e retornou código 1 com instrução para configurar a chave. Esse é o comportamento esperado para a atualização explícita: não houve tentativa de contornar autenticação e nenhum download de rede ocorreu. As transferências automatizadas foram exercitadas só com `FakeSource`.
+7. **Deduplicação/limites:** durante a revisão, garanti que IDs repetidos na mesma resposta de busca sejam marcados antes do download, que o limite máximo também limite o mínimo configurado e que assets CC0/CC BY-SA não sejam aceitos como CC0/CC BY.
+
+## 5. Status vs PRD §19
 
 Não há arquivo PRD no repositório para verificar §19. Para os critérios desta solicitação, biblioteca, limites, deduplicação, licença, seleção determinística e least-used, ausência de rede quando suficiente, modos, mix/ducking, transições, metadata e fluxo humano foram cobertos por testes. Download real de Freesound e avaliação perceptiva com trilhas musicais não foram possíveis sem a chave.
 
-## 5. Limitações
+## 6. Limitações
 
 - A única fonte automática implementada é Freesound. A atualização requer chave oficial em `FREESOUND_API_KEY`; sem ela, `update` explica a ausência e o Curio gera o vídeo sem música ou mantém SFX sintético.
 - O adapter usa previews HQ MP3, não o download original que exige OAuth2. Licenças fora de CC0/CC BY são deliberadamente recusadas. Arquivo manual é marcado como licença fornecida/não verificada.
