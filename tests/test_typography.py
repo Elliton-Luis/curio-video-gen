@@ -1056,3 +1056,64 @@ def test_a_fonte_da_legenda_continua_a_de_exibicao(tmp_path):
     from curio.stages.subs import ensure_display_font
     _, ass, _ = _legenda("people", TEXTO, tmp_path)
     assert ensure_display_font()[0] in ass
+
+
+# --- emphasis: a palavra em que a transformação chega ----------------
+
+def _papel_do_cartao(tmp_path, genre, entities=("sal", "romano")):
+    real = T.Typography.pil
+    pedidos = []
+
+    def espiao(self, role="title", size=48):
+        pedidos.append(role)
+        return real(self, role, size)
+
+    T.Typography.pil = espiao
+    try:
+        ch = Chapter(id=1, narration="A palavra vem do latim salarium.",
+                     duration_estimate=7.5, visual_type="typographic",
+                     subject="salarium", visual_entities=list(entities))
+        V.render_card("salarium", list(entities), "x", str(tmp_path),
+                      "pt-BR", 1, ch=ch, typo=T.for_genre(genre))
+    finally:
+        T.Typography.pil = real
+    return pedidos
+
+
+def test_a_palavra_de_destino_usa_o_papel_emphasis(tmp_path):
+    """`term` é o assunto; `emphasis` é a palavra em que a transformação
+    chega. São funções diferentes e o cartão precisa das duas."""
+    pedidos = _papel_do_cartao(tmp_path, "etymology")
+    assert "emphasis" in pedidos
+    assert "document" in pedidos
+    assert "term" in pedidos
+
+
+def test_ciencia_destaca_a_medida_em_mono(tmp_path):
+    """O que se destaca em ciência é o número, e número precisa alinhar."""
+    p = T.profile_for("science")
+    assert p.intent_for(T.ROLE_EMPHASIS) == T.INTENT_MONO
+    assert p.intent_for(T.ROLE_EMPHASIS) != p.intent_for(T.ROLE_TERM)
+    assert "emphasis" in _papel_do_cartao(tmp_path, "science")
+
+
+def test_misterio_destaca_a_pista_curta_e_seca(tmp_path):
+    p = T.profile_for("mystery")
+    assert p.intent_for(T.ROLE_EMPHASIS) == T.INTENT_CONDENSED
+    assert p.intent_for(T.ROLE_EMPHASIS) != p.intent_for(T.ROLE_TERM)
+
+
+def test_etimologia_destaque_e_a_palavra_maior_do_cartao():
+    p = T.profile_for("etymology")
+    assert p.size_for(T.ROLE_EMPHASIS, 46) > p.size_for(T.ROLE_TERM, 46)
+
+
+def test_generos_de_livro_nao_inventam_diferenca_entre_termo_e_destaque():
+    """People e History pedem a mesma coisa para os dois papéis.
+
+    A diferença viria de enfeite, e enfeite tipográfico sem função é o
+    que a direção de arte pediu para tirar.
+    """
+    for g in ("people", "history", "mythology"):
+        p = T.profile_for(g)
+        assert p.intent_for(T.ROLE_EMPHASIS) == p.intent_for(T.ROLE_TERM), g

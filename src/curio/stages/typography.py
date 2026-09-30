@@ -278,7 +278,7 @@ ETYMOLOGY = TypographyProfile(
            ROLE_DATE: INTENT_SANS, ROLE_LOCATION: INTENT_SANS,
            ROLE_EMPHASIS: INTENT_SERIF, ROLE_CONCEPT: INTENT_SERIF},
     scale={ROLE_TERM: 1.18, ROLE_CONCEPT: 1.12, ROLE_TITLE: 1.04,
-           ROLE_QUOTE: 0.96, ROLE_KICKER: 0.6},
+           ROLE_QUOTE: 0.96, ROLE_KICKER: 0.6, ROLE_EMPHASIS: 1.24},
     direction="A palavra é o gráfico. Termo no corpo de destaque, forma "
               "antiga em itálico, a seta de transformação como elemento "
               "tipográfico e não como seta desenhada.",
@@ -300,8 +300,10 @@ MYSTERY = TypographyProfile(
            ROLE_CAPTION: INTENT_SANS, ROLE_QUOTE: INTENT_SERIF_ITALIC,
            ROLE_DOCUMENT: INTENT_MONO, ROLE_LATIN: INTENT_SERIF_ITALIC,
            ROLE_TERM: INTENT_SANS, ROLE_DATE: INTENT_MONO,
-           ROLE_LOCATION: INTENT_MONO, ROLE_EMPHASIS: INTENT_SANS,
-           ROLE_CONCEPT: INTENT_CONDENSED},
+           ROLE_LOCATION: INTENT_MONO,
+           # O que se destaca num caso não resolvido é a pista curta e
+           # seca, e a condensada é a cara de um laudo.
+           ROLE_EMPHASIS: INTENT_CONDENSED, ROLE_CONCEPT: INTENT_CONDENSED},
     scale={ROLE_KICKER: 0.66, ROLE_DATE: 0.74, ROLE_LOCATION: 0.74,
            ROLE_QUOTE: 0.96, ROLE_TITLE: 1.04},
     direction="Arquivo. Sans condensada; mono para data, lugar e "
@@ -343,10 +345,12 @@ SCIENCE = TypographyProfile(
            ROLE_CAPTION: INTENT_SANS, ROLE_QUOTE: INTENT_SERIF_ITALIC,
            ROLE_DOCUMENT: INTENT_MONO, ROLE_LATIN: INTENT_SERIF_ITALIC,
            ROLE_TERM: INTENT_SANS, ROLE_DATE: INTENT_MONO,
-           ROLE_LOCATION: INTENT_SANS, ROLE_EMPHASIS: INTENT_SANS,
-           ROLE_CONCEPT: INTENT_SANS},
+           ROLE_LOCATION: INTENT_SANS,
+           # O que se destaca num vídeo de ciência quase sempre é a
+           # medida, e é a medida que precisa alinhar dígito a dígito.
+           ROLE_EMPHASIS: INTENT_MONO, ROLE_CONCEPT: INTENT_SANS},
     scale={ROLE_TERM: 1.1, ROLE_TITLE: 1.02, ROLE_KICKER: 0.6,
-           ROLE_DATE: 0.76},
+           ROLE_DATE: 0.76, ROLE_EMPHASIS: 1.16},
     direction="Técnica. Sans limpa, hierarquia por tamanho e espaço, "
               "mono para medida e unidade. Nada de ornamento.",
     captions=BOOK_CAPTIONS)

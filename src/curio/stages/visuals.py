@@ -720,8 +720,12 @@ def render_card(subject: str, terms: list[str], narration: str,
     chain = _card_chain(ch) if ch is not None else [
         str(t).strip() for t in (terms or []) if str(t).strip()][:4]
     if chain:
+        # A forma que a cadeia desemboca é o elemento em DESTAQUE da
+        # tela, e é o papel `emphasis` que existe para isso. O termo
+        # (`term`) é o assunto da cena; o destaque é a palavra em que a
+        # transformação chega.
         f_chain = _font(46, typo, "document")
-        f_atual = _font(46, typo, "term")
+        f_atual = _font(46, typo, "emphasis")
         y = max(y + 60, 720)
         d.line([(W // 2, y - 46), (W // 2, y - 18)], fill=ACCENT, width=5)
         d.polygon([(W // 2 - 20, y - 20), (W // 2 + 20, y - 20), (W // 2, y + 14)],
