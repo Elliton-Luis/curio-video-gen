@@ -167,13 +167,24 @@ ambiente (`CURIO_OUT_DIR`, `CURIO_TTS`, `CURIO_BACKEND`, …) sobrescrevem o
 arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
 (gitignored; veja `.env.example`).
 
+### Variáveis que valem a pena conhecer
+
+| Variável | Efeito |
+|---|---|
+| `CURIO_GENRE` | gênero editorial: `history`, `etymology`, `mythology`, `mystery`, `science`, `people` (vazio = nenhum) |
+| `CURIO_CONTACT` | **defina isto.** contato no `User-Agent`; sem ele a Wikimedia responde `429` a tudo, o que derruba a pesquisa e as imagens do Commons |
+| `CURIO_WIKI_UA` | substitui o `User-Agent` inteiro, se preferir |
+
+O `doctor` avisa quando o contato não está configurado. A Wikimedia
+exige `nome/versão (contato) biblioteca/versão`, e sem contato a resposta
+não é um erro legível — é `HTTP 429` em toda requisição.
+
 ### Seleção de mídia
 
 | Chave (config) | Variável | Padrão | O que faz |
 |---|---|---|---|
 | `[media] providers` | `CURIO_MEDIA_PROVIDERS` | `pixabay,unsplash,pexels,nasa,wikimedia` | ordem de tentativa; `none` desliga |
-| — | `CURIO_MEDIA_SCORE_MIN` | `34` | nota mínima (0–100); `0` desliga o corte |
-| — | `CURIO_MEDIA_MIN_DIMENSION` | `1080` | lado mínimo em px |
+| — | `CURIO_MEDIA_SCORE_MIN` | `34` | nota mínima (0–100); `0` desliga o corte || — | `CURIO_MEDIA_MIN_DIMENSION` | `1080` | lado mínimo em px |
 
 ### Pontuação semântica (opcional, desligada)
 

@@ -18,7 +18,9 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 
-USER_AGENT = "curio/0.1 (educational local video tool; no contact)"
+from ..ua import user_agent
+
+USER_AGENT = user_agent()  # noqa: N816 — nome histórico, importado pelo cache
 TIMEOUT = 30
 MAX_BYTES = 25 * 1024 * 1024
 MIN_DIMENSION = 1000

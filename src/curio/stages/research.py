@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 
-USER_AGENT = "curio/0.1 (educational local video tool; no contact)"
+from ..ua import user_agent
+
+USER_AGENT = user_agent()  # noqa: N816 — nome histórico, usado por testes
 WIKI_TIMEOUT = 20
 EXTRACT_CHARS = 1200  # por fonte: suficiente p/ fatos, cabe no prompt
 PROMPT_BUDGET_CHARS = 2500  # teto total do pack injetado no LLM
@@ -95,10 +98,48 @@ def extract_keywords(text: str, language: str = "pt-BR",
 
 
 def _get_json(url: str, timeout: int = WIKI_TIMEOUT):
+    """GET JSON da API da Wikimedia, com retry em 429/5xx.
+
+    A Wikimedia não sinaliza rate limit com 429 e corpo de erro: é um
+    429 puro. Sem retry, uma rajada de queries (que é justamente o que os
+    perfis de gênero provocam, porque cada um tem mais termos) mata a
+    pesquisa no meio. Duas tentativas com espera resolvem o caso comum,
+    que é o servidor pedir para voltar em instantes.
+    """
     import json
+    import time
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.load(resp)
+    ultima: Exception | None = None
+    for tentativa in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            ultima = exc
+            if exc.code == 429:
+                esperar = 1.5 * (tentativa + 1)
+            elif exc.code >= 500:
+                esperar = 0.8 * (tentativa + 1)
+            else:
+                # Não é rate limit nem servidor: repetir não muda nada.
+                # Ainda vira ResearchError, que é o contrato de _get_json.
+                raise ResearchError(f"Wikipedia recusou a requisição "
+                                    f"(HTTP {exc.code}).") from exc
+        except Exception as exc:  # noqa: BLE001 — rede falhou
+            ultima = exc
+            esperar = 0.5 * (tentativa + 1)
+        if tentativa < 2:
+            time.sleep(esperar)
+    codigo = getattr(ultima, "code", None)
+    if codigo == 429:
+        from ..ua import aviso_contato
+        raise ResearchError(
+            "A Wikimedia recusou a requisição (HTTP 429, rate limit). "
+            + (aviso_contato() + " " if aviso_contato() else "")
+            + "A rede está boa; o problema é o User-Agent."
+        ) from ultima
+    raise ResearchError(f"Wikipedia indisponível ({ultima}). "
+                        "Verifique a rede e tente de novo.") from ultima
 
 
 def _wiki_lang(language: str) -> str:

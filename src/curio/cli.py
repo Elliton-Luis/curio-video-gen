@@ -509,6 +509,15 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("fonte para título", ff.find_font_bold() is not None,
           ff.find_font_bold() or "título será omitido")
     # Informativo: ausência de chave NÃO falha o doctor (gerador local cobre).
+    # A Wikimedia não tem chave, mas tem exigência: sem contato no
+    # User-Agent ela responde 429 e a pesquisa inteira cai. Não é FALHA
+    # porque a geração local segue, mas precisa estar escrito.
+    from .ua import aviso_contato, user_agent
+    _aviso_ua = aviso_contato()
+    print(f"[{'OK' if not _aviso_ua else '--'}] User-Agent Wikimedia"
+          f"{'' if not _aviso_ua else ' — ' + user_agent()}")
+    if _aviso_ua:
+        print(f"       {_aviso_ua}")
     # Chain LLM: NVIDIA → OpenRouter → Gemini → Groq (1º com chave tenta).
     _llm_models = {"nvidia": cfg.nvidia_model, "openrouter": cfg.openrouter_model,
                    "gemini": cfg.gemini_model, "groq": cfg.groq_model}
