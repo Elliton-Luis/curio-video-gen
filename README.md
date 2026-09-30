@@ -462,6 +462,25 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 | Título | pergunta curta gerada pela IA a partir do roteiro (metadados `video_title`), queimada nos primeiros 5 s |
 | Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |
 
+### Diagnósticos de fontes e mídia
+
+- Afirmações numéricas sem correspondência nas fontes continuam passando
+  pelo mesmo gate de grounding. O aviso inclui o trecho do roteiro, a causa
+  provável e as fontes avaliadas; consulte `sources/FONTES.md` para o relatório
+  completo.
+- Providers sem configuração necessária, como Pexels sem `PEXELS_API_KEY`,
+  avisam uma vez por execução. A cascata de fallback continua usando os outros
+  providers disponíveis.
+- `metadata.json` registra `provider_downloads` por provider: candidatos
+  encontrados, downloads tentados/sucedidos/falhos, HTTP 403 e outros erros.
+  Cache hits não contam como novos downloads.
+- `media.json` registra assets repetidos em `reuse` com as cenas e o motivo
+  `same_top_match`; a reutilização continua permitida. Cenas sem foto adequada
+  podem receber cards ou diagramas semânticos.
+
+O relatório do caso São Jerônimo, incluindo validação e limitações, está em
+[`docs/relatorios/20260930-144326_relatorio_diagnosticos-sao-jeronimo.md`](docs/relatorios/20260930-144326_relatorio_diagnosticos-sao-jeronimo.md).
+
 ## Roadmap
 
 - **MVP (agora):** pipeline básico provando ideia → vídeo publicável.
