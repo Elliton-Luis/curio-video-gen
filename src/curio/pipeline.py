@@ -1052,7 +1052,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         from .stages import review as review_stage
         review_stage.write_contact_sheet(
             paths.contact_sheet, chapters, media_scenes, paths.root, slug,
-            threshold=scoring_stage.threshold())
+            threshold=scoring_stage.threshold(), genre=genre_key)
     stage_times["finalize"] = 0.0
     metadata["stage_times"] = stage_times
     metadata["metrics_file"] = metrics.save(metadata, stage_times,

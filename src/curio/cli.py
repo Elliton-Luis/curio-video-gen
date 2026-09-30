@@ -301,13 +301,20 @@ def cmd_review(args, cfg: CurioConfig) -> int:
         return 1
     chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
     media = _read_json(paths.media_json) if os.path.isfile(paths.media_json) else []
+    # O gênero vive no metadata.json, escrito na geração. Um projeto
+    # antigo não tem a chave: aí não há gênero para mostrar, e a revisão
+    # sai igual à de antes.
+    _meta = _read_json(paths.metadata_json) if os.path.isfile(
+        paths.metadata_json) else {}
+    genre = str(_meta.get("genre") or "")
     if args.dry_run:
         print(review_stage.dry_run_text(chapters, media,
-                                        threshold=scoring_stage.threshold()))
+                                        threshold=scoring_stage.threshold(),
+                                        genre=genre))
         return 0
     out = review_stage.write_contact_sheet(
         paths.contact_sheet, chapters, media, paths.root, slug,
-        threshold=scoring_stage.threshold())
+        threshold=scoring_stage.threshold(), genre=genre)
     print(f"Folha de contato: {out}")
     return 0
 

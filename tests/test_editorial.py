@@ -7,6 +7,8 @@ medium, outra densidade de legenda. Se esses números batem, o gênero é
 rótulo.
 """
 
+import pathlib
+
 import pytest
 
 from curio.config import CurioConfig
@@ -520,3 +522,52 @@ def test_scenes_for_script_respeita_o_genero():
 
 def test_teto_aparece_no_resumo_do_perfil():
     assert E.summary(E.get("etymology"))["pacing"]["max_scenes"] == 20
+
+
+# --- o gênero precisa aparecer onde se julga o vídeo -------------------
+
+def test_banner_do_genero_mostra_os_numeros_do_perfil():
+    from curio.stages import review as R
+    b = R.genre_banner("people")
+    assert "História de pessoas" in b
+    assert "13s/cena" in b
+    assert "até 10 cenas" in b
+    assert "legenda 6 palavras" in b
+
+
+def test_banner_vazio_sem_genero_ou_genero_desconhecido():
+    from curio.stages import review as R
+    assert R.genre_banner("") == ""
+    assert R.genre_banner("inexistente") == ""
+
+
+def test_dry_run_mostra_o_genero_e_nao_mostra_quando_nao_ha():
+    from curio.stages import review as R
+    from curio.stages.scenes import Chapter
+    ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
+                  visual_type="card", subject="x")]
+    com = R.dry_run_text(ch, [], genre="etymology")
+    assert "Gênero:" in com
+    assert "Etimologia" in com
+    assert "Gênero:" not in R.dry_run_text(ch, [])
+
+
+def test_folha_de_contato_mostra_o_genero(tmp_path):
+    from curio.stages import review as R
+    from curio.stages.scenes import Chapter
+    ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
+                  visual_type="card", subject="x")]
+    out = str(tmp_path / "contact_sheet.html")
+    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj", genre="science")
+    html = pathlib.Path(out).read_text(encoding="utf-8")
+    assert "Ciência" in html and "14s/cena" in html
+    out2 = str(tmp_path / "sem.html")
+    R.write_contact_sheet(out2, ch, [], str(tmp_path), "proj")
+    assert "s/cena" not in pathlib.Path(out2).read_text(encoding="utf-8")
+
+
+def test_projeto_antigo_sem_genero_ainda_revisa():
+    """metadata.json sem a chave é o caso de todo projeto anterior."""
+    from curio.stages import review as R
+    meta = {"title": "x"}
+    assert R.genre_banner(str(meta.get("genre") or "")) == ""
