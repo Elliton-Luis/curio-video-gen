@@ -80,6 +80,33 @@ def test_unsplash_parsing_e_licenca(monkeypatch):
     assert (a.width, a.height) == (4000, 6000)
 
 
+def test_pixabay_usa_ua_de_navegador_e_per_page_minimo(monkeypatch):
+    """Cloudflare do Pixabay barra UA de bot (1010); per_page < 3 dá 400."""
+    import urllib.parse as _up
+    import urllib.request as _ur
+
+    monkeypatch.setenv("PIXABAY_API_KEY", "fake-key")
+    prov = P.PixabayProvider()
+    captured = {}
+
+    def spy(req, timeout=30):
+        captured["ua"] = req.get_header("User-agent")
+        captured["url"] = req.full_url
+
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"totalHits": 0, "hits": []}'
+
+        return R()
+
+    monkeypatch.setattr(_ur, "urlopen", spy)
+    assert prov.search("microscope", limit=2) == []
+    assert "Mozilla" in captured["ua"]
+    qs = dict(_up.parse_qsl(_up.urlsplit(captured["url"]).query))
+    assert int(qs["per_page"]) >= 3, qs
+
+
 def test_unsplash_sem_chave_falha_explicita(monkeypatch):
     monkeypatch.delenv("UNSPLASH_ACCESS_KEY", raising=False)
     with pytest.raises(P.MediaError, match="UNSPLASH_ACCESS_KEY"):

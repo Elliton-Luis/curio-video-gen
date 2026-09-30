@@ -248,10 +248,16 @@ class OpenverseProvider(MediaProvider):
 
 class PixabayProvider(MediaProvider):
     """Pixabay: exige PIXABAY_API_KEY (grátis com cadastro). Fotos e
-    ilustrações sem marca d'água, licença Pixabay (uso livre)."""
+    ilustrações sem marca d'água, licença Pixabay (uso livre).
+
+    Usa User-Agent de navegador: o Cloudflare do Pixabay barra UAs de
+    bot (erro 1010) mesmo com chave válida.
+    """
 
     name = "pixabay"
     API = "https://pixabay.com/api/"
+    BROWSER_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
     def __init__(self) -> None:
         import os as _os
@@ -265,12 +271,13 @@ class PixabayProvider(MediaProvider):
             "key": self.key,
             "q": query,
             "image_type": "photo",
-            "per_page": str(min(limit, 20)),
+            # Pixabay exige per_page entre 3 e 200 (fora disso dá 400).
+            "per_page": str(max(3, min(limit, 20))),
             "safesearch": "true",
         }
         req = urllib.request.Request(
             self.API + "?" + urllib.parse.urlencode(params),
-            headers={"User-Agent": USER_AGENT})
+            headers={"User-Agent": self.BROWSER_UA})
         if metrics is not None:
             metrics.media_search(self.name)
         try:
