@@ -71,6 +71,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260929-174157_relatorio_legendas-shorts-reels.md` — legendas
   Shorts/Reels/TikTok (uppercase, glitch highlight, fade-in, timestamp folder);
   `smoke.sh` com 87 cheques.
+- `relatorios/20260930-144326_relatorio_diagnosticos-sao-jeronimo.md` — contexto
+  estruturado de São Jerônimo, grounding explicativo, diagnóstico de providers,
+  timeout LLM configurável e evidências/limitações da validação manual.
 
 ## Análises (estado, gaps, riscos)
 
