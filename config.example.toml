@@ -116,3 +116,49 @@ model = "base"  # faster-whisper local (tiny|base|small|medium)
 [research]
 max_sources = 3  # fontes web exigidas p/ grounding (≥1; CURIO_RESEARCH_MAX_SOURCES)
 timeout = 20  # teto por chamada da Wikipedia em segundos (CURIO_RESEARCH_TIMEOUT)
+
+# --- Tipografia por gênero -------------------------------------------
+# A fonte decide por PAPEL, não globalmente: a narração e a citação são
+# vozes diferentes e precisam parecer diferentes. A cena declara a
+# função ("quote", "latin", "person") e o perfil abaixo decide o desenho.
+#
+# Nenhuma fonte é baixada. O curio pergunta ao fontconfig o que já está
+# instalado e cai numa cadeia genérica quando a pedida não existe — o
+# `doctor` mostra qual fonte respondeu. A Minion Pro é proprietária:
+# instale você, se quiser.
+#
+# Chaves aceitas por gênero: primary (serifada), italic (serifada
+# inclinada), sans, mono, condensed, fallback. Trocar `primary` move
+# todos os papéis serifados de uma vez.
+[typography.people]
+primary = "Minion Pro"
+italic = "Minion Pro Italic"
+#sans = "Inter"
+#mono = "Source Code Pro"
+#fallback = "EB Garamond"
+
+# Escape hatch: a fonte de UM papel só. Útil quando um gênero tem uma
+# voz que não é a do resto.
+#[typography.people.roles]
+#quote = "Cormorant Garamond"
+
+# Os outros cinco, para quando você escolher outro gênero. Comentados
+# para não atrapalhar quem só quer o de people.
+#[typography.history]
+#primary = "Minion Pro"
+#italic = "Minion Pro Italic"
+#[typography.etymology]
+#primary = "EB Garamond"
+#italic = "EB Garamond Italic"
+#[typography.mystery]
+#sans = "Roboto Condensed"
+#mono = "IBM Plex Mono"
+#[typography.mythology]
+#primary = "Adobe Caslon Pro"
+#[typography.science]
+#sans = "Inter"
+#mono = "JetBrains Mono"
+
+# As legendas NÃO são redirecionadas por aqui, e isso é deliberado: a
+# fonte de exibição pesada fica, porque legibilidade vale mais que
+# estilo. A identidade entra no título, na citação, no cartão e no nome.

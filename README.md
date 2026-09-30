@@ -142,6 +142,110 @@ revisão o lê sem reclamar.
 
 Via CLI, use `CURIO_GENRE` ou `genre` no `config.toml`.
 
+## Tipografia por gênero
+
+Trocar a fonte do vídeo inteiro não cria identidade editorial — cria uma
+diferença de glifo. O que faz um vídeo de História de Pessoas parecer um
+livro em vez de um post é a distinção entre **a voz que narra** e **a voz
+que cita**. Por isso a fonte decide por **papel**, e não globalmente.
+
+A cena declara a **função** do texto, nunca a fonte:
+
+```json
+{"text": "Ora et labora", "role": "quote", "language": "la"}
+```
+
+E o perfil do gênero decide o desenho. Uma cena que escrevesse
+`font = "Minion Pro Italic"` quebraria a abstração no instante em que o
+gênero muda, e trocar de gênero é justamente o que precisa ser barato.
+
+### Os papéis
+
+`title` · `person` · `subtitle` · `kicker` · `caption` · `quote` ·
+`document` · `latin` · `term` · `date` · `location` · `emphasis` · `concept`
+
+O papel mapeia para uma **intenção** (`serif`, `serif_italic`, `sans`,
+`mono`, `condensed`), e a intenção resolve para uma família. É essa
+separação que permite que dois gêneros usem as mesmas intenções com
+fontes diferentes, e que trocar `primary` mova todos os papéis serifados
+de uma vez.
+
+Em `people`, `title` e `person` são serifada de leitura, e `quote`,
+`document` e `latin` são **itálico serifado** — a Minion Pro Italic é
+recurso editorial, nunca a fonte do vídeo. A legenda fica de fora por
+decisão: legibilidade vale mais que estilo, e nenhuma configuração
+redireciona esse papel.
+
+### As fontes de cada gênero
+
+| gênero | serifada / itálico | sem serifa | mono |
+|---|---|---|---|
+| `people` | Minion Pro / Minion Pro Italic | Inter | Source Code Pro |
+| `history` | Minion Pro / Minion Pro Italic | Inter | Source Code Pro |
+| `etymology` | EB Garamond / EB Garamond Italic | Inter | Source Code Pro |
+| `mythology` | Adobe Caslon Pro / Adobe Caslon Pro Italic | Inter | Source Code Pro |
+| `mystery` | Source Serif Pro / Source Serif Pro Italic | Roboto Condensed | IBM Plex Mono |
+| `science` | Noto Serif | Inter | JetBrains Mono |
+
+`etymology` põe o termo em corpo de destaque porque ali a tipografia **é**
+o diagrama: as formas históricas da cadeia recebem o tratamento
+documental, e a forma atual fica no corpo de título. `mystery` usa mono
+para data, lugar e identificador, o que separa fato de testemunho na
+tela. `science` não tem ornamento em lugar nenhum.
+
+### Fontes: nunca assumidas, nunca baixadas
+
+A Minion Pro é proprietária e não está em máquina nenhuma por padrão.
+O curio **não baixa fonte alguma** — nem a proprietária, nem uma
+substituta. Ele pergunta ao fontconfig o que já está instalado e, quando
+a pedida não existe, cai numa cadeia genérica da mesma função
+(`EB Garamond` → `Noto Serif` → `Liberation Serif` para serifada;
+`Noto Sans` → `Liberation Sans` para sem serifa).
+
+Duas armadilhas do fontconfig são tratadas explicitamente:
+
+- ele **substitui em silêncio**. `fc-match "Minion Pro"` responde
+  `Noto Sans`. O curio exige que o nome pedido volte na família
+  resolvida, senão isso não é fallback, é outra fonte;
+- quando a família **não tem itálico**, ele devolve o **regular** e
+  reporta sucesso. `fc-match "EB Garamond:italic"` responde `Regular`
+  aqui. Aceitar isso colocaria a citação na mesma fonte da narração e a
+  distinção inteira sumiria **sem erro e sem log**. O curio confere o
+  estilo resolvido e cai para a próxima candidata se não for itálico.
+
+O itálico que vence é o **irmão da família que a voz principal já
+resolveu**: título em EB Garamond pede o itálico do EB Garamond, e não
+"qualquer serifada". Sem isso a citação sairia numa família parecida com
+a do título, o que parece acidente em vez de decisão.
+
+`video-gen doctor` diz, papel a papel, qual família foi pedida e qual
+respondeu. "Minion Pro não está instalada" é uma frase que o autor
+precisa ler antes de gastar quarenta minutos de render.
+
+### Trocar a fonte
+
+No `config.toml`, por gênero e por intenção:
+
+```toml
+[typography.people]
+primary = "Minion Pro"        # todos os papéis serifados
+italic = "Minion Pro Italic"  # citação, documento, latim
+fallback = "EB Garamond"      # cabeça da cadeia genérica
+
+[typography.people.roles]
+quote = "Cormorant Garamond"  # escape hatch: um papel só
+```
+
+Nomes são escritos como se escreve: `italic = "Liberation Serif Italic"`
+funciona, porque o sufixo de estilo vira a consulta `família:italic`.
+Uma família que não exista **não** apaga a serifada do papel — ela cai
+na cadeia do gênero. Também por ambiente, para quem não mantém
+config.toml:
+
+```sh
+CURIO_TYPOGRAPHY_PEOPLE="primary=Minion Pro;italic=Minion Pro Italic"
+```
+
 ## Escolha visual: como cada cena é visualizada
 
 O requisito não é que a cena tenha uma **fotografia** — é que ela tenha
@@ -218,6 +322,7 @@ arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
 | Variável | Efeito |
 |---|---|
 | `CURIO_GENRE` | gênero editorial: `history`, `etymology`, `mythology`, `mystery`, `science`, `people` (vazio = nenhum) |
+| `CURIO_TYPOGRAPHY_<GÊNERO>` | fonte por gênero sem config.toml: `"primary=Minion Pro;italic=Minion Pro Italic"` |
 | `CURIO_CONTACT` | **defina isto.** contato no `User-Agent`; sem ele a Wikimedia responde `429` a tudo, o que derruba a pesquisa e as imagens do Commons |
 | `CURIO_WIKI_UA` | substitui o `User-Agent` inteiro, se preferir |
 
