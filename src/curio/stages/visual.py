@@ -608,11 +608,22 @@ def _relevance(query: str, asset: MediaAsset) -> int:
     return sum(1 for term in _query_terms(query) if term in haystack)
 
 
-def _provider_priority_order(cfg: CurioConfig) -> list[MediaProvider]:
-    """Retorna provedores na ordem de prioridade rigorosa."""
+def _provider_priority_order(cfg: CurioConfig, ch=None) -> list[MediaProvider]:
+    """Provedores na ordem de prioridade para ESTA cena.
+
+    Para `historical_art` os acervos de arte sobem: uma foto de banco
+    moderno é pior que nenhuma imagem para um santo do século XIII, e o
+    Wikimedia Commons guarda pintura, fresco, manuscrito e escultura em
+    domínio público sem chave. A ordem global continua valendo para os
+    demais tipos - a escada é por cena, não uma preferência permanente.
+    """
     all_providers = get_providers(cfg)
-    # Ordena pela hierarquia definida
-    priority_map = {name: i for i, name in enumerate(PROVIDER_PRIORITY)}
+    order = list(PROVIDER_PRIORITY)
+    if str(getattr(ch, "visual_type", "") or "") == "historical_art":
+        art_first = [p for p in ("wikimedia", "openverse")
+                     if p in order]
+        order = art_first + [p for p in order if p not in art_first]
+    priority_map = {name: i for i, name in enumerate(order)}
     return sorted(all_providers, key=lambda p: priority_map.get(p.name, 999))
 
 
@@ -623,6 +634,13 @@ GENERIC_FALLBACK_QUERIES = (
     "laboratory", "microscope", "science", "research", "experiment",
     "test tube",
 )
+
+# Meios que trazem ARTE para a frente numa busca. A ordem é o que o
+# acervo tem de mais primeiro: pintura e fresco são o grosso do
+# Wikimedia Commons para temas religiosos e antigos.
+ART_MEDIA_HINTS = ("painting", "fresco", "engraving", "woodcut",
+                   "illustration", "manuscript", "altarpiece", "mosaic",
+                   "drawing", "etching")
 
 # Cenas de mecanismo (ex.: anticorpo, linha de controle): bancos de foto
 # mostram mãos/testes genéricos — L3/L4 + diagrama sintético cobrem.
@@ -662,6 +680,14 @@ def _waterfall_queries(ch) -> list[str]:
             _add(term)
     for term in list(getattr(ch, "global_visual_queries", []) or []):
         _add(term)
+    if str(getattr(ch, "visual_type", "") or "") == "historical_art":
+        # Cena histórica precisa de ARTE, e o vocabulário que traz arte
+        # para a frente é o meio, não o assunto. "saint francis" sozinho
+        # devolve foto moderna de estátua em praça; "saint francis
+        # painting" devolve o fresco.
+        for term in list(ai[:2]) or list(getattr(ch, "visual_entities", []) or [])[:2]:
+            for meio in ART_MEDIA_HINTS:
+                _add(f"{term} {meio}")
     if ai:
         _add(" ".join(ai[:2]) + " diagram")
     for term in GENERIC_FALLBACK_QUERIES:
@@ -940,7 +966,15 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     genéricos; cena de mecanismo sem nada ganha diagrama sintético.
     """
     max_images = max(1, min(5, int(max_images)))
-    providers = _provider_priority_order(cfg)
+    # A ordem de provedores é por cena: histórica quer acervo de arte
+    # primeiro, as demais mantêm a ordem global.
+    providers = []
+    seen_names: set[str] = set()
+    for ch in chapters:
+        for prov in _provider_priority_order(cfg, ch):
+            if prov.name not in seen_names:
+                seen_names.add(prov.name)
+                providers.append(prov)
     if not providers:
         return _fetch_media_fallback(chapters, max_images, warnings=[])
     

@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from curio.stages import visuals
+from curio.stages import scoring, visuals
 from curio.stages.scenes import Chapter
 
 PIL = pytest.importorskip("PIL")
@@ -170,3 +170,90 @@ def test_visual_entra_no_render_sem_ajuste(tmp_path):
                                             str(tmp_path / "seg.mp4"), cfg, 0)
     assert os.path.isfile(seg)
     assert os.path.getsize(seg) > 1000
+
+
+# --- pontuação: núcleo prova o assunto, apoio só desempata ------------
+
+def _ch_score(subject, entities=(), queries=()):
+    return Chapter(id=1, narration="n", duration_estimate=5.0,
+                   visual_type="literal", subject=subject,
+                   visual_entities=list(entities), context=[],
+                   visual_queries=list(queries))
+
+
+def test_titulo_de_acervo_nao_perde_a_primeira_palavra():
+    """'File:Saint Francis' não pode virar 'file:saint' e não casar.
+
+    Separar token só por espaço colava o prefixo do Wikimedia na
+    primeira palavra — ou seja, todo título de acervo perdia um termo, e
+    justamente nos provedores sem chave que guardam a arte pública.
+    """
+    ch = _ch_score("saint francis of assisi")
+    nota = scoring.base_score(
+        {"title": "File:Saint Francis of Assisi - Allori.jpg"}, ch)
+    # cobertura total do núcleo = CORE_MAX (o bônus de apoio é que leva
+    # até 100; aqui a cena não pediu apoio)
+    assert nota["score"] == scoring.CORE_MAX
+    assert nota["matched"] == ["saint", "francis", "assisi"]
+
+
+def test_uma_palavra_do_assunto_nao_basta_para_entrar():
+    """'thermal' contra o sujeito 'thermal receipt paper' não é o tema."""
+    ch = _ch_score("thermal receipt paper",
+                   entities=["thermal printer", "heat", "dye change"])
+    nota = scoring.base_score({"title": "thermal power station at dusk"}, ch)
+    assert nota["score"] < scoring.DEFAULT_THRESHOLD
+    ok, _low = scoring.below_threshold([{"score": nota["score"]}])
+    assert not ok, "a usina voltou a passar"
+
+
+def test_bonus_de_apoio_nao_compra_imagem_errada():
+    ch = _ch_score("thermal receipt paper",
+                   entities=["thermal", "power", "station"])
+    # casaria com apoio, mas o núcleo não prova nada
+    nota = scoring.base_score({"title": "thermal power station"}, ch)
+    assert nota["support"], "o título casa com as entidades"
+    assert nota["score"] < scoring.DEFAULT_THRESHOLD
+
+
+def test_entidade_presente_desempata_a_favor():
+    """Duas imagens do mesmo assunto: vence a que tem o apoio pedido."""
+    ch = _ch_score("saint francis of assisi", entities=["fresco", "monk"])
+    sem = scoring.base_score({"title": "saint francis of assisi statue"}, ch)
+    com = scoring.base_score(
+        {"title": "saint francis of assisi fresco with monk"}, ch)
+    assert com["score"] > sem["score"]
+    assert "fresco" in com["support"]
+
+
+def test_assunto_dominina_as_consultas():
+    """Consultas são busca, não identidade: não podem diluir o sujeito."""
+    ch = _ch_score("saint francis of assisi",
+                   queries=["saint francis assisi", "franciscan friar"])
+    nota = scoring.base_score(
+        {"title": "File:Saint Francis in Ecstasy.jpg"}, ch)
+    # 2 de 3 palavras do assunto: as consultas NÃO entraram no denominador,
+    # então a nota é 2/3 do núcleo, bem acima do corte
+    assert nota["score"] == pytest.approx(scoring.CORE_MAX * 2 / 3, abs=1)
+    ok, _low = scoring.below_threshold([{"score": nota["score"]}])
+    assert ok
+
+
+def test_sem_assunto_usa_a_narracao_como_nucleo():
+    ch = Chapter(id=1, narration="Rome preserved food with salt.",
+                 duration_estimate=5.0, visual_type="literal")
+    nota = scoring.base_score({"title": "Rome preserved food with salt"}, ch)
+    assert nota["score"] > 0
+
+
+def test_arte_historica_passa_e_foto_moderna_nao():
+    """Critério de aceite 2: a arte entra, a foto de banco não."""
+    ch = _ch_score("saint francis of assisi", entities=["fresco", "monk"])
+    arte = scoring.base_score(
+        {"title": "File:Saint Francis in Ecstasy - Zurbaran.jpg"}, ch)
+    foto = scoring.base_score(
+        {"title": "File:Assisi Basilica - modern tourist photo"}, ch)
+    assert arte["score"] > foto["score"]
+    ok_arte, _ = scoring.below_threshold([{"score": arte["score"]}])
+    ok_foto, _ = scoring.below_threshold([{"score": foto["score"]}])
+    assert ok_arte and not ok_foto
