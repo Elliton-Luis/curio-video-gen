@@ -45,6 +45,8 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # timeout_max = 15      # teto do mesmo timeout. Padrão 15 = o comportamento
 #                       # antigo. Suba só se o seu modelo for lento demais e
 #                       # você aceitar esperar mais antes do fallback.
+# Com os outros providers indisponíveis, a NVIDIA entra em fallback final
+# resiliente: até 5 tentativas sem timeout; 401/403/404 encerram sem retry.
 
 # Fallback automático quando a NVIDIA falha (roteiro e cenas).
 # Chave via .env (OPENROUTER_API_KEY); aqui só modelo/base.

@@ -10,8 +10,8 @@ cada um pulado sem chave, tentado com retries quando há chave:
 4. Groq (GROQ_API_KEY; GROQ_MODEL, padrão openai/gpt-oss-120b).
 - Robustez em rodízio: a NVIDIA falhou 1x, já troca — a rotação
   intercala a NVIDIA entre os fallbacks (N, OpenRouter, N, Gemini, N,
-  Groq…), até CURIO_LLM_ATTEMPTS tentativas totais (padrão 6) com backoff
-  nas transitórias (timeout, conexão, HTTP 429/5xx). 401/403 (chave
+  Groq…), até CURIO_LLM_ATTEMPTS rodadas globais (padrão 6); cada rodada
+  pode conter retries HTTP internos com backoff. 401/403 (chave
   inválida) e 404 (modelo inexistente) eliminam o provedor do rodízio na
   hora. No fim, erro com levantamento completo: tentativas, últimos erros
   e chaves ausentes.
@@ -230,7 +230,7 @@ class _Skipped(RuntimeError):
 
 
 def max_attempts() -> int:
-    """Tentativas totais no rodízio: 6 por padrão (CURIO_LLM_ATTEMPTS)."""
+    """Rodadas globais de provider: 6 por padrão (CURIO_LLM_ATTEMPTS)."""
     try:
         return max(1, min(12, int(os.environ.get("CURIO_LLM_ATTEMPTS", "6"))))
     except ValueError:
@@ -417,7 +417,7 @@ def _http_error_message(status: int, body: str, model: str,
 
 
 def _post_once(messages: list[dict], key: str, model: str, base_url: str,
-               timeout: int, max_tokens: int, temperature: float,
+               timeout: int | None, max_tokens: int, temperature: float,
                pid: str, json_mode: bool = False) -> dict:
     """Uma tentativa HTTP. Erro transitório sai marcado (retryable=True)."""
     spec = PROVIDER_SPECS[pid]
@@ -450,15 +450,17 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
                                               spec["models_url"]))
         # 401/403/404 são definitivos (repetir não adianta); o resto repete.
         err.retryable = exc.code == 429 or 500 <= exc.code < 600
+        err.http_attempts = 1
         raise err from exc
     except (socket.timeout, TimeoutError) as exc:
-        err = NvidiaError(
-            f"etapa {display}: timeout após {timeout}s com o modelo {model}."
-        )
+        prazo = f"após {timeout}s" if timeout is not None else "sem timeout configurado"
+        err = NvidiaError(f"etapa {display}: timeout {prazo} com o modelo {model}.")
         err.retryable = True
+        err.http_attempts = 1
         # Timeout = provedor lento: não repetir aqui dentro (evita 6×15s
         # no mesmo provedor); o rodízio troca imediatamente de provedor.
-        err.fast_fail = True
+        # O fallback resiliente final controla seus próprios 5 retries.
+        err.fast_fail = timeout is not None
         raise err from exc
     except urllib.error.URLError as exc:
         err = NvidiaError(
@@ -466,16 +468,28 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
             f"Motivo provável: {exc.reason}. Verifique rede e base_url."
         )
         err.retryable = True
+        err.http_attempts = 1
+        raise err from exc
+    except OSError as exc:
+        # Alguns resets/desconexões HTTP chegam sem serem encapsulados em
+        # URLError (por exemplo RemoteDisconnected); também são transitórios.
+        err = NvidiaError(
+            f"etapa {display}: conexão interrompida pela API. "
+            f"Motivo provável: {exc}. Verifique rede e base_url."
+        )
+        err.retryable = True
+        err.http_attempts = 1
         raise err from exc
 
 
 def _post_with_retries(messages: list[dict], key: str, model: str,
                        base_url: str, timeout: int, max_tokens: int,
                        temperature: float, pid: str, json_mode: bool = False) -> dict:
-    """Até N tentativas com backoff para falhas transitórias.
+    """Até N requests HTTP dentro de uma rodada de provider.
 
-    N = CURIO_LLM_ATTEMPTS (padrão 5). Erro definitivo (401/403/404) ou
-    esgotamento levantam o último NvidiaError com o nº de tentativas.
+    N = `max_attempts()` (padrão 6). Este contador é interno à rodada; `_chat`
+    conta rodadas globais separadamente. Erro definitivo, timeout fast-fail ou
+    esgotamento propagam `http_attempts` para o levantamento final.
     """
     display = PROVIDER_SPECS[pid]["display"]
     attempts, last = max_attempts(), None
@@ -485,12 +499,16 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
                               max_tokens, temperature, pid, json_mode)
         except NvidiaError as exc:
             last = exc
+            exc.http_attempts = i
             if getattr(exc, "fast_fail", False):
                 raise last  # timeout: troca de provedor já, sem retry interno
             if not getattr(exc, "retryable", False) or i == attempts:
                 if i == attempts and getattr(exc, "retryable", False):
                     last = NvidiaError(
                         f"{exc} (após {attempts} tentativas)")
+                    last.retryable = True
+                    last.retry_exhausted = True
+                    last.http_attempts = i
                 raise last
             delay = RETRY_BASE_DELAY * (2 ** (i - 1))
             print(f"[{display}] tentativa {i}/{attempts} falhou "
@@ -618,10 +636,11 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
           timeout_max: int | None = None) -> tuple[dict, str]:
     """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
 
-    Cada tentativa vai ao próximo da rotação; erro definitivo (401/403/404)
+    Cada rodada vai ao próximo provider da rotação; erro definitivo (401/403/404)
     elimina o provedor do rodízio. Retorna (body, rótulo-do-provedor).
-    Esgotado o budget (ou os provedores), levanta NvidiaError com o
-    levantamento completo: tentativas, últimos erros e chaves ausentes.
+    O budget global conta rodadas; os retries HTTP internos são contabilizados
+    à parte. Esgotado o budget, se só NVIDIA restar, usa fallback final sem
+    timeout em vez de encerrar com ela ainda viável.
 
     `prefer` reordena o rodízio sem intercalar a NVIDIA (para JSON).
     O timeout por chamada é limitado ao teto configurado (15 s por
@@ -650,14 +669,23 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
             "LLM indisponível (nenhuma chave): " + " | ".join(skipped) + ". "
             "Defina ao menos uma no .env — veja .env.example.")
     budget, made = max_attempts(), 0
+    rounds: dict[str, int] = {}
     attempts: dict[str, int] = {}
     last_err: dict[str, str] = {}
+    nvidia_last_candidate = False
     for pid in _rotation(list(live), interleave_nvidia=not prefer):
-        if made >= budget or not live:
+        if not live:
+            break
+        if live == ["nvidia"]:
+            return _nvidia_resilient_fallback(
+                messages, model, base_url, max_tokens, temperature, json_mode,
+                metrics, budget, made, rounds, attempts, last_err, skipped)
+        if made >= budget:
             break
         if pid not in live:
             continue  # eliminado do rodízio por erro definitivo
         made += 1
+        rounds[pid] = rounds.get(pid, 0) + 1
         om, ob = resolved[pid]
         dft_model, dft_base = llm_settings(pid)
         use_model, use_base = om or dft_model, ob or dft_base
@@ -675,41 +703,74 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
                                       teto_pid, max_tokens, temperature, pid,
                                       json_mode)
         except NvidiaError as exc:
-            attempts[pid] = attempts.get(pid, 0) + 1
+            attempts[pid] = (attempts.get(pid, 0) +
+                             max(1, int(getattr(exc, "http_attempts", 1))))
             last_err[pid] = str(exc)
             if not getattr(exc, "retryable", False):
                 live.remove(pid)  # definitivo: fora do rodízio
                 print(f"[{PROVIDER_SPECS[pid]['display']}] erro definitivo "
                       f"— fora do rodízio: {exc}", flush=True)
-                continue
-            if getattr(exc, "fast_fail", False):
+            elif getattr(exc, "retry_exhausted", False):
+                # O retry interno já consumiu o orçamento HTTP desse provider
+                # nesta execução; não reinicia outro bloco 1/6 depois.
+                live.remove(pid)
+                if pid == "nvidia":
+                    nvidia_last_candidate = True
+                print(f"[{PROVIDER_SPECS[pid]['display']}] esgotou "
+                      f"{getattr(exc, 'http_attempts', 1)} tentativa(s) HTTP "
+                      f"nesta rodada.", flush=True)
+            elif getattr(exc, "fast_fail", False):
                 print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
                       f"{made}/{budget} falhou (timeout): {exc} — "
                       f"trocando de provedor já…", flush=True)
-                continue  # sem backoff: provedor lento não bloqueia o rodízio
-            if made < budget and live:
+                if pid != "nvidia":
+                    # Timeout rápido põe os fallbacks no banco nesta execução;
+                    # a NVIDIA fica elegível para o modo final sem timeout.
+                    live.remove(pid)
+            elif made < budget and live:
                 delay = min(30.0, RETRY_BASE_DELAY * (2 ** (made - 1)))
                 print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
                       f"{made}/{budget} falhou (transitório): {exc} — "
                       f"rodízio em {delay:.0f}s…", flush=True)
                 time.sleep(delay)
+            if live == ["nvidia"]:
+                return _nvidia_resilient_fallback(
+                    messages, model, base_url, max_tokens, temperature,
+                    json_mode, metrics, budget, made, rounds, attempts,
+                    last_err, skipped)
+            if not live and nvidia_last_candidate:
+                return _nvidia_resilient_fallback(
+                    messages, model, base_url, max_tokens, temperature,
+                    json_mode, metrics, budget, made, rounds, attempts,
+                    last_err, skipped)
             continue
         if metrics is not None:
             metrics.nvidia(f"{pid}:{use_model}", (body or {}).get("usage"))
         return body, f"{pid}:{use_model}"
+    if live == ["nvidia"] or (not live and nvidia_last_candidate):
+        return _nvidia_resilient_fallback(
+            messages, model, base_url, max_tokens, temperature, json_mode,
+            metrics, budget, made, rounds, attempts, last_err, skipped)
     raise NvidiaError(_survey(budget, made, attempts, last_err,
-                              skipped, live))
+                              skipped, live, rounds))
 
 
 def _survey(budget: int, made: int, attempts: dict, last_err: dict,
-            skipped: list[str], remaining: list[str]) -> str:
-    """Levantamento final: o que foi tentado, onde parou, o que falta."""
-    parts = [f"LLM indisponível após {made}/{budget} tentativa(s)"]
+            skipped: list[str], remaining: list[str], rounds: dict | None = None,
+            final_attempts: int = 0, final_outcome: str = "") -> str:
+    """Levantamento final; separa rodadas do rodízio de requests HTTP."""
+    rounds = rounds or {}
+    parts = [f"LLM indisponível após {made}/{budget} rodada(s) globais"]
     for pid in PROVIDER_ORDER:
         spec = PROVIDER_SPECS[pid]
         if pid in attempts:
-            parts.append(f"{spec['display']}: {attempts[pid]} tentativa(s), "
+            parts.append(f"{spec['display']}: {attempts[pid]} tentativa(s) HTTP "
+                         f"em {rounds.get(pid, 0)} rodada(s), "
                          f"último erro: {last_err.get(pid, '?')}")
+    if final_attempts:
+        parts.append(f"NVIDIA fallback resiliente: {final_attempts}/5 tentativa(s) "
+                     f"sem timeout ({final_outcome or 'interrompido'}); "
+                     f"último erro: {last_err.get('nvidia', '?')}")
     parts.extend(skipped)
     if remaining:
         parts.append("Ainda no rodízio sem sucesso: "
@@ -718,6 +779,49 @@ def _survey(budget: int, made: int, attempts: dict, last_err: dict,
                  "(NVIDIA_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, "
                  "GROQ_API_KEY) e confira modelos e rede.")
     return " | ".join(parts)
+
+
+def _nvidia_resilient_fallback(messages: list[dict], model: str,
+                               base_url: str, max_tokens: int,
+                               temperature: float, json_mode: bool,
+                               metrics, budget: int, made: int,
+                               rounds: dict, attempts: dict, last_err: dict,
+                               skipped: list[str]) -> tuple[dict, str]:
+    """Último caminho: aguarda sem timeout e tenta no máximo cinco vezes."""
+    display = PROVIDER_SPECS["nvidia"]["display"]
+    print(f"[{display}] último provider viável — fallback resiliente", flush=True)
+    key = CREDENTIALS["nvidia"].from_env().active_key
+    for i in range(1, 6):
+        print(f"[{display}] tentativa {i}/5 — aguardando sem timeout...",
+              flush=True)
+        try:
+            body = _post_once(messages, key, model, base_url, None,
+                              max_tokens, temperature, "nvidia", json_mode)
+        except NvidiaError as exc:
+            last_err["nvidia"] = str(exc)
+            if not getattr(exc, "retryable", False):
+                print(f"[{display}] erro definitivo no fallback resiliente — "
+                      f"encerrando: {exc}", flush=True)
+                raise NvidiaError(_survey(
+                    budget, made, attempts, last_err, skipped, [], rounds,
+                    final_attempts=i, final_outcome="erro definitivo")) from exc
+            if i == 5:
+                print(f"[{display}] 5 tentativas transitórias falharam; encerrando.",
+                      flush=True)
+                raise NvidiaError(_survey(
+                    budget, made, attempts, last_err, skipped, [], rounds,
+                    final_attempts=5, final_outcome="5 falhas transitórias")) from exc
+            delay = min(30.0, RETRY_BASE_DELAY * (2 ** (i - 1)))
+            print(f"[{display}] falha transitória ({i}/5): {exc} — "
+                  f"nova tentativa em {delay:.0f}s…", flush=True)
+            time.sleep(delay)
+            continue
+        if metrics is not None:
+            metrics.nvidia(f"nvidia:{model}", (body or {}).get("usage"))
+        return body, f"nvidia:{model}"
+    raise NvidiaError(_survey(budget, made, attempts, last_err, skipped, [], rounds,
+                              final_attempts=5,
+                              final_outcome="5 falhas transitórias"))
 
 
 def _extract_json(text: str) -> dict:
