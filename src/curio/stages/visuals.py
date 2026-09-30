@@ -276,8 +276,11 @@ class VisualState:
         return self.forms.count(form) if self.forms.count(form) else 0
 
 
-def choose_form(ch, state: "VisualState | None" = None) -> str:
+def choose_form(ch, state: "VisualState | None" = None,
+                genre: str = "") -> str:
     """A forma que esta cena deve usar, dada o que o vídeo já mostrou."""
+    from . import editorial
+    perfil = editorial.get(genre)
     vtype = str(getattr(ch, "visual_type", "") or "literal")
     sujeito = str(getattr(ch, "subject", "") or "")
     narration = str(getattr(ch, "narration", "") or "")
@@ -290,7 +293,9 @@ def choose_form(ch, state: "VisualState | None" = None) -> str:
     # 2) assunto repetido → spotlight, para não virar cópia da anterior
     elif state is not None and state.subject_repeated(sujeito):
         base = FORM_SPOTLIGHT
-    # 3) o tipo tem forma preferida
+    # 3) o perfil do gênero tem forma preferida; senão, a do tipo
+    elif perfil is not None and perfil.visual.preferred_forms:
+        base = perfil.visual.preferred_forms[0]
     else:
         base = _FORM_FOR_TYPE.get(vtype, FORM_DEFINITION)
 
@@ -566,10 +571,26 @@ def render_diagram(subject: str, steps: list[str], narration: str,
 
 # --- a escada ----------------------------------------------------------
 
-def strategies_for(ch) -> list[str]:
-    """Escada de estratégias para a cena, do mais adequado ao menos."""
+def strategies_for(ch, genre: str = "") -> list[str]:
+    """Escada de estratégias para a cena, do mais adequado ao menos.
+
+    O perfil editorial pode antecipar a escada: um gênero científico não deve
+    receber foto decorativa de laboratório antes do diagrama, e um de
+    etimologia não deve tentar fotografar uma palavra. A escada do perfil
+    é declarada para CADA medium, e a do tipo visual só completa o que
+    faltar.
+    """
+    from . import editorial
+    perfil = editorial.get(genre)
     vtype = str(getattr(ch, "visual_type", "") or "literal")
-    return list(LADDERS.get(vtype, LADDERS["literal"]))
+    if perfil is not None and perfil.visual.ladder:
+        base = list(perfil.visual.ladder)
+    else:
+        base = list(LADDERS.get(vtype, LADDERS["literal"]))
+    for s in LADDERS.get(vtype, LADDERS["literal"]):
+        if s not in base:
+            base.append(s)
+    return base
 
 
 def _diagram_steps(ch) -> list[str]:
@@ -603,7 +624,8 @@ def build_visual(ch, strategy: str, cache_dir: str, language: str = "pt-BR",
 
 
 def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR",
-                     state: "VisualState | None" = None) -> object | None:
+                     state: "VisualState | None" = None,
+                     genre: str = "") -> object | None:
     """Primeira estratégia que este módulo sabe produzir para a cena.
 
     Só as estratégias de código (cartão, diagrama, e as formas visuais
@@ -614,9 +636,9 @@ def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR",
     `state` carrega o que o vídeo já mostrou, para que a forma escolhida
     não repita a da cena anterior quando o assunto também repete.
     """
-    for strategy in strategies_for(ch):
+    for strategy in strategies_for(ch, genre):
         if strategy in FORMS:
-            forma = choose_form(ch, state)
+            forma = choose_form(ch, state, genre)
             asset = render_form(ch, forma, cache_dir, language)
             if asset is not None:
                 if state is not None:

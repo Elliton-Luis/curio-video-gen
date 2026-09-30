@@ -109,6 +109,10 @@ class CurioConfig:
     auto_open: bool = True  # abre apps após teleprompter (só c/ sessão gráfica)
     # Idioma do vídeo: "pt-BR" ou "en-US"
     language: str = "pt-BR"
+    # Gênero editorial (ver stages/editorial.py). VAZIO = nenhum gênero
+    # escolhido, e aí o pipeline se comporta exatamente como antes do
+    # recurso. Aceita as chaves de `editorial.GENRES`.
+    genre: str = ""
     # Chaves NVIDIA NÃO vivem aqui: lidas direto do ambiente
     # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
     # para nunca vazarem em logs, erros ou metadata.

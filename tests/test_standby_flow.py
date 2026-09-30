@@ -33,7 +33,7 @@ def _seed_project(out_dir, slug="teste-standby"):
     return root
 
 
-def _empty_media(chapters, cfg, max_images, metrics=None):
+def _empty_media(chapters, cfg, max_images, metrics=None, genre=""):
     scenes = [{"chapter_id": c.id, "asset": None, "assets": [],
                "reused_from": None} for c in chapters]
     return scenes, ["cena sem mídia (mock)"]

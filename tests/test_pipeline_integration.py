@@ -109,7 +109,7 @@ def _run(tmp_path, **over):
         patch("curio.stages.scenes.build_chapters",
               return_value=(chapters, "mock")),
         patch("curio.stages.visual.fetch_media_multi",
-              side_effect=lambda chs, c, mx, metrics=None: (
+              side_effect=lambda chs, c, mx, metrics=None, genre="": (
                   _media(chs, images), [])),
         patch("curio.stages.tts.synthesize", side_effect=_fake_tts),
     ]

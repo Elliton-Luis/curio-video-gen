@@ -28,6 +28,7 @@ from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
 from .stages import scenes as scenes_stage
+from .stages import editorial as editorial_stage
 from .stages import scoring as scoring_stage
 from .stages import script as script_stage
 from .stages import subs as subs_stage
@@ -493,13 +494,26 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                  force: bool = False, narration: str = "ai",
                  on_progress=None, provided_script: str | None = None,
                  max_images: int = 1,
-                 visual_overlap: float | None = None) -> dict:
+                 visual_overlap: float | None = None,
+                 genre: str | None = None) -> dict:
     started = time.monotonic()
     stage_times: dict[str, float] = {}
     warnings: list[str] = []
     stages = STAGES_HUMAN if narration == "human" else STAGES_AI
     script_mode = provided_script is not None
     max_images = max(1, min(5, int(max_images or 1)))
+    # Gênero: parâmetro explícito > config. Sem chave, `perfil` é None e
+    # nada abaixo muda de comportamento — é a compatibilidade com os
+    # projetos anteriores ao recurso.
+    genre_key = (genre if genre is not None else cfg.genre) or ""
+    perfil = editorial_stage.get(genre_key)
+    pacing = perfil.pacing if perfil is not None else None
+    alvo_cena = pacing.target_scene_seconds if pacing is not None else 9.0
+    genre_directive = editorial_stage.script_directive(perfil)
+    scene_directive = editorial_stage.scene_directive(perfil)
+    if perfil is not None:
+        print(f"Gênero: {perfil.label} — pacing {alvo_cena:g}s/cena, "
+              f"forma visual {', '.join(perfil.visual.preferred_forms) or '—'}")
     overlap_cap = float(cfg.visual_overlap if visual_overlap is None
                         else visual_overlap)
     # Fotos complementares: o orçamento de EXIBIÇÃO é do vídeo (1–2), não da
@@ -532,7 +546,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     emit(0, "Pesquisando fontes")
     research = research_stage.research_topic(
         idea, cfg.language, max_sources=cfg.research_max_sources,
-        metrics=metrics, timeout=cfg.research_timeout, cfg=cfg)
+        metrics=metrics, timeout=cfg.research_timeout, cfg=cfg,
+        genre=genre_key)
     research_sources = list(research)
     research_target = getattr(research, "target", None)
     research_rejected = list(getattr(research, "rejected", []))
@@ -597,7 +612,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         script_text, script_source = healed, "cache"
     else:
         script_text, script_source = script_stage.generate_script(
-            idea, cfg, metrics, research=research_pack)
+            idea, cfg, metrics, research=research_pack,
+            genre_directive=genre_directive)
         with open(paths.script_txt, "w", encoding="utf-8") as fh:
             fh.write(script_text)
     stage_times["script"] = round(time.monotonic() - t0, 2)
@@ -646,13 +662,18 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if script_mode:
             n = visual_stage.scenes_for_script(script_text, cfg)
         elif cfg.duration_target <= 0:
-            # Automático: o roteiro (não a meta) define as cenas.
-            n = scenes_stage.scenes_for_length(len(script_text.split()))
+            # Automático: o roteiro (não a meta) define as cenas — e o
+            # pacing do gênero entra no cálculo do tamanho de cada cena.
+            n = scenes_stage.scenes_for_length(len(script_text.split()),
+                                               alvo_cena)
         else:
-            n = scenes_stage.scenes_for_duration(cfg.duration_target)
+            n = scenes_stage.scenes_for_duration(cfg.duration_target,
+                                                 alvo_cena)
         try:
             chapters, scenes_source = scenes_stage.build_chapters(
-                script_text, cfg, n_scenes=n, metrics=metrics)
+                script_text, cfg, n_scenes=n, metrics=metrics,
+                genre=genre_key, target_seconds=alvo_cena,
+                genre_directive=scene_directive)
         except nvidia_stage.NvidiaError as exc:
             if not script_mode:
                 raise
@@ -709,7 +730,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if media_scenes is None:
         if max_images > 1:
             media_scenes, media_warnings = visual_stage.fetch_media_multi(
-                chapters, cfg, max_images, metrics)
+                chapters, cfg, max_images, metrics, genre=genre_key)
         else:
             media_scenes, media_warnings = _fetch_media(chapters, cfg, paths,
                                                        metrics)
@@ -816,7 +837,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            stage_times, started, emit, metrics,
                            script_mode=script_mode, max_images=max_images,
                            overlap_cap=overlap_cap,
-                           insert_budget=insert_budget)
+                           insert_budget=insert_budget,
+                           genre_key=genre_key,
+                           genre_profile=editorial_stage.summary(perfil))
 
     # [4/6] Narração (IA) — timestamps reais via WordBoundary
     t0 = time.monotonic()
@@ -892,7 +915,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         script_text, audio_duration, paths.subs_srt, paths.subs_ass,
         cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
         words=words if tts_info["provider"] == "edge-tts" else None,
-        cache_dir=cfg.cache_dir)
+        cache_dir=cfg.cache_dir,
+        max_words=(pacing.caption_max_words if pacing is not None
+                   else subs_stage.MAX_WORDS_PER_CUE),
+        highlight=(pacing.caption_highlight if pacing is not None else "word"))
     subs_changed = _read(paths.subs_ass) != prev_ass
     if subs_changed and not force and os.path.isfile(paths.final_mp4):
         print("AVISO: texto das legendas mudou — refazendo o MP4 final "
@@ -941,6 +967,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                               chapters, scenes_source, media_scenes, warnings,
                               stage_times, started)
     metadata.update({
+        "genre": genre_key,
+        "genre_profile": editorial_stage.summary(perfil),
         "narration": "ai",
         "mode": "script" if script_mode else "idea",
         "video_title": video_title,
@@ -1061,7 +1089,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                 warnings: list[str], stage_times: dict, started: float,
                 emit, metrics, script_mode: bool = False,
                 max_images: int = 1, overlap_cap: float = 0.9,
-                insert_budget: int = 0) -> dict:
+                insert_budget: int = 0, genre_key: str = "",
+                genre_profile: dict | None = None) -> dict:
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
     emit(4, "Estimando timeline")
@@ -1109,6 +1138,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                               chapters, scenes_source, media_scenes, warnings,
                               stage_times, started)
     metadata.update({
+        "genre": genre_key,
+        "genre_profile": genre_profile or editorial_stage.summary(None),
         "narration": "human-pending",
         "mode": "script" if script_mode else "idea",
         "video_title": video_title,
@@ -1204,10 +1235,16 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     emit("Transcrevendo", "OK")
 
     emit("Legendando")
+    from .stages import editorial as _ed
+    _perfil = _ed.get((meta or {}).get("genre", ""))
+    _pac = _perfil.pacing if _perfil is not None else None
     cue_count = subs_stage.write_subtitles(
         "", human_dur, paths.subs_srt, paths.subs_ass,
         cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
-        words=words, cache_dir=cfg.cache_dir)
+        words=words, cache_dir=cfg.cache_dir,
+        max_words=(_pac.caption_max_words if _pac is not None
+                   else subs_stage.MAX_WORDS_PER_CUE),
+        highlight=(_pac.caption_highlight if _pac is not None else "word"))
     emit("Legendando", "OK")
 
     emit("Ajustando visual")

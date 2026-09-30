@@ -197,6 +197,8 @@ class ResearchResult:
         self.sources = sources
         self.rejected = rejected or []
         self.tried_queries = tried_queries or []
+        self.genre = ""
+        self.directive = ""
 
     def __iter__(self):
         # Compatibilidade com quem só quer a lista de fontes.
@@ -211,7 +213,8 @@ class ResearchResult:
 
 def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
                    metrics=None, timeout: int = WIKI_TIMEOUT,
-                   cfg=None, require_relevance: bool = True) -> ResearchResult:
+                   cfg=None, require_relevance: bool = True,
+                   genre: str = "") -> ResearchResult:
     """Pesquisa a ideia, ACEITANDO SÓ fontes sobre o referente pretendido.
 
     A ordem importa:
@@ -244,6 +247,15 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             seen_q.add(q.lower())
             queries.append(q)
 
+    # O gênero entra ANTES da busca, não depois: um perfil de etimologia
+    # precisa perguntar "cognato" e "forma antiga", e um de pessoa precisa
+    # perguntar "biografia" e "obras". Aplicar a estratégia só no roteiro
+    # deixaria a pesquisa do gênero igual à genérica.
+    from . import editorial as _editorial
+    perfil = _editorial.get(genre)
+    if perfil is not None:
+        for q in perfil.research.queries:
+            _add(f"{target.name or idea.strip()} {q}" if target.name else q)
     for q in target.search_queries:
         _add(q)
     _add(idea.strip())
@@ -304,7 +316,11 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
         raise ResearchError(_no_usable_source_message(idea, target, rejected))
 
     print(entity_stage.explain(target, sources, rejected))
-    return ResearchResult(target, sources[:max_sources], rejected, queries)
+    res = ResearchResult(target, sources[:max_sources], rejected, queries)
+    res.genre = genre
+    if perfil is not None:
+        res.directive = _editorial.research_directive(perfil)
+    return res
 
 
 def _no_usable_source_message(idea: str, target, rejected) -> str:

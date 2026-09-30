@@ -715,6 +715,7 @@ def _search_scene_with_shortcircuit(
     metrics,
     cache_dir: str,
     visual_state=None,
+    genre: str = "",
 ) -> tuple[list[dict], list[str]]:
     """Busca mídia de uma cena: COLETA candidatos, depois FILTRA e PONTUA.
 
@@ -746,7 +747,7 @@ def _search_scene_with_shortcircuit(
         from . import visuals
         synth = visuals.visual_for_scene(ch, cfg.cache_dir,
                                          getattr(cfg, "language", "pt-BR"),
-                                         visual_state)
+                                         visual_state, genre)
         if synth is not None:
             _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
             if metrics:
@@ -920,7 +921,7 @@ def _search_scene_with_shortcircuit(
         from . import visuals
         synth = visuals.visual_for_scene(ch, cfg.cache_dir,
                                          getattr(cfg, "language", "pt-BR"),
-                                         visual_state)
+                                         visual_state, genre)
         if synth is not None:
             _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
             picked.append({"asset": synth.to_dict(),
@@ -994,7 +995,7 @@ def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
 
 def fetch_media_multi(chapters, cfg: CurioConfig,
                       max_images: int = 3,
-                      metrics=None) -> tuple[list[dict], list[str]]:
+                      metrics=None, genre: str = "") -> tuple[list[dict], list[str]]:
     """Busca ativos por cena com short-circuit rigoroso e cache local.
 
     Hierarquia: Pixabay → Unsplash → Pexels → NASA → Wikimedia → Openverse.
@@ -1026,7 +1027,7 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     for ch in chapters:
         scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
             ch, providers, cfg, max_images, metrics, cfg.cache_dir,
-            visual_state=visual_state,
+            visual_state=visual_state, genre=genre,
         )
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)

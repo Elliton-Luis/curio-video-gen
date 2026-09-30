@@ -700,7 +700,8 @@ def generate_script(idea: str, model: str,
                     or_base_url: str | None = None,
                     extra: dict | None = None,
                     language: str = "pt-BR",
-                    research: str | None = None) -> tuple[str, str]:
+                    research: str | None = None,
+                    genre_directive: str | None = None) -> tuple[str, str]:
     """Gera o roteiro (chain com retries por provedor). Nunca silêncio.
 
     `max_chars=None` = Automático: duração livre, sem corte (só o teto de
@@ -739,6 +740,11 @@ def generate_script(idea: str, model: str,
         if english else
         f"Escreva o roteiro de narração para a ideia: {idea}"
     )
+    if (genre_directive or "").strip():
+        # O gênero entra como DIREÇÃO, no fim: a voz continua sendo a do
+        # system prompt (que é a que garante a prosa falada) e o bloco do
+        # gênero decide estrutura, ritmo e o que não fazer.
+        system_prompt = system_prompt + "\n\n" + genre_directive.strip()
     if (research or "").strip():
         # RAG: fatos reais entram no pedido; o system prompt já proíbe
         # afirmar qualquer fato fora deles.

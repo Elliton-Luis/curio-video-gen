@@ -31,23 +31,32 @@ TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
 
 
-def scenes_for_duration(duration_target: float) -> int:
-    """~1 cena a cada 9 s: 30 s→3, 45 s→5, 60 s→7 (limites 3–7).
+def scenes_for_duration(duration_target: float,
+                        target_seconds: float = 9.0) -> int:
+    """~1 cena a cada `target_seconds`: 30 s→3, 45 s→5, 60 s→7 (3–7).
 
     Meta 0 (Automático) cai no piso: quem manda no nº de cenas é o
     tamanho do roteiro (ver `scenes_for_length`).
     """
-    return max(3, min(7, round(duration_target / 9)))
+    alvo = max(4.0, float(target_seconds or 9.0))
+    return max(3, min(9, round(duration_target / alvo)))
 
 
-def scenes_for_length(words: int) -> int:
-    """Nº de cenas pelo TAMANHO do roteiro (~1 cena/9 s a 150 WPM, 3–12).
+def scenes_for_length(words: int, target_seconds: float = 9.0) -> int:
+    """Nº de cenas pelo TAMANHO do roteiro e o ALVO de segundos por cena.
 
     Usado no modo Automático e como piso no `visual.scenes_for_script`:
     roteiro longo = mais cenas, nunca corte para caber em meta.
+
+    `target_seconds` é o lever de pacing do gênero. É aqui que "cenas
+    curtas e transformações frequentes" (etimologia, 7,5 s) e "tempo
+    suficiente para o diagra ser compreendido" (ciência, 14 s) viram
+    números de cena diferentes — e não adjetivos no prompt. Um perfil que
+    não mexesse aqui seria exatamente o "rótulo que muda o texto".
     """
     est_seconds = max(1, words) / WORDS_PER_MINUTE * 60
-    return max(3, min(12, round(est_seconds / 9)))
+    alvo = max(4.0, float(target_seconds or 9.0))
+    return max(3, min(14, round(est_seconds / alvo)))
 
 
 SCENES_SYSTEM_PROMPT = (
@@ -358,6 +367,24 @@ def _coerce_visual_terms(raw: dict) -> tuple[list[str], str]:
     return out, " ".join(out)
 
 
+def _genre_forbidden(terms: list[str], genre: str) -> list[str]:
+    """Proibições da IA + as que o perfil editorial impõe.
+
+    A IA não sabe o que é enganoso para o gênero: "modern photograph" não
+    é errado num vídeo de ciência e é péssimo num de história de uma
+    pessoa. Quem sabe é o perfil.
+    """
+    from . import editorial
+    perfil = editorial.get(genre)
+    if perfil is None or not perfil.visual.forbidden:
+        return terms
+    out = list(terms)
+    for t in perfil.visual.forbidden:
+        if t not in out:
+            out.append(t)
+    return out[:8]
+
+
 def _coerce_str_list(raw: dict, key: str, limit: int) -> list[str]:
     """Lista de strings em campo que a IA pode devolver como string solta."""
     val = raw.get(key, [])
@@ -384,9 +411,13 @@ def _payload_snippet(data, limit: int = 300) -> str:
 
 
 def build_chapters(script: str, cfg: CurioConfig,
-                   n_scenes: int | None = None, metrics=None) -> tuple[list[Chapter], str]:
+                   n_scenes: int | None = None, metrics=None,
+                   genre: str = "", target_seconds: float | None = None,
+                   genre_directive: str = "") -> tuple[list[Chapter], str]:
     """Retorna (capítulos, fonte). Fonte: 'openrouter:gemini-2.5-flash' | 'local'."""
-    n_scenes = n_scenes or scenes_for_duration(cfg.duration_target)
+    alvo = float(target_seconds) if target_seconds else None
+    n_scenes = n_scenes or scenes_for_duration(cfg.duration_target,
+                                               alvo or 9.0)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
     if nvidia_stage.any_llm_available():
         english = str(cfg.language or "").lower().startswith("en")
@@ -395,6 +426,10 @@ def build_chapters(script: str, cfg: CurioConfig,
         user_prompt = (f"Split this script into scenes:\n\n{script}"
                        if english else
                        f"Divida este roteiro em cenas:\n\n{script}")
+        if genre_directive:
+            # A direção do gênero entra no prompt da cena, não no roteiro:
+            # é aqui que se decide o que a CENA tem que mostrar.
+            system_prompt = system_prompt + "\n\n" + genre_directive
         data, label = nvidia_stage.complete_json(
             system_prompt.format(n=n_scenes, lo=lo, hi=hi),
             user_prompt,
@@ -430,7 +465,8 @@ def build_chapters(script: str, cfg: CurioConfig,
                 subject=str(raw.get("subject", "") or "").strip(),
                 visual_entities=_coerce_str_list(raw, "visual_entities", 4),
                 context=_coerce_str_list(raw, "context", 3),
-                forbidden=_coerce_str_list(raw, "forbidden", 5),
+                forbidden=_genre_forbidden(_coerce_str_list(raw, "forbidden", 5),
+                                          genre),
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
             return chapters, provider

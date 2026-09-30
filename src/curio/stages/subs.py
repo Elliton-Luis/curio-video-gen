@@ -217,8 +217,8 @@ def _apply_highlight(text: str, highlight_idx: int) -> str:
     return " ".join(highlighted)
 
 
-def build_cues(text: str, total_duration: float,
-               lead: float = 0.15) -> list[tuple[float, float, str]]:
+def build_cues(text: str, total_duration: float, lead: float = 0.15,
+               max_words: int = MAX_WORDS_PER_CUE) -> list[tuple[float, float, str]]:
     """Divide em cues curtos com tempos proporcionais. Coração da sincronia.
     
     Limita a MAX_WORDS_PER_CUE palavras por cue, 1 palavra de destaque por cue.
@@ -229,9 +229,10 @@ def build_cues(text: str, total_duration: float,
     if not words:
         raise ValueError("roteiro vazio — nada para legendar")
     # Frases primeiro (quebras naturais), depois limite de palavras/chars.
-    chunks = [c for s in _sentences(text) for c in chunk_words(s.split(), MAX_WORDS_PER_CUE)]
+    max_words = max(2, min(9, int(max_words or MAX_WORDS_PER_CUE)))
+    chunks = [c for s in _sentences(text) for c in chunk_words(s.split(), max_words)]
     if not chunks:
-        chunks = chunk_words(words, MAX_WORDS_PER_CUE)
+        chunks = chunk_words(words, max_words)
     weights = [sum(len(w) + 1 for w in c.split()) for c in chunks]
     total_w = sum(weights)
     usable = max(0.5, total_duration - lead)
@@ -276,14 +277,16 @@ _MARKER_TOKEN = re.compile(r"^\(?\d{1,2}[).,:;\-–—\]]$")
 
 def cues_from_words(words: list[dict], max_words: int = 5,
                     max_chars: int = 36, max_dur: float = 4.5,
-                    min_dur: float = 0.8) -> list[tuple[float, float, str]]:
+                    min_dur: float = 0.8,
+                    highlight: str = "word") -> list[tuple[float, float, str]]:
     """Agrupa WordBoundary reais em blocos legíveis.
 
     Quebra em fim de frase quando o bloco já tem corpo (≥3 palavras ou
     ≥20 chars); limites duros de palavras/chars/duração evitam estouro.
     Sem offset artificial: o primeiro bloco começa no primeiro boundary real.
-    Aplica formatação: maiúsculas + destaque em 1 palavra por cue.
-    Tokens que são só marcadores de lista ("0)", "1."...) são descartados.
+    Aplica formatação: maiúsculas + destaque em 1 palavra por cue, que
+    `highlight="none"` desliga. Tokens que são só marcadores de lista
+    ("0)", "1."...) são descartados.
     """
     clean = [w for w in words
              if str(w.get("text", "")).strip()
@@ -304,9 +307,11 @@ def cues_from_words(words: list[dict], max_words: int = 5,
             # Monta o texto do cue em maiúsculas com destaque
             cue_text = " ".join(str(x["text"]).upper() for x in cur)
             # Aplica destaque na palavra de impacto
-            highlight_idx = _select_highlight_word([x["text"].upper() for x in cur])
             words_upper = [x["text"].upper() for x in cur]
-            cue_styled = _apply_highlight(" ".join(words_upper), highlight_idx)
+            cue_styled = _apply_highlight(
+                " ".join(words_upper),
+                _select_highlight_word(words_upper) if highlight != "none"
+                else -1)
             cues.append((start, end, cue_styled))
             cur = []
     if cur:
@@ -398,21 +403,30 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
                     base_font_size: int, margin_v: int,
                     words: list[dict] | None = None,
                     fontname: str | None = None, bold: int | None = None,
-                    cache_dir: str = "cache") -> int:
+                    cache_dir: str = "cache",
+                    max_words: int = MAX_WORDS_PER_CUE,
+                    highlight: str = "word") -> int:
     """Gera SRT + ASS. Com `words` (timestamps reais), sem offset artificial;
     sem eles, cai no modo proporcional legado.
+
+    `max_words` e `highlight` são o segundo lever de gênero visível sem o
+    título: a densidade da legenda e o que nela acende. Etimologia corta
+    de 4 em 4 e acende a palavra; ciência corta de 6 em 6 e acenta o termo.
+    Karaokê em tudo vira ruído, então `highlight="none"` desliga.
 
     A fonte do ASS é escalada pela altura (base calibrada para 1920),
     em pixels reais — PlayRes do ASS = resolução do vídeo. Fonte pesada
     resolvida uma vez (Archivo Black instalado sob demanda, senão DejaVu
     Bold). Sincronia e agrupamento: intocados.
     """
+    max_words = max(2, min(9, int(max_words or MAX_WORDS_PER_CUE)))
     if fontname is None or bold is None:
         resolved, resolved_bold, _path = ensure_display_font(cache_dir)
         fontname = resolved if fontname is None else fontname
         bold = resolved_bold if bold is None else bold
     font_size = max(20, round(base_font_size * height / 1920))
-    cues = cues_from_words(words) if words else build_cues(text, total_duration)
+    cues = (cues_from_words(words, max_words=max_words, highlight=highlight)
+            if words else build_cues(text, total_duration, max_words=max_words))
     with open(srt_path, "w", encoding="utf-8") as fh:
         fh.write(cues_to_srt(cues))
     with open(ass_path, "w", encoding="utf-8") as fh:
