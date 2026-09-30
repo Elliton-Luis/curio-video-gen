@@ -409,22 +409,6 @@ def script_directive(profile: GenreProfile | None) -> str:
     return "\n".join(partes)
 
 
-def research_directive(profile: GenreProfile | None) -> str:
-    """O que a pesquisa deste gênero precisa trazer, e o que distinguir."""
-    if profile is None:
-        return ""
-    linhas = [f"GENRE: {profile.label}."]
-    if profile.research.guidance:
-        linhas.append("WHAT TO LOOK FOR: " + profile.research.guidance)
-    if profile.research.queries:
-        linhas.append("EXTRA SEARCH TERMS: " + ", ".join(
-            profile.research.queries))
-    if profile.research.must_distinguish:
-        linhas.append("THE SOURCES MUST DISTINGUISH: "
-                      + ", ".join(profile.research.must_distinguish) + ".")
-    return "\n".join(linhas)
-
-
 def scene_directive(profile: GenreProfile | None) -> str:
     """Direção visual e de queries que entra no prompt das cenas."""
     if profile is None:

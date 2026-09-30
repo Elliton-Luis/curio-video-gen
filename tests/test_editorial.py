@@ -156,8 +156,22 @@ def test_bloco_de_roteiro_muda_por_genero():
 
 def test_blocos_vazios_sem_genero():
     assert E.script_directive(None) == ""
-    assert E.research_directive(None) == ""
     assert E.scene_directive(None) == ""
+
+
+def test_estrategia_de_pesquisa_chega_ao_roteiro():
+    """A distinção que a pesquisa exige tem de estar no prompt do roteiro.
+
+    A estratégia de pesquisa não entra como frase: entra como query
+    (research_topic) e como exigência de distinção no roteiro
+    (script_directive). Um teste confere a segunda perna, que é a que
+    impede o LLM de achatar um cognato e uma etimologia popular no mesmo
+    parágrafo.
+    """
+    d = E.script_directive(E.get("etymology"))
+    assert "documentada" in d and "popular" in d
+    d2 = E.script_directive(E.get("mystery"))
+    assert "fato" in d2.lower() and "hipótese" in d2.lower()
 
 
 # --- estratégia visual ------------------------------------------------

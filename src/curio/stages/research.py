@@ -239,7 +239,6 @@ class ResearchResult:
         self.rejected = rejected or []
         self.tried_queries = tried_queries or []
         self.genre = ""
-        self.directive = ""
 
     def __iter__(self):
         # Compatibilidade com quem só quer a lista de fontes.
@@ -389,8 +388,6 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
     print(entity_stage.explain(target, sources, rejected))
     res = ResearchResult(target, sources[:max_sources], rejected, queries)
     res.genre = genre
-    if perfil is not None:
-        res.directive = _editorial.research_directive(perfil)
     return res
 
 
