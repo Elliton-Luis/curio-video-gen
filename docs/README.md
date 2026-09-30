@@ -74,6 +74,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260930-144326_relatorio_diagnosticos-sao-jeronimo.md` — contexto
   estruturado de São Jerônimo, grounding explicativo, diagnóstico de providers,
   timeout LLM configurável e evidências/limitações da validação manual.
+- `relatorios/20260930-163126_relatorio_biblioteca-audiovisual-genero.md` —
+  biblioteca local Freesound CC0/CC BY, política de atualização, seleção por
+  uso/seed, mix com ducking, transições, metadata, testes FFmpeg e limitações.
 
 ## Análises (estado, gaps, riscos)
 
