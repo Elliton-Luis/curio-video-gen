@@ -46,6 +46,7 @@ from ..media.providers import (
     classify_rights,
     license_ok,
 )
+from . import media_rules
 from . import scenes as scenes_stage
 
 # Entradas suaves e variadas, sem repetição consecutiva no vídeo inteiro.
@@ -211,6 +212,13 @@ PROVIDER_PRIORITY = ("pixabay", "unsplash", "pexels", "nasa",
 # Cache local de mídia por termo de busca
 MEDIA_CACHE_DIR = "cache/media_query"
 
+# Quantos candidatos se coleta por consulta antes de escolher. O lineup
+# antigo aceitava 1 asset do primeiro provedor; recolher uma dúzia e
+# ordenar é o que permite escolher em vez de tomar o que veio.
+CANDIDATE_MULTIPLIER = 4
+# Rejeições que a folha de contato guarda por cena (o resto é ruído).
+REJECTED_KEPT = 8
+
 
 @dataclass
 class SearchTask:
@@ -308,6 +316,30 @@ def _validate_asset(asset: MediaAsset) -> bool:
     if asset.size_bytes > MAX_BYTES:
         return False
     return True
+
+
+def _validate_asset_for(asset: MediaAsset, blocked: list[str]) -> str:
+    """Gate de metadados + bloqueios temáticos da cena. Devolve "" ou o motivo.
+
+    Versão do `_validate_asset` que devolve o PORQUÊ. Chamar só o booleano
+    jogava fora a informação que o autor precisa para corrigir a escolha:
+    sem motivo, uma cena que ficou sem foto é indistinguível de um bug.
+    """
+    if not asset.download_url or not re.search(
+            r"\.(jpe?g|png|webp)(\?|$)", asset.download_url, re.I):
+        return "não é imagem (jpg/png/webp)"
+    if not license_ok(asset.license or ""):
+        return f"licença não permite edição: {asset.license or 'desconhecida'}"
+    if classify_rights(asset.license or "",
+                       getattr(asset, "provider", "")) == "blocked":
+        return f"licença bloqueada: {asset.license or 'desconhecida'}"
+    if asset.width > 0 and asset.height > 0:
+        if min(asset.width, asset.height) < media_rules.min_dimension():
+            return (f"resolução {asset.width}x{asset.height} menor que "
+                    f"{media_rules.min_dimension()}px")
+    if asset.size_bytes > MAX_BYTES:
+        return f"arquivo {asset.size_bytes // 1024}KB acima do teto"
+    return media_rules.rejection_reason(asset.to_dict(), blocked)
 
 
 def _probe_dims(path: str) -> tuple[int, int]:
@@ -653,75 +685,71 @@ def _search_scene_with_shortcircuit(
     metrics,
     cache_dir: str,
 ) -> tuple[list[dict], list[str]]:
-    """
-    Busca mídia para uma cena com short-circuit + cachoeira:
-    - Cachoeira de queries: termos exatos da IA → avulsos → tema →
-      variante diagrama → genéricos (nunca vazio)
-    - Para cada query, tenta provedores em ordem de prioridade
-    - Para no primeiro provedor que retorne ativo válido
-    - Verifica cache local antes de bater na API
-    - Sem nada nas bibliotecas e cena de mecanismo: diagrama sintético
+    """Busca mídia de uma cena: COLETA candidatos, depois FILTRA e PONTUA.
+
+    O comportamento antigo parava no primeiro asset que passasse no gate e
+    no primeiro provedor que respondesse. Isso transformava o acervo inteiro
+    num sorteio: com o Pixabay primeiro na fila, ele resolvia as 23 imagens
+    do vídeo, e a que "casou" com a palavra do tema era a que o Pixabay
+    devolveu primeiro — não a mais próxima do assunto. Foi assim que uma
+    usina termelétrica entrou numa cena de papel térmico.
+
+    Agora: junta candidatos de vários provedores, descarta com MOTIVO
+    (licença, resolução, termo decorativo, termo proibido da cena) e só
+    então ordena. Um provedor que responde mal não esgota mais a cena.
     """
     warnings = []
     queries = _waterfall_queries(ch)
+    blocked = media_rules.scene_blocklist(ch)
     if metrics:
         metrics.media_queries_count += len(queries)
-    
-    picked: list[dict] = []
-    picked_ids = set()
-    picked_titles = set()
-    
+
+    candidates: list[dict] = []   # candidatos que passaram nos filtros
+    rejected: list[dict] = []     # (motivo, título) p/ a folha de contato
+    seen_ids: set[str] = set()
+
+    def _consider(cand: MediaAsset, query: str, from_cache: bool) -> None:
+        if cand.asset_id in seen_ids:
+            return
+        seen_ids.add(cand.asset_id)
+        why = _validate_asset_for(cand, blocked)
+        if why:
+            rejected.append({"title": cand.title, "query": query,
+                             "reason": why, "provider": cand.provider})
+            if metrics:
+                metrics.media_record_asset_rejected()
+            return
+        candidates.append({
+            "asset": cand.to_dict(),
+            "query": query,
+            "relevance": 0,  # preenchido pelo scoring, não pela ordem de chegada
+            "order": 0,
+            "from_cache": from_cache,
+        })
+
     for query in queries:
-        if len(picked) >= max_images:
+        if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
             break
-            
-        # 1. Verifica cache local primeiro
+
+        # 1. Cache local primeiro (mesma consulta, resposta antiga)
         cached = _get_cached_asset(cache_dir, query)
-        if cached and _validate_asset(cached):
-            if cached.asset_id not in picked_ids:
-                norm_title = re.sub(r"\s+", " ", (cached.title or "").lower()).strip()
-                if not norm_title or norm_title not in picked_titles:
-                    picked_ids.add(cached.asset_id)
-                    if norm_title:
-                        picked_titles.add(norm_title)
-                    cached.used_in = f"cena {ch.id}"
-                    if not cached.rights_status:
-                        cached.rights_status = classify_rights(
-                            cached.license or "", cached.provider)
-                    if cached.rights_status == "verify":
-                        if metrics:
-                            metrics.media_record_rights("verify")
-                        msg = (f"cena {ch.id}: licença a conferir manualmente "
-                               f"({cached.provider}: {cached.license or 'desconhecida'})")
-                        warnings.append(msg)
-                        print(f"AVISO: {msg}", file=sys.stderr)
-                    picked.append({
-                        "asset": cached.to_dict(),
-                        "query": query,
-                        "relevance": 100,  # cache hit = max relevance
-                        "order": len(picked),
-                        "from_cache": True
-                    })
-                    if metrics:
-                        metrics.media_cache_hits += 1
-                        metrics.media_record_asset_reused()
-                    continue
-        
-        # 2. Busca com short-circuit por provedor
-        asset_found = False
+        if cached is not None:
+            _consider(cached, query, from_cache=True)
+            if metrics:
+                metrics.media_cache_hits += 1
+
+        # 2. Coleta de TODOS os provedores, não só do primeiro que responde
         for prov in providers:
-            # Skip se provedor desativado por erro persistente (429/401/403)
             if getattr(prov, "_disabled", False):
                 continue
-
+            if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
+                break
             if metrics:
                 metrics.media_search(prov.name)
-
             try:
-                results = _search_with_timeout(prov, query, SEARCH_TIMEOUT, metrics)
+                results = _search_with_timeout(
+                    prov, query, SEARCH_TIMEOUT, metrics)
             except MediaError as exc:
-                # 429/401/403 persistem na execução: desativa para não
-                # queimar tempo e cota repetindo a mesma falha.
                 if (any(code in str(exc) for code in ("429", "401", "403"))
                         or "Too Many Requests" in str(exc)):
                     prov._disabled = True
@@ -730,88 +758,116 @@ def _search_scene_with_shortcircuit(
                     print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
                           file=sys.stderr)
                 continue
-            
             if metrics:
                 metrics.media_record_results(prov.name, len(results))
-            
-            # Filtra e valida resultados
             for cand in results:
-                if not _validate_asset(cand):
-                    continue
-                if cand.asset_id in picked_ids:
-                    continue
-                norm_title = re.sub(r"\s+", " ", (cand.title or "").lower()).strip()
-                if norm_title and norm_title in picked_titles:
-                    continue
-                
-                # Tenta baixar + confere o arquivo real (dims ffprobe).
-                # Necessário p/ provedores sem dims na API (ex.: NASA).
-                try:
-                    asset = download_asset(cand, cfg.cache_dir, metrics)
-                except MediaError as exc:
-                    if metrics:
-                        metrics.media_record_asset_rejected()
-                    continue
-                if not _downloaded_dims_ok(asset):
-                    if metrics:
-                        metrics.media_record_asset_rejected()
-                    continue
+                if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
+                    break
+                _consider(cand, query, from_cache=False)
 
-                # Sucesso! Marca onde entrou, carimba copyright e salva.
-                asset.used_in = f"cena {ch.id}"
-                asset.rights_status = classify_rights(
-                    asset.license or "", asset.provider)
-                if asset.rights_status == "verify":
-                    if metrics:
-                        metrics.media_record_rights("verify")
-                    msg = (f"cena {ch.id}: licença a conferir manualmente "
-                           f"({asset.provider}: {asset.license or 'desconhecida'}) — "
-                           f"{asset.license_url or asset.source_url or 'sem link'}")
-                    warnings.append(msg)
-                    print(f"AVISO: {msg}", file=sys.stderr)
-                _save_to_cache(cache_dir, query, asset)
-                
-                picked_ids.add(cand.asset_id)
-                if norm_title:
-                    picked_titles.add(norm_title)
-                picked.append({
-                    "asset": asset.to_dict(),
-                    "query": query,
-                    "relevance": _relevance(query, cand),
-                    "order": len(picked),
-                    "from_cache": False
-                })
-                asset_found = True
-                break  # Short-circuit: para no primeiro provedor que funcionar
-            
-            if asset_found:
-                break  # Short-circuit: para de tentar outros provedores para esta query
-        
-        if not asset_found and metrics:
-            metrics.media_record_asset_rejected()
-    
-    # NOTA: avalia só narração + termos da cena — os genéricos da cachoeira
-    # ("microscope", "test tube"...) sempre casariam e o diagrama dispararia
-    # para todo vídeo sem imagens.
+    # 3. Ordena por precisão sobre o assunto e corta no orçamento da cena.
+    #    Só então baixa: até aqui nada além de metadados saiu da rede.
+    from . import scoring
+    ranked = scoring.rank_candidates(candidates, ch)
+    min_score = scoring.threshold()
+    ranked, low = scoring.below_threshold(ranked, min_score)
+    for entry in low:
+        # Descartado por NOTA, não por filtro: é o caso que mais importa
+        # registrar, porque a imagem passou em todos os testes e ainda
+        # assim não é do assunto (a usina que "casou" com "térmico").
+        rejected.append({
+            "title": entry["asset"].get("title", ""),
+            "query": entry["query"],
+            "reason": (f"nota {entry['score']:.0f} abaixo do mínimo "
+                       f"{min_score:.0f}"),
+            "provider": entry["asset"].get("provider", ""),
+        })
+        if metrics:
+            metrics.media_record_rejection("nota abaixo do mínimo")
+    if metrics:
+        metrics.media_record_selection(len(candidates), len(ranked))
+    for rej in rejected:
+        if metrics:
+            metrics.media_record_rejection(rej["reason"])
+    # A estratégia da cena é registrada mesmo quando ela dá certo: o
+    # relatório precisa mostrar a distribuição (item 20), e um diagrama
+    # não pode ser contado como falha.
+    if metrics:
+        metrics.media_record_visual_type(
+            str(getattr(ch, "visual_type", "") or "literal"))
+
+    picked: list[dict] = []
+    for i, entry in enumerate(ranked[:max_images]):
+        asset_dict = entry["asset"]
+        try:
+            asset = MediaAsset.from_dict(asset_dict)
+        except TypeError:
+            continue
+        local = asset.local_path
+        if not (local and os.path.isfile(local)):
+            try:
+                asset = download_asset(asset, cfg.cache_dir, metrics)
+            except MediaError as exc:
+                msg = f"cena {ch.id}: download falhou ({exc})"
+                warnings.append(msg)
+                print(f"AVISO: {msg}", file=sys.stderr)
+                continue
+        if not _downloaded_dims_ok(asset):
+            msg = (f"cena {ch.id}: '{asset.title[:50]}' rejeitado após "
+                   f"download (resolução insuficiente ou ilegível)")
+            warnings.append(msg)
+            rejected.append({"title": asset.title, "query": entry["query"],
+                             "reason": "resolução/legibilidade após download",
+                             "provider": asset.provider})
+            if metrics:
+                metrics.media_record_asset_rejected()
+            continue
+        asset.used_in = f"cena {ch.id}"
+        if not asset.rights_status:
+            asset.rights_status = classify_rights(asset.license or "",
+                                                  asset.provider)
+        if asset.rights_status == "verify":
+            if metrics:
+                metrics.media_record_rights("verify")
+            msg = (f"cena {ch.id}: licença a conferir manualmente "
+                   f"({asset.provider}: {asset.license or 'desconhecida'}) — "
+                   f"{asset.license_url or asset.source_url or 'sem link'}")
+            warnings.append(msg)
+            print(f"AVISO: {msg}", file=sys.stderr)
+        _save_to_cache(cache_dir, entry["query"], asset)
+        if entry["from_cache"] and metrics:
+            metrics.media_cache_misses += 0
+        entry = dict(entry)
+        entry["asset"] = asset.to_dict()
+        entry["order"] = len(picked)
+        entry["score"] = entry.get("score", 0)
+        if metrics:
+            metrics.media_record_score(entry["score"])
+        picked.append(entry)
+
     if not picked and _looks_mechanistic(ch, list(ch.visual_queries)):
-        # Último recurso p/ mecanismo: diagrama original gerado por código
-        # (tira + fluxo + linhas T/C) — sem rede, sem licença de terceiros.
         synth = _synth_diagram_for_scene(ch, queries, cfg, metrics)
         if synth is not None:
             picked.append(synth)
-            picked_ids.add(synth["asset"]["asset_id"])
+            seen_ids.add(synth["asset"]["asset_id"])
     if not picked:
-        msg = (f"cena {ch.id}: sem mídia relevante "
-               f"({', '.join(queries) or 'sem consultas'}) — fallback")
+        msg = (f"cena {ch.id}: sem imagem adequada "
+               f"({', '.join(queries[:3]) or 'sem consultas'})"
+               + (f" — {len(rejected)} candidato(s) rejeitados" if rejected else "")
+               + " — vai usar estratégia visual alternativa")
         warnings.append(msg)
         print(f"AVISO: {msg}", file=sys.stderr)
-    
+        if metrics:
+            metrics.media_record_asset_rejected()
+
     first = picked[0]["asset"] if picked else None
+    scene_rejected = rejected[:REJECTED_KEPT]
     return [{
         "chapter_id": ch.id,
         "asset": first,
         "assets": picked,
-        "reused_from": None
+        "reused_from": None,
+        "rejected": scene_rejected,
     }], warnings
 
 

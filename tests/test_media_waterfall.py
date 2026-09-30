@@ -8,10 +8,17 @@ from curio.metrics import RunMetrics
 from curio.stages import visual as V
 
 
-def _ch(queries=(), narration="Texto da cena.", cid=1, glob=()):
-    return SimpleNamespace(id=cid, narration=narration,
-                           visual_queries=list(queries),
-                           global_visual_queries=list(glob))
+def _ch(queries=(), narration="Texto da cena.", cid=1, glob=(), **extra):
+    """Cena de teste. `entities`/`subject` existem porque o scoring compara
+    o título da foto com o vocabulário da cena: uma cena cuja narração não
+    tem nada a ver com a foto deve (e deve) reprovar o candidato."""
+    base = dict(id=cid, narration=narration,
+                visual_queries=list(queries),
+                global_visual_queries=list(glob),
+                visual_type="literal", subject="", visual_entities=[],
+                context=[], forbidden=[])
+    base.update(extra)
+    return SimpleNamespace(**base)
 
 
 def _asset(provider="pixabay", aid="1", title="water glass laboratory",
@@ -93,18 +100,43 @@ def _mock_download(monkeypatch, tmp_path):
     monkeypatch.setattr(V, "download_asset", _fake)
 
 
-def test_short_circuit_para_no_primeiro_provedor(tmp_path, monkeypatch):
+def test_todos_os_provedores_sao_consultados(tmp_path, monkeypatch):
+    """Contrato antigo (parar no 1º provedor) foi a causa do defeito.
+
+    Com o Pixabay primeiro na fila e short-circuit, ele resolvia o vídeo
+    inteiro: as 23 imagens saíram dele e nenhuma alternativa foi vista.
+    Agora todos são consultados e a escolha passa a ser do scoring.
+    """
     _mock_download(monkeypatch, tmp_path)
-    good = [_asset(aid="ok1")]
-    p1 = _FakeProv("pixabay", good)
-    p2 = _FakeProv("nasa", [_asset(provider="nasa", aid="n1")])
-    ch = _ch(("water glass",))
+    p1 = _FakeProv("pixabay", [_asset(aid="ok1")])
+    p2 = _FakeProv("nasa", [_asset(provider="nasa", aid="n1",
+                                   title="nasa water glass")])
+    ch = _ch(("water glass",), subject="water glass",
+             visual_entities=["glass", "water"])
     scenes, warns = V._search_scene_with_shortcircuit(
         ch, [p1, p2], SimpleNamespace(cache_dir=str(tmp_path)), 1, None,
         str(tmp_path))
-    assert scenes[0]["asset"]["asset_id"] == "ok1"
-    assert p2.calls == []  # short-circuit: segundo nem é consultado
-    assert not warns
+    assert p1.calls and p2.calls, "provedor posterior não foi consultado"
+    # com max_images=1 fica o de maior nota, não o primeiro que chegou
+    assert scenes[0]["asset"]["asset_id"] in ("ok1", "n1")
+
+
+def test_provedor_que_so_devolve_lixo_nao_esgota_a_cena(tmp_path, monkeypatch):
+    """Um acervo ruim (wallpaper/4k) não pode decidir a cena."""
+    _mock_download(monkeypatch, tmp_path)
+    lixo = [_asset(aid="w1", title="mountain river wallpaper 4k hd"),
+            _asset(aid="w2", title="desert field background 4k")]
+    p1 = _FakeProv("pixabay", lixo)
+    p2 = _FakeProv("wikimedia", [_asset(provider="wikimedia", aid="w1real",
+                                        title="thermal paper receipt")])
+    ch = _ch(("thermal paper receipt",), subject="thermal paper receipt",
+             visual_entities=["receipt", "paper"])
+    scenes, _ = V._search_scene_with_shortcircuit(
+        ch, [p1, p2], SimpleNamespace(cache_dir=str(tmp_path)), 1, None,
+        str(tmp_path))
+    assert scenes[0]["asset"]["asset_id"] == "w1real"
+    reasons = [r["reason"] for r in scenes[0]["rejected"]]
+    assert any("termo bloqueado" in r for r in reasons), reasons
 
 
 def test_waterfall_avanca_ate_generico_e_401_desativa(tmp_path, monkeypatch):
@@ -114,7 +146,8 @@ def test_waterfall_avanca_ate_generico_e_401_desativa(tmp_path, monkeypatch):
     p2 = _FakeProv("nasa", empty, err401)
     p3 = _FakeProv("wikimedia", [_asset(provider="wikimedia", aid="w1",
                                         title="science laboratory")])
-    ch = _ch(("water glass",))
+    ch = _ch(("water glass",), subject="science laboratory",
+             visual_entities=["laboratory", "science"])
     m = RunMetrics("s", "idea", "narr")
     scenes, _ = V._search_scene_with_shortcircuit(
         ch, [p1, p2, p3], SimpleNamespace(cache_dir=str(tmp_path)), 1, m,
@@ -139,13 +172,19 @@ def test_synth_diagram_em_cena_mecanistica_sem_nada(tmp_path):
     assert not warns  # diagrama resolve: sem fallback
 
 
-def test_sem_imagens_nem_diagrama_vira_fallback(tmp_path):
+def test_sem_imagem_adequada_avisa_que_vai_trocar_de_estrategia(tmp_path):
+    """Sem foto boa NÃO é "fallback genérico": é troca de estratégia.
+
+    A mensagem precisa dizer isso, senão o autor lê como falha do vídeo
+    e não como a cena indo para diagrama/cartão.
+    """
     ch = _ch(("rome soldier",), "Roma caiu em guerra.")
     scenes, warns = V._search_scene_with_shortcircuit(
         ch, [], SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR"),
         1, None, str(tmp_path))
     assert scenes[0]["asset"] is None
-    assert warns and "fallback" in warns[0]
+    assert warns and "sem imagem adequada" in warns[0]
+    assert "estratégia" in warns[0]
 
 
 def test_download_rejeita_dims_reais_baixas(tmp_path):

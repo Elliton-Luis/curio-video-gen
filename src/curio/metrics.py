@@ -59,6 +59,20 @@ class RunMetrics:
         self.media_synth_diagrams = 0
         self.media_rights_verify = 0
         self.media_rights_blocked = 0
+        #Seleção: candidatos vistos, mantidos, e o motivo de cada descarte.
+        self.media_candidates_total = 0
+        self.media_candidates_kept = 0
+        self.media_rejections: dict[str, int] = {}
+        # Estratégia visual por cena. Um diagrama ou cartão NÃO é falha:
+        # é a cena certa visualizada do jeito certo.
+        self.media_visual_types: dict[str, int] = {}
+        self.media_fallbacks: dict[str, int] = {}
+        self.media_score_sum = 0.0
+        self.media_scored_count = 0
+        self.media_low_score = 0
+        # Camadas opcionais (clip/vision) e dispositivo usado.
+        self.media_layers_used: dict[str, int] = {}
+        self.media_layer_device = ""
         self.research_queries = 0
         self.research_sources = 0
 
@@ -113,6 +127,41 @@ class RunMetrics:
             self.media_rights_verify += 1
         elif status == "blocked":
             self.media_rights_blocked += 1
+
+    def media_record_selection(self, candidates: int, kept: int) -> None:
+        """Candidatos que passaram nos filtros e quantos ficaram na cena.
+
+        `candidates` alto com `kept` baixo é o sinal de que os hard filters
+        estão descartando coisa que talvez servisse.
+        """
+        self.media_candidates_total += max(0, int(candidates))
+        self.media_candidates_kept += max(0, int(kept))
+
+    def media_record_rejection(self, reason: str) -> None:
+        """Contabiliza o MOTIVO da rejeição, não só que houve uma."""
+        key = (reason or "outro").split(":")[0].strip()[:40] or "outro"
+        self.media_rejections[key] = self.media_rejections.get(key, 0) + 1
+
+    def media_record_visual_type(self, vtype: str) -> None:
+        """Como cada cena foi visualizada. Um diagrama NÃO é falha."""
+        v = (vtype or "desconhecido").strip()[:20]
+        self.media_visual_types[v] = self.media_visual_types.get(v, 0) + 1
+
+    def media_record_score(self, score: float) -> None:
+        self.media_score_sum += float(score or 0.0)
+        self.media_scored_count += 1
+        if float(score or 0.0) < 0.34 * 100:
+            self.media_low_score += 1
+
+    def media_record_layer(self, layer: str, device: str = "") -> None:
+        """Camada opcional usada (clip/vision) e em que dispositivo."""
+        self.media_layers_used[layer] = self.media_layers_used.get(layer, 0) + 1
+        if device:
+            self.media_layer_device = device
+
+    def media_record_fallback(self, strategy: str) -> None:
+        """Cena que trocou de estratégia visual (não encontrou foto boa)."""
+        self.media_fallbacks[strategy] = self.media_fallbacks.get(strategy, 0) + 1
 
     def research_query(self) -> None:
         self.research_queries += 1
