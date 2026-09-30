@@ -90,12 +90,17 @@ LEGIBILITY_ROLES = frozenset({ROLE_CAPTION})
 # pretendido, não por preferência estética.
 
 GENERIC_FALLBACK: dict[str, tuple[str, ...]] = {
-    INTENT_SERIF: ("EB Garamond", "Noto Serif", "Liberation Serif",
-                   "DejaVu Serif"),
-    # Sem EB Garamond aqui de propósito: onde ela existe raramente tem
-    # itálico, e aceitar o regular silenciosamente é o defeito que este
-    # módulo existe para evitar. Noto e Liberation têm itálico de verdade.
-    INTENT_SERIF_ITALIC: ("Noto Serif", "Liberation Serif",
+    # Utopia abre a lista de propósito, e não por gosto de disponibilidade:
+    # ela foi desenhada por Robert Slimbach, o MESMO desenhista da Minion
+    # Pro. Onde a Minion não está, Utopia é o substituto mais próximo que
+    # existe em qualquer distribuição Linux, e é justamente por isso que
+    # fica antes das outras.
+    INTENT_SERIF: ("Utopia", "EB Garamond", "Noto Serif",
+                   "Liberation Serif", "DejaVu Serif"),
+    # Sem Utopia aqui: onde a família não tem itálico, aceitar o regular
+    # silenciosamente é o defeito que este módulo existe para evitar.
+    # Noto e Liberation têm itálico de verdade.
+    INTENT_SERIF_ITALIC: ("Utopia", "Noto Serif", "Liberation Serif",
                           "DejaVu Serif"),
     INTENT_SANS: ("Noto Sans", "Liberation Sans", "DejaVu Sans"),
     INTENT_SANS_ITALIC: ("Noto Sans", "Liberation Sans", "DejaVu Sans"),
@@ -151,6 +156,10 @@ class TypographyProfile:
     # de citação com o corpo do título estoura o quadro.
     scale: dict[str, float] = field(default_factory=dict)
     direction: str = ""
+    # A família veio do config? Então é escolha de quem usa, e a escolha
+    # vale mesmo sem itálico: o par automático existe para consertar a
+    # NOSSA preferência, não para desobedecer à DELE.
+    pinned: bool = False
 
     def intent_for(self, role: str) -> str:
         return self.roles.get(role, INTENT_SANS)
@@ -366,7 +375,8 @@ def profile_for(genre: str = "", overrides: dict | None = None
             familia = str(familia or "").strip()
             if papel in ROLES and familia:
                 fam[f"role:{papel}"] = familia
-    return replace(base, families=fam, roles=roles)
+    pinado = bool(fam != base.families)
+    return replace(base, families=fam, roles=roles, pinned=pinado)
 
 
 # --- resolução de fonte ------------------------------------------------
@@ -435,6 +445,7 @@ def _fc_resolve(family: str, want_italic: bool) -> tuple[str, str, bool] | None:
 
 
 _CACHE: dict[tuple[str, bool], tuple[str, str, bool] | None] = {}
+_PAIR_CACHE: dict[tuple, str] = {}
 
 
 def clear_cache() -> None:
@@ -446,8 +457,13 @@ def clear_cache() -> None:
     mandar o módulo olhar de novo. Sem esta função, uma falha transitória
     fica na memória como se fosse definitiva, e a próxima fonte instalada
     continua invisível.
+
+    Limpa também a decisão de PAR, que é derivada da resolução: deixar
+    uma delas sobreviver a um `fc-match` reexecutado é o tipo de estado
+    que faz um teste passar e o vídeo sair errado.
     """
     _CACHE.clear()
+    _PAIR_CACHE.clear()
 
 
 def _fc_cached(family: str, want_italic: bool):
@@ -468,7 +484,7 @@ def _legacy_path():
 
 def _candidates(profile: TypographyProfile, intent: str, role: str
                 ) -> list[tuple[str, bool]]:
-    """Cadeia de famílias a tentar, na ordem, com a Preferred primeiro.
+    """Cadeia de famílias a tentar, na ordem, com a Preferida primeiro.
 
     O primeiro item é o que o perfil pede; o resto é genérico por
     intenção. Uma entrada por papel (config `roles`) tem precedência
@@ -476,30 +492,23 @@ def _candidates(profile: TypographyProfile, intent: str, role: str
     """
     want_italic = intent in (INTENT_SERIF_ITALIC, INTENT_SANS_ITALIC)
     especifico = profile.families.get(f"role:{role}", "").strip()
-    fila = []
     if especifico:
         # Preferência, não sentence: se a família que o usuário apontou
         # para este papel não existir na máquina, o papel continua
         # resolvendo pela cadeia da intenção. Cair direto na fonte do
         # sistema aqui significaria que um `roles.quote` com um nome
-        # errado apaga a serifa da citação, que é o oposto do que um override
-        # de configuração deveria fazer.
-        fila.append((especifico, want_italic))
-    preferida = profile.family_for(intent).strip()
-    if preferida:
-        fila.append((preferida, want_italic))
+        # errado apaga a serifa da citação, que é o oposto do que um
+        # override de configuração deveria fazer.
+        fila = [(especifico, want_italic)]
+    else:
+        fila = [(profile.family_for(intent).strip(), want_italic)] \
+            if profile.family_for(intent).strip() else []
     if want_italic:
         # O itálico irmão da família que a voz principal JÁ RESOLVEU. Sem
         # isto, um título em EB Garamond e uma citação em Noto Serif são
         # duas famílias diferentes: a diferença existe, mas parece
         # acidente em vez de desenho, porque EB Garamond é uma old-style
         # e Noto Serif uma transitional.
-        #
-        # O irmão sai da família resolvida, não do nome preferido: se
-        # Minion Pro não está instalado, o título cai em EB Garamond e o
-        # itálico a procurar é o do EB Garamond. Perguntar por
-        # "Minion Pro Italic" e depois aceitar qualquer serifada é o
-        # caminho curto para um vídeo com duas fontes sem ninguém pedir.
         base_intent = (INTENT_SERIF if intent == INTENT_SERIF_ITALIC
                        else INTENT_SANS)
         familia_resolvida = _first_resolved(profile, base_intent)
@@ -512,18 +521,44 @@ def _candidates(profile: TypographyProfile, intent: str, role: str
     return fila
 
 
+def _tem_ambos(nome: str) -> str:
+    """A família tem os dois rostos, e qual é o nome dela. "" se não tem.
+
+    É o que separa "acho uma serifada" de "acho um PAR de serifada". Uma
+    família sem itálico resolve a narração e obriga a citação a mudar de
+    família, e um texto que muda de família entre o título e a citação lê
+    como dois vídeos colados, não como um.
+    """
+    if not nome:
+        return ""
+    reto = _fc_cached(nome, False)
+    if reto is None:
+        return ""
+    inclinado = _fc_cached(nome, True)
+    return reto[0] if inclinado is not None else ""
+
+
 def _first_resolved(profile: TypographyProfile, intent: str) -> str:
     """A primeira família da cadeia que existe de fato nesta máquina."""
-    for nome, itálico in [(profile.family_for(intent).strip(),
-                           intent in (INTENT_SERIF_ITALIC,
-                                      INTENT_SANS_ITALIC))] + \
-            [(n, False) for n in GENERIC_FALLBACK.get(intent, ())]:
-        if not nome:
-            continue
+    base = INTENT_SERIF if intent == INTENT_SERIF_ITALIC else intent
+    for nome, itálico in _chain(profile, base):
         achado = _fc_cached(nome, itálico)
         if achado is not None:
             return achado[0]
     return ""
+
+
+def _chain(profile: TypographyProfile, intent: str) -> list[tuple[str, bool]]:
+    """Preferida + genérica, na ordem, para uma intenção não-itálica."""
+    want_italic = intent in (INTENT_SERIF_ITALIC, INTENT_SANS_ITALIC)
+    fila = []
+    preferida = profile.family_for(intent).strip()
+    if preferida:
+        fila.append((preferida, want_italic))
+    for nome in GENERIC_FALLBACK.get(intent, ()):
+        fila.append((nome, want_italic))
+    return fila
+
 
 
 def resolve(role: str = ROLE_TITLE, genre: str = "",
@@ -545,21 +580,94 @@ def resolve(role: str = ROLE_TITLE, genre: str = "",
     # peça serifada.
     intent = (INTENT_SANS if role in LEGIBILITY_ROLES
               else profile.intent_for(role))
-    for familia, itálico in _candidates(profile, intent, role):
+    par = _par_de_bolso(profile, intent)
+    if par:
+        # O gênero decidiu descer para um PAR. Título e citação usam a
+        # mesma família, e a citação usa o itálico DELA. Filtrar
+        # candidatos um a um em vez de trocar a cadeia inteira é o que
+        # produzia "citação: fonte do sistema": o filtro pulava a
+        # família certa por não ser a preferida do perfil, que é justamente
+        # a família que não existe.
+        wants = intent in (INTENT_SERIF_ITALIC, INTENT_SANS_ITALIC)
+        fila = [(par, wants)]
+        if wants:
+            fila.append((f"{par} Italic", True))
+        for nome in GENERIC_FALLBACK.get(intent, ()):
+            fila.append((nome, wants))
+    else:
+        fila = _candidates(profile, intent, role)
+    for familia, itálico in fila:
         achado = _fc_cached(familia, itálico)
         if achado is None:
             continue
         achada, caminho, inclinada = achado
         preferida = profile.family_for(intent).strip()
+        # A comparação ignora o token de estilo. Pedir "Minion Pro
+        # Italic" e receber o rosto itálico da Minion Pro É a fonte pedida
+        # respondendo — marcar isso como fallback faria o doctor reclamar
+        # de uma máquina que tem exatamente o que foi pedido.
+        base_pedida = split_style(preferida or familia)[0]
         return ResolvedFont(family=achada, path=caminho, italic=inclinada,
                             requested=preferida or familia,
-                            is_fallback=bool(preferida)
-                            and achada.lower() != preferida.lower(),
+                            is_fallback=bool(base_pedida)
+                            and achada.lower() != base_pedida.lower(),
                             intent=intent)
     legado = _legacy_path()
     return ResolvedFont(family="(fonte do sistema)", path=legado,
                         italic=False, requested=profile.family_for(intent),
                         is_fallback=True, intent=intent)
+
+
+def _par_de_bolso(profile: TypographyProfile, intent: str) -> str:
+    """A família que este gênero deve usar como PAR, ou "" se tanto faz.
+
+    Existe por causa de uma assimetria feia. A Minion Pro não está em
+    quase máquina nenhuma, e a primeira serifada da cadeia genérica
+    (EB Garamond) também não tem itálico em parte das instalações. O
+    resultado ingênuo é: título em EB Garamond, citação em Noto Serif.
+    Duas famílias, uma old-style e uma transitional, no mesmo vídeo. A
+    diferença existe, mas parece acidente em vez de desenho.
+
+    Quando a família PREFERIDA do perfil não existe — e só nesse caso —
+    procuramos a primeira da cadeia que tenha os dois rostos, e o gênero
+    inteiro desce para ela. A função editorial fica preservada
+    (serifada, com itálico) e a coerência volta. Se a preferida existe,
+    ela manda, mesmo sem itálico: quem pediu Minion Pro pediu Minion Pro.
+
+    A escolha é da família inteira, não do papel, por isso a letra do
+    gênero decide e não o `title` que deu nome a esta função.
+    """
+    if intent not in (INTENT_SERIF, INTENT_SERIF_ITALIC, INTENT_SANS,
+                      INTENT_SANS_ITALIC):
+        return ""
+    base = (INTENT_SERIF if intent == INTENT_SERIF_ITALIC
+            else INTENT_SANS if intent == INTENT_SANS_ITALIC else intent)
+    preferida = profile.family_for(base).strip()
+    if not preferida:
+        return ""
+    chave = (profile.key, base, tuple(sorted(profile.families.items())),
+             profile.pinned)
+    if chave in _PAIR_CACHE:
+        return _PAIR_CACHE[chave]
+    par = ""
+    achada = _fc_cached(preferida, False)
+    if profile.pinned:
+        par = ""            # escolha de quem usa: vale mesmo sem itálico
+    elif achada is not None and _fc_cached(preferida, True) is not None:
+        par = ""            # a preferida existe e tem os dois rostos
+    else:
+        # A preferida não existe, ou existe sem itálico. Nos dois casos o
+        # gênero inteiro desce para a primeira da cadeia com par
+        # completo, senão o título fica numa família e a citação em
+        # outra — que é a incoerência que o autor viu.
+        for nome, _it in _chain(profile, base):
+            achado = _tem_ambos(nome)
+            if achado:
+                par = achado
+                break
+    _PAIR_CACHE[chave] = par
+    return par
+
 
 
 class Typography:

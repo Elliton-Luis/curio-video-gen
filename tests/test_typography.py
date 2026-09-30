@@ -204,12 +204,66 @@ def test_resolve_marca_o_fallback_mas_nao_falha():
 
 
 def test_resolve_usa_a_familia_pedida_quando_ela_existe(monkeypatch):
-    """Com Minion Pro instalada, é ela que responde — sem fallback."""
-    monkeypatch.setitem(T._CACHE, ("EB Garamond", False),
-                        ("EB Garamond", "/f/ebg.ttf", False))
-    fonte = T.resolve(T.ROLE_TITLE, "etymology")
-    assert fonte.family == "EB Garamond"
-    assert fonte.is_fallback is False
+    """Com a família pedida instalada E com itálico, é ela que responde.
+
+    Uma família existe mas não tem itálico não conta: aí o gênero desce
+    para um par completo, porque ficar nela significaria citação em outra
+    família. Este teste representa a instalação real da EB Garamond, que
+    traz os dois rostos.
+    """
+    T.clear_cache()
+    T._CACHE[("EB Garamond", False)] = ("EB Garamond", "/f/ebg.ttf", False)
+    T._CACHE[("EB Garamond", True)] = ("EB Garamond", "/f/ebgi.ttf", True)
+    try:
+        fonte = T.resolve(T.ROLE_TITLE, "etymology")
+        assert fonte.family == "EB Garamond"
+        assert fonte.is_fallback is False
+    finally:
+        T.clear_cache()
+
+
+def test_com_minion_instalada_a_citacao_e_a_minion_italic(monkeypatch):
+    """A exigência principal, com a fonte presente.
+
+    Sem isto, o perfil de people declara "Minion Pro Italic" e ninguém
+    sabe se o sistema realmente entregaria o itálico dela ou cairia num
+    itálico qualquer.
+    """
+    T.clear_cache()
+    T._CACHE[("Minion Pro", False)] = ("Minion Pro", "/f/minion.otf", False)
+    T._CACHE[("Minion Pro", True)] = ("Minion Pro", "/f/minioni.otf", True)
+    try:
+        titulo = T.resolve(T.ROLE_TITLE, "people")
+        citacao = T.resolve(T.ROLE_QUOTE, "people")
+        latim = T.resolve(T.ROLE_LATIN, "people")
+        assert titulo.family == "Minion Pro" and titulo.italic is False
+        assert citacao.family == "Minion Pro" and citacao.italic is True
+        assert latim.family == "Minion Pro" and latim.italic is True
+        assert titulo.is_fallback is False and citacao.is_fallback is False
+    finally:
+        T.clear_cache()
+
+
+def test_minion_instalada_mas_so_retro_movela_gênero_inteiro(monkeypatch):
+    """Instalação parcial: a Minion Pro existe e não tem itálico.
+
+    Duas saídas possíveis, e só uma é aceitável. Deixar o título na
+    Minion e a citação em outra resolve a falta do itálico e cria o
+    problema que ninguém quer ver: duas famílias no mesmo vídeo. Então o
+    gênero desce inteiro para um par completo — título E citação na mesma
+    família, citação no itálico dela.
+    """
+    T.clear_cache()
+    T._CACHE[("Minion Pro", False)] = ("Minion Pro", "/f/minion.otf", False)
+    # sem entrada para ("Minion Pro", True): não há itálico
+    try:
+        titulo = T.resolve(T.ROLE_TITLE, "people")
+        citacao = T.resolve(T.ROLE_QUOTE, "people")
+        assert citacao.italic is True
+        assert titulo.family == citacao.family
+        assert titulo.family != "Minion Pro"
+    finally:
+        T.clear_cache()
 
 
 def test_itaico_irmao_da_familia_resolvida_antes_da_cadeia_generica():
@@ -224,10 +278,72 @@ def test_itaico_irmao_da_familia_resolvida_antes_da_cadeia_generica():
     # escrito com o sufixo não paga uma segunda consulta ao fontconfig.
     T._CACHE[("EB Garamond", False)] = ("EB Garamond", "/f/ebg.ttf", False)
     T._CACHE[("EB Garamond", True)] = ("EB Garamond", "/f/ebgi.ttf", True)
+    T._CACHE[("EB Garamond Italic", True)] = ("EB Garamond", "/f/ebgi.ttf",
+                                              True)
     try:
-        r = T.resolve(T.ROLE_QUOTE, "people")
+        # Com a ITALIC do perfil instalada mas a serifada não resolvendo,
+        # a voz principal desce e o itálico procura o irmão do que ela
+        # resolveu, não o nome preferido.
+        T._CACHE.pop(("EB Garamond", False), None)
+        T._CACHE[("EB Garamond", False)] = ("EB Garamond", "/f/ebg.ttf", False)
+        r = T.resolve(T.ROLE_QUOTE, "etymology")
         assert r.family == "EB Garamond"
         assert r.italic is True
+    finally:
+        T.clear_cache()
+
+
+# --- o par coerente: a mesma família nos dois lados --------------------
+
+def test_sem_a_familia_pedida_titulo_e_citacao_sao_a_mesma_familia():
+    """A incoerência que o autor viu no vídeo.
+
+    Com a Minion Pro ausente e a primeira serifada da cadeia sem itálico
+    (que é o caso da EB Garamond em parte das instalações, e desta
+    máquina), a saída ingênua é título numa família e citação em outra.
+    Duas famílias no mesmo vídeo leem como dois vídeos colados.
+    """
+    T.clear_cache()
+    try:
+        for g in ("people", "history", "etymology", "mythology"):
+            familias = {T.resolve(papel, g).family for papel in
+                        (T.ROLE_TITLE, T.ROLE_PERSON, T.ROLE_TERM,
+                         T.ROLE_QUOTE, T.ROLE_LATIN, T.ROLE_DOCUMENT)}
+            assert len(familias) == 1, (g, familias)
+    finally:
+        T.clear_cache()
+
+
+def test_a_citacao_continua_inclinada_no_par_escolhido():
+    T.clear_cache()
+    try:
+        for g in ("people", "history", "etymology", "mythology"):
+            assert T.resolve(T.ROLE_QUOTE, g).italic is True, g
+    finally:
+        T.clear_cache()
+
+
+def test_fonte_pinada_pelo_usuario_vale_mesmo_sem_italic():
+    """Quem digita a família no config está escolhendo, não sugerindo."""
+    T.clear_cache()
+    T._CACHE[("EB Garamond", False)] = ("EB Garamond", "/f/ebg.ttf", False)
+    try:
+        p = T.profile_for("people", {"primary": "EB Garamond"})
+        assert p.pinned is True
+        assert T._par_de_bolso(p, T.INTENT_SERIF) == ""
+        assert T.resolve(T.ROLE_TITLE, "people",
+                         {"primary": "EB Garamond"}).family == "EB Garamond"
+    finally:
+        T.clear_cache()
+
+
+def test_genero_sem_italic_ainda_encontra_uma_familia_inclinada():
+    """Ciência e Mistério pedem sans no título e itálico serifado na
+    citação. A citação não pode virar reta só porque o título é sans."""
+    T.clear_cache()
+    try:
+        for g in ("science", "mystery"):
+            assert T.resolve(T.ROLE_QUOTE, g).italic is True, g
     finally:
         T.clear_cache()
 
