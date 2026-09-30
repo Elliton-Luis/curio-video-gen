@@ -1048,6 +1048,7 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
         all_warnings.extend(scene_warnings)
     
     _resolve_reuse_multi(scenes)
+    _annotate_reuse(scenes)
     return scenes, all_warnings
 
 
@@ -1060,6 +1061,49 @@ def _fetch_media_fallback(chapters, max_images: int, warnings: list) -> tuple[li
         print(f"AVISO: {msg}", file=sys.stderr)
         scenes.append({"chapter_id": ch.id, "asset": None, "assets": [], "reused_from": None})
     return scenes, warnings
+
+
+def _annotate_reuse(scenes: list[dict]) -> None:
+    """Marca no media.json as imagens que aparecem em mais de uma cena.
+
+    A São Jerônimo mostrou o caso que faltava. Duas cenas com midia
+    PRÓPRIA podem receber o mesmo asset_id: cada uma buscou e o provedor
+    devolveu o mesmo melhor resultado. Isso não é o que `_resolve_reuse_
+    multi` trata, e o campo `reused_from` ficava vazio nas duas — o
+    mesmo asset em cenas 1 e 3 só aparecia se alguém fosse comparar o
+    media.json na mão.
+
+    O motivo aqui é ALWAYS `same_top_match`: duas cenas independentes
+    receberam o mesmo asset. Não é `thematic_reuse`, e isso é
+    deliberado. Reuso editorial intencional é uma decisão do autor, e o
+    curio não tem como ler decisão nenhuma nos dados — afirmar
+    "reuso temático" seria inventar o motivo e chamar de diagnóstico. O
+    que o registro entrega é o par de cenas e o asset, para o autor
+    decidir em um segundo se foi intencional.
+    """
+    primeira: dict[str, int] = {}
+    for s in scenes:
+        ids = []
+        for entry in s.get("assets") or []:
+            a = (entry or {}).get("asset") or {}
+            aid = str(a.get("asset_id") or "")
+            if not aid:
+                continue
+            ids.append((aid, a))
+        for aid, a in ids:
+            if aid in primeira:
+                s.setdefault("reuse", []).append({
+                    "asset": aid,
+                    "title": a.get("title", "")[:120],
+                    "provider": a.get("provider", ""),
+                    "previous_scene": primeira[aid],
+                    "current_scene": s.get("chapter_id"),
+                    "reason": "same_top_match",
+                })
+            else:
+                primeira[aid] = s.get("chapter_id")
+    for s in scenes:
+        s.setdefault("reuse", [])
 
 
 def _resolve_reuse_multi(scenes: list[dict]) -> None:
