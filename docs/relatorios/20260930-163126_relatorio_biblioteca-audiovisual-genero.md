@@ -3,7 +3,7 @@
 - **Data:** 2026-09-30 16:31 (-03:00)
 - **Tipo:** relatorio
 - **Escopo:** biblioteca local de música/SFX, atualização licenciada, seleção, mixagem, ducking, transições e metadata audiovisual.
-- **Commit(s):** `6e678e3` (`feat(audio): add persistent genre audiovisual library`), `93f8427` (`test(audio): cover library caching and rendered mixes`); documentação: pendente.
+- **Commit(s):** `6e678e3` (`feat(audio): add persistent genre audiovisual library`), `93f8427` (`test(audio): cover library caching and rendered mixes`), `02a3219` (`docs: record audiovisual library implementation`).
 - **Origem:** solicitação “Curio — Biblioteca audiovisual automática por gênero”.
 
 ## 1. O que foi pedido
