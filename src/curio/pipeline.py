@@ -511,6 +511,44 @@ def _narration_with_sfx(wav_path: str, sfx_path: str | None, total: float,
     return render_stage.mix_sfx(wav_path, sfx_path, out, total)
 
 
+def _print_grounding_warning(grounding: dict) -> str:
+    """O aviso de grounding: afirmação, trecho, causa e fontes avaliadas.
+
+    Antes saía "2 dado(s) do roteiro sem correspondência nas fontes: 135,
+    393". 135 e 393 são números, não identificadores: com dezenas de
+    números no texto, o aviso não levava ninguém a lugar nenhum — e era
+    justamente o aviso que ninguém podia descartar, porque ele aponta
+    onde o roteiro pode estar inventando.
+
+    Sai a afirmação, onde ela está no texto, por que ela provavelmente não
+    bate e quais fontes foram conferidas. O gate não muda nada disso: a
+    contagem e a cobertura são as mesmas de antes, porque quem decide o que
+    é verificável é `verify_grounding`, não a frase.
+
+    O corpo sai no stderr e a frase de uma linha volta para `warnings`, que
+    é o que vai para o metadata.json. Existe como função separada do fluxo
+    para poder ser testada e reaproveitada — não há segunda versão dela.
+    """
+    n = len(grounding["unverified"])
+    det = grounding.get("unverified_display") or []
+    msg = (f"{n} {'afirmações' if n > 1 else 'afirmação'} do roteiro sem "
+           f"correspondência nas fontes")
+    print(f"AVISO: {msg}:", file=sys.stderr)
+    for d in det[:8]:
+        print(f"  - {d['fact']}: \"{d['claim']}\"", file=sys.stderr)
+        print(f"      possível causa: {d['cause']}", file=sys.stderr)
+    mais = len(det) - 8
+    if mais > 0:
+        print(f"  ... e {mais} {'outras' if mais > 1 else 'outra'}. "
+              f"Ver o relatório completo.", file=sys.stderr)
+    print(f"  Fontes avaliadas: "
+          f"{', '.join(grounding.get('sources_checked', [])[:6])}",
+          file=sys.stderr)
+    print("  Consulte sources/FONTES.md para as fontes relacionadas.",
+          file=sys.stderr)
+    return msg
+
+
 def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
                    script_source: str, chapters: list[Chapter],
                    scenes_source: str, media_scenes: list[dict],
@@ -690,29 +728,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     grounding = research_stage.verify_grounding(script_text, research_sources,
                                                 cfg.language)
     if grounding["unverified"]:
-        # O aviso não sai mais como "135, 393": 135 é um número, não um
-        # identificador, e com dezenas deles no texto o aviso não levava
-        # ninguém a lugar nenhum. Sai a afirmação, onde ela está e por que
-        # ela provavelmente não bate. O gate é o mesmo de antes — a
-        # contagem e a cobertura saem inalteradas.
-        _det = grounding.get("unverified_display") or []
-        _n = len(grounding["unverified"])
-        msg = (f"{_n} {'afirmações' if _n > 1 else 'afirmação'} do roteiro sem "
-               f"correspondência nas fontes")
-        warnings.append(msg)
-        print(f"AVISO: {msg}:", file=sys.stderr)
-        for _d in _det[:8]:
-            print(f"  - {_d['fact']}: \"{_d['claim']}\"", file=sys.stderr)
-            print(f"      possível causa: {_d['cause']}", file=sys.stderr)
-        _mais = len(_det) - 8
-        if _mais > 0:
-            print(f"  ... e {_mais} {'outras' if _mais > 1 else 'outra'}. "
-                  f"Ver o relatório completo.", file=sys.stderr)
-        print(f"  Fontes avaliadas: "
-              f"{', '.join(grounding.get('sources_checked', [])[:6])}",
-              file=sys.stderr)
-        print("  Consulte sources/FONTES.md para as fontes relacionadas.",
-              file=sys.stderr)
+        warnings.append(_print_grounding_warning(grounding))
     elif grounding["checked"]:
         print(f"Fundamentação: {grounding['checked']} dado(s) conferidos, "
               f"todos nas fontes.")

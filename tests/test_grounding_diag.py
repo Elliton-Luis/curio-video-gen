@@ -153,3 +153,44 @@ def test_relatorio_com_grounding_vazio_nao_quebra(tmp_path):
     out = str(tmp_path / "F.md")
     S.write_report(out, reg, research=fontes("nada"), grounding=g)
     assert "Conferência anti-invenção" in open(out, encoding="utf-8").read()
+
+
+# --- o que o usuário lê no terminal -----------------------------------
+
+def test_o_aviso_no_terminal_aponta_a_afirmacao(capsys):
+    """A frase sozinha não basta: o console tem que dizer o que olhar.
+
+    Este é o teste que faltava — todos os outros olham `verify_grounding`,
+    que é a estrutura. O que a pessoa lê no terminal é a string, e uma
+    string que volta a dizer "135, 393" resolve o problema que o aviso
+    existe para resolver.
+    """
+    from curio import pipeline as P
+    g = R.verify_grounding(ROTEIRO, fontes("Nasceu em 347. Vulgata."))
+    msg = P._print_grounding_warning(g)
+    err = capsys.readouterr().err
+    assert msg == ("5 afirmações do roteiro sem correspondência nas fontes")
+    assert "135 anos" in err and "levou 135 anos" in err
+    assert "possível causa: valor_ausente_das_fontes" in err
+    assert "Fontes avaliadas: Fonte 1" in err
+    assert "sources/FONTES.md" in err
+    # e o número continua fora do padrão "135, 393": o id não é a informação
+    assert "sem correspondência nas fontes: 135" not in err
+
+
+def test_o_aviso_conta_cada_afirmacao_uma_vez(capsys):
+    """135 e "135 anos" são um dado só no texto exibido."""
+    from curio import pipeline as P
+    g = R.verify_grounding(ROTEIRO, fontes("Nasceu em 347. Vulgata."))
+    P._print_grounding_warning(g)
+    err = capsys.readouterr().err
+    assert err.count("  - ") == len(g["unverified_display"])
+
+
+def test_uma_afirmacao_so_fala_no_singular(capsys):
+    from curio import pipeline as P
+    g = R.verify_grounding("Ele recebeu 400 presentes em 393.",
+                           fontes("Nada disso aparece."))
+    msg = P._print_grounding_warning(g)
+    capsys.readouterr()
+    assert msg.startswith("2 afirmações")
