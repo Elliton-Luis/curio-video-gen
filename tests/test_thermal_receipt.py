@@ -12,6 +12,7 @@ errada. Uma cena sem imagem é resolvida por outra estratégia visual
 (diagrama, cartão); uma cena com usina termelétrica é misinformation.
 """
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -213,8 +214,12 @@ def test_asset_com_dimensoes_desconhecidas_passa():
 
 # --- o resultado visível: cena fica vazia, não errada -----------------
 
-def test_cena_sem_foto_boa_fica_sem_foto(tmp_path, monkeypatch):
-    """Fluxo completo com um acervo igual ao do vídeo original."""
+def test_cena_sem_foto_boa_recebe_diagrama(tmp_path, monkeypatch):
+    """Fluxo completo com um acervo igual ao do vídeo original.
+
+    O resultado NÃO é "cena vazia" nem "usina na tela": é um diagrama
+    do mecanismo. A cena mostra o que precisa mostrar do outro jeito.
+    """
     from tests.test_media_waterfall import _FakeProv  # noqa: E402
     acervo = [_asset("w1", "power plant cooling towers steam"),
               _asset("w2", "mountain river wallpaper 4k hd"),
@@ -226,13 +231,18 @@ def test_cena_sem_foto_boa_fica_sem_foto(tmp_path, monkeypatch):
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR")
     scenes, warns = V._search_scene_with_shortcircuit(
         ch, [p1], cfg, 2, m, str(tmp_path))
-    assert scenes[0]["asset"] is None, "entrou imagem irrelevante"
+    asset = scenes[0]["asset"]
+    assert asset is not None, "a cena ficou sem visual nenhum"
+    assert asset["provider"] == "synth", "entrou imagem de banco irrelevante"
+    assert "Diagrama" in asset["title"]
+    assert os.path.getsize(asset["local_path"]) > 10000
+    # as 4 rejeições continuam registradas, com motivo
     assert scenes[0]["rejected"], "o motivo da rejeição não foi registrado"
     motivos = " ".join(r["reason"] for r in scenes[0]["rejected"])
     assert "termo bloqueado" in motivos
-    assert any("sem imagem adequada" in w for w in warns), warns
     # e as métricas contam a estratégia, sem chamar isso de falha
     assert m.media_visual_types.get("mechanism") == 1
+    assert m.media_fallbacks.get("diagram") == 1
     assert m.media_rejections
 
 

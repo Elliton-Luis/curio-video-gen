@@ -850,6 +850,28 @@ def _search_scene_with_shortcircuit(
         if synth is not None:
             picked.append(synth)
             seen_ids.add(synth["asset"]["asset_id"])
+    strategy_used = "image"
+    if not picked:
+        # Nenhuma fotografia serviu. A cena NÃO fica vazia e NÃO recebe
+        # imagem genérica: ela troca de medium. Um diagrama ou um cartão
+        # é a cena certa mostrada do jeito certo, e a métrica registra
+        # como estratégia, não como falha.
+        from . import visuals
+        synth = visuals.visual_for_scene(ch, cfg.cache_dir,
+                                         getattr(cfg, "language", "pt-BR"))
+        if synth is not None:
+            _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
+            picked.append({"asset": synth.to_dict(),
+                           "query": queries[0] if queries else "",
+                           "relevance": 0, "order": 0, "from_cache": False,
+                           "score": 0.0, "strategy": "synth"})
+            strategy_used = ("diagram" if "Diagrama" in synth.title
+                             else "card")
+            if metrics:
+                metrics.media_record_fallback(strategy_used)
+                metrics.media_synth_diagrams += 1
+            print(f"cena {ch.id}: sem foto adequada — visual por código "
+                  f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
     if not picked:
         msg = (f"cena {ch.id}: sem imagem adequada "
                f"({', '.join(queries[:3]) or 'sem consultas'})"
@@ -868,6 +890,8 @@ def _search_scene_with_shortcircuit(
         "assets": picked,
         "reused_from": None,
         "rejected": scene_rejected,
+        "visual_type": str(getattr(ch, "visual_type", "") or "literal"),
+        "strategy": strategy_used,
     }], warnings
 
 

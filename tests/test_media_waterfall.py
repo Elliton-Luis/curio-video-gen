@@ -172,19 +172,25 @@ def test_synth_diagram_em_cena_mecanistica_sem_nada(tmp_path):
     assert not warns  # diagrama resolve: sem fallback
 
 
-def test_sem_imagem_adequada_avisa_que_vai_trocar_de_estrategia(tmp_path):
-    """Sem foto boa NÃO é "fallback genérico": é troca de estratégia.
+def test_cena_sem_foto_boa_troca_de_estrategia(tmp_path):
+    """Sem foto boa, a cena NÃO fica vazia: ela vira cartão.
 
-    A mensagem precisa dizer isso, senão o autor lê como falha do vídeo
-    e não como a cena indo para diagrama/cartão.
+    Este é o ponto que muda o produto. Antes, "nada encontrado" significava
+    gradiente com o título — um placeholder que parecia erro. Agora a cena
+    recebe um visual coerente com o que ela diz.
     """
-    ch = _ch(("rome soldier",), "Roma caiu em guerra.")
+    ch = _ch(("roman legion",), "A legião romana marchou até o rio.",
+             subject="roman legion", visual_entities=["legion", "roman"])
     scenes, warns = V._search_scene_with_shortcircuit(
         ch, [], SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR"),
         1, None, str(tmp_path))
-    assert scenes[0]["asset"] is None
-    assert warns and "sem imagem adequada" in warns[0]
-    assert "estratégia" in warns[0]
+    asset = scenes[0]["asset"]
+    assert asset is not None, "cena ficou sem visual"
+    assert asset["provider"] == "synth"
+    assert os.path.getsize(asset["local_path"]) > 10000
+    assert scenes[0]["strategy"] in ("card", "diagram")
+    # não é degradation silenciosa: a troca fica registrada
+    assert warns == [] or any("visual por código" in w for w in warns)
 
 
 def test_download_rejeita_dims_reais_baixas(tmp_path):
