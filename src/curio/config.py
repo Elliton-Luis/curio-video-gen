@@ -241,6 +241,12 @@ class CurioConfig:
         cfg.language = normalize_language(cfg.language)
         if is_english(cfg.language) and cfg.tts_voice == "pt-BR-AntonioNeural":
             cfg.tts_voice = "en-US-GuyNeural"
+        # Gênero editorial. Guardado como veio (minúsculo, sem validar):
+        # um valor desconhecido tem de ser visível no doctor/dry-run, não
+        # normalizado em silêncio para o padrão.
+        cfg.genre = str(data.get("genre", cfg.genre) or "").strip().lower()
+        if os.environ.get("CURIO_GENRE"):
+            cfg.genre = os.environ["CURIO_GENRE"].strip().lower()
         cfg.queues_dir = str(data.get("queues_dir", cfg.queues_dir))
         if os.environ.get("CURIO_QUEUES_DIR"):
             cfg.queues_dir = str(os.environ["CURIO_QUEUES_DIR"])
