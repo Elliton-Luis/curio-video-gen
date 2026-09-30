@@ -14,7 +14,8 @@ from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import backfill_from_metadata
-from .pipeline import finalize_project, run_pipeline, run_script_pipeline, video_paths
+from .pipeline import (MediaStandby, finalize_project, run_pipeline,
+                        run_script_pipeline, video_paths)
 from .slug import slugify, slugify_with_timestamp
 from .stages import nvidia as nvidia_stage
 from .stages import transcribe as transcribe_stage
@@ -24,6 +25,16 @@ from .stages import visual as visual_stage
 
 def _progress(idx: int, total: int, label: str, status: str) -> None:
     print(f"[{idx}/{total}] {label}... {status}", flush=True)
+
+
+def _standby_exit(exc: MediaStandby) -> int:
+    """Projeto sem imagens: instruções de retomada (código 3, não é erro)."""
+    print(f"\nSTANDBY: {exc}", file=sys.stderr)
+    print(f"  1) Coloque fotos (.jpg/.png/.webp) em:\n     {exc.manual_dir}",
+          file=sys.stderr)
+    print(f"  2) Rode de novo (sem --force) para continuar o vídeo.",
+          file=sys.stderr)
+    return 3
 
 
 def _fail(stage: str, exc: BaseException, hint: str = "") -> int:
@@ -70,6 +81,8 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     try:
         meta = run_pipeline(idea, cfg, slug=args.slug, force=args.force,
                             narration=narration, on_progress=_progress)
+    except MediaStandby as exc:
+        return _standby_exit(exc)
     except ValueError as exc:
         return _fail("roteiro", exc, "ideia vazia ou inválida.")
     except nvidia_stage.NvidiaError as exc:
@@ -128,6 +141,8 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
             script_text, cfg, title=getattr(args, "title", None),
             slug=args.slug, force=args.force, narration=narration,
             on_progress=_progress)
+    except MediaStandby as exc:
+        return _standby_exit(exc)
     except ValueError as exc:
         return _fail("roteiro", exc, "roteiro vazio ou divisão inválida.")
     except nvidia_stage.NvidiaError as exc:

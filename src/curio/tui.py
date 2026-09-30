@@ -19,7 +19,7 @@ import time
 
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
-from .pipeline import run_pipeline, video_paths
+from .pipeline import MediaStandby, run_pipeline, video_paths
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
 from .media import providers as media_prov
@@ -283,6 +283,15 @@ def _progress(idx: int, total: int, label: str, status: str) -> None:
     print(f"  [{idx}/{total}] {label}... {status}", flush=True)
 
 
+def _show_standby(c: dict[str, str], exc: MediaStandby) -> None:
+    """Painel de standby: sem imagens, usuário provê fotos e continua."""
+    print(f"\n{c['yellow']}◷ STANDBY — nenhuma imagem encontrada "
+          f"para {exc.n_scenes} cena(s).{c['reset']}")
+    print("O vídeo NÃO foi produzido (sem tela preta/vazia).")
+    print(f"  1) Coloque fotos (.jpg/.png/.webp) em:\n     {exc.manual_dir}")
+    print("  2) Volte aqui e rode o mesmo fluxo de novo (sem refazer).")
+
+
 def _show_verify(c: dict[str, str], mp4: str, srt: str, cfg: CurioConfig) -> bool:
     print(f"\n{c['bold']}Verificação do vídeo:{c['reset']}")
     rep = verify_mod.verify_video(mp4, srt, cfg.duration_target, cfg.width, cfg.height)
@@ -304,6 +313,10 @@ def _project_status(cfg: CurioConfig, slug: str) -> tuple[str, dict]:
             meta = json.load(fh)
     except json.JSONDecodeError:
         return "metadados corrompidos", {}
+    if meta.get("status") == "standby-no-media":
+        manual = meta.get("manual_dir", "assets/manual")
+        return (f"STANDBY sem imagens — coloque fotos em {manual} "
+                f"e rode o generate de novo"), meta
     mode = meta.get("narration", "ai")
     tag = " (roteiro pronto)" if meta.get("mode") == "script" else ""
     if mode == "human-pending":
@@ -733,8 +746,8 @@ def _queue_detail(c, cfg, path: str) -> None:
         idx = select_option(
             c, f"Fila: {os.path.basename(path)}",
             ["Processar fila", "Adicionar ideias", "Remover ideia",
-             "Reordenar ideia", "Repetir itens com erro", "Ver status detalhado",
-             "Voltar"],
+             "Reordenar ideia", "Repetir itens com erro/standby",
+             "Ver status detalhado", "Voltar"],
             status=_queue_status_lines(queue)[:5] + [counts, f"arquivo: {path}"])
         if idx is None or idx == 6:
             try:
@@ -940,6 +953,9 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=force,
                             narration="ai", on_progress=_progress)
+    except MediaStandby as exc:
+        _show_standby(c, exc)
+        return
     except Exception as exc:  # noqa: BLE001 — TUI exibe erro e volta ao menu
         print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
         print("O que já estava pronto foi preservado — tente de novo.")
@@ -973,6 +989,9 @@ def _human_step1(c: dict[str, str], cfg: CurioConfig) -> str | None:
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=False,
                             narration="human", on_progress=_progress)
+    except MediaStandby as exc:
+        _show_standby(c, exc)
+        return None
     except Exception as exc:  # noqa: BLE001
         print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
         print("O que já estava pronto foi preservado — tente de novo.")
@@ -1068,6 +1087,9 @@ def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
     try:
         meta = run_script_pipeline(script_text, cfg, narration=narration,
                                    on_progress=_progress)
+    except MediaStandby as exc:
+        _show_standby(c, exc)
+        return
     except Exception as exc:  # noqa: BLE001 — TUI exibe erro e volta ao menu
         print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
         print("O que já estava pronto foi preservado — tente de novo.")
@@ -1096,8 +1118,12 @@ def _list_flow(c: dict[str, str], cfg: CurioConfig) -> None:
         if not meta and status == "não encontrado":
             continue
         rows += 1
-        mark = (c["yellow"] + "○" if "aguardando" in status
-                else c["green"] + "●")
+        if "STANDBY" in status:
+            mark = c["yellow"] + "◷"
+        elif "aguardando" in status:
+            mark = c["yellow"] + "○"
+        else:
+            mark = c["green"] + "●"
         print(f"{mark}{c['reset']} {c['cyan']}{entry}{c['reset']}: {status}")
     if not rows:
         print("Nenhum projeto ainda — comece pela opção 1 ou 2.")
@@ -1136,7 +1162,10 @@ def _projects_flow(c: dict[str, str], cfg: CurioConfig) -> None:
         labels = []
         for entry in entries:
             status, _meta = _project_status(cfg, entry)
-            mark = "○" if "aguardando" in status else "●"
+            if "STANDBY" in status:
+                mark = "◷"
+            else:
+                mark = "○" if "aguardando" in status else "●"
             labels.append(f"{mark} {entry} — {status}")
         labels.append("Voltar")
         idx = select_option(c, "Projetos", labels, status=_status_summary(cfg))

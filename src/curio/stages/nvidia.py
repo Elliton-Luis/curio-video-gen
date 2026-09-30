@@ -772,8 +772,10 @@ def _sanitize(text: str, max_chars: int) -> str:
     text = re.sub(r"\[[^\]\n]*\]", "", text)  # [Cena 1: ...], [trilha]...
     text = re.sub(r"(?im)^\s*(narrador|narração|roteiro|narrator|script)\s*:\s*", "", text)
     text = re.sub(r"(?i)^(aqui está[^:]*|roteiro[^:]*|claro!?|here is[^:]*|here's[^:]*|sure!?|of course!?)\s*:?\s*", "", text.strip())
-    # Remove prefixos numerados "0) ", "1) ", etc. em qualquer posição
-    text = re.sub(r"(^|\.\s+)\d+\)\s*", r"\1", text)
+    # Remove marcadores de lista numerada ("0) ", "0), ", "1. ", ...) —
+    # mesma blindagem das legendas, aplicada já na fonte (roteiro/TTS).
+    from .subs import strip_list_markers as _strip_markers
+    text = _strip_markers(text)
     text = text.replace("*", "").replace("#", "").replace('"', "")
     text = re.sub(r"\s+", " ", text).strip().strip("`' ")
     if len(text) <= max_chars:

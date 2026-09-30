@@ -3,7 +3,9 @@
 Fluxo A (narração IA): roteiro → cenas → mídia → narração → legendas → montagem.
 Fluxo B (narração humana): roteiro → cenas → mídia → timeline → silencioso
 → teleprompter; depois `finalize_project` com o áudio humano.
-Tudo cacheável por artefato; mídia sem resultado vira fallback com aviso.
+Tudo cacheável por artefato; cena sem mídia reusa a mais próxima, mas
+ZERO imagens no vídeo = standby (MediaStandby): o usuário deposita fotos
+em `assets/manual/` e roda o generate de novo para continuar.
 """
 
 from __future__ import annotations
@@ -191,6 +193,120 @@ def _resolve_reuse(scenes: list[dict]) -> None:
               f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
 
 
+class MediaStandby(RuntimeError):
+    """Nenhuma imagem para o vídeo: projeto em standby até fotos manuais.
+
+    Atributos: slug, manual_dir, n_scenes. O usuário coloca fotos em
+    `manual_dir` e roda o generate de novo (sem --force) para continuar.
+    """
+
+    def __init__(self, slug: str, manual_dir: str, n_scenes: int):
+        self.slug = slug
+        self.manual_dir = manual_dir
+        self.n_scenes = n_scenes
+        super().__init__(
+            f"projeto '{slug}' em STANDBY: nenhuma imagem encontrada para "
+            f"{n_scenes} cena(s). Coloque fotos (.jpg/.png/.webp) em "
+            f"{manual_dir} e rode o generate de novo para continuar o vídeo."
+        )
+
+
+MANUAL_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def manual_media_dir(paths: VideoPaths) -> str:
+    """Pasta onde o usuário deposita fotos manuais quando há standby."""
+    return os.path.join(paths.root, "assets", "manual")
+
+
+def _manual_readme(manual_dir: str, slug: str, n_scenes: int) -> None:
+    os.makedirs(manual_dir, exist_ok=True)
+    readme = os.path.join(manual_dir, "COMO_USAR.txt")
+    if os.path.isfile(readme):
+        return
+    with open(readme, "w", encoding="utf-8") as fh:
+        fh.write(
+            f"Projeto '{slug}' em STANDBY: nenhuma imagem automática.\n"
+            f"1) Coloque fotos aqui (.jpg/.jpeg/.png/.webp) — "
+            f"ideal: 1 por cena ({n_scenes} cenas).\n"
+            f"2) Nomes em ordem alfabética definem a ordem das cenas "
+            f"(ex.: 01-abertura.jpg, 02-meio.jpg).\n"
+            f"3) Rode o generate de novo (sem --force) para continuar.\n"
+            f"Com menos fotos que cenas, as fotos rodiziam entre as cenas.\n"
+        )
+
+
+def _probe_image_dims(path: str) -> tuple[int, int]:
+    """Dimensões via ffprobe; (0, 0) se indisponível (nunca fatal)."""
+    try:
+        proc = ff.run([ff.FFPROBE, "-v", "error", "-select_streams", "v:0",
+                       "-show_entries", "stream=width,height",
+                       "-of", "csv=p=0", path])
+        if proc.returncode == 0:
+            parts = proc.stdout.strip().split(",")
+            return int(parts[0]), int(parts[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0, 0
+
+
+def _manual_media_scenes(chapters: list[Chapter],
+                         manual_dir: str) -> list[dict] | None:
+    """Monta media_scenes a partir de fotos manuais (None se vazia).
+
+    Arquivos em ordem alfabética; rodízio entre cenas se houver menos
+    fotos que cenas. `reused_from` marca de qual cena a foto veio.
+    """
+    if not os.path.isdir(manual_dir):
+        return None
+    files = sorted(f for f in os.listdir(manual_dir)
+                   if f.lower().endswith(MANUAL_IMAGE_EXTS)
+                   and os.path.isfile(os.path.join(manual_dir, f)))
+    if not files:
+        return None
+    scenes = []
+    for i, ch in enumerate(chapters):
+        fname = files[i % len(files)]
+        donor = chapters[i % len(files)].id
+        local = os.path.join(manual_dir, fname)
+        stem = os.path.splitext(fname)[0]
+        w, h = _probe_image_dims(local)
+        asset = {
+            "provider": "manual",
+            "asset_id": f"manual-{stem}",
+            "title": stem.replace("-", " ").replace("_", " "),
+            "author": "",
+            "license": "manual do usuário",
+            "source_url": "",
+            "download_url": "",
+            "download_fallback_url": "",
+            "width": w,
+            "height": h,
+            "size_bytes": os.path.getsize(local),
+            "kind": "image",
+            "local_path": local,
+        }
+        scenes.append({"chapter_id": ch.id,
+                        "asset": asset,
+                        "assets": [{"asset": asset, "query": "manual",
+                                    "relevance": 100, "order": 0}],
+                        "reused_from": None if donor == ch.id else donor})
+    return scenes
+
+
+def _count_assets(media_scenes: list[dict]) -> int:
+    """Total de cenas com ao menos uma imagem (formato singular ou multi)."""
+    n = 0
+    for s in media_scenes or []:
+        if s.get("asset") is not None:
+            n += 1
+            continue
+        if any((e.get("asset") or {}).get("local_path")
+               for e in s.get("assets") or []):
+            n += 1
+    return n
+
+
 def _scene_segment(ch: Chapter, asset_dict: dict | None, idea: str,
                    duration: float, paths: VideoPaths, cfg: CurioConfig,
                    variant: int) -> str:
@@ -363,7 +479,19 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                       file=sys.stderr)
                 force_after_script = True
     elif not force and os.path.isfile(paths.script_txt):
-        script_text, script_source = _read(paths.script_txt), "cache"
+        # Autocura: roteiros gerados antes da blindagem podem conter
+        # marcadores de lista ("0) ", "1. "...). Remove só os marcadores
+        # (sem truncar/re-escrever) para que qualquer etapa refeita use
+        # texto limpo; áudio/cenas em cache seguem intactos e alinhados.
+        raw_cached = _read(paths.script_txt)
+        healed = subs_stage.strip_list_markers(raw_cached)
+        if healed != raw_cached:
+            print("AVISO: roteiro em cache continha numeração de lista — "
+                  "marcadores removidos.", file=sys.stderr)
+            warnings.append("roteiro em cache higienizado (marcadores de lista)")
+            with open(paths.script_txt, "w", encoding="utf-8") as fh:
+                fh.write(healed)
+        script_text, script_source = healed, "cache"
     else:
         script_text, script_source = script_stage.generate_script(idea, cfg, metrics)
         with open(paths.script_txt, "w", encoding="utf-8") as fh:
@@ -420,11 +548,20 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     stage_times["scenes"] = round(time.monotonic() - t0, 2)
     emit(2, "Interpretando cenas", "OK")
 
-    # [3/6] Mídia
+    # [3/6] Mídia (manual > cache > provedores; zero imagens = standby)
     t0 = time.monotonic()
     emit(3, "Buscando mídia")
+    manual_dir = manual_media_dir(paths)
     media_scenes = None
-    if not force_after_script and os.path.isfile(paths.media_json):
+    manual = _manual_media_scenes(chapters, manual_dir)
+    if manual is not None:
+        media_scenes = manual
+        msg = (f"mídia manual: {len({e['asset']['local_path'] for s in manual for e in s.get('assets') or []})} "
+               f"foto(s) de {manual_dir}")
+        warnings.append(msg)
+        print(f"Mídia manual: usando fotos de {manual_dir}.", file=sys.stderr)
+        _write_json(paths.media_json, media_scenes)
+    if media_scenes is None and not force_after_script and os.path.isfile(paths.media_json):
         try:
             saved = _read_json(paths.media_json)
             chapter_ok = ([s["chapter_id"] for s in saved] ==
@@ -475,6 +612,24 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     stage_times["media"] = round(time.monotonic() - t0, 2)
     emit(3, "Buscando mídia",
          "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")
+
+    # Sem nenhuma imagem o vídeo NÃO é produzido: standby até fotos manuais.
+    if _count_assets(media_scenes) == 0:
+        _manual_readme(manual_dir, slug, len(chapters))
+        sources.save(paths.sources_json)
+        _write_json(paths.metadata_json, {
+            "slug": slug,
+            "idea": idea,
+            "status": "standby-no-media",
+            "narration": "standby",
+            "manual_dir": manual_dir,
+            "n_scenes": len(chapters),
+            "stage_times": dict(stage_times),
+            "warnings": list(warnings),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        emit(3, "Buscando mídia", "STANDBY")
+        raise MediaStandby(slug, manual_dir, len(chapters))
 
     if narration == "human":
         return _human_prep(idea, slug, cfg, paths, script_text, script_source,
@@ -533,18 +688,22 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                               cfg.visual_sfx)
                        if max_images > 1 else [])
 
-    # [5/6] Legendas (reais quando há boundaries)
+    # [5/6] Legendas (reais quando há boundaries). Sempre regeneradas:
+    # é barato, determinístico (roteiro+áudio em cache) e autocura legendas
+    # antigas geradas antes das blindagens de sanitização.
     t0 = time.monotonic()
     emit(5, "Sincronizando legendas")
-    if force or not (os.path.isfile(paths.subs_srt)
-                     and os.path.isfile(paths.subs_ass)):
-        cue_count = subs_stage.write_subtitles(
-            script_text, audio_duration, paths.subs_srt, paths.subs_ass,
-            cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
-            words=words if tts_info["provider"] == "edge-tts" else None,
-            cache_dir=cfg.cache_dir)
-    else:
-        cue_count = _read(paths.subs_srt).count("-->")
+    prev_ass = _read(paths.subs_ass) if os.path.isfile(paths.subs_ass) else ""
+    cue_count = subs_stage.write_subtitles(
+        script_text, audio_duration, paths.subs_srt, paths.subs_ass,
+        cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
+        words=words if tts_info["provider"] == "edge-tts" else None,
+        cache_dir=cfg.cache_dir)
+    subs_changed = _read(paths.subs_ass) != prev_ass
+    if subs_changed and not force and os.path.isfile(paths.final_mp4):
+        print("AVISO: texto das legendas mudou — refazendo o MP4 final "
+              "para acompanhar.", file=sys.stderr)
+        warnings.append("legendas atualizadas (rebuild do final.mp4)")
     stage_times["subs"] = round(time.monotonic() - t0, 2)
     emit(5, "Sincronizando legendas", "OK")
 
@@ -554,7 +713,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     durations = [max(0.5, c.end - c.start) for c in chapters]
     total = round(audio_duration + 0.8, 2)
     sfx_path = None
-    if not force and os.path.isfile(paths.final_mp4):
+    if not force and not subs_changed and os.path.isfile(paths.final_mp4):
         video_duration = ff.probe_duration(paths.final_mp4)
         render_info = {"backend": "cache", "encoder": "cache",
                        "duration": video_duration, "path": paths.final_mp4}

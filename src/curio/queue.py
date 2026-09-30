@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import CurioConfig
-from .pipeline import run_pipeline
+from .pipeline import MediaStandby, run_pipeline
 from .slug import slugify
 
 
@@ -231,7 +231,22 @@ def process_queue(
 
             try:
                 # Executa pipeline completo (mesmo pipeline do modo individual).
-                result = run_pipeline(item.idea, item_cfg, slug=item.slug)
+                try:
+                    result = run_pipeline(item.idea, item_cfg, slug=item.slug)
+                except MediaStandby as standby:
+                    item.status = QueueItemStatus.PAUSED
+                    item.error = (f"standby sem imagens — fotos em "
+                                  f"{standby.manual_dir}")
+                    item.finished_at = datetime.now(timezone.utc).isoformat()
+                    item.duration_seconds = round(time.monotonic() - start_time, 2)
+                    if on_item_complete:
+                        on_item_complete(item, False)
+                    print(f"STANDBY '{item.idea}': {standby}", file=sys.stderr)
+                    if queue.queue_file:
+                        queue.save(queue.queue_file)
+                    if on_progress:
+                        on_progress(queue)
+                    continue
                 artifacts = result.get("artifacts", {}) or {}
                 video_path = str(artifacts.get("video", ""))
                 project_root = os.path.dirname(os.path.dirname(video_path)) if video_path else os.path.join(output_dir, item.slug)
@@ -271,10 +286,10 @@ def process_queue(
 
 
 def retry_failed(queue: VideoQueue) -> int:
-    """Marca itens com erro como aguardando para reprocessamento."""
+    """Marca itens com erro ou em standby como aguardando (reprocessar)."""
     count = 0
     for item in queue.items:
-        if item.status == QueueItemStatus.ERROR:
+        if item.status in (QueueItemStatus.ERROR, QueueItemStatus.PAUSED):
             item.status = QueueItemStatus.WAITING
             item.error = ""
             item.retry_count += 1

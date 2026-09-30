@@ -102,12 +102,39 @@ def _words(text: str) -> list[str]:
     return re.findall(r"\S+", text)
 
 
+# Marcadores de lista numerada que vazam do LLM ("0) ", "0), ", "1. ",
+# "(2) ", "3: ", "4 - "). Até 2 dígitos para nunca comer anos ("1990").
+_LIST_MARKER_BOUNDARY = re.compile(
+    r"(^|[.!?…]\s+)\(?\d{1,2}\s*[).\-:\]]\s*,?\s*")
+_LIST_MARKER_MID = re.compile(
+    r"(?<=\s)\(?\d{1,2}[).]\s*,?\s*(?=[A-ZÀ-Þ])")
+_LIST_MARKER_LEAD_JUNK = re.compile(r"^[\s,;:\-–—)\]]+")
+
+
+def strip_list_markers(text: str) -> str:
+    """Remove marcadores de lista numerada de qualquer posição do texto.
+
+    Cobre início do texto, após fim de frase e itens capitalizados no meio
+    do texto; repete até estabilizar (cadeias tipo "0) 1) texto").
+    Anos ("1990") e códigos ("B12") são preservados.
+    """
+    if not text:
+        return text
+    prev = None
+    while prev != text:
+        prev = text
+        text = _LIST_MARKER_BOUNDARY.sub(r"\1", text)
+        text = _LIST_MARKER_MID.sub("", text)
+    return _LIST_MARKER_LEAD_JUNK.sub("", text)
+
+
 def _normalize_subtitle_text(text: str) -> str:
     """Normaliza texto da legenda: corrige pontuação, capitalização, interrogações."""
     if not text:
         return text
-    # Remove prefixos numerados "0) ", "1) ", etc. em qualquer posição
-    text = re.sub(r"(^|\.\s+)\d+\)\s*", r"\1", text)
+    # Garantia de exibição: nenhum marcador numerado chega à legenda,
+    # venha o texto do LLM, do cache ou de roteiro fornecido.
+    text = strip_list_markers(text)
     # Normaliza espaços
     text = re.sub(r"\s+", " ", text.strip())
     # Corrige letras maiúsculas aleatórias no meio da frase
@@ -240,6 +267,12 @@ def _ends_sentence(text: str) -> bool:
     return text.rstrip().endswith((".", "!", "?", "…", "..."))
 
 
+# Token isolado que é só marcador de lista ("0)", "1.", "(2)") — vem do
+# TTS quando o roteiro (ex.: cache antigo) contém numeração; não carrega
+# significado e nunca deve aparecer na legenda.
+_MARKER_TOKEN = re.compile(r"^\(?\d{1,2}[).,:;\-–—\]]$")
+
+
 def cues_from_words(words: list[dict], max_words: int = 5,
                     max_chars: int = 36, max_dur: float = 4.5,
                     min_dur: float = 0.8) -> list[tuple[float, float, str]]:
@@ -249,8 +282,11 @@ def cues_from_words(words: list[dict], max_words: int = 5,
     ≥20 chars); limites duros de palavras/chars/duração evitam estouro.
     Sem offset artificial: o primeiro bloco começa no primeiro boundary real.
     Aplica formatação: maiúsculas + destaque em 1 palavra por cue.
+    Tokens que são só marcadores de lista ("0)", "1."...) são descartados.
     """
-    clean = [w for w in words if str(w.get("text", "")).strip()]
+    clean = [w for w in words
+             if str(w.get("text", "")).strip()
+             and not _MARKER_TOKEN.match(str(w.get("text", "")).strip())]
     if not clean:
         raise ValueError("sem timestamps de palavras — nada para legendar")
     cues, cur = [], []
