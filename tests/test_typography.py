@@ -6,6 +6,7 @@ quando a Minion Pro NÃO está na máquina, que é o caso de quase todo
 mundo, e o que o renderizador faz com o papel que a cena declarou.
 """
 
+import pathlib
 import subprocess
 import sys
 
@@ -850,3 +851,76 @@ def test_diagrama_sem_genero_usa_a_fonte_de_exibicao(tmp_path):
     finally:
         T.Typography.pil = real
     assert asset is not None
+
+
+# --- a revisão mostra a tipografia -------------------------------------
+
+def test_folha_de_contato_mostra_a_tipografia(tmp_path):
+    from curio.stages import review as R
+    from curio.stages.scenes import Chapter
+    ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
+                  visual_type="card", subject="x")]
+    out = str(tmp_path / "c.html")
+    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj", genre="people")
+    html = pathlib.Path(out).read_text(encoding="utf-8")
+    assert "tipografia" in html.lower() or "Utopia" in html
+
+
+def test_folha_prefere_o_que_esta_gravado_no_metadata(tmp_path):
+    """O gravado é o que o vídeo REALMENTE usou.
+
+    Se o que está no metadata e o que o resolver devolve divergirem, o
+    vídeo foi montado com outra fonte, e a revisão é o pior lugar para
+    esconder isso.
+    """
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    from curio.stages import review as R
+    from curio.stages.scenes import Chapter
+    gravado = _typography_report(CurioConfig(), "people")
+    gravado["roles"]["quote"]["family"] = "Cormorant Garamond"
+    ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
+                  visual_type="card", subject="x")]
+    out = str(tmp_path / "c.html")
+    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj", genre="people",
+                          typography=gravado)
+    from curio.stages import review as R
+    linha = R._typography_from_report(gravado)
+    assert "citação: Cormorant Garamond" in linha
+    # e o título segue o que foi gravado, que aqui é Utopia
+    assert "título: Utopia" in linha
+
+
+def test_folha_sem_genero_nao_mostra_tipografia(tmp_path):
+    from curio.stages import review as R
+    from curio.stages.scenes import Chapter
+    ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
+                  visual_type="card", subject="x")]
+    out = str(tmp_path / "c.html")
+    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj")
+    html = pathlib.Path(out).read_text(encoding="utf-8")
+    assert "Tipografia" not in html and "typograph" not in html.lower()
+
+
+def test_dry_run_mostra_a_tipografia():
+    from curio.config import CurioConfig
+    from curio.pipeline import _typography_report
+    from curio.stages import review as R
+    from curio.stages.scenes import Chapter
+    ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
+                  visual_type="card", subject="x")]
+    texto = R.dry_run_text(ch, [], genre="people",
+                           typography=_typography_report(CurioConfig(),
+                                                        "people"))
+    assert "Tipografia:" in texto
+    assert "itálico" in texto
+
+
+def test_banner_mostra_o_fallback_quando_a_fonte_pedida_faltou():
+    from curio.stages import review as R
+    T.clear_cache()
+    try:
+        b = R.typography_banner("people")
+        assert "pediu Minion Pro" in b or "Minion Pro" not in b
+    finally:
+        T.clear_cache()

@@ -308,13 +308,14 @@ def cmd_review(args, cfg: CurioConfig) -> int:
         paths.metadata_json) else {}
     genre = str(_meta.get("genre") or "")
     if args.dry_run:
-        print(review_stage.dry_run_text(chapters, media,
-                                        threshold=scoring_stage.threshold(),
-                                        genre=genre))
+        print(review_stage.dry_run_text(
+            chapters, media, threshold=scoring_stage.threshold(),
+            genre=genre, typography=_meta.get("typography")))
         return 0
     out = review_stage.write_contact_sheet(
         paths.contact_sheet, chapters, media, paths.root, slug,
-        threshold=scoring_stage.threshold(), genre=genre)
+        threshold=scoring_stage.threshold(), genre=genre,
+        typography=_meta.get("typography"))
     print(f"Folha de contato: {out}")
     return 0
 

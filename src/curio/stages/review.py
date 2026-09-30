@@ -128,10 +128,55 @@ def genre_banner(genre: str = "") -> str:
             f"destaque {p.caption_highlight}")
 
 
+def typography_banner(genre: str = "", overrides: dict | None = None) -> str:
+    """A tipografia que este vídeo vai usar, por papel. Vazia sem gênero.
+
+    A folha de contato é onde o autor decide se o vídeo ficou bom, e a
+    tipografia é exatamente o que não se julga vendo a miniatura: uma
+    citação em itálico serifado e a mesma frase em sans pesada são a mesma
+    frase. O relatório diz também o que RESPONDEU, que é a informação que
+    o metadata esconde de quem não abre o JSON.
+    """
+    from . import typography as _typo
+    if not _typo.profile_for(genre or "").key:
+        return ""
+    linhas = []
+    for papel, nome in ((_typo.ROLE_TITLE, "título"),
+                        (_typo.ROLE_QUOTE, "citação"),
+                        (_typo.ROLE_CAPTION, "legenda")):
+        r = _typo.resolve(papel, genre, overrides)
+        if papel in _typo.LEGIBILITY_ROLES:
+            familia, _b, _p = _typo.for_genre(genre, overrides).ass(papel)
+        else:
+            familia = r.family + (" itálico" if r.italic else "")
+        marca = "" if not r.is_fallback else f" (pediu {r.requested})"
+        linhas.append(f"{nome}: {familia}{marca}")
+    return " · ".join(linhas)
+
+
+def _typography_from_report(report: dict | None) -> str:
+    """Lê a tipografia já gravada no metadata.json. Vazia se não houver."""
+    if not isinstance(report, dict):
+        return ""
+    papeis = report.get("roles")
+    if not isinstance(papeis, dict):
+        return ""
+    partes = []
+    for papel, nome in (("title", "título"), ("quote", "citação"),
+                        ("caption", "legenda")):
+        r = papeis.get(papel) or {}
+        if not r.get("family"):
+            continue
+        partes.append(f"{nome}: {r['family']}"
+                      + (" itálico" if r.get("italic") else ""))
+    return " · ".join(partes)
+
+
 def write_contact_sheet(out_path: str, chapters, media_scenes: list[dict],
                         root: str, slug: str = "", threshold: float = 0.0,
                         layers: list[str] | None = None,
-                        genre: str = "") -> str:
+                        genre: str = "",
+                        typography: dict | None = None) -> str:
     """Gera `review/contact_sheet.html` — uma linha por cena."""
     base = os.path.dirname(os.path.abspath(out_path))
     rows = scene_rows(chapters, media_scenes, base)
@@ -150,6 +195,7 @@ def write_contact_sheet(out_path: str, chapters, media_scenes: list[dict],
            position:sticky;top:0;background:var(--bg);z-index:2}
     h1{margin:0 0 6px;font-size:20px}
     .genre{color:var(--acc);font-size:13px;margin:0 0 6px}
+    .genre+.genre{color:var(--soft);font-weight:400}
     .sum{color:var(--soft);font-size:13px}
     .sum b{color:var(--ink)}
     main{padding:20px 28px 60px;display:grid;gap:16px;max-width:1180px}
@@ -183,12 +229,20 @@ def write_contact_sheet(out_path: str, chapters, media_scenes: list[dict],
 
     g = genre_banner(genre)
     linha_genero = (f'<div class="genre">{html.escape(g)}</div>' if g else "")
+    # A folha prefere o que está GRAVADO no metadata: é o que o vídeo
+    # realmente usou. Divergir entre o gravado e o resolvido agora é
+    # sinal de que o vídeo foi montado com outra fonte, e esconder isso
+    # na revisão seria o pior lugar para esconder.
+    ty = _typography_from_report(typography)
+    if not ty:
+        ty = typography_banner(genre)
+    linha_typo = (f'<div class="genre">{html.escape(ty)}</div>' if ty else "")
     parts = [f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Revisão — {html.escape(slug or "projeto")}</title><style>{css}</style>
 </head><body>
 <header><h1>Revisão visual — {html.escape(slug or "projeto")}</h1>
-{linha_genero}
+{linha_genero}{linha_typo}
 <div class="sum">{len(rows)} cena(s) · <b>{len(rows) - len(sem_foto)}</b> com
 visual · <b>{len(geradas)}</b> geradas por código
 · mínimo de nota {threshold:.0f} · camadas: {html.escape(", ".join(layers))}
@@ -260,13 +314,17 @@ visual · <b>{len(geradas)}</b> geradas por código
 
 def dry_run_text(chapters, media_scenes: list[dict], threshold: float = 0.0,
                  layers: list[str] | None = None, clip_device: str = "",
-                 genre: str = "") -> str:
+                 genre: str = "",
+                 typography: dict | None = None) -> str:
     """Relatório de texto da decisão, por cena. Sem HTML, sem download."""
     layers = layers or ["base"]
     out: list[str] = []
     g = genre_banner(genre)
     if g:
         out.append(f"Gênero: {g}")
+    ty = _typography_from_report(typography) or typography_banner(genre)
+    if ty:
+        out.append(f"Tipografia: {ty}")
     for r in scene_rows(chapters, media_scenes, "."):
         out.append(f"\nCena {r['id']}  [{r['visual_type']}]")
         out.append(f"  texto      : {r['narration'][:150]}")
