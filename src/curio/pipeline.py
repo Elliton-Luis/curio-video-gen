@@ -379,7 +379,7 @@ def _build_silent(chapters: list[Chapter], media_scenes: list[dict], idea: str,
     for i, (ch, dur) in enumerate(zip(chapters, durations)):
         segs.append(_scene_segment(ch, assets.get(ch.id), idea, round(dur, 1),
                                    paths, cfg, variant=i))
-    return render_stage.concat_copy(segs, out_path)
+    return render_stage.concat_copy(segs, out_path, cfg)
 
 
 def _visual_segment(trecho: dict, idea: str, duration: float,
@@ -419,7 +419,7 @@ def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
              "images": t.get("images", [])} if t else
             {"chapter_id": ch.id, "narration": ch.narration, "images": []},
             idea, dur, paths, cfg, variant=i))
-    return render_stage.concat_copy(segs, out_path)
+    return render_stage.concat_copy(segs, out_path, cfg)
 
 
 def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],

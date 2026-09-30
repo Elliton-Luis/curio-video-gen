@@ -10,6 +10,7 @@ import os
 
 import pytest
 
+from curio.config import CurioConfig
 from curio.stages import scoring, visuals
 from curio.stages.scenes import Chapter
 
@@ -257,3 +258,68 @@ def test_arte_historica_passa_e_foto_moderna_nao():
     ok_arte, _ = scoring.below_threshold([{"score": arte["score"]}])
     ok_foto, _ = scoring.below_threshold([{"score": foto["score"]}])
     assert ok_arte and not ok_foto
+
+
+# --- a concatenação precisa produzir UMA série de codec ---------------
+# O sintoma era: vídeo falhava em ~14,9 s (fronteira do 2º segmento) com
+# "Error reinitializing filters!" e -38, deixando um final.mp4 truncado
+# como se tivesse funcionado. Causa: -c copy do demuxer concat justapõe
+# N séries de codec, e o segundo encode precisa reiniciar o filtergraph ao
+# atravessar cada fronteira — o que o hwupload do VA-API não implementa.
+
+def _segmentos(tmp_path, n=3):
+    from PIL import Image
+    import subprocess
+    segs = []
+    for i in range(n):
+        p = str(tmp_path / f"seg{i}.mp4")
+        src = str(tmp_path / f"img{i}.png")
+        Image.new("RGB", (480, 854), (40 + i * 30, 90, 140)).save(src)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1",
+                        "-framerate", "24", "-t", "2", "-i", src,
+                        "-c:v", "libx264", "-preset", "ultrafast",
+                        "-pix_fmt", "yuv420p", p], check=True)
+        segs.append(p)
+    return segs
+
+
+def _n_series(path):
+    """Conta trocas de série observing os keyframes do stream."""
+    import subprocess
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path],
+        capture_output=True, text=True).stdout
+    return sum(1 for ln in out.splitlines() if ",K" in ln or ln.endswith("K"))
+
+
+def test_concat_copy_normaliza_quando_o_encode_final_e_vaapi(tmp_path):
+    from curio.stages import render as R
+    cfg = CurioConfig(render_backend="vaapi")
+    out = str(tmp_path / "silent.mp4")
+    R.concat_copy(_segmentos(tmp_path), out, cfg)
+    assert os.path.isfile(out)
+    assert _n_series(out) <= 1, "o concat precisa sair com série única"
+
+
+def test_concat_copy_nao_paga_passe_extra_no_caminho_software(tmp_path):
+    from curio.stages import render as R
+    cfg = CurioConfig(render_backend="cpu")
+    out = str(tmp_path / "silent.mp4")
+    R.concat_copy(_segmentos(tmp_path), out, cfg)
+    assert os.path.isfile(out)
+    assert not os.path.exists(out + ".norm.mp4"), "normalizou sem precisar"
+
+
+def test_concat_copy_sem_cfg_comporta_se_como_antes(tmp_path):
+    from curio.stages import render as R
+    out = str(tmp_path / "silent.mp4")
+    R.concat_copy(_segmentos(tmp_path), out)
+    assert os.path.isfile(out) and os.path.getsize(out) > 1000
+
+
+def test_needs_single_sequence_depende_do_encoder(tmp_path):
+    from curio.stages import render as R
+    assert R._needs_single_sequence(CurioConfig(render_backend="vaapi"))
+    assert R._needs_single_sequence(CurioConfig(render_backend="arc"))
+    assert not R._needs_single_sequence(CurioConfig(render_backend="cpu"))

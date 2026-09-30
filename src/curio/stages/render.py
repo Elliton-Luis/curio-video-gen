@@ -7,6 +7,9 @@ Intel Arc (VA-API/AV1 no nó Intel) > QSV > libx264 (auto-detect).
 
 from __future__ import annotations
 
+import os
+import sys
+
 from .. import ffmpeg as ff
 from ..config import CurioConfig
 
@@ -311,9 +314,30 @@ def render_fallback_segment(duration: float, out_path: str, cfg: CurioConfig,
     return out_path
 
 
-def concat_copy(paths: list[str], out_path: str) -> str:
-    """Concatena segmentos idênticos sem re-encode."""
-    import os
+def concat_copy(paths: list[str], out_path: str, cfg: CurioConfig | None = None) -> str:
+    """Concatena segmentos; sem re-encode quando dá para evitá-lo.
+
+    O "sem re-encode" era uma premissa errada. Cada segmento é gravado
+    como uma SÉRIE de codec própria, e o `-c copy` do demuxer concat junta
+    as séries sem fundi-las: o arquivo final tem N cabecalhos de sequência
+    e o segundo encode (legendas + título + áudio) precisa reiniciar o
+    filtergraph ao atravessar cada fronteira.
+
+    O `hwupload` do VA-API não implementa reinicialização, então morre com
+    -38 (ENOSYS) e imprime a lista completa de pixel formats do encoder
+    tentando negociar. O sintoma é confuso: falha sempre na fronteira do
+    SEGUNDO segmento — 14,9 s num vídeo de 12 cenas — muito depois de
+    qualquer coisa ter dado errado, e o `final.mp4` fica truncado no
+    disco como se tivesse funcionado.
+
+    Por isso: quando o encode final é VA-API, normalizamos para uma série
+    única antes. O encode é por software porque é justamente o software
+    que tolera o reinit; com `libx264` os 88 s do exemplo passam, e o
+    segundo passe por VA-API então funciona (medido: 13 s + 19 s para um
+    vídeo de 88 s). Quando o encode final é por software, o problema não
+    existe e nada é normalizado — não se paga um passe que ninguém
+    precisa.
+    """
     list_path = out_path + ".files.txt"
     with open(list_path, "w", encoding="utf-8") as fh:
         for p in paths:
@@ -322,7 +346,38 @@ def concat_copy(paths: list[str], out_path: str) -> str:
     proc = ff.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
                    "-i", list_path, "-c", "copy", out_path])
     _check(proc, "concat")
+
+    if cfg is not None and _needs_single_sequence(cfg):
+        _normalize_sequence(list_path, out_path)
     return out_path
+
+
+def _needs_single_sequence(cfg: CurioConfig) -> bool:
+    """O encode final vai usar VA-API? (só aí o multi-série é fatal.)"""
+    try:
+        _backend, encoder = ff.pick_encoder(cfg.render_backend)
+    except Exception:  # noqa: BLE001 — detecção falha: melhor normalizar
+        return True
+    return encoder.endswith("_vaapi")
+
+
+def _normalize_sequence(list_path: str, out_path: str) -> None:
+    """Regrava o concat como UMA série de codec, para o próximo encode."""
+    tmp = out_path + ".norm.mp4"
+    proc = ff.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                   "-i", list_path, "-c:v", "libx264", "-preset", "veryfast",
+                   "-crf", "16", "-pix_fmt", "yuv420p", tmp])
+    if proc.returncode != 0:
+        # Normalização falhou: fica o concat original, e o próximo
+        # encode é que decide se aguenta. Melhor um arquivo possivelmente
+        # multi-série do que nenhum arquivo.
+        print(f"AVISO: não foi possível normalizar a série de codecs "
+              f"({(proc.stderr or '').strip()[-200:] or 'erro desconhecido'}) "
+              f"— o encode por hardware pode falhar.", file=sys.stderr)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return
+    os.replace(tmp, out_path)
 
 
 # Nível dos SFX. Os geradores do ffmpeg não saem em 0 dBFS: `sine` com
