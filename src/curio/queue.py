@@ -182,6 +182,7 @@ def process_queue(
     on_item_start: Optional[Callable[[QueueItem], None]] = None,
     on_item_complete: Optional[Callable[[QueueItem, bool], None]] = None,
     on_progress: Optional[Callable[[VideoQueue], None]] = None,
+    on_event=None,
 ) -> VideoQueue:
     """Processa a fila sequencialmente.
 
@@ -232,7 +233,8 @@ def process_queue(
             try:
                 # Executa pipeline completo (mesmo pipeline do modo individual).
                 try:
-                    result = run_pipeline(item.idea, item_cfg, slug=item.slug)
+                    result = run_pipeline(item.idea, item_cfg, slug=item.slug,
+                                          on_event=on_event)
                 except MediaStandby as standby:
                     item.status = QueueItemStatus.PAUSED
                     item.error = (f"standby sem imagens — fotos em "
@@ -263,14 +265,15 @@ def process_queue(
                     
             except Exception as exc:
                 item.status = QueueItemStatus.ERROR
-                item.error = str(exc)
+                from .runlog import safe_text
+                item.error = safe_text(exc)
                 item.finished_at = datetime.now(timezone.utc).isoformat()
                 item.duration_seconds = round(time.monotonic() - start_time, 2)
                 
                 if on_item_complete:
                     on_item_complete(item, False)
                 
-                print(f"ERRO no item '{item.idea}': {exc}", file=sys.stderr)
+                print(f"ERRO no item '{item.idea}': {item.error}", file=sys.stderr)
 
             # Salva progresso
             if queue.queue_file:

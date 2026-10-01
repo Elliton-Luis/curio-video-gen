@@ -187,6 +187,13 @@ class WikimediaProvider(MediaProvider):
                 break
             except Exception as exc:
                 last = exc
+                if attempt < 4:
+                    from ..runlog import event as run_event
+                    run_event("retry", f"Wikimedia: tentativa {attempt + 1}/5; "
+                              f"{type(exc).__name__}; nova tentativa",
+                              operation="media_search", provider=self.name,
+                              attempt=attempt + 1, attempts=5,
+                              error=str(exc))
                 import time
                 time.sleep(2 * (attempt + 1))
         if data is None:

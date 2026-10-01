@@ -235,8 +235,11 @@ class SearchTask:
 def _search_with_timeout(provider_obj, query: str, timeout: float, metrics=None) -> list[MediaAsset]:
     """Executa busca com timeout."""
     import concurrent.futures
+    import contextvars
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(provider_obj.search, query, 5, metrics)
+        context = contextvars.copy_context()
+        future = executor.submit(context.run, provider_obj.search,
+                                 query, 5, metrics)
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError:
@@ -738,6 +741,9 @@ def _search_scene_with_shortcircuit(
     então ordena. Um provedor que responde mal não esgota mais a cena.
     """
     warnings = []
+    results_before = sum(metrics.media_results_received.values()) if metrics else 0
+    downloads_before = metrics.media_downloads if metrics else 0
+    cache_before = metrics.media_cache_hits if metrics else 0
     queries = _waterfall_queries(ch)
     blocked = media_rules.scene_blocklist(ch)
     vtype = str(getattr(ch, "visual_type", "") or "literal")
@@ -761,6 +767,9 @@ def _search_scene_with_shortcircuit(
                 metrics.media_record_visual_type(vtype)
                 metrics.media_record_fallback("card")
                 metrics.media_synth_diagrams += 1
+            from ..runlog import event as run_event
+            run_event("fallback", f"Cena {ch.id}: card tipográfico",
+                      operation="media", scene=ch.id, strategy="card")
             return [{
                 "chapter_id": ch.id,
                 "asset": synth.to_dict(),
@@ -833,8 +842,14 @@ def _search_scene_with_shortcircuit(
                     prov._disabled = True
                     if metrics:
                         metrics.media_record_timeout()
-                    print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
-                          file=sys.stderr)
+                    from ..runlog import event as run_event
+                    logged = run_event(
+                        "fallback", f"{prov.name}: provider desativado; {exc}",
+                        operation="media_search", provider=prov.name,
+                        error=str(exc))
+                    if not logged:
+                        print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
+                              file=sys.stderr)
                 continue
             if metrics:
                 metrics.media_record_results(prov.name, len(results))
@@ -894,7 +909,12 @@ def _search_scene_with_shortcircuit(
             except MediaError as exc:
                 msg = f"cena {ch.id}: download falhou ({exc})"
                 warnings.append(msg)
-                print(f"AVISO: {msg}", file=sys.stderr)
+                from ..runlog import event as run_event
+                logged = run_event("warning", msg, operation="media_download",
+                                   scene=ch.id, provider=asset.provider,
+                                   error=str(exc))
+                if not logged:
+                    print(f"AVISO: {msg}", file=sys.stderr)
                 if metrics:
                     metrics.media_record_funnel("download_failed")
                 continue
@@ -921,7 +941,12 @@ def _search_scene_with_shortcircuit(
                    f"({asset.provider}: {asset.license or 'desconhecida'}) — "
                    f"{asset.license_url or asset.source_url or 'sem link'}")
             warnings.append(msg)
-            print(f"AVISO: {msg}", file=sys.stderr)
+            from ..runlog import event as run_event
+            logged = run_event("warning", msg, operation="media_rights",
+                               scene=ch.id, provider=asset.provider,
+                               rights_status="verify")
+            if not logged:
+                print(f"AVISO: {msg}", file=sys.stderr)
         _save_to_cache(cache_dir, entry["query"], asset)
         if entry["from_cache"] and metrics:
             metrics.media_cache_misses += 0
@@ -963,18 +988,39 @@ def _search_scene_with_shortcircuit(
             if metrics:
                 metrics.media_record_fallback(strategy_used)
                 metrics.media_synth_diagrams += 1
-            print(f"cena {ch.id}: sem foto adequada — visual por código "
-                  f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
+            from ..runlog import active as run_active
+            if not run_active():
+                print(f"cena {ch.id}: sem foto adequada — visual por código "
+                      f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
     if not picked:
         msg = (f"cena {ch.id}: sem imagem adequada "
                f"({', '.join(queries[:3]) or 'sem consultas'})"
                + (f" — {len(rejected)} candidato(s) rejeitados" if rejected else "")
                + " — vai usar estratégia visual alternativa")
         warnings.append(msg)
-        print(f"AVISO: {msg}", file=sys.stderr)
+        from ..runlog import event as run_event
+        logged = run_event("warning", msg, operation="media", scene=ch.id)
+        if not logged:
+            print(f"AVISO: {msg}", file=sys.stderr)
         if metrics:
             metrics.media_record_asset_rejected()
             metrics.media_record_no_visual()
+
+    from ..runlog import event as run_event
+    returned = (sum(metrics.media_results_received.values()) - results_before
+                if metrics else 0)
+    downloads = metrics.media_downloads - downloads_before if metrics else 0
+    cache_hits = metrics.media_cache_hits - cache_before if metrics else 0
+    synthetic = bool(picked and picked[0].get("asset", {}).get("provider") == "synth")
+    message = (f"Cena {ch.id}: {returned} resultados; {len(candidates)} elegíveis; "
+               f"{len(ranked)} acima do score; {len(picked)} selecionado(s); "
+               f"{downloads} baixado(s), {cache_hits} cache hit(s)"
+               + ("; card/diagrama" if synthetic else ""))
+    run_event("fallback" if synthetic else "result", message,
+              operation="media", scene=ch.id, returned=returned,
+              eligible=len(candidates), above_threshold=len(ranked),
+              selected=len(picked), downloaded=downloads,
+              cache_hits=cache_hits, strategy=strategy_used)
 
     first = picked[0]["asset"] if picked else None
     scene_rejected = rejected[:REJECTED_KEPT]

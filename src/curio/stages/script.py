@@ -217,6 +217,11 @@ def generate_title(script_text: str, idea: str, cfg: CurioConfig,
                 extra=cfg.llm_overrides())
             return _validate_title(str(data.get("title", "")), script_text), label
         except (nvidia_stage.NvidiaError, ValueError) as exc:
-            print(f"AVISO: título IA inválido ({exc}) — usando fallback.",
-                  file=sys.stderr)
+            from ..runlog import event as run_event
+            logged = run_event("fallback", f"Título IA inválido: {exc}; usando ideia",
+                               operation="title", fallback="idea",
+                               error=str(exc))
+            if not logged:
+                print(f"AVISO: título IA inválido ({exc}) — usando fallback.",
+                      file=sys.stderr)
     return _fallback_title(script_text, idea), "fallback"

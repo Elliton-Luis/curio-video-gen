@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import sys
-import traceback
 
 from . import __version__
 from .audio.library import (AudioLibrary, AudioLibraryError, GENRES,
@@ -34,10 +33,17 @@ from .stages import tts as tts_stage
 from .stages import media_rules
 from .stages import scoring as scoring_stage
 from .stages import visual as visual_stage
+from .runlog import safe_text
 
 
 def _progress(idx: int, total: int, label: str, status: str) -> None:
     print(f"[{idx}/{total}] {label}... {status}", flush=True)
+
+
+def _run_event(record: dict) -> None:
+    if record.get("event") in {"log_ready", "progress", "warning", "fallback", "provider",
+                                "result", "cache", "retry", "error"}:
+        print(f"  {safe_text(record.get('message', ''))[:240]}", flush=True)
 
 
 def _standby_exit(exc: MediaStandby) -> int:
@@ -51,7 +57,7 @@ def _standby_exit(exc: MediaStandby) -> int:
 
 
 def _fail(stage: str, exc: BaseException, hint: str = "") -> int:
-    print(f"\nERRO na etapa '{stage}': {exc}", file=sys.stderr)
+    print(f"\nERRO na etapa '{stage}': {safe_text(exc)[:500]}", file=sys.stderr)
     if hint:
         print(f"Motivo provável: {hint}", file=sys.stderr)
     print("Dica: artefatos anteriores foram preservados — corrija e rode de novo "
@@ -93,7 +99,12 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
         return 2
     try:
         meta = run_pipeline(idea, cfg, slug=args.slug, force=args.force,
-                            narration=narration, on_progress=_progress)
+                            narration=narration, on_progress=_progress,
+                            on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nExecução interrompida. Log persistente está em output/<slug>/logs/.",
+              file=sys.stderr)
+        return 130
     except MediaStandby as exc:
         return _standby_exit(exc)
     except research_stage.ResearchError as exc:
@@ -112,8 +123,7 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     except ff.FFMpegError as exc:
         return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
     except Exception as exc:  # noqa: BLE001 — CLI deve exibir erro amigável
-        traceback.print_exc()
-        return _fail("pipeline", exc, "erro inesperado; veja o traceback acima.")
+        return _fail("pipeline", exc, "veja o log da execução para detalhes técnicos.")
     if narration == "human":
         print(f"\nSilencioso: {meta['artifacts']['silent']}")
         print(f"Teleprompter: {meta['artifacts']['teleprompter']}")
@@ -164,7 +174,11 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
         meta = run_script_pipeline(
             script_text, cfg, title=getattr(args, "title", None),
             slug=args.slug, force=args.force, narration=narration,
-            on_progress=_progress)
+            on_progress=_progress, on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nExecução interrompida. Log persistente está em output/<slug>/logs/.",
+              file=sys.stderr)
+        return 130
     except MediaStandby as exc:
         return _standby_exit(exc)
     except research_stage.ResearchError as exc:
@@ -181,8 +195,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     except ff.FFMpegError as exc:
         return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
     except Exception as exc:  # noqa: BLE001 — CLI deve exibir erro amigável
-        traceback.print_exc()
-        return _fail("pipeline", exc, "erro inesperado; veja o traceback acima.")
+        return _fail("pipeline", exc, "veja o log da execução para detalhes técnicos.")
     if narration == "human":
         print(f"\nSilencioso: {meta['artifacts']['silent']}")
         print(f"Teleprompter: {meta['artifacts']['teleprompter']}")
@@ -238,7 +251,12 @@ def cmd_sources(args, cfg: CurioConfig) -> int:
 def cmd_finalize(args, cfg: CurioConfig) -> int:
     try:
         meta = finalize_project(args.slug, args.audio, cfg,
-                                force=args.force, on_progress=_final_progress)
+                                force=args.force, on_progress=_final_progress,
+                                on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nFinalização interrompida. Log persistente está em output/<slug>/logs/.",
+              file=sys.stderr)
+        return 130
     except FileNotFoundError as exc:
         return _fail("finalize", exc, "projeto ou áudio não encontrado.")
     except ValueError as exc:
@@ -249,8 +267,7 @@ def cmd_finalize(args, cfg: CurioConfig) -> int:
     except ff.FFMpegError as exc:
         return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
     except Exception as exc:  # noqa: BLE001
-        traceback.print_exc()
-        return _fail("finalize", exc, "erro inesperado; veja o traceback acima.")
+        return _fail("finalize", exc, "veja o log persistente para detalhes técnicos.")
     print(f"\nOutput: {meta['artifacts']['video']}")
     print(f"Duração: {meta['duration_actual']}s | legendas: "
           f"{meta['subtitle_cues']} blocos ({meta['subtitle_source']})")
@@ -768,13 +785,14 @@ def cmd_queue(args, cfg: CurioConfig) -> int:
             if item.video_path:
                 print(f"  Vídeo: {item.video_path}")
         else:
-            print(f"✗ [{item.slug}] ERRO: {item.error}")
+            print(f"✗ [{item.slug}] ERRO: {safe_text(item.error)[:500]}")
     
     queue_mod.process_queue(
         queue, cfg, cfg.out_dir,
         on_item_start=on_item_start,
         on_item_complete=on_item_complete,
         on_progress=_queue_progress if not args.no_progress else None,
+        on_event=_run_event,
     )
     
     if queue.queue_file:

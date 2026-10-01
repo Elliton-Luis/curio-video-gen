@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-043232_relatorio-log-persistente-execucao.md` — eventos curtos de CLI/TUI, log JSONL desde startup, redação de secrets e cobertura de falha/interrupção.
+- `relatorios/20261001-042350_relatorio-log-persistente-execucao.md` — eventos curtos em CLI/TUI, JSONL por execução, sanitização e captura de falhas/interrupções.
 - `relatorios/20261001-034958_relatorio_funil-midia-sem-download.md` — causa do funil de São Francisco, execução pequena, contadores de perdas, URL JPG Unsplash e testes de regressão.
 - `relatorios/20261001-033358_relatorio_contrato-roteiro-ia.md` — documentação do contrato de geração automática, template manual, incompatibilidade com Roteiro Pronto e validações documentais.
 - `relatorios/20261001-031800_relatorio_providers-env-mistral.md` — auditoria e sincronização de `.env`, ordem/modelos LLM, integração Mistral e validações mínimas dos cinco providers.

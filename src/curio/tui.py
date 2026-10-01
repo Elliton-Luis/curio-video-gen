@@ -320,6 +320,13 @@ def _progress(idx: int, total: int, label: str, status: str) -> None:
     print(f"  [{idx}/{total}] {label}... {status}", flush=True)
 
 
+def _run_event(record: dict) -> None:
+    if record.get("event") in {"log_ready", "progress", "warning", "fallback", "provider",
+                                "result", "cache", "retry", "error"}:
+        from .runlog import safe_text
+        print(f"    {safe_text(record.get('message', ''))[:240]}", flush=True)
+
+
 def _show_standby(c: dict[str, str], exc: MediaStandby) -> None:
     """Painel de standby: sem imagens, usuário provê fotos e continua."""
     print(f"\n{c['yellow']}◷ STANDBY — nenhuma imagem encontrada "
@@ -968,8 +975,9 @@ def _queue_run(c, cfg, queue, path: str) -> None:
         if ok:
             print(f"✓ {item.idea} ({item.duration_seconds:.0f}s) → {item.video_path}")
         else:
-            state["last_error"] = item.error
-            print(f"{c['red']}✗ {item.idea}: {item.error}{c['reset']}")
+            from .runlog import safe_text
+            state["last_error"] = safe_text(item.error)
+            print(f"{c['red']}✗ {item.idea}: {safe_text(item.error)[:500]}{c['reset']}")
             print("Continuando para o próximo item...")
 
     def on_progress(q):
@@ -982,7 +990,7 @@ def _queue_run(c, cfg, queue, path: str) -> None:
     try:
         process_queue(queue, cfg, cfg.out_dir,
                       on_item_start=on_start, on_item_complete=on_done,
-                      on_progress=on_progress)
+                      on_progress=on_progress, on_event=_run_event)
     except Exception as exc:
         print(f"{c['red']}ERRO na fila: {exc}{c['reset']}")
     queue.save(path)
@@ -1128,12 +1136,17 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=force,
-                            narration="ai", on_progress=_progress)
+                            narration="ai", on_progress=_progress,
+                            on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nExecução interrompida. Consulte log em output/<slug>/logs/.")
+        return
     except MediaStandby as exc:
         _show_standby(c, exc)
         return
     except Exception as exc:  # noqa: BLE001 — TUI exibe erro e volta ao menu
-        print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
+        from .runlog import safe_text
+        print(f"\n{c['red']}ERRO: {safe_text(exc)[:500]}{c['reset']}")
         print("O que já estava pronto foi preservado — tente de novo.")
         return
     print(f"\n{c['green']}Pronto!{c['reset']} Vídeo final: {meta['artifacts']['video']} "
@@ -1165,12 +1178,17 @@ def _human_step1(c: dict[str, str], cfg: CurioConfig) -> str | None:
     cfg = _ask_duration(c, cfg)
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=False,
-                            narration="human", on_progress=_progress)
+                            narration="human", on_progress=_progress,
+                            on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nExecução interrompida. Consulte log em output/<slug>/logs/.")
+        return None
     except MediaStandby as exc:
         _show_standby(c, exc)
         return None
     except Exception as exc:  # noqa: BLE001
-        print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
+        from .runlog import safe_text
+        print(f"\n{c['red']}ERRO: {safe_text(exc)[:500]}{c['reset']}")
         print("O que já estava pronto foi preservado — tente de novo.")
         return None
     print(f"\n{c['green']}Base pronta!{c['reset']} (repare: ainda NÃO há vídeo final)")
@@ -1206,9 +1224,14 @@ def _human_step2(c: dict[str, str], cfg: CurioConfig,
         return
     try:
         meta = finalize_project(slug, os.path.expanduser(audio), cfg,
-                                on_progress=_final_progress)
+                                on_progress=_final_progress,
+                                on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nFinalização interrompida. Consulte log em output/<slug>/logs/.")
+        return
     except Exception as exc:  # noqa: BLE001
-        print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
+        from .runlog import safe_text
+        print(f"\n{c['red']}ERRO: {safe_text(exc)[:500]}{c['reset']}")
         return
     print(f"\n{c['green']}Pronto!{c['reset']} Vídeo final: {meta['artifacts']['video']} "
           f"({meta['duration_actual']}s)")
@@ -1263,12 +1286,17 @@ def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
             print("Valor inválido — mantendo o padrão.")
     try:
         meta = run_script_pipeline(script_text, cfg, narration=narration,
-                                   on_progress=_progress)
+                                   on_progress=_progress,
+                                   on_event=_run_event)
+    except KeyboardInterrupt:
+        print("\nExecução interrompida. Consulte log em output/<slug>/logs/.")
+        return
     except MediaStandby as exc:
         _show_standby(c, exc)
         return
     except Exception as exc:  # noqa: BLE001 — TUI exibe erro e volta ao menu
-        print(f"\n{c['red']}ERRO: {exc}{c['reset']}")
+        from .runlog import safe_text
+        print(f"\n{c['red']}ERRO: {safe_text(exc)[:500]}{c['reset']}")
         print("O que já estava pronto foi preservado — tente de novo.")
         return
     if narration == "human":

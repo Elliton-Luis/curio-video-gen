@@ -490,6 +490,10 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 
 ### Diagnósticos de fontes e mídia
 
+- Cada execução cria `output/<slug>/logs/run-<timestamp>.jsonl` antes da pesquisa.
+  O log registra etapas, providers, fallbacks, erros e tempos, inclusive em
+  falhas ou `Ctrl+C`. Terminal mostra resumo; JSONL contém detalhes sanitizados.
+  `metadata.json` aponta para `execution_log`. `metrics/` continua separado.
 - Afirmações numéricas sem correspondência nas fontes continuam passando
   pelo mesmo gate de grounding. O aviso inclui o trecho do roteiro, a causa
   provável e as fontes avaliadas; consulte `sources/FONTES.md` para o relatório

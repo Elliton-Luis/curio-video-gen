@@ -544,9 +544,16 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
                     last.http_attempts = i
                 raise last
             delay = RETRY_BASE_DELAY * (2 ** (i - 1))
-            print(f"[{display}] tentativa {i}/{attempts} falhou "
-                  f"(transitório): {exc} — nova tentativa em {delay:.0f}s…",
-                  flush=True)
+            from ..runlog import event as run_event
+            logged = run_event(
+                "retry", f"{display}: tentativa {i}/{attempts}; "
+                f"{exc}; nova tentativa em {delay:.0f}s",
+                provider=display, model=model, attempt=i,
+                attempts=attempts, delay_seconds=delay, error=str(exc))
+            if not logged:
+                print(f"[{display}] tentativa {i}/{attempts} falhou "
+                      f"(transitório): {exc} — nova tentativa em {delay:.0f}s…",
+                      flush=True)
             time.sleep(delay)
     raise last  # inalcançável (loop sempre retorna ou levanta)
 
@@ -738,32 +745,42 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
             attempts[pid] = (attempts.get(pid, 0) +
                              max(1, int(getattr(exc, "http_attempts", 1))))
             last_err[pid] = str(exc)
+            from ..runlog import event as run_event
+            logged = run_event("fallback", f"{PROVIDER_SPECS[pid]['display']}: "
+                               f"{exc}; tentando próximo provider",
+                               provider=pid, model=resolved[pid][0],
+                               retryable=getattr(exc, "retryable", False),
+                               error=str(exc))
             if not getattr(exc, "retryable", False):
                 live.remove(pid)  # definitivo: fora do rodízio
-                print(f"[{PROVIDER_SPECS[pid]['display']}] erro definitivo "
-                      f"— fora do rodízio: {exc}", flush=True)
+                if not logged:
+                    print(f"[{PROVIDER_SPECS[pid]['display']}] erro definitivo "
+                          f"— fora do rodízio: {exc}", flush=True)
             elif getattr(exc, "retry_exhausted", False):
                 # O retry interno já consumiu o orçamento HTTP desse provider
                 # nesta execução; não reinicia outro bloco 1/6 depois.
                 live.remove(pid)
                 if pid == "nvidia":
                     nvidia_last_candidate = True
-                print(f"[{PROVIDER_SPECS[pid]['display']}] esgotou "
-                      f"{getattr(exc, 'http_attempts', 1)} tentativa(s) HTTP "
-                      f"nesta rodada.", flush=True)
+                if not logged:
+                    print(f"[{PROVIDER_SPECS[pid]['display']}] esgotou "
+                          f"{getattr(exc, 'http_attempts', 1)} tentativa(s) HTTP "
+                          f"nesta rodada.", flush=True)
             elif getattr(exc, "fast_fail", False):
-                print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
-                      f"{made}/{budget} falhou (timeout): {exc} — "
-                      f"trocando de provedor já…", flush=True)
+                if not logged:
+                    print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
+                          f"{made}/{budget} falhou (timeout): {exc} — "
+                          f"trocando de provedor já…", flush=True)
                 if pid != "nvidia":
                     # Timeout rápido põe os fallbacks no banco nesta execução;
                     # a NVIDIA fica elegível para o modo final sem timeout.
                     live.remove(pid)
             elif made < budget and live:
                 delay = min(30.0, RETRY_BASE_DELAY * (2 ** (made - 1)))
-                print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
-                      f"{made}/{budget} falhou (transitório): {exc} — "
-                      f"rodízio em {delay:.0f}s…", flush=True)
+                if not logged:
+                    print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
+                          f"{made}/{budget} falhou (transitório): {exc} — "
+                          f"rodízio em {delay:.0f}s…", flush=True)
                 time.sleep(delay)
             if live == ["nvidia"]:
                 return _nvidia_resilient_fallback(
@@ -778,6 +795,10 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
             continue
         if metrics is not None:
             metrics.nvidia(f"{pid}:{use_model}", (body or {}).get("usage"))
+        from ..runlog import event as run_event
+        run_event("provider", f"Provider: {PROVIDER_SPECS[pid]['display']} / {use_model}",
+                  provider=pid, model=use_model,
+                  usage=(body or {}).get("usage"))
         return body, f"{pid}:{use_model}"
     if live == ["nvidia"] or (not live and nvidia_last_candidate):
         return _nvidia_resilient_fallback(
@@ -821,35 +842,52 @@ def _nvidia_resilient_fallback(messages: list[dict], model: str,
                                skipped: list[str]) -> tuple[dict, str]:
     """Último caminho: aguarda sem timeout e tenta no máximo cinco vezes."""
     display = PROVIDER_SPECS["nvidia"]["display"]
-    print(f"[{display}] último provider viável — fallback resiliente", flush=True)
+    from ..runlog import event as run_event
+    managed = run_event("fallback", "NVIDIA: fallback final sem timeout",
+                        provider="nvidia", model=model, max_attempts=5)
+    if not managed:
+        print(f"[{display}] último provider viável — fallback resiliente", flush=True)
     key = CREDENTIALS["nvidia"].from_env().active_key
     for i in range(1, 6):
-        print(f"[{display}] tentativa {i}/5 — aguardando sem timeout...",
-              flush=True)
+        if not managed:
+            print(f"[{display}] tentativa {i}/5 — aguardando sem timeout...",
+                  flush=True)
         try:
             body = _post_once(messages, key, model, base_url, None,
                               max_tokens, temperature, "nvidia", json_mode)
         except NvidiaError as exc:
             last_err["nvidia"] = str(exc)
             if not getattr(exc, "retryable", False):
-                print(f"[{display}] erro definitivo no fallback resiliente — "
-                      f"encerrando: {exc}", flush=True)
+                if not managed:
+                    print(f"[{display}] erro definitivo no fallback resiliente — "
+                          f"encerrando: {exc}", flush=True)
                 raise NvidiaError(_survey(
                     budget, made, attempts, last_err, skipped, [], rounds,
                     final_attempts=i, final_outcome="erro definitivo")) from exc
             if i == 5:
-                print(f"[{display}] 5 tentativas transitórias falharam; encerrando.",
-                      flush=True)
+                if not managed:
+                    print(f"[{display}] 5 tentativas transitórias falharam; encerrando.",
+                          flush=True)
                 raise NvidiaError(_survey(
                     budget, made, attempts, last_err, skipped, [], rounds,
                     final_attempts=5, final_outcome="5 falhas transitórias")) from exc
             delay = min(30.0, RETRY_BASE_DELAY * (2 ** (i - 1)))
-            print(f"[{display}] falha transitória ({i}/5): {exc} — "
-                  f"nova tentativa em {delay:.0f}s…", flush=True)
+            if managed:
+                run_event("retry", f"NVIDIA fallback: tentativa {i}/5; "
+                          f"{exc}; nova tentativa em {delay:.0f}s",
+                          provider="nvidia", model=model, attempt=i,
+                          attempts=5, delay_seconds=delay, error=str(exc))
+            else:
+                print(f"[{display}] falha transitória ({i}/5): {exc} — "
+                      f"nova tentativa em {delay:.0f}s…", flush=True)
             time.sleep(delay)
             continue
         if metrics is not None:
             metrics.nvidia(f"nvidia:{model}", (body or {}).get("usage"))
+        if managed:
+            run_event("provider", f"Provider: NVIDIA / {model}",
+                      provider="nvidia", model=model,
+                      usage=(body or {}).get("usage"), fallback_attempt=i)
         return body, f"nvidia:{model}"
     raise NvidiaError(_survey(budget, made, attempts, last_err, skipped, [], rounds,
                               final_attempts=5,

@@ -201,9 +201,16 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
                 except TTSError as exc:
                     last_err = exc
                     if attempt < TTS_EDGE_ATTEMPTS:
-                        print(f"AVISO: {exc} "
-                              f"Tentativa {attempt}/{TTS_EDGE_ATTEMPTS}…",
-                              file=sys.stderr)
+                        from ..runlog import event as run_event
+                        logged = run_event(
+                            "retry", f"Edge TTS: tentativa {attempt}/"
+                            f"{TTS_EDGE_ATTEMPTS}; {exc}", operation="tts",
+                            provider="edge-tts", attempt=attempt,
+                            attempts=TTS_EDGE_ATTEMPTS, error=str(exc))
+                        if not logged:
+                            print(f"AVISO: {exc} "
+                                  f"Tentativa {attempt}/{TTS_EDGE_ATTEMPTS}…",
+                                  file=sys.stderr)
                         time.sleep(2 * attempt)
             assert last_err is not None
             raise last_err
@@ -213,8 +220,13 @@ def synthesize(text: str, wav_path: str, provider: str, voice: str,
                     f"{exc} E espeak-ng não está instalado — sem fallback. "
                     "Rode `scripts/install.sh`."
                 ) from exc
-            print(f"AVISO: {exc} Usando espeak-ng local como fallback.",
-                  file=sys.stderr)
+            from ..runlog import event as run_event
+            logged = run_event("fallback", f"Edge TTS: {exc}; usando espeak-ng",
+                               operation="tts", fallback="espeak-ng",
+                               provider="edge-tts", error=str(exc))
+            if not logged:
+                print(f"AVISO: {exc} Usando espeak-ng local como fallback.",
+                      file=sys.stderr)
             voice, speed = ("en-us", 170) if language.startswith("en") else ("pt-br", 170)
     if shutil.which("espeak-ng") is None:
         raise TTSError("espeak-ng não encontrado. Rode `scripts/install.sh`.")

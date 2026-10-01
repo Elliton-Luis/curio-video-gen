@@ -30,7 +30,7 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
-    monkeypatch.setattr(cache, "_fetch", lambda url: b"fixture")
+    monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
     ch = Chapter(1, "Receipt.", 3, subject="receipt")
     metrics = RunMetrics("fixture", "receipt", "ai")

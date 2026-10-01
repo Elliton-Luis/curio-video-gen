@@ -151,6 +151,14 @@ def test_integracao_completa(tmp_path):
     meta, out_dir = _run(tmp_path)
     root = os.path.join(out_dir, "teste-integracao")
     paths = video_paths(out_dir, "teste-integracao")
+    run_log = meta["execution_log"]
+    assert os.path.isfile(run_log)
+    events = [json.loads(line) for line in open(run_log, encoding="utf-8")]
+    assert events[0]["event"] == "run_started"
+    assert events[-1]["event"] == "run_completed"
+    assert {e["stage"] for e in events if e["event"] == "stage_started"} >= {
+        "research", "script", "scenes", "media", "tts", "subs", "render"}
+    assert not any("prompt" in e.get("details", {}) for e in events)
 
     # 1) inserções esparsas chegaram à timeline e ao metadata
     assert meta["visual"]["insert_budget"] == 2

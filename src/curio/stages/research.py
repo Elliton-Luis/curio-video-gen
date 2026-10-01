@@ -19,6 +19,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 
 from ..ua import user_agent
+from ..runlog import event as run_event
 
 USER_AGENT = user_agent()  # noqa: N816 — nome histórico, usado por testes
 WIKI_TIMEOUT = 20
@@ -129,6 +130,12 @@ def _get_json(url: str, timeout: int = WIKI_TIMEOUT):
             ultima = exc
             esperar = 0.5 * (tentativa + 1)
         if tentativa < 2:
+            codigo = getattr(ultima, "code", None)
+            motivo = f"HTTP {codigo}" if codigo else type(ultima).__name__
+            run_event("retry", f"Wikipedia: {motivo}; tentando novamente "
+                      f"em {esperar:.1f}s", provider="wikipedia",
+                      attempt=tentativa + 1, status=codigo,
+                      delay_seconds=esperar, error=str(ultima))
             time.sleep(esperar)
     codigo = getattr(ultima, "code", None)
     if codigo == 429:
@@ -383,9 +390,19 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             _consider(ddg, "duckduckgo")
 
     if not sources:
+        run_event("error", f"Pesquisa sem fontes aceitas após {len(queries)} consulta(s)",
+                  operation="research", entity=target.name,
+                  query_count=len(queries), rejected=len(rejected),
+                  rejection_reasons={m: sum(1 for _, reason, _ in rejected
+                                            if reason == m)
+                                     for _, m, _ in rejected})
         raise ResearchError(_no_usable_source_message(idea, target, rejected))
 
-    print(entity_stage.explain(target, sources, rejected))
+    if not run_event("result", f"Pesquisa: {len(sources)} fonte(s) aceita(s), "
+                     f"{len(rejected)} rejeitada(s)", operation="research",
+                     target=target.name, source_titles=[s.title[:60]
+                                                        for s in sources[:5]]):
+        print(entity_stage.explain(target, sources, rejected))
     res = ResearchResult(target, sources[:max_sources], rejected, queries)
     res.genre = genre
     return res

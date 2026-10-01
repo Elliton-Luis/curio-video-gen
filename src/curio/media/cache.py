@@ -19,7 +19,7 @@ from .providers import TIMEOUT, USER_AGENT, MediaAsset, MediaError
 RETRIES = 3
 
 
-def _fetch(url: str) -> bytes:
+def _fetch(url: str, provider: str = "") -> bytes:
     """GET com retry + backoff em 429/5xx (cortesia com o provedor)."""
     last: Exception | None = None
     for attempt in range(RETRIES):
@@ -35,6 +35,13 @@ def _fetch(url: str) -> bytes:
             last = exc
             if attempt >= 1:
                 break
+        if attempt < RETRIES - 1:
+            from ..runlog import event as run_event
+            run_event("retry", f"Download {provider or 'mídia'}: tentativa "
+                      f"{attempt + 1}/{RETRIES}; {type(last).__name__}",
+                      operation="media_download", provider=provider,
+                      attempt=attempt + 1, attempts=RETRIES,
+                      error=str(last))
         time.sleep(1.5 * (attempt + 1))
     assert last is not None
     raise last
@@ -60,7 +67,7 @@ def download_asset(asset: MediaAsset, cache_dir: str,
     try:
         if metrics is not None:
             metrics.media_download_started(asset.provider)
-        data = _fetch(asset.download_url)
+        data = _fetch(asset.download_url, asset.provider)
     except Exception as first_exc:
         if metrics is not None:
             metrics.media_download_error(asset.provider, first_exc)
@@ -71,7 +78,11 @@ def download_asset(asset: MediaAsset, cache_dir: str,
         try:
             if metrics is not None:
                 metrics.media_download_started(asset.provider)
-            data = _fetch(asset.download_fallback_url)
+            from ..runlog import event as run_event
+            run_event("fallback", f"Download {asset.provider}: URL alternativa",
+                      operation="media_download", provider=asset.provider,
+                      fallback="download_fallback_url")
+            data = _fetch(asset.download_fallback_url, asset.provider)
         except Exception as exc:
             if metrics is not None:
                 metrics.media_download_error(asset.provider, exc)

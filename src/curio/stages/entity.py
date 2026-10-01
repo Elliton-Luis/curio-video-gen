@@ -352,6 +352,9 @@ def resolve_entity(idea: str, cfg=None, language: str = "pt-BR",
             or_model=cfg.openrouter_model,
             or_base_url=cfg.openrouter_base_url,
             extra=cfg.llm_overrides())
+        from ..runlog import event as run_event
+        run_event("provider", f"Entidade: {_label}", operation="entity",
+                  provider=_label.split(":", 1)[0], model=_label.split(":", 1)[-1])
         if not isinstance(data, dict):
             return heuristica
         nome = str(data.get("target", "") or "").strip()
@@ -384,8 +387,13 @@ def resolve_entity(idea: str, cfg=None, language: str = "pt-BR",
             metrics.research_source()  # conta como 1 consulta de pesquisa
         return alvo
     except Exception as exc:  # noqa: BLE001 — heurística cobre
-        print(f"AVISO: resolução de entidade falhou ({exc}) — usando a "
-              f"heurística; fontes podem ser menos precisas.", file=sys.stderr)
+        from ..runlog import event as run_event
+        logged = run_event("fallback", f"Entidade: {exc}; usando heurística",
+                           operation="entity", fallback="heuristic",
+                           error=str(exc))
+        if not logged:
+            print(f"AVISO: resolução de entidade falhou ({exc}) — usando a "
+                  f"heurística; fontes podem ser menos precisas.", file=sys.stderr)
         return heuristica
 
 

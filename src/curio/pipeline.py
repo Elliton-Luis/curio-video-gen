@@ -26,6 +26,8 @@ from .config import CurioConfig
 from .media import download_asset, get_providers
 from .media.providers import MediaAsset, MediaError, classify_rights
 from .metrics import RunMetrics, backfill_from_metadata
+from .runlog import (RunLog, current_log_path, event as run_event,
+                     format_exception, set_stage as set_log_stage)
 from .slug import slugify, slugify_with_timestamp
 from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage
@@ -660,6 +662,7 @@ def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
         "height": cfg.height,
         "fps": cfg.fps,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "execution_log": current_log_path(),
         "processing_time_seconds": round(time.monotonic() - started, 2),
         "stage_times": stage_times,
         "pipeline_version": "scenes-0.2",
@@ -671,7 +674,46 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                  on_progress=None, provided_script: str | None = None,
                  max_images: int = 1,
                  visual_overlap: float | None = None,
-                 genre: str | None = None) -> dict:
+                 genre: str | None = None, on_event=None) -> dict:
+    run_slug = slug or slugify_with_timestamp(idea)
+    paths = video_paths(cfg.out_dir, run_slug)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    log_path = os.path.join(paths.root, "logs", f"run-{stamp}.jsonl")
+    started = time.monotonic()
+    with RunLog(log_path, run_slug, on_event) as runlog:
+        run_event("log_ready", f"Log: {log_path}", log_path=log_path)
+        try:
+            result = _run_pipeline(
+                idea, cfg, slug=run_slug, force=force, narration=narration,
+                on_progress=on_progress, provided_script=provided_script,
+                max_images=max_images, visual_overlap=visual_overlap,
+                genre=genre)
+        except BaseException as exc:
+            if isinstance(exc, MediaStandby):
+                runlog.event("run_standby", "Execução em standby",
+                             error_type=type(exc).__name__, reason=str(exc))
+                raise
+            runlog.event(
+                "run_interrupted" if isinstance(exc, KeyboardInterrupt)
+                else "run_failed",
+                "Execução interrompida" if isinstance(exc, KeyboardInterrupt)
+                else "Execução falhou", error_type=type(exc).__name__,
+                error=str(exc), traceback=format_exception(exc))
+            raise
+        runlog.event("run_completed", "Execução concluída",
+                     duration_seconds=round(time.monotonic() - started, 2),
+                     metrics_file=result.get("metrics_file"),
+                     output=result.get("artifacts", {}).get("video")
+                     or result.get("artifacts", {}).get("teleprompter"))
+        return result
+
+
+def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
+                  force: bool = False, narration: str = "ai",
+                  on_progress=None, provided_script: str | None = None,
+                  max_images: int = 1,
+                  visual_overlap: float | None = None,
+                  genre: str | None = None) -> dict:
     started = time.monotonic()
     stage_times: dict[str, float] = {}
     warnings: list[str] = []
@@ -712,6 +754,27 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         max_images = 3
 
     def emit(idx: int, label: str, status: str = "…") -> None:
+        stage_key = {"Pesquisando fontes": "research",
+                     "Gerando roteiro": "script",
+                     "Lendo roteiro pronto": "script",
+                     "Interpretando cenas": "scenes",
+                     "Buscando mídia": "media",
+                     "Gerando narração": "tts",
+                     "Sincronizando legendas": "subs",
+                     "Montando vídeo": "render",
+                     "Estimando timeline": "timeline",
+                     "Montando silencioso": "silent",
+                     "Gerando teleprompter": "teleprompter"}.get(label)
+        stage = stage_key or (stages[idx] if 0 <= idx < len(stages) else label)
+        set_log_stage(stage)
+        if status == "…":
+            run_event("stage_started", label)
+        else:
+            elapsed = stage_times.get(stage_key) if stage_key else None
+            if elapsed is not None and status == "OK":
+                status = f"OK ({elapsed:.1f}s)"
+            run_event("stage_finished" if status.startswith("OK") else "stage_status",
+                      label, status=status, duration_seconds=elapsed)
         if on_progress:
             on_progress(idx, len(stages), label, status)
 
@@ -747,6 +810,16 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     research_queries = list(getattr(research, "tried_queries", []))
     research_status = ("confirmed" if len(research_sources) >= 2
                        else "partial")
+    target_name = getattr(research_target, "name", "") or "tema"
+    source_titles = [rs.title[:60] for rs in research_sources[:3]]
+    run_event(
+        "result", f"Entidade: {target_name}; consultas: {len(research_queries)}; "
+        f"fontes aceitas: {len(research_sources)}, rejeitadas: "
+        f"{len(research_rejected)}",
+        operation="research", entity=target_name,
+        query_count=len(research_queries), found=len(research_sources) +
+        len(research_rejected), accepted=len(research_sources),
+        rejected=len(research_rejected), sources=source_titles)
     for rs in research_sources:
         sources.add_claim(
             claim=rs.title, title=rs.title, url=rs.url,
@@ -781,6 +854,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if not script_text:
             raise ValueError("roteiro vazio — nada para produzir")
         script_source = "provided"
+        run_event("result", f"Roteiro fornecido: {len(script_text)} caracteres",
+                  operation="script", source=script_source,
+                  characters=len(script_text))
         cached = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else None
         if cached != script_text:
             with open(paths.script_txt, "w", encoding="utf-8") as fh:
@@ -803,6 +879,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             with open(paths.script_txt, "w", encoding="utf-8") as fh:
                 fh.write(healed)
         script_text, script_source = healed, "cache"
+        run_event("cache", f"Roteiro reutilizado: {len(script_text)} caracteres",
+                  artifact="script", characters=len(script_text))
     else:
         # A entidade JÁ foi resolvida na etapa de pesquisa; o roteiro
         # recebia só a frase da ideia e perdia o nome canônico, as formas
@@ -814,6 +892,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             genre_directive=genre_directive,
             entity_context=entity_stage.script_context(
                 research_target, cfg.language))
+        run_event("provider", f"Roteiro: {script_source}; {len(script_text)} caracteres",
+                  operation="script", source=script_source,
+                  characters=len(script_text))
         with open(paths.script_txt, "w", encoding="utf-8") as fh:
             fh.write(script_text)
     stage_times["script"] = round(time.monotonic() - t0, 2)
@@ -827,6 +908,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                                 cfg.language)
     if grounding["unverified"]:
         warnings.append(_print_grounding_warning(grounding))
+        run_event("warning", f"Grounding: {len(grounding['unverified'])} "
+                  "afirmação(ões) não verificadas", operation="grounding",
+                  unverified=len(grounding["unverified"]))
     elif grounding["checked"]:
         print(f"Fundamentação: {grounding['checked']} dado(s) conferidos, "
               f"todos nas fontes.")
@@ -845,6 +929,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         with open(paths.title_txt, "w", encoding="utf-8") as fh:
             fh.write(video_title)
     print(f"Título: {video_title} ({title_source})")
+    run_event("cache" if title_source == "cache" else "provider",
+              f"Título: {title_source}", operation="title",
+              source=title_source, characters=len(video_title))
 
     # [2/6] Cenas
     t0 = time.monotonic()
@@ -875,13 +962,22 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 raise
             # Modo roteiro-pronto: sem API, a divisão local basta — ela
             # agrupa frases literais e sempre preserva a narração.
-            print(f"AVISO: {exc} — usando divisão local.", file=sys.stderr)
+            logged = run_event(
+                "fallback", f"Cenas: provider falhou; divisão local ({exc})",
+                operation="scenes", fallback="local", error=str(exc))
+            if not logged:
+                print(f"AVISO: {exc} — usando divisão local.", file=sys.stderr)
             warnings.append(f"cenas locais (NVIDIA indisponível: {exc})")
             chapters = scenes_stage._local_chapters(script_text, n)
             scenes_source = "local"
         if script_mode:
             visual_stage.validate_preserved(script_text, chapters)
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
+    scene_event = ("provider" if scenes_source not in ("local", "cache")
+                   else "fallback" if scenes_source == "local" else "cache")
+    run_event(scene_event, f"Cenas: {scenes_source}; {len(chapters)} cena(s)",
+              operation="scenes", source=scenes_source,
+              scenes=len(chapters))
     stage_times["scenes"] = round(time.monotonic() - t0, 2)
     emit(2, "Interpretando cenas", "OK")
 
@@ -897,6 +993,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                f"foto(s) de {manual_dir}")
         warnings.append(msg)
         print(f"Mídia manual: usando fotos de {manual_dir}.", file=sys.stderr)
+        run_event("cache", f"Mídia manual: {len(manual)} cena(s)",
+                  operation="media", source="manual", scenes=len(manual))
         _write_json(paths.media_json, media_scenes)
     if media_scenes is None and not force_after_script and os.path.isfile(paths.media_json):
         try:
@@ -921,6 +1019,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                             break
             if chapter_ok and files_ok:
                 media_scenes = saved
+                run_event("cache", "Mídia reutilizada do cache",
+                          operation="media", scenes=len(saved))
         except (json.JSONDecodeError, KeyError):
             media_scenes = None
     if media_scenes is None:
@@ -932,6 +1032,31 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                                        metrics)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
+        if media_warnings:
+            for warning in media_warnings[:8]:
+                run_event("warning", str(warning), operation="media")
+    for scene in media_scenes:
+        entries = scene.get("assets") or []
+        asset = scene.get("asset") or {}
+        synth = asset.get("provider") == "synth"
+        run_event(
+            "fallback" if synth else "result",
+            f"Mídia cena {scene.get('chapter_id')}: "
+            f"{len(entries)} asset(s); "
+            f"{'visual sintético' if synth else asset.get('provider', 'sem asset')}",
+            operation="media", scene=scene.get("chapter_id"),
+            candidates=len(entries), provider=asset.get("provider", ""),
+            fallback=synth,
+            rejected=len(scene.get("rejected") or []))
+    real_media_count = sum(
+        1 for scene in media_scenes
+        if (scene.get("asset") or {}).get("provider") != "synth")
+    run_event("result", f"Mídia: {real_media_count}/{len(media_scenes)} cena(s) com asset real; "
+              f"{len(media_scenes) - real_media_count} sintético(s)",
+              operation="media", real_assets=real_media_count,
+              synthetic_scenes=len(media_scenes) - real_media_count,
+              downloads=metrics.media_downloads,
+              cache_hits=metrics.media_cache_hits)
     # Registra procedência das mídias no registro de fontes do projeto:
     # links ANTES do uso (página, arquivo, licença) + local APÓS o uso.
     # `media_rights_notes` alimenta o relatório: licença incerta não passa
@@ -1023,6 +1148,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "stage_times": dict(stage_times),
             "warnings": list(warnings),
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "execution_log": current_log_path(),
         })
         emit(3, "Buscando mídia", "STANDBY")
         raise MediaStandby(slug, manual_dir, len(chapters))
@@ -1069,6 +1195,12 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         words = res.words
         tts_info = {"provider": res.provider, "voice": res.voice,
                     "speed": res.speed, "reused": False}
+        run_event("cache" if tts_info.get("reused") else "provider",
+                  f"TTS: {tts_info['provider']} / {tts_info['voice']} "
+                  f"({audio_duration:.1f}s)", operation="tts",
+              provider=tts_info["provider"], voice=tts_info["voice"],
+              duration_seconds=round(audio_duration, 2),
+              cache=tts_info.get("reused", False))
     stage_times["tts"] = round(time.monotonic() - t0, 2)
     emit(4, "Gerando narração", "OK")
 
@@ -1131,6 +1263,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
               "para acompanhar.", file=sys.stderr)
         warnings.append("legendas atualizadas (rebuild do final.mp4)")
     stage_times["subs"] = round(time.monotonic() - t0, 2)
+    run_event("result", f"Legendas: {cue_count} cue(s); "
+              f"{'WordBoundary' if timed_source == 'wordboundary' else 'proporcional'}",
+              operation="subtitles", cues=cue_count, timing=timed_source)
     emit(5, "Sincronizando legendas", "OK")
 
     # [6/6] Montagem dinâmica + final
@@ -1201,6 +1336,11 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         video_duration = render_info["duration"]
         _mark_audio_used(cfg, audio_plan)
     stage_times["render"] = round(time.monotonic() - t0, 2)
+    run_event("result", f"Render: {render_info['backend']} / "
+              f"{render_info['encoder']}; {video_duration:.1f}s",
+              operation="render", backend=render_info["backend"],
+              encoder=render_info["encoder"],
+              duration_seconds=round(video_duration, 2))
     emit(6, "Montando vídeo", "OK")
 
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
@@ -1307,6 +1447,11 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             threshold=scoring_stage.threshold(), genre=genre_key,
             typography=_typography_report(cfg, genre_key))
     stage_times["finalize"] = 0.0
+    for warning in warnings[:8]:
+        run_event("warning", str(warning), operation="pipeline_warning")
+    if len(warnings) > 8:
+        run_event("warning", f"Mais {len(warnings) - 8} aviso(s) no metadata",
+                  operation="pipeline_warning", count=len(warnings) - 8)
     metadata["stage_times"] = stage_times
     metadata["metrics_file"] = metrics.save(metadata, stage_times,
                                             cfg.metrics_dir)
@@ -1317,7 +1462,7 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
                         title: str | None = None, slug: str | None = None,
                         force: bool = False, narration: str = "ai",
                         max_images: int | None = None,
-                        on_progress=None) -> dict:
+                        on_progress=None, on_event=None) -> dict:
     """Modo roteiro-pronto: organiza mídia sobre um roteiro já existente.
 
     O texto é usado verbatim como narração/legenda — nunca gerado nem
@@ -1337,7 +1482,8 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
         max_images = cfg.visual_max_images
     return run_pipeline(title, cfg, slug=slug, force=force,
                         narration=narration, on_progress=on_progress,
-                        provided_script=text, max_images=max_images)
+                        provided_script=text, max_images=max_images,
+                        on_event=on_event)
 
 
 def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
@@ -1467,7 +1613,31 @@ def _probe_streams(path: str) -> list[dict]:
 
 
 def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
-                     force: bool = False, on_progress=None) -> dict:
+                     force: bool = False, on_progress=None,
+                     on_event=None) -> dict:
+    paths = video_paths(cfg.out_dir, slug)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    log_path = os.path.join(paths.root, "logs", f"finalize-{stamp}.jsonl")
+    with RunLog(log_path, slug, on_event) as runlog:
+        run_event("log_ready", f"Log: {log_path}", log_path=log_path)
+        try:
+            result = _finalize_project(slug, audio_src, cfg, force, on_progress)
+        except BaseException as exc:
+            runlog.event("run_interrupted" if isinstance(exc, KeyboardInterrupt)
+                         else "run_failed",
+                         "Finalização interrompida" if isinstance(exc, KeyboardInterrupt)
+                         else "Finalização falhou",
+                         error_type=type(exc).__name__, error=str(exc),
+                         traceback=format_exception(exc))
+            raise
+        runlog.event("run_completed", "Finalização concluída",
+                     metrics_file=result.get("metrics_file"),
+                     duration_seconds=result.get("duration_actual"))
+        return result
+
+
+def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
+                      force: bool = False, on_progress=None) -> dict:
     """Une áudio humano ao vídeo silencioso: transcreve, legenda, merge."""
     started = time.monotonic()
     paths = video_paths(cfg.out_dir, slug)
@@ -1503,7 +1673,20 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     project_genre = str(meta.get("genre") or cfg.genre or "")
     transition_mode = _transition_mode(cfg)
 
+    progress_started: dict[str, float] = {}
+
     def emit(label: str, status: str = "…") -> None:
+        set_log_stage(label)
+        if status == "…":
+            progress_started[label] = time.monotonic()
+            run_event("stage_started", label)
+        else:
+            elapsed = round(time.monotonic() - progress_started.pop(label,
+                                                                     time.monotonic()), 2)
+            if status == "OK":
+                status = f"OK ({elapsed:.1f}s)"
+            run_event("stage_finished", label, status=status,
+                      duration_seconds=elapsed)
         if on_progress:
             on_progress(label, status)
 
@@ -1530,6 +1713,11 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         _write_json(paths.transcription_json, words)
     else:
         words = _read_json(paths.transcription_json)
+    run_event("provider" if metrics.whisper_calls else "cache",
+              f"Transcrição: {'faster-whisper/' + cfg.whisper_model if metrics.whisper_calls else 'cache'}; "
+              f"{len(words)} palavra(s)", operation="transcription",
+              model=cfg.whisper_model, words=len(words),
+              cache=not bool(metrics.whisper_calls))
     emit("Transcrevendo", "OK")
 
     emit("Legendando")
@@ -1543,6 +1731,8 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         max_words=(_pac.caption_max_words if _pac is not None
                    else subs_stage.MAX_WORDS_PER_CUE),
         highlight=(_pac.caption_highlight if _pac is not None else "word"))
+    run_event("result", f"Legendas: {cue_count} cue(s)",
+              operation="subtitles", cues=cue_count)
     emit("Legendando", "OK")
 
     emit("Ajustando visual")
@@ -1609,6 +1799,11 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         music_gain_db=cfg.music_gain_db,
         music_ducking=cfg.music_ducking,
         final_fade=_final_audio_fade(project_genre, transition_mode))
+    run_event("result", f"Render: {render_info['backend']} / "
+              f"{render_info['encoder']}; {render_info['duration']:.1f}s",
+              operation="render", backend=render_info["backend"],
+              encoder=render_info["encoder"],
+              duration_seconds=round(render_info["duration"], 2))
     _mark_audio_used(cfg, audio_plan)
     emit("Merge final", "OK")
 
@@ -1640,6 +1835,7 @@ def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         "finalize_warnings": warnings,
         "warnings": sorted(set(meta.get("warnings", []) + warnings)),
         "processing_time_seconds": round(time.monotonic() - started, 2),
+        "execution_log": current_log_path(),
     })
     meta.setdefault("artifacts", {})["video"] = paths.final_mp4
     meta["artifacts"]["human_audio"] = paths.human_wav

@@ -567,6 +567,7 @@ def build_chapters(script: str, cfg: CurioConfig,
                    max_scenes: int | None = None) -> tuple[list[Chapter], str]:
     """Retorna (capítulos, fonte). Fonte: 'openrouter:gemini-2.5-flash' | 'local'."""
     alvo = float(target_seconds) if target_seconds else None
+    from ..runlog import event as run_event
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target,
                                                alvo or 9.0, max_scenes)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
@@ -589,11 +590,17 @@ def build_chapters(script: str, cfg: CurioConfig,
             or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
             extra=cfg.llm_overrides())
         provider = label.split(":")[0]
+        run_event("provider", f"Cenas: {label}", operation="scenes",
+                  provider=provider, model=label.split(":", 1)[-1])
         raw_list = _coerce_scene_list(data)
         if not raw_list:
-            print(f"AVISO: cenas {provider} vieram sem lista válida "
-                  f"(payload: {_payload_snippet(data)}) — usando divisão local.",
-                  file=sys.stderr)
+            logged = run_event("fallback", f"Cenas {provider}: resposta sem lista; divisão local",
+                               operation="scenes", fallback="local",
+                               response_shape="no scene list")
+            if not logged:
+                print(f"AVISO: cenas {provider} vieram sem lista válida "
+                      f"(payload: {_payload_snippet(data)}) — usando divisão local.",
+                      file=sys.stderr)
         chapters = []
         for i, raw in enumerate(raw_list, 1):
             narration = str(raw.get("narration", "")).strip()
@@ -623,11 +630,20 @@ def build_chapters(script: str, cfg: CurioConfig,
             ))
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
             return chapters, provider
-        print(f"AVISO: cenas {provider} não reproduzem o roteiro literal "
-              f"(payload: {_payload_snippet(data)}) — usando divisão local.",
-              file=sys.stderr)
+        logged = run_event("fallback", f"Cenas {provider}: narração não reproduz roteiro; divisão local",
+                           operation="scenes", fallback="local",
+                           validation="narration mismatch",
+                           returned_scenes=len(chapters))
+        if not logged:
+            print(f"AVISO: cenas {provider} não reproduzem o roteiro literal "
+                  f"(payload: {_payload_snippet(data)}) — usando divisão local.",
+                  file=sys.stderr)
     else:
-        print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
+        logged = run_event("fallback", "Cenas: sem provider; divisão local",
+                           operation="scenes", fallback="local",
+                           reason="no provider key")
+        if not logged:
+            print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
     return _local_chapters(script, n_scenes), "local"
 
 

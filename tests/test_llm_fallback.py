@@ -60,6 +60,31 @@ def test_nvidia_timeout_keeps_normal_rotation_when_fallback_exists(monkeypatch):
     assert calls == [("nvidia", 15), ("openrouter", 15)]
 
 
+def test_run_log_records_provider_timeout_and_successful_fallback(
+        monkeypatch, tmp_path):
+    from curio.runlog import RunLog
+    _keys(monkeypatch, "nvidia", "openrouter")
+
+    def fake_retries(_messages, _key, _model, _url, _timeout, *_args):
+        provider = _args[-2]
+        if provider == "nvidia":
+            raise _error("socket timeout", retryable=True, fast_fail=True)
+        return _body("fallback succeeded")
+
+    monkeypatch.setattr(N, "_post_with_retries", fake_retries)
+    path = tmp_path / "fallback.jsonl"
+    with RunLog(path, "fallback"):
+        body, label = _chat()
+    assert label.startswith("openrouter:")
+    assert body["choices"][0]["message"]["content"] == "fallback succeeded"
+    import json
+    events = [json.loads(line) for line in path.read_text().splitlines()]
+    assert any(e["event"] == "fallback" and "timeout" in e["message"]
+               for e in events)
+    assert any(e["event"] == "provider" and "OpenRouter" in e["message"]
+               for e in events)
+
+
 def test_provider_order_exhausts_available_fallbacks_within_global_budget(
         monkeypatch, capsys):
     _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq", "mistral")
