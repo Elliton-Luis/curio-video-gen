@@ -705,11 +705,22 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
           f"(CURIO_MEDIA_SCORE_MIN), lado mínimo "
           f"{media_rules.min_dimension()}px "
           f"(CURIO_MEDIA_MIN_DIMENSION)")
-    _clip = clip_status()
+    _clip = scoring_stage.clip_status()
     if _clip is None:
         print("[--] scoring semântico (CLIP) — desligado; usando a camada base")
     else:
         print(f"[--] CLIP — {_clip}")
+    library = AudioLibrary(cfg.audio_library_dir)
+    genre = cfg.genre or "people"
+    music_count = library.count("music", genre)
+    sfx_counts = {category: library.count("sfx", genre, category)
+                  for category in SFX_CATEGORIES}
+    print(f"[{'OK' if cfg.audio_enabled else '--'}] Áudio — "
+          f"music={cfg.music_mode}, transitions={cfg.music_transitions}, "
+          f"gain={cfg.music_gain_db}dB, ducking={cfg.music_ducking}")
+    print(f"[{'OK' if music_count and all(sfx_counts.values()) else '--'}] "
+          f"Biblioteca {genre} — música {music_count}; "
+          + "; ".join(f"SFX/{category} {count}" for category, count in sfx_counts.items()))
     print(f"\nConfig: out_dir={cfg.out_dir} tts={cfg.tts_provider}/{cfg.tts_voice} "
           f"backend={cfg.render_backend} nvidia_model={cfg.nvidia_model}")
     return 0 if ok else 1

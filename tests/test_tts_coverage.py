@@ -160,7 +160,7 @@ def test_pipeline_recusa_cache_parcial_e_ressintetiza(tmp_path, monkeypatch):
     out_dir = str(tmp_path / "output")
     slug = "caso-9s"
     text = _seed_caches(os.path.join(out_dir, slug))
-    cfg = CurioConfig()
+    cfg = CurioConfig(audio_enabled=False)
     cfg.out_dir = out_dir
     cfg.metrics_dir = str(tmp_path / "metrics")
     monkeypatch.setattr(pipe.research_stage, "research_topic",
@@ -193,7 +193,7 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
     slug = "caso-ok"
     _seed_caches(os.path.join(out_dir, slug), script_words=100,
                  audio_words=100)
-    cfg = CurioConfig()
+    cfg = CurioConfig(audio_enabled=False)
     cfg.out_dir = out_dir
     cfg.metrics_dir = str(tmp_path / "metrics")
     monkeypatch.setattr(pipe.research_stage, "research_topic",

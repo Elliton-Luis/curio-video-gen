@@ -517,9 +517,10 @@ O relatório do caso São Jerônimo, incluindo validação e limitações, está
 
 ### Identidade audiovisual por gênero
 
-O recurso é habilitado por seções `[audio]`, `[music]` ou `[sfx]` no
-`config.toml`; configurações antigas sem essas seções mantêm a saída anterior.
-A biblioteca persistente fica em:
+O recurso vem ativado por padrão (`audio_enabled`, `music.mode=auto`,
+`transitions=auto`); desligue com `--music-mode none` ou
+`[audio].transitions = "none"`. O `config.toml` permite ajustar ganho,
+ducking e autopreenchimento. A biblioteca persistente fica em:
 
 ```text
 assets/library/music/<genre>/

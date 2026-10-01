@@ -1,0 +1,13 @@
+# Configuração local efetiva. Credenciais ficam exclusivamente no .env.
+[audio]
+transitions = "auto"
+
+[music]
+mode = "auto"
+gain_db = -30
+ducking = true
+auto_fill = true
+
+[sfx]
+library_enabled = true
+auto_fill = true

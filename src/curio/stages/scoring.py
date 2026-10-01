@@ -124,6 +124,19 @@ def base_score(asset: dict, ch) -> dict:
     hit_core, matched, missing = _hits(core)
     total_core = sum(core.values()) or 1.0
     coverage = hit_core / total_core
+    aliases = getattr(ch, "subject_aliases", []) or []
+    # Aliases completos vêm da entidade pesquisada ou de um lugar literal da
+    # cena. Não aumentar nota por sobrenome isolado ou homônimo de uma query.
+    if aliases:
+        alias_matches = [set(_tokens(alias)) for alias in aliases
+                         if _tokens(alias)]
+        full = next((tokens for tokens in alias_matches
+                     if tokens.issubset(title_tokens)), None)
+        if full is None:
+            coverage = 0.0
+        else:
+            coverage = 1.0
+            matched = sorted(full)
     base = CORE_MAX * coverage
 
     # Bônus de apoio: entidade presente vale 10, contexto vale 5, teto 25.

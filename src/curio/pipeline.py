@@ -482,7 +482,7 @@ def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
 def _genre_transitions(chapters: list[Chapter], genre: str,
                        mode: str = "auto") -> list[float]:
     """Cross-dissolve por gênero e papel de cena; cortes dramáticos são secos."""
-    if mode == "none" or not genre or len(chapters) < 2:
+    if mode == "none" or len(chapters) < 2:
         return [0.0] * max(0, len(chapters) - 1)
     defaults = {"people": 0.34, "history": 0.25, "etymology": 0.16,
                 "mythology": 0.40, "mystery": 0.38, "science": 0.16}
@@ -975,6 +975,13 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
     scene_event = ("provider" if scenes_source not in ("local", "cache")
                    else "fallback" if scenes_source == "local" else "cache")
+    from .stages.visual_context import fill_missing_context
+    if fill_missing_context(chapters, research_target, genre_key,
+                            research_sources, cfg.research_timeout):
+        force_after_script = True  # mídia em cache precisa refletir o novo contexto
+        _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
+        run_event("result", "Contexto visual recuperado da entidade pesquisada",
+                  operation="scenes", source=scenes_source)
     run_event(scene_event, f"Cenas: {scenes_source}; {len(chapters)} cena(s)",
               operation="scenes", source=scenes_source,
               scenes=len(chapters))
@@ -1297,6 +1304,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         video_title or idea, script_text, events, previous_audio)
     warnings.extend(audio_plan["warnings"])
     new_audio_meta = audio_plan["metadata"]
+    credits.extend(new_audio_meta.get("credits", []))
     audio_cache_matches = (
         previous_audio.get("signature") == new_audio_meta.get("signature")
         or legacy_audio_cache)

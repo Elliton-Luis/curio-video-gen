@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-063937_relatorio_contexto-visual-audio-auto.md` — contexto visual compartilhado entidade↔scoring, áudio automático padrão, biblioteca people/SFX e validação real.
+
 - `relatorios/20261001-045242_relatorio_diagnostico-scoring-tomas-aquino.md` — replay de scores reais, origem de 34 e decisão de preservar threshold.
 - `relatorios/20261001-043232_relatorio-log-persistente-execucao.md` — eventos curtos de CLI/TUI, log JSONL desde startup, redação de secrets e cobertura de falha/interrupção.
 - `relatorios/20261001-042350_relatorio-log-persistente-execucao.md` — eventos curtos em CLI/TUI, JSONL por execução, sanitização e captura de falhas/interrupções.

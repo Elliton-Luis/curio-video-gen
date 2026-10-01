@@ -349,6 +349,7 @@ class Chapter:
     # chapters.json antigo continue carregando sem erro.
     visual_type: str = "literal"
     subject: str = ""
+    subject_aliases: list[str] = field(default_factory=list)
     visual_entities: list[str] = field(default_factory=list)
     context: list[str] = field(default_factory=list)
     forbidden: list[str] = field(default_factory=list)
@@ -395,6 +396,7 @@ class Chapter:
             visual_intent=str(d.get("visual_intent", "")),
             visual_type=vtype,
             subject=str(d.get("subject", "") or ""),
+            subject_aliases=[str(q) for q in d.get("subject_aliases", [])],
             visual_entities=[str(q) for q in d.get("visual_entities", [])],
             context=[str(q) for q in d.get("context", [])],
             forbidden=[str(q) for q in d.get("forbidden", [])],

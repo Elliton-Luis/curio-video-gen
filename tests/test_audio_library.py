@@ -238,14 +238,20 @@ def test_auto_uses_local_track_and_none_never_selects(tmp_path, monkeypatch):
     assert none["metadata"]["music"]["mode"] == "none"
 
 
-def test_absent_audio_config_preserves_legacy_silent_output(tmp_path, monkeypatch):
+def test_audio_is_enabled_by_default_and_can_be_disabled(tmp_path, monkeypatch):
     library = AudioLibrary(tmp_path / "lib")
     _register(library, tmp_path, monkeypatch, "local")
-    cfg = CurioConfig()  # projetos/configs antigos não habilitam a camada nova
+    cfg = CurioConfig()
     cfg.audio_library_dir = str(tmp_path / "lib")
+    cfg.music_auto_fill = False
     plan = resolve_audio(cfg, "people", "p", "title", "script", [])
-    assert cfg.audio_enabled is False
-    assert plan["music_asset"] is None
+    assert cfg.audio_enabled is True
+    assert plan["music_asset"] is not None
+    assert plan["metadata"]["music"]["mode"] == "auto"
+    assert plan["metadata"]["transitions"]["mode"] == "auto"
+    assert plan["metadata"]["credits"]
+    cfg.audio_enabled = False
+    plan = resolve_audio(cfg, "people", "p", "title", "script", [])
     assert plan["metadata"]["music"]["mode"] == "none"
     assert plan["metadata"]["transitions"]["mode"] == "none"
 
@@ -260,6 +266,21 @@ def test_empty_library_does_not_download_during_render(tmp_path, monkeypatch):
     assert plan["music_asset"] is None
     assert plan["metadata"]["music"]["track"] is None
     assert plan["warnings"]
+
+
+def test_new_sfx_events_are_not_hidden_by_cached_empty_selection(tmp_path, monkeypatch):
+    library = AudioLibrary(tmp_path / "lib")
+    _register(library, tmp_path, monkeypatch, "music")
+    _register(library, tmp_path, monkeypatch, "paper", category="paper")
+    cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
+                      music_auto_fill=False, sfx_auto_fill=False)
+    previous = resolve_audio(cfg, "people", "p", "title", "script", [])
+    assert previous["metadata"]["sfx"]["mode"] == "none"
+    plan = resolve_audio(cfg, "people", "p", "title", "script",
+                         [{"kind": "swish", "at": 1.0}],
+                         previous=previous["metadata"])
+    assert plan["metadata"]["sfx"]["mode"] == "library"
+    assert plan["metadata"]["sfx"]["assets"]
 
 
 def test_autofill_failure_falls_back_to_video_without_music(tmp_path, monkeypatch):

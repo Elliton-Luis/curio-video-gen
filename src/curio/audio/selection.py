@@ -35,6 +35,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     parâmetros não mudaram, mantém a mesma seleção inclusive após `--force`.
     """
     requested_mode = str(getattr(cfg, "music_mode", "auto") or "auto").lower()
+    genre = genre or "people"  # identidade de áudio neutra, sem mudar gênero editorial
     enabled = bool(getattr(cfg, "audio_enabled", False)) or requested_mode != "auto"
     mode = requested_mode if enabled else "none"
     if mode not in ("auto", "none", "manual"):
@@ -100,7 +101,8 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     old_sfx = previous.get("sfx") if isinstance(previous.get("sfx"), dict) else {}
     prior_assets = old_sfx.get("assets") or []
     keep_sfx_selection = (_same_request(old_music, mode, genre, gain, ducking)
-                          and "assets" in old_sfx)
+                           and "assets" in old_sfx
+                           and len(prior_assets) == len(sfx_events))
     sfx_assets: list[dict] = []
     if sfx_enabled and genre:
         updated_categories: set[str] = set()
@@ -153,6 +155,10 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                 "assets": sfx_assets},
         "transitions": {"mode": transition_mode},
         "warnings": warnings,
+        "credits": [f"{asset.get('title', '')} — {asset.get('author', '')} — "
+                    f"{asset.get('license', '')} — {asset.get('source_url', '')}"
+                    for asset in [music_asset, *sfx_assets]
+                    if asset and asset.get("license") == "CC BY"],
     }
     identity = {
         "mode": mode, "genre": genre,

@@ -110,11 +110,9 @@ class CurioConfig:
     visual_insertions: int = 2
     visual_insert_style: str = "drop_in"  # entrada estilo "cai do álbum"
     visual_insert_gain_db: int = -30  # som quase imperceptível da inserção
-    # Música local por gênero. Sem uma seção de áudio carregada, o pipeline
-    # mantém a saída legada; com áudio habilitado, uma biblioteca vazia ainda
-    # permite render sem trilha.
+    # Música local por gênero, com transições e SFX habilitados por padrão.
     audio_library_dir: str = "assets/library"
-    audio_enabled: bool = False  # sem config de áudio, saída visual/audiovisual antiga
+    audio_enabled: bool = True
     music_mode: str = "auto"  # auto | none | manual
     music_file: str = ""
     music_auto_fill: bool = True
@@ -270,7 +268,8 @@ class CurioConfig:
         music_lib = music.get("library", {}) if isinstance(music.get("library"), dict) else {}
         sfx = data.get("sfx", {}) if isinstance(data.get("sfx"), dict) else {}
         sfx_lib = sfx.get("library", {}) if isinstance(sfx.get("library"), dict) else {}
-        cfg.audio_enabled = any(k in data for k in ("audio", "music", "sfx"))
+        cfg.audio_enabled = _as_bool(audio.get("enabled", cfg.audio_enabled),
+                                     cfg.audio_enabled)
         cfg.audio_library_dir = str(audio.get("library_dir", cfg.audio_library_dir))
         if os.environ.get("CURIO_AUDIO_LIBRARY_DIR"):
             cfg.audio_library_dir = os.environ["CURIO_AUDIO_LIBRARY_DIR"]

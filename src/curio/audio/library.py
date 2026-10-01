@@ -28,7 +28,7 @@ GENRES = ("people", "history", "etymology", "mythology", "mystery", "science")
 SFX_CATEGORIES = ("paper", "soft_impact")
 
 MUSIC_DIRECTIONS = {
-    "people": ("contemplative historical literary instrumental ambient", "contemplative"),
+    "people": ("ambient piano", "contemplative"),
     "history": ("documentary historical ambient instrumental subtle tension", "documentary"),
     "etymology": ("curious intellectual light minimal instrumental ambient", "curious"),
     "mythology": ("ancient atmospheric literary instrumental ambient", "ancient"),
@@ -37,8 +37,8 @@ MUSIC_DIRECTIONS = {
 }
 
 SFX_QUERIES = {
-    "paper": "paper handling soft sound effect",
-    "soft_impact": "soft muted impact sound effect",
+    "paper": "paper",
+    "soft_impact": "soft impact",
 }
 
 
@@ -325,6 +325,12 @@ class AudioLibrary:
                     report["license_rejections"].append(
                         f"{source_id}: licença não aceita ({raw_license or 'ausente'}); "
                         "somente CC0 e CC BY são baixadas")
+                continue
+            reported_duration = float(item.get("duration") or 0)
+            if reported_duration and (reported_duration < min_duration or
+                                      reported_duration > max_duration):
+                report["errors"].append(
+                    f"{source_id}: duração fora dos limites informados ({reported_duration:.2f}s)")
                 continue
             previews = item.get("previews") or {}
             preview_url = str(previews.get("preview-hq-mp3") or "")
