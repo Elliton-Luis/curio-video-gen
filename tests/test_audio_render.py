@@ -77,7 +77,7 @@ def test_build_sfx_track_uses_local_audio_asset(tmp_path, monkeypatch):
 
 
 def test_default_music_gain_is_audible_under_ducking():
-    assert CurioConfig().music_gain_db == -21
+    assert CurioConfig().music_gain_db == -18
 
 
 def test_genre_transition_plan_distinguishes_genres_and_scene_roles():

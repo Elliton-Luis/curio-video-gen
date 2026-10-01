@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-124051_relatorio_ganho-musica-18db.md` — cama musical em −18 dB com ducking intacto.
+
 - `relatorios/20261001-082206_relatorio_som-alto-transicoes-genericas.md` — ganhos audíveis, xfade por gênero, cascata genérica e cartões nunca vazios.
 
 - `relatorios/20261001-081537_relatorio_fontes-garantia-texto-timeout-separado.md` — segundo passe de fontes (núcleo + EN + `allow_weak`, nunca fatal) e timeout NVIDIA separado (10 s handshake / 120 s resposta).

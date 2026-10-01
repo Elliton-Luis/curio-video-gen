@@ -369,7 +369,7 @@ def test_render_identity_changes_with_genre_gain_and_ducking(tmp_path, monkeypat
     cfg.audio_enabled = True
     cfg.music_auto_fill = False
     base = resolve_audio(cfg, "people", "p", "title", "script", [])
-    cfg.music_gain_db = -18
+    cfg.music_gain_db = -20
     gain = resolve_audio(cfg, "people", "p", "title", "script", [])
     cfg.music_gain_db = -30
     cfg.music_ducking = False
