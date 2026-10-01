@@ -899,6 +899,9 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
     max_tokens, body, label = 2000, None, ""
     diagnostics = []
     for retry in range(2):  # uma escalada, preservada como limite atual
+        if retry:
+            print(f"[cenas JSON] tentativa estendida solicitada: "
+                  f"max_tokens={max_tokens}", file=sys.stderr)
         body, label = _chat(messages, max_tokens, 0.3, model, base_url,
                             timeout, or_model, or_base_url, metrics, extra,
                             json_mode=True, prefer=JSON_FIRST_ORDER)
