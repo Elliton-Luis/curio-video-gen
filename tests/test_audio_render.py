@@ -28,11 +28,11 @@ def test_burn_final_mixes_music_low_and_sidechains_voice(tmp_path, monkeypatch):
     cfg = CurioConfig()
     cfg.render_backend = "cpu"
     R.burn_final(str(silent), None, str(voice), str(out), cfg, 5.0,
-                 music_path=str(music), music_gain_db=-30,
+                 music_path=str(music), music_gain_db=-15,
                  music_ducking=True, final_fade=0.6)
     cmd = commands[0]
     graph = cmd[cmd.index("-filter_complex") + 1]
-    assert "volume=-30.0dB" in graph
+    assert "volume=-15.0dB" in graph
     assert "sidechaincompress=" in graph
     assert "release=1100" in graph
     assert "-shortest" in cmd
@@ -77,7 +77,7 @@ def test_build_sfx_track_uses_local_audio_asset(tmp_path, monkeypatch):
 
 
 def test_default_music_gain_is_audible_under_ducking():
-    assert CurioConfig().music_gain_db == -18
+    assert CurioConfig().music_gain_db == -15
 
 
 def test_genre_transition_plan_distinguishes_genres_and_scene_roles():

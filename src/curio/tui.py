@@ -604,7 +604,7 @@ def _ask_visual(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
                 print(f"{c['red']}Estilo inválido. Use: "
                       f"{'|'.join(INSERT_STYLES)}{c['reset']}")
         gain = _ask(f"  Volume do som [{cfg.visual_insert_gain_db}] dB "
-                    f"(-45..-12, -30 discreto): ").strip()
+                    f"(-45..-12, -21 audível): ").strip()
         if gain:
             try:
                 cfg = dataclasses.replace(
@@ -659,7 +659,7 @@ def _ask_audio(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
         path = _ask("Arquivo de música (mp3/wav/ogg/flac): ").strip()
         if path:
             cfg = dataclasses.replace(cfg, music_file=os.path.expanduser(path))
-    gain = _ask(f"Volume musical [{cfg.music_gain_db} dB] (-40..-15, discreto): ").strip()
+    gain = _ask(f"Volume musical [{cfg.music_gain_db} dB] (-40..-15, audível): ").strip()
     if gain:
         try:
             cfg = dataclasses.replace(cfg, music_gain_db=max(-40, min(-15, int(gain))))

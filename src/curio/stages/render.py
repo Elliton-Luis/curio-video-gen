@@ -572,7 +572,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                title: str | None = None,
                title_fontfile: str | None = None,
                music_path: str | None = None,
-                music_gain_db: float = -18.0,
+                music_gain_db: float = -15.0,
                music_ducking: bool = True,
                final_fade: float = 0.0) -> dict:
     """silent + legendas queimadas + áudio → MP4 final (um encode só).

@@ -540,7 +540,7 @@ def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],
                            overlap_cap: float, sfx: bool,
                            insertions: int | None = None,
                            insert_style: str = "drop_in",
-                           insert_gain_db: int = -24) -> list[dict]:
+                           insert_gain_db: int = -21) -> list[dict]:
     vt = visual_stage.build_visual_timeline(
         chapters, media_scenes, overlap_cap, seed=slug, sfx=sfx,
         insertions=insertions, insert_style=insert_style,

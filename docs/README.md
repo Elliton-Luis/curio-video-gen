@@ -8,6 +8,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 ## Relatórios (o que foi feito e como)
 
 - `relatorios/20261001-124051_relatorio_ganho-musica-18db.md` — cama musical em −18 dB com ducking intacto.
+- `relatorios/20261001-125954_relatorio_musica-15-inserts-21.md` — música −15 dB e inserts −21 dB, ducking intacto.
 
 - `relatorios/20261001-082206_relatorio_som-alto-transicoes-genericas.md` — ganhos audíveis, xfade por gênero, cascata genérica e cartões nunca vazios.
 

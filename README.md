@@ -567,7 +567,7 @@ manuais são marcados como fornecidos pelo usuário, com licença não verificad
 A TUI expõe Automática, Nenhuma, arquivo manual e atualização da biblioteca em
 Configurações → Áudio. A seleção automática usa o gênero, favorece assets menos
 usados e desempata com seed estável do projeto; uma regeneração mantém a faixa
-gravada no metadata. A música usa ganho de −18 dB, fades de
+gravada no metadata. A música usa ganho de −15 dB, fades de
 entrada/saída e sidechain ducking sob a voz, com release para atravessar pausas.
 SFX da biblioteca substituem apenas eventos pontuais já existentes; sem asset
 local, o SFX sintético atual continua disponível. Transições de cena têm

@@ -133,7 +133,7 @@ def test_som_marca_o_instante_da_entrada():
     chapters = _chapters(10)
     vt = V.build_visual_timeline(chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2, insert_style="drop_in",
-                                 insert_gain_db=-30)
+                                 insert_gain_db=-21)
     for t in vt:
         for im in t["images"]:
             sfx = im.get("sfx")
@@ -141,7 +141,7 @@ def test_som_marca_o_instante_da_entrada():
                 assert sfx is None
                 continue
             assert sfx is not None, "inserção sem som"
-            assert sfx["gain_db"] == -30
+            assert sfx["gain_db"] == -21
             assert sfx["at"] == pytest.approx(round(t["start"] + im["start"], 3))
             assert 0 <= sfx["at"] < t["end"]
 
