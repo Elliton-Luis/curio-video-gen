@@ -1275,22 +1275,31 @@ def _human_flow(c: dict[str, str], cfg: CurioConfig) -> None:
 
 # ------------------------------------------------------- roteiro pronto
 
+SCRIPT_INPUT_TERMINATOR = "<<FIM_DO_ROTEIRO>>"
+
+
+def _read_multiline_script() -> str:
+    """Read pasted narration until the explicit marker; preserve all other lines."""
+    print("Cole abaixo o roteiro completo. O texto será usado como narração e "
+          "o Curio cuidará das próximas etapas.")
+    print(f"Finalize digitando {SCRIPT_INPUT_TERMINATOR} em uma linha isolada.")
+    lines = []
+    while True:
+        line = _ask("| ")
+        if line == SCRIPT_INPUT_TERMINATOR:
+            return "\n".join(lines)
+        lines.append(line)
+
+
 def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
     from .pipeline import run_script_pipeline
-    from .stages import visual as visual_stage
-    print(f"\n{c['bold']}ROTEIRO PRONTO — suas palavras, intocadas; só as fotos mudam."
-          f"{c['reset']}")
-    print("O texto é usado exatamente como está (narração + legendas).")
-    path = _ask("Arquivo .txt com o roteiro: ").strip()
-    if not path:
+    print(f"\n{c['bold']}ROTEIRO PRONTO{c['reset']}")
+    script_text = _read_multiline_script()
+    if not script_text.strip():
+        print(f"{c['red']}ERRO: roteiro vazio — cole a narração completa.{c['reset']}")
         return
-    try:
-        script_text = visual_stage.read_script_file(os.path.expanduser(path))
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"{c['red']}ERRO: {exc}{c['reset']}")
-        return
-    print(f"Roteiro: {len(script_text)} caracteres, "
-          f"{len(script_text.split())} palavras (será preservado).")
+    print(f"Roteiro recebido: {len(script_text)} caracteres, "
+          f"{len(script_text.split())} palavras.")
     nar = _ask("Narração: [1] voz de IA (vídeo final) / [2] eu mesmo (2 passos)? [1]: "
                ).strip()
     narration = "human" if nar == "2" else "ai"
@@ -1476,7 +1485,7 @@ def run(cfg: CurioConfig | None = None) -> int:
                 c, "O que você quer fazer?",
                 ["Criar vídeo",
                  "Narrar eu mesmo (2 passos)",
-                 "Roteiro pronto (sem reescrever)",
+                 "Roteiro pronto (colar narração)",
                  "Fila de ideias",
                  "Projetos",
                  "Configurações",

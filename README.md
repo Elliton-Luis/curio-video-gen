@@ -58,7 +58,7 @@ video-gen generate --narration human "De onde veio a palavra salário?"
 # ...grave sua voz, depois:
 video-gen finalize de-onde-veio-a-palavra-salario --audio minha-voz.wav
 
-# Roteiro já pronto (não reescreve nada: só organiza as fotos por trecho)
+# Roteiro já pronto (narração preservada; Curio monta o restante do vídeo)
 video-gen from-script meu-roteiro.txt --narration ai
 # 1-5 fotos por cena com sobreposição estilo álbum (--max-images 3);
 # SFX discretos em ~1/3 das inserções (desliga com CURIO_VISUAL_SFX=0)
@@ -69,6 +69,8 @@ video-gen generate --force "O mito dos capacetes com chifres dos vikings"
 # Interface visual em terminal (abre a TUI)
 video-gen tui
 # Atalho: ./scripts/run.sh sem argumentos também abre a TUI
+# Em "Roteiro pronto", cole o texto em várias linhas e termine com
+# <<FIM_DO_ROTEIRO>> em uma linha isolada.
 
 # Listar vídeos e ver metadados
 video-gen list

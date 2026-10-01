@@ -894,8 +894,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     force_after_script = force
     if script_mode:
         assert provided_script is not None
-        script_text = provided_script.strip()
-        if not script_text:
+        script_text = provided_script
+        if not script_text.strip():
             raise ValueError("roteiro vazio — nada para produzir")
         script_source = "provided"
         run_event("result", f"Roteiro fornecido: {len(script_text)} caracteres",
@@ -1528,8 +1528,8 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
     linha do roteiro. `max_images` (1–5, padrão da config) é o nº de fotos
     por cena com sobreposição em álbum.
     """
-    text = (script_text or "").strip()
-    if not text:
+    text = script_text or ""
+    if not text.strip():
         raise ValueError("roteiro vazio — nada para produzir")
     if title is None:
         first_line = next((ln.strip() for ln in text.splitlines()

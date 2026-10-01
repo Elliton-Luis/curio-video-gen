@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-153350_relatorio_tui-colar-roteiro.md` — Roteiro Pronto aceita colagem multiline até `<<FIM_DO_ROTEIRO>>`, preserva texto e segue pelo pipeline; suíte completa: 653 testes.
 - `relatorios/20261001-141308_relatorio_fallback-resposta-invalida.md` — resposta LLM vazia/curta agora cai para próximo provider; inclui diagnóstico sem conteúdo sensível e 37 testes focados.
 - `relatorios/20261001-135550_relatorio_shorts60.md` — duração editorial guiada 45–90 s, beats de câmera com assets existentes, legendas/safe area e métricas; validação focada: 115 testes.
 - `relatorios/20261001-125954_relatorio_musica-15-inserts-21.md` — música −15 dB e inserts −21 dB, ducking intacto.
