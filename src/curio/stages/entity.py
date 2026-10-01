@@ -76,7 +76,16 @@ _ENTITY_SYSTEM_PROMPT = (
     "description of the topic, leave aliases, discriminants and forbidden "
     "empty, and put 2 to 4 distinctive topic words in search_queries. "
     "is_entity true only when the subject really is a named thing with a "
-    "specific referent: a person, a place, a work, a saint."
+    "specific referent: a person, a place, a work, a saint. "
+    "8) NEVER invent discriminants: author, date, work or epithet you are "
+    "not sure about. An event like \"War of the Bucket\" takes "
+    "discriminants from the request itself (\"Bucket\", \"Bologna, Modena, "
+    "1325\" only if stated or certain), never a guessed author or year. "
+    "When unsure, leave discriminants EMPTY: an empty list accepts by "
+    "name, a guessed one rejects the right source. "
+    "9) events and works follow the same full-name rule as saints: "
+    "\"War of the Bucket\", not \"War\"; qualifiers in the request "
+    "(\"oak\", \"1325\") are context, not part of the canonical title."
 )
 
 _ENTITY_SYSTEM_PROMPT_EN = _ENTITY_SYSTEM_PROMPT
@@ -155,6 +164,40 @@ class TargetEntity:
 
     def _fold_text(self, text: str) -> str:
         return _norm_phrase(text)
+
+    def core_terms(self) -> list[str]:
+        """Núcleo do nome: palavras significativas, sem partículas.
+
+        "A Guerra do Balde de Carvalho" -> ["guerra", "balde", "carvalho"].
+        Serve ao casamento por núcleo: a ordem e os qualificadores podem
+        variar ("Guerra do Balde" vs "Guerra do Balde de Carvalho"), mas
+        todas as palavras do núcleo precisam estar no título da fonte.
+        """
+        stop = {"de", "da", "do", "das", "dos", "e", "a", "o", "as", "os",
+                "em", "no", "na", "the", "of"}
+        out: list[str] = []
+        for tok in _norm_phrase(self.name).split():
+            if len(tok) >= 4 and tok not in stop and tok not in out:
+                out.append(tok)
+        return out
+
+    def nucleus_in_title(self, title: str) -> bool:
+        """O núcleo consta do título (qualquer ordem, um qualificador a menos)?
+
+        "Guerra do Balde" passa para alvo "Guerra do Balde de Carvalho"
+        (2/3); "Flávio Bolsonaro" não passa (0/3). Um qualificador a
+        menos é tolerado porque o pedido costuma trazer contexto que o
+        título canônico não tem ("de Carvalho", "de 1325"); dois a
+        menos já é outro assunto. Com 1–2 termos no núcleo, exige todos.
+        """
+        core = self.core_terms()
+        if not core:
+            return False
+        hay = _norm_phrase(title)
+        hit = sum(1 for t in core if t in hay)
+        if len(core) <= 2:
+            return hit == len(core)
+        return hit >= len(core) - 1
 
     def mentions_name(self, text: str) -> bool:
         """O texto cita o sujeito por algum dos seus nomes?"""

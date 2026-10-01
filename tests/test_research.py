@@ -170,3 +170,53 @@ def test_research_pula_artigo_com_falha(monkeypatch):
     monkeypatch.setattr(mod, "_get_json", fake)
     srcs = R.research_topic("teste com mar", "pt-BR", max_sources=1)
     assert len(srcs) == 1 and srcs[0].title == "Bom"
+
+
+def test_nucleo_tolera_um_qualificador_a_menos():
+    from curio.stages.entity import TargetEntity
+    alvo = TargetEntity(name="A Guerra do Balde de Carvalho")
+    assert alvo.core_terms() == ["guerra", "balde", "carvalho"]
+    assert alvo.nucleus_in_title("Guerra do Balde")
+    assert not alvo.nucleus_in_title("Flávio Bolsonaro")
+    curto = TargetEntity(name="Mar Salgado")
+    assert curto.nucleus_in_title("Mar Salgado")
+    assert not curto.nucleus_in_title("Mar Morto")
+
+
+def test_passe_relaxado_aceita_artigo_certo_e_barra_homonimo():
+    from curio.stages import entity as E
+    from curio.stages.research import _relaxed_nucleus_accept
+    alvo = E.TargetEntity(
+        name="A Guerra do Balde de Carvalho",
+        discriminants=["novel", "José Saramago", "1985"],
+        forbidden=["Balde de Lixo SA"],
+        search_queries=["A Guerra do Balde de Carvalho"])
+    certo = ResearchSource(
+        title="Guerra do Balde",
+        url="https://pt.wikipedia.org/wiki/Guerra_do_Balde",
+        snippet="Conflito entre Bolonha e Módena em 1325 por um balde.")
+    errado = ResearchSource(
+        title="Flávio Bolsonaro", url="https://pt.wikipedia.org/wiki/X",
+        snippet="Político brasileiro.")
+    vetado = ResearchSource(
+        title="Balde de Lixo SA Guerra", url="https://pt.wikipedia.org/wiki/Y",
+        snippet="Empresa Balde de Lixo SA na guerra fiscal.")
+    rej = [(certo, E.REASON_DISCRIMINANT, ""), (errado, E.REASON_ENTITY, ""),
+           (vetado, E.REASON_ENTITY, "")]
+    out = _relaxed_nucleus_accept(rej, alvo, 3)
+    assert [s.title for s in out] == ["Guerra do Balde"]
+
+
+def test_allow_weak_garante_resultado_sem_fonte(monkeypatch):
+    import curio.stages.research as mod
+
+    def empty(url, timeout=20):
+        if "api.duckduckgo.com" in url:
+            return {"AbstractText": "", "AbstractURL": ""}
+        return {"query": {"search": []}}
+
+    monkeypatch.setattr(mod, "_get_json", empty)
+    res = mod.research_topic("xyzq asdfgh", "pt-BR", allow_weak=True)
+    assert res.weak is True and len(res.sources) == 0
+    with pytest.raises(ResearchError, match="nenhuma fonte"):
+        mod.research_topic("xyzq asdfgh", "pt-BR")

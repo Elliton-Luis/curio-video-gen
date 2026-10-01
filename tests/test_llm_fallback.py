@@ -7,7 +7,7 @@ from curio.stages import nvidia as N
 
 KEYS = ("NVIDIA_API_KEY", "NVIDIA_API_KEYS", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
         "GOOGLE_API_KEY", "GROQ_API_KEY", "MISTRAL_API_KEY", "CURIO_LLM_ATTEMPTS",
-        "NVIDIA_TIMEOUT_MAX")
+        "NVIDIA_TIMEOUT_MAX", "NVIDIA_CONNECT_TIMEOUT")
 
 
 def _keys(monkeypatch, *providers):
@@ -229,10 +229,21 @@ def test_internal_http_retries_report_exact_count_to_global_survey(monkeypatch):
 
 
 def test_unwrapped_network_reset_is_transient_in_last_resort(monkeypatch):
-    def reset(*_args, **_kwargs):
-        raise ConnectionResetError("peer reset")
+    import http.client
+    from curio.stages import nvidia as N
 
-    monkeypatch.setattr(N.urllib.request, "urlopen", reset)
+    class BoomConn:
+        def __init__(self, *a, **k):
+            pass
+
+        def connect(self):
+            raise ConnectionResetError("peer reset")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", BoomConn)
+    monkeypatch.setattr(http.client, "HTTPConnection", BoomConn)
     with pytest.raises(N.NvidiaError, match="conexão interrompida") as caught:
         N._post_once([], "key", "model", "https://nvidia.test", None,
                      10, 0.0, "nvidia")
@@ -240,18 +251,119 @@ def test_unwrapped_network_reset_is_transient_in_last_resort(monkeypatch):
     assert getattr(caught.value, "fast_fail", False) is False
 
 
-def test_post_once_passes_explicit_no_timeout_to_urllib(monkeypatch):
-    import io
-    import json
+def test_connect_timeout_usado_no_handshake_e_total_na_resposta(monkeypatch):
+    import http.client
+    from curio.stages import nvidia as N
 
     seen = {}
 
-    def fake_open(_request, timeout):
-        seen["timeout"] = timeout
-        return io.BytesIO(json.dumps(_body()).encode())
+    class FakeSock:
+        def settimeout(self, v):
+            seen.setdefault("sock_timeouts", []).append(v)
 
-    monkeypatch.setattr(N.urllib.request, "urlopen", fake_open)
+    class FakeResp:
+        status = 200
+
+        def read(self, _n):
+            return b""
+
+    class FakeConn:
+        def __init__(self, host, port, timeout=None):
+            seen["connect_timeout"] = timeout
+
+        def connect(self):
+            pass
+
+        @property
+        def sock(self):
+            return FakeSock()
+
+        def request(self, *a, **k):
+            pass
+
+        def getresponse(self):
+            return FakeResp()
+
+        def close(self):
+            pass
+
+    class FakeBody:
+        pass
+
+    import json as _json
+
+    class FakeConn2(FakeConn):
+        def getresponse(self):
+            class R:
+                status = 200
+
+                def read(self, _n):
+                    if not hasattr(self, "done"):
+                        self.done = True
+                        return _json.dumps(
+                            {"choices": [{"message": {"content": "ok"}}]}
+                        ).encode()
+                    return b""
+            return R()
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", FakeConn2)
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConn2)
+    monkeypatch.setenv("NVIDIA_CONNECT_TIMEOUT", "7")
+    result = N._post_once([], "key", "model", "https://nvidia.test", 120,
+                          10, 0.0, "nvidia")
+    assert result["choices"][0]["message"]["content"] == "ok"
+    assert seen["connect_timeout"] == 7
+    assert 120 in seen["sock_timeouts"]
+
+
+def test_post_once_passes_explicit_no_timeout_to_total(monkeypatch):
+    import http.client
+    import json
+    from curio.stages import nvidia as N
+
+    seen = {}
+
+    class FakeConn:
+        def __init__(self, *a, **k):
+            pass
+
+        def connect(self):
+            pass
+
+        @property
+        def sock(self):
+            outer = self
+
+            class S:
+                def settimeout(self, v):
+                    seen["sock_timeout"] = v
+                    outer.saw = v
+
+            return S()
+
+        def request(self, *a, **k):
+            pass
+
+        def getresponse(self):
+            class R:
+                status = 200
+
+                def read(self, _n):
+                    if not hasattr(self, "done"):
+                        self.done = True
+                        return json.dumps(
+                            {"choices": [{"message": {"content": "ok"}}]}
+                        ).encode()
+                    return b""
+
+            return R()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", FakeConn)
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConn)
     result = N._post_once([], "key", "model", "https://nvidia.test", None,
                           10, 0.0, "nvidia")
     assert result["choices"][0]["message"]["content"] == "ok"
-    assert seen["timeout"] is None
+    assert seen["sock_timeout"] is None

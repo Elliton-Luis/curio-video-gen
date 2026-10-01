@@ -1,11 +1,10 @@
-"""Timeout de chamada do LLM: o que ele é, e o que ele deixou de ser.
+"""Timeout de chamada do LLM: conexão separada de resposta/processamento.
 
 A execução de São Jerônimo mostrou "[NVIDIA] tentativa 1/6 falhou
-(timeout): etapa NVIDIA: timeout após 15s", seguido de um fallback que
-funcionou. A pergunta era se o modelo era lento demais ou o prazo curto
-demais, e a resposta foi: com um timeout de socket, um modelo de 550B que
-transmite algo de tempos em tempos NÃO é cortado — o que mata é silêncio
-no socket. Separo. O que mudou é que o teto deixou de ser rígido.
+(timeout)" com 15 s, seguido de um fallback que funcionou. Um 550B no
+NIM não conclui em 15 s: o padrão de resposta/processamento agora é
+120 s, e a conexão/handshake tem teto próprio e curto (10 s) — rede ou
+endpoint falham rápido sem consumir o orçamento de geração.
 """
 
 import itertools
@@ -13,12 +12,12 @@ import itertools
 
 # --- o teto: investigado antes de mexer ---------------------------
 
-def test_o_teto_padrao_continua_15(monkeypatch):
-    """Nada muda para quem não configura nada."""
+def test_o_teto_padrao_agora_e_120(monkeypatch):
+    """Um 550B no NIM não conclui em 15 s: padrão folgado, ainda configurável."""
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
-    assert N.call_timeout_max() == 15
-    assert N.LLM_CALL_TIMEOUT_MAX == 15
+    assert N.call_timeout_max() == 120
+    assert N.LLM_CALL_TIMEOUT_MAX == 120
 
 
 def test_o_teto_agora_e_configuravel(monkeypatch):
@@ -40,9 +39,9 @@ def test_o_teto_agora_e_configuravel(monkeypatch):
 def test_teto_invalido_cai_no_padrao(monkeypatch):
     from curio.stages import nvidia as N
     monkeypatch.setenv("NVIDIA_TIMEOUT_MAX", "lixo")
-    assert N.call_timeout_max() == 15
-    assert N.call_timeout_max(0) == 15
-    assert N.call_timeout_max(-5) == 15
+    assert N.call_timeout_max() == 120
+    assert N.call_timeout_max(0) == 120
+    assert N.call_timeout_max(-5) == 120
 
 
 def test_config_carrega_o_teto(tmp_path, monkeypatch):
@@ -106,8 +105,8 @@ def test_o_teto_configurado_chega_na_chamada(monkeypatch):
     assert vistos["nvidia"] == 90
 
 
-def test_teto_padrao_ainda_limita_a_15(monkeypatch):
-    """Sem configurar nada, a chamada continua indo com 15."""
+def test_teto_padrao_agora_e_folgado(monkeypatch):
+    """Sem configurar nada, a chamada vai com o padrão novo (120)."""
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -124,7 +123,7 @@ def test_teto_padrao_ainda_limita_a_15(monkeypatch):
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     N._chat([{"role": "user", "content": "oi"}], 100, 0.0, "m", "https://x",
             timeout=120)
-    assert vistos["nvidia"] == 15
+    assert vistos["nvidia"] == 120
 
 
 def test_teto_por_provedor_so_muda_este_provedor(monkeypatch):
@@ -135,7 +134,7 @@ def test_teto_por_provedor_so_muda_este_provedor(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "k2")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("GROQ_API_KEY", "")
-    monkeypatch.setitem(N.LLM_PROVIDER_TIMEOUT, "nvidia", 90)
+    monkeypatch.setitem(N.LLM_PROVIDER_TIMEOUT, "nvidia", 150)
     vistos = {}
 
     def fake_post(messages, key, model, base_url, timeout, max_tokens,
@@ -146,13 +145,36 @@ def test_teto_por_provedor_so_muda_este_provedor(monkeypatch):
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     N._chat([{"role": "user", "content": "oi"}], 100, 0.0, "m", "https://x",
             timeout=120)
-    assert vistos["nvidia"] == 90
+    assert vistos["nvidia"] == 150
 
 
 def test_timeout_ainda_cai_no_rodizio():
     """O fast_fail de timeout se mantém: provedor lento não bloqueia."""
     from curio.stages import nvidia as N
-    err = N.NvidiaError("timeout após 15s")
+    err = N.NvidiaError("timeout de resposta/processamento")
     err.retryable = True
     err.fast_fail = True
     assert err.fast_fail is True and err.retryable is True
+
+
+def test_connect_timeout_padrao_e_10_e_configuravel(monkeypatch):
+    """Handshake curto e separado do orçamento de geração."""
+    from curio.stages import nvidia as N
+    monkeypatch.delenv("NVIDIA_CONNECT_TIMEOUT", raising=False)
+    assert N.llm_connect_timeout() == 10
+    assert N.CONNECT_TIMEOUT_DEFAULT == 10
+    assert N.llm_connect_timeout(25) == 25
+    monkeypatch.setenv("NVIDIA_CONNECT_TIMEOUT", "7")
+    assert N.llm_connect_timeout() == 7
+    monkeypatch.setenv("NVIDIA_CONNECT_TIMEOUT", "lixo")
+    assert N.llm_connect_timeout() == 10
+
+
+def test_config_carrega_connect_timeout(tmp_path, monkeypatch):
+    from curio.config import CurioConfig
+    monkeypatch.delenv("NVIDIA_CONNECT_TIMEOUT", raising=False)
+    p = tmp_path / "config.toml"
+    p.write_text('[nvidia]\nconnect_timeout = 8\n', encoding="utf-8")
+    assert CurioConfig.load(str(p)).nvidia_connect_timeout == 8
+    monkeypatch.setenv("NVIDIA_CONNECT_TIMEOUT", "6")
+    assert CurioConfig.load(str(p)).nvidia_connect_timeout == 6

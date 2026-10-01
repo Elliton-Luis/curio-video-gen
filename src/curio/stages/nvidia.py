@@ -22,8 +22,7 @@ import re
 import socket
 import sys
 import time
-import urllib.error
-import urllib.request
+import urllib.parse
 
 from .. import __version__
 
@@ -439,8 +438,15 @@ def _http_error_message(status: int, body: str, model: str,
 
 def _post_once(messages: list[dict], key: str, model: str, base_url: str,
                timeout: int | None, max_tokens: int, temperature: float,
-               pid: str, json_mode: bool = False) -> dict:
-    """Uma tentativa HTTP. Erro transitório sai marcado (retryable=True)."""
+               pid: str, json_mode: bool = False,
+               connect_timeout: int | None = None) -> dict:
+    """Uma tentativa HTTP. Erro transitório sai marcado (retryable=True).
+
+    Conexão e resposta têm orçamentos separados: o handshake usa
+    `connect_timeout` (padrão 10 s); o envio+resposta usa `timeout`
+    (orçamento total, None = sem teto no fallback resiliente final).
+    """
+    import http.client
     spec = PROVIDER_SPECS[pid]
     display, key_hint = spec["display"], spec["key_envs"][0]
     payload_dict = {
@@ -458,54 +464,56 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         payload_dict["response_format"] = {"type": "json_object"}
     payload = json.dumps(payload_dict).encode()
     headers = {"Content-Type": "application/json",
-               "Authorization": "Bearer " + key}
+               "Authorization": "Bearer " + key,
+               "Content-Length": str(len(payload))}
     if pid == "groq":
         # Groq/Cloudflare bloqueia o User-Agent Python-urllib padrão (HTTP 403
         # Cloudflare 1010). Identifique a aplicação sem simular navegador.
         headers["User-Agent"] = f"curio/{__version__} (LLM API client)"
-    req = urllib.request.Request(
-        base_url.rstrip("/") + "/chat/completions",
-        data=payload,
-        headers=headers,
-    )
+    else:
+        headers["User-Agent"] = f"curio/{__version__} (LLM API client)"
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.load(resp)
-    except urllib.error.HTTPError as exc:
+        ctimeout = llm_connect_timeout(connect_timeout)
+    except Exception:  # noqa: BLE001 — nunca derruba a chamada
+        ctimeout = CONNECT_TIMEOUT_DEFAULT
+    total = None
+    if timeout is not None:
         try:
-            detail = exc.read().decode("utf-8", "replace")
-        except Exception:  # noqa: BLE001 — melhor mensagem parcial que nenhuma
-            detail = ""
-        if key:
-            detail = detail.replace(key, "[REDACTED]")
-        err = NvidiaError(_http_error_message(exc.code, detail, model,
-                                              display, key_hint,
-                                              spec["models_url"]))
-        # 401/403/404 são definitivos (repetir não adianta); o resto repete.
-        err.retryable = exc.code == 429 or 500 <= exc.code < 600
-        err.http_attempts = 1
-        raise err from exc
+            total = int(timeout)
+            if total <= 0:
+                total = None
+        except (TypeError, ValueError):
+            total = None
+    parts = urllib.parse.urlsplit(base_url.rstrip("/") + "/chat/completions")
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    path = parts.path or "/chat/completions"
+    if parts.query:
+        path += "?" + parts.query
+    conn_cls = (http.client.HTTPSConnection if parts.scheme == "https"
+                else http.client.HTTPConnection)
+    conn = conn_cls(host, port, timeout=ctimeout)
+    start = time.monotonic()
+    try:
+        conn.connect()
     except (socket.timeout, TimeoutError) as exc:
-        prazo = f"após {timeout}s" if timeout is not None else "sem timeout configurado"
-        err = NvidiaError(f"etapa {display}: timeout {prazo} com o modelo {model}.")
-        err.retryable = True
-        err.http_attempts = 1
-        # Timeout = provedor lento: não repetir aqui dentro (evita 6×15s
-        # no mesmo provedor); o rodízio troca imediatamente de provedor.
-        # O fallback resiliente final controla seus próprios 5 retries.
-        err.fast_fail = timeout is not None
-        raise err from exc
-    except urllib.error.URLError as exc:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — limpeza best-effort
+            pass
         err = NvidiaError(
-            f"etapa {display}: falha de conexão com a API. "
-            f"Motivo provável: {exc.reason}. Verifique rede e base_url."
-        )
+            f"etapa {display}: conexão/handshake excedeu {ctimeout}s "
+            f"com {host} (rede ou endpoint; o orçamento de geração nem "
+            f"foi consumido).")
         err.retryable = True
         err.http_attempts = 1
+        err.fast_fail = True
         raise err from exc
     except OSError as exc:
-        # Alguns resets/desconexões HTTP chegam sem serem encapsulados em
-        # URLError (por exemplo RemoteDisconnected); também são transitórios.
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — limpeza best-effort
+            pass
         err = NvidiaError(
             f"etapa {display}: conexão interrompida pela API. "
             f"Motivo provável: {exc}. Verifique rede e base_url."
@@ -513,6 +521,96 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         err.retryable = True
         err.http_attempts = 1
         raise err from exc
+    # Handshake OK: o socket passa a tolerar até o orçamento TOTAL
+    # (modelo lento que transmite aos poucos não é cortado no meio).
+    try:
+        if total is not None:
+            conn.sock.settimeout(total)
+        else:
+            conn.sock.settimeout(None)
+    except (OSError, AttributeError):
+        pass
+    try:
+        conn.request("POST", path, body=payload, headers=headers)
+        resp = conn.getresponse()
+        status = resp.status
+        # Leitura em chunks com teto total: silêncio além do orçamento
+        # vira timeout de resposta/processamento, não de conexão.
+        chunks: list[bytes] = []
+        deadline = (start + total) if total is not None else None
+        while True:
+            if deadline is not None and time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"orçamento total de {total}s excedido lendo a resposta")
+            try:
+                piece = resp.read(65536)
+            except (socket.timeout, TimeoutError) as exc:
+                raise TimeoutError(str(exc) or "silêncio na resposta") from exc
+            if not piece:
+                break
+            chunks.append(piece)
+            if deadline is not None and time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"orçamento total de {total}s excedido lendo a resposta")
+        raw = b"".join(chunks)
+    except (socket.timeout, TimeoutError) as exc:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — limpeza best-effort
+            pass
+        prazo = (f"{total}s de resposta/processamento"
+                 if total is not None else "sem orçamento total")
+        err = NvidiaError(
+            f"etapa {display}: timeout de resposta/processamento "
+            f"({prazo}) com o modelo {model} — conexão OK, o modelo "
+            f"não concluiu a tempo. Detalhe: {exc}.")
+        err.retryable = True
+        err.http_attempts = 1
+        # Resposta lenta: não repetir aqui dentro (evita N×orçamento
+        # no mesmo provedor); o rodízio troca imediatamente de provedor.
+        # O fallback resiliente final controla seus próprios 5 retries.
+        err.fast_fail = total is not None
+        raise err from exc
+    except (http.client.HTTPException, OSError) as exc:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — limpeza best-effort
+            pass
+        err = NvidiaError(
+            f"etapa {display}: conexão interrompida pela API. "
+            f"Motivo provável: {exc}. Verifique rede e base_url."
+        )
+        err.retryable = True
+        err.http_attempts = 1
+        raise err from exc
+    try:
+        conn.close()
+    except Exception:  # noqa: BLE001 — limpeza best-effort
+        pass
+    if status >= 400:
+        try:
+            detail = raw.decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 — melhor mensagem parcial que nenhuma
+            detail = ""
+        if key:
+            detail = detail.replace(key, "[REDACTED]")
+        err = NvidiaError(_http_error_message(status, detail, model,
+                                              display, key_hint,
+                                              spec["models_url"]))
+        # 401/403/404 são definitivos (repetir não adianta); o resto repete.
+        err.retryable = status == 429 or 500 <= status < 600
+        err.http_attempts = 1
+        raise err
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        err = NvidiaError(
+            f"etapa {display}: resposta não-JSON da API "
+            f"({len(raw)} bytes).")
+        err.retryable = True
+        err.http_attempts = 1
+        raise err from exc
+    return body
 
 
 def _post_with_retries(messages: list[dict], key: str, model: str,
@@ -560,18 +658,22 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
 
 JSON_FIRST_ORDER = PROVIDER_ORDER
 
-# Teto por chamada HTTP LLM (s).
+# Teto por chamada HTTP LLM (s) — espera de RESPOSTA/processamento.
 #
-# Antes era 15 e RÍGIDO: nem .env nem config passavam disso, o que
-# significava que um modelo grande e lento no NIM não tinha como ser
-# usado — o teto matava a chamada e o rodízio caía no próximo provedor
-# sem que ninguém pudesse aumentar o orçamento. O padrão continua 15 e o
-# comportamento de hoje é idêntico; o que muda é que o teto agora é
-# CONFIGURÁVEL, porque a escolha de valor é de quem opera, e não há
-# evidência aqui para escolher por ele.
+# Era 15 e RÍGIDO: um modelo grande e lento no NIM não tinha como ser
+# usado. Agora o padrão é 120 e continua CONFIGURÁVEL (`[nvidia]
+# timeout_max` ou NVIDIA_TIMEOUT_MAX): quem medir, ajusta; quem não,
+# usa o padrão folgado em vez de cair no fallback à toa.
 #
 # `[nvidia] timeout_max` no config.toml, ou NVIDIA_TIMEOUT_MAX no .env.
-LLM_CALL_TIMEOUT_MAX = 15
+LLM_CALL_TIMEOUT_MAX = 120
+
+# Espera de CONEXÃO/handshake TLS por chamada (s) — SEPARADA da espera
+# de resposta/processamento. Se o host não atende em 10 s, é rede ou
+# endpoint errado, não modelo lento: falhar rápido aqui não consome o
+# orçamento de geração. `[nvidia] connect_timeout` ou
+# NVIDIA_CONNECT_TIMEOUT sobrescrevem.
+CONNECT_TIMEOUT_DEFAULT = 10
 
 # Timeout por PROVEDOR, quando a resposta deste é mais lenta que a dos
 # outros. Mesma regra: vazio = o teto global, sem diferença nenhuma. Um
@@ -580,43 +682,48 @@ LLM_CALL_TIMEOUT_MAX = 15
 # "um teto alto para todos" e "um teto baixo para todos".
 LLM_PROVIDER_TIMEOUT: dict[str, int] = {}
 
-# O QUE ESTE TIMEOUT É, E O QUE ELE NÃO É
+# O QUE ESTES TIMEOUTS SÃO (separados de verdade)
 #
-# Investigation before changing it. A execução de São Jerônimo mostrou
-# "[NVIDIA] tentativa 1/6 falhou (timeout): etapa NVIDIA: timeout após 15s
-# com o modelo nvidia/nemotron-3-ultra-550b-a55b", seguido de um
-# fallback que funcionou. A pergunta era: o modelo é lento demais, ou o
-# prazo é curto demais?
+#   connect timeout  — handshake TCP+TLS com o host da API (padrão 10 s).
+#     Estoura aqui = rede/endpoint, não modelo lento. Falha rápido e o
+#     rodízio troca de provedor sem gastar o orçamento de geração.
+#   resposta/processamento — orçamento TOTAL da chamada (padrão 120 s),
+#     do request ao body completo. Um 550B que transmite de tempos em
+#     tempos NÃO é cortado no meio: o socket tolera cada recv até o
+#     orçamento total, e só o silêncio além do total mata a chamada.
 #
-# O que existe hoje é UM número, e ele é um timeout de SOCKET:
-# `urlopen(timeout=...)` vale para o handshake e para cada recv. Isso
-# significa que um modelo que leva 40 s mas transmite algo de tempos em
-# tempos NÃO é cortado — o que mata é silêncio no socket. O que não
-# existe é a separação pedida em três nomes:
-#
-#   connect timeout  — quanto tempo esperar pelo handshake TLS/API.
-#   read timeout     — quanto tempo aceitar silêncio entre pacotes.
-#   generation budget — quanto tempo a GERAÇÃO inteira pode levar.
-#
-# Só o segundo é observável hoje, porque os três viram o mesmo parâmetro.
-# Separá-los exigiria trocar a camada HTTP (http.client com timeout
-# distinto no socket após o connect, ou uma biblioteca), e essa é uma
-# reengenharia de provider — fora do escopo desta tarefa, e sem medição
-# que justificasse o risco.
-#
-# Nenhum valor novo foi escolhido aqui. Não há medição de quanto o
-# nemotron-3-ultra leva de verdade nesta máquina, e inventar 90 s seria
-# chutar. O que ficou pronto é a MECÂNICA: o teto é configurável e
-# pode ser dado por provedor. Quem medir, configura; quem não, o
-# comportamento é o de sempre.
+# Implementação stdlib (http.client): conecta com o timeout curto,
+# depois eleva o timeout do socket para o orçamento total antes de
+# enviar/ler. As mensagens distinguem "conexão/handshake" de
+# "resposta/processamento" para o diagnóstico não misturar os dois.
+
+
+def llm_connect_timeout(configured: int | None = None) -> int:
+    """A espera de conexão, na ordem: config, env, padrão (10 s)."""
+    if configured is not None:
+        try:
+            v = int(configured)
+            if v > 0:
+                return v
+        except (TypeError, ValueError):
+            pass
+    env = os.environ.get("NVIDIA_CONNECT_TIMEOUT", "").strip()
+    if env:
+        try:
+            v = int(env)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return CONNECT_TIMEOUT_DEFAULT
 
 
 def call_timeout_max(configured: int | None = None) -> int:
-    """O teto de chamada, na ordem: config, env, padrão.
+    """O teto de resposta/processamento, na ordem: config, env, padrão.
 
     Existe para que "aumentar o tempo do modelo lento" seja uma linha de
-    configuração em vez de uma edição de código. Nenhuma evidência
-    justifica um valor maior que 15, então o padrão é 15.
+    configuração em vez de uma edição de código. O padrão é 120 s: um
+    550B no NIM não conclui em 15 s.
     """
     if configured is not None:
         try:
@@ -680,9 +787,10 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
     timeout em vez de encerrar com ela ainda viável.
 
     `prefer` reordena o rodízio sem intercalar a NVIDIA (para JSON).
-    O timeout por chamada é limitado ao teto configurado (15 s por
-    padrão), e um provedor pode ter teto próprio via
-    LLM_PROVIDER_TIMEOUT. Nenhum dos dois muda o comportamento padrão.
+    O orçamento de resposta por chamada é limitado ao teto configurado
+    (120 s por padrão), e um provedor pode ter teto próprio via
+    LLM_PROVIDER_TIMEOUT. A conexão/handshake tem teto próprio e curto
+    (10 s). Nenhum dos dois muda o comportamento de fallback.
     """
     try:
         timeout = max(1, min(int(timeout), call_timeout_max(timeout_max)))
@@ -730,7 +838,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         use_model, use_base = om or dft_model, ob or dft_base
         # O teto deste provedor pode ser maior que o global. A razão de
         # existir é o caso observado: um modelo grande no NIM precisa de
-        # mais que 15 s, e aumentar o global obriga a aumentar para
+        # mais que o padrão, e aumentar o global obriga a aumentar para
         # todos — inclusive para os provedores rápidos, que passam a
         # esperar mais para falhar. Vazio = usa o global, sem diferença.
         teto_pid = timeout

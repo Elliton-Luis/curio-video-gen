@@ -240,12 +240,19 @@ class ResearchResult:
 
     def __init__(self, target, sources: list[ResearchSource],
                  rejected: list[tuple[ResearchSource, str, str]] | None = None,
-                 tried_queries: list[str] | None = None):
+                 tried_queries: list[str] | None = None,
+                 weak: bool = False,
+                 weak_warnings: list[str] | None = None):
         self.target = target
         self.sources = sources
         self.rejected = rejected or []
         self.tried_queries = tried_queries or []
         self.genre = ""
+        # weak=True: fontes vieram do passe relaxado (núcleo, sem
+        # discriminante) ou não há fontes — o roteiro pode ser gerado,
+        # mas o grounding é fraco e o pipeline deve avisar.
+        self.weak = bool(weak)
+        self.weak_warnings = list(weak_warnings or [])
 
     def __iter__(self):
         # Compatibilidade com quem só quer a lista de fontes.
@@ -261,7 +268,7 @@ class ResearchResult:
 def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
                    metrics=None, timeout: int = WIKI_TIMEOUT,
                    cfg=None, require_relevance: bool = True,
-                   genre: str = "") -> ResearchResult:
+                   genre: str = "", allow_weak: bool = False) -> ResearchResult:
     """Pesquisa a ideia, ACEITANDO SÓ fontes sobre o referente pretendido.
 
     A ordem importa:
@@ -389,7 +396,94 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
         if ddg is not None:
             _consider(ddg, "duckduckgo")
 
+    weak = False
+    weak_warnings: list[str] = []
+    if not sources and rejected:
+        # Passe 2 — núcleo: o artigo certo com qualificadores a mais no
+        # pedido ("... de Carvalho") ou discriminante alucinado ("Saramago")
+        # cai aqui em vez de zerar o vídeo. Homônimo em `forbidden`
+        # continua barrado.
+        relaxed = _relaxed_nucleus_accept(rejected, target, max_sources)
+        if relaxed:
+            weak = True
+            for src in relaxed:
+                seen_urls.add(src.url)
+                sources.append(src)
+                if metrics is not None:
+                    metrics.research_source()
+            weak_warnings.append(
+                f"grounding fraco: {len(relaxed)} fonte(s) aceita(s) por "
+                "núcleo no título, sem discriminante "
+                f"({', '.join(s.title[:50] for s in relaxed)}). "
+                "Fatos devem ser ditos com incerteza explícita.")
+            run_event("fallback",
+                      f"Pesquisa: passe relaxado (núcleo) aceitou "
+                      f"{len(relaxed)} fonte(s)",
+                      operation="research", entity=target.name,
+                      accepted=len(relaxed))
+    if not sources and target is not None:
+        # Passe 3 — nova cabeça: núcleo sem qualificadores + EN. Só quando
+        # o estrito zerou: com ≥1 fonte, novas cabeças trazem duplicatas
+        # (o mesmo artigo em outro idioma/URL) por pouco ganho.
+        for query in _reformulated_queries(idea, target, language, seen_q):
+            if len(sources) >= max_sources:
+                break
+            _add(query)
+            if metrics is not None:
+                metrics.research_query()
+            for lang in ([language]
+                         + (["en"] if _wiki_lang(language) == "pt" else [])):
+                if len(sources) >= max_sources:
+                    break
+                try:
+                    hits = wikipedia_search(query, lang, timeout=timeout)
+                except ResearchError:
+                    continue
+                for hit in hits:
+                    if len(sources) >= max_sources:
+                        break
+                    if _is_junk_hit(hit["title"]):
+                        continue
+                    try:
+                        src = wikipedia_extract(hit["title"], lang,
+                                                timeout=timeout)
+                    except ResearchError:
+                        continue
+                    before = len(sources)
+                    _consider(src, query)
+                    if len(sources) == before and require_relevance:
+                        # Candidata barrada no estrito entra no bolo do
+                        # passe 2 ao final (núcleo), sem nova rede.
+                        pass
+        if not sources and rejected:
+            relaxed = _relaxed_nucleus_accept(rejected, target, max_sources)
+            fresh = [s for s in relaxed if s.url not in seen_urls]
+            if fresh:
+                weak = True
+                for src in fresh:
+                    seen_urls.add(src.url)
+                    sources.append(src)
+                    if metrics is not None:
+                        metrics.research_source()
+                weak_warnings.append(
+                    f"grounding fraco (2º passe): {len(fresh)} fonte(s) por "
+                    "núcleo no título.")
+
     if not sources:
+        if allow_weak:
+            # Garantia de texto: o roteiro sai com incerteza explícita
+            # (o prompt já manda omitir ou ressalvar o que não está nas
+            # fontes) em vez do erro fatal. Só cai aqui quando NADA —
+            # nem estrito, nem núcleo, nem EN — falou do tema.
+            msg = ("pesquisa sem fonte aceita; roteiro segue com "
+                   "grounding fraco e incerteza explícita")
+            run_event("fallback", msg, operation="research",
+                      entity=target.name, query_count=len(queries),
+                      rejected=len(rejected))
+            res = ResearchResult(target, [], rejected, queries, weak=True,
+                                 weak_warnings=[msg])
+            res.genre = genre
+            return res
         run_event("error", f"Pesquisa sem fontes aceitas após {len(queries)} consulta(s)",
                   operation="research", entity=target.name,
                   query_count=len(queries), rejected=len(rejected),
@@ -403,9 +497,71 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
                      target=target.name, source_titles=[s.title[:60]
                                                         for s in sources[:5]]):
         print(entity_stage.explain(target, sources, rejected))
-    res = ResearchResult(target, sources[:max_sources], rejected, queries)
+    res = ResearchResult(target, sources[:max_sources], rejected, queries,
+                         weak=weak, weak_warnings=weak_warnings)
     res.genre = genre
     return res
+
+
+def _relaxed_nucleus_accept(
+    rejected: list[tuple[ResearchSource, str, str]],
+    target, max_sources: int,
+) -> list[ResearchSource]:
+    """Segundo passe: núcleo no título, sem exigir discriminante.
+
+    "Guerra do Balde" passa para alvo "Guerra do Balde de Carvalho";
+    "Flávio Bolsonaro" continua barrado (núcleo ausente) e homônimos
+    em `forbidden` continuam barrados. É fallback honesto: quem aceitar
+    aqui entra com status fraco, nunca como "confirmado".
+    """
+    from . import entity as entity_stage
+    if target is None or not getattr(target, "is_entity", True):
+        return []
+    if not (getattr(target, "name", "") or "").strip():
+        return []
+    out: list[ResearchSource] = []
+    seen: set[str] = set()
+    for src, motivo, _det in rejected:
+        if len(out) >= max_sources:
+            break
+        if motivo not in (entity_stage.REASON_ENTITY,
+                          entity_stage.REASON_DISCRIMINANT):
+            continue
+        if src.url in seen:
+            continue
+        texto = f"{src.title} {src.snippet}"
+        if target.matched_forbidden(texto):
+            continue
+        if not target.nucleus_in_title(src.title):
+            continue
+        seen.add(src.url)
+        out.append(src)
+    return out
+
+
+def _reformulated_queries(idea: str, target, language: str,
+                          seen: set[str]) -> list[str]:
+    """Queries de segundo passe: núcleo sem qualificadores + EN.
+
+    A cabeça errada ("de Carvalho" que não existe no título canônico)
+    é o que zera a busca; o núcleo ("Guerra Balde") e o inglês
+    ("War of the Bucket" via keywords) dão ao segundo passe uma cabeça
+    diferente em vez de repetir as mesmas 13 consultas.
+    """
+    from . import entity as entity_stage
+    out: list[str] = []
+    core = target.core_terms() if target is not None else []
+    if len(core) >= 2:
+        cand = " ".join(core)
+        if cand.lower() not in seen:
+            out.append(cand)
+    head = entity_stage._head_noun(getattr(target, "name", "") or "")
+    if head and len(_strip_acc(head)) >= 4 and head.lower() not in seen:
+        out.append(head)
+    for kw in extract_keywords(idea, language):
+        if kw.lower() not in seen:
+            out.append(kw)
+    return out[:4]
 
 
 def _no_usable_source_message(idea: str, target, rejected) -> str:

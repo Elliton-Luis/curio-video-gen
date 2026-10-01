@@ -1,8 +1,6 @@
 """Configuração Groq e diagnóstico observável de JSON para cenas."""
 
-import io
 import json
-import urllib.error
 
 import pytest
 
@@ -16,6 +14,62 @@ def _response(content, finish, completion_tokens):
                      "finish_reason": finish}],
         "usage": {"completion_tokens": completion_tokens},
     }
+
+
+class _FakeResp:
+    def __init__(self, status, payload: bytes):
+        self.status = status
+        self._payload = payload
+
+    def read(self, _n):
+        if self._payload:
+            out, self._payload = self._payload, b""
+            return out
+        return b""
+
+
+class _FakeConn:
+    """http.client falso: captura request, devolve status+payload fixos."""
+    last = None
+
+    def __init__(self, host, port, timeout=None, *, status=200, payload=b""):
+        self.host, self.port, self.timeout = host, port, timeout
+        self._status, self._payload = status, payload
+        self.request_args = None
+        type(self).last = self
+
+    def connect(self):
+        pass
+
+    @property
+    def sock(self):
+        outer = self
+
+        class S:
+            def settimeout(self, _v):
+                pass
+
+        return S()
+
+    def request(self, method, path, body=None, headers=None):
+        self.request_args = (method, path, body, dict(headers or {}))
+
+    def getresponse(self):
+        return _FakeResp(self._status, self._payload)
+
+    def close(self):
+        pass
+
+
+def _install_conn(monkeypatch, status=200, payload=b""):
+    def factory(host, port, timeout=None):
+        return _FakeConn(host, port, timeout, status=status, payload=payload)
+
+    import http.client
+    monkeypatch.setattr(http.client, "HTTPSConnection", factory)
+    monkeypatch.setattr(http.client, "HTTPConnection", factory)
+    _FakeConn.last = None
+    return _FakeConn
 
 
 def test_lightning_id_uses_existing_nim_catalog_entry():
@@ -54,32 +108,25 @@ def test_default_provider_order_and_requested_models():
 
 
 def test_mistral_request_uses_openai_chat_contract(monkeypatch):
-    seen = {}
-
-    def fake_open(req, timeout):
-        seen["url"] = req.full_url
-        seen["headers"] = dict(req.header_items())
-        seen["body"] = json.loads(req.data)
-        return io.BytesIO(json.dumps(_response('{"ok":true}', "stop", 8)).encode())
-
-    monkeypatch.setattr(N.urllib.request, "urlopen", fake_open)
+    fake = _install_conn(
+        monkeypatch, payload=json.dumps(
+            _response('{"ok":true}', "stop", 8)).encode())
     N._post_once([{"role": "user", "content": "Return JSON."}],
                  "fake-secret", "mistral-small-latest",
                  "https://api.mistral.ai/v1", 15, 128, 0.0, "mistral",
                  json_mode=True)
-    assert seen["url"] == "https://api.mistral.ai/v1/chat/completions"
-    assert seen["headers"]["Authorization"] == "Bearer fake-secret"
-    assert seen["body"]["model"] == "mistral-small-latest"
-    assert seen["body"]["response_format"] == {"type": "json_object"}
+    method, path, body, headers = fake.last.request_args
+    assert path == "/v1/chat/completions"
+    assert headers["Authorization"] == "Bearer fake-secret"
+    payload = json.loads(body)
+    assert payload["model"] == "mistral-small-latest"
+    assert payload["response_format"] == {"type": "json_object"}
 
 
 def test_mistral_429_preserves_api_message_and_redacts_key(monkeypatch):
-    def rate_limited(req, timeout):
-        raise urllib.error.HTTPError(
-            req.full_url, 429, "Too Many Requests", {},
-            io.BytesIO(b'{"message":"Rate limit exceeded: secret-key"}'))
-
-    monkeypatch.setattr(N.urllib.request, "urlopen", rate_limited)
+    fake = _install_conn(
+        monkeypatch, status=429,
+        payload=b'{"message":"Rate limit exceeded: secret-key"}')
     with pytest.raises(N.NvidiaError) as caught:
         N._post_once([], "secret-key", "mistral-small-latest",
                      "https://api.mistral.ai/v1", 15, 128, 0.0, "mistral")
@@ -123,42 +170,35 @@ def test_groq_success_remains_a_normal_member_of_provider_rotation(monkeypatch):
 
 def test_groq_request_has_openai_endpoint_bearer_model_and_app_user_agent(
         monkeypatch):
-    seen = {}
-
-    def fake_open(req, timeout):
-        seen["url"] = req.full_url
-        seen["headers"] = dict(req.header_items())
-        seen["body"] = json.loads(req.data)
-        seen["timeout"] = timeout
-        return io.BytesIO(json.dumps(_response('{"ok":true}', "stop", 8)).encode())
-
-    monkeypatch.setattr(N.urllib.request, "urlopen", fake_open)
+    fake = _install_conn(
+        monkeypatch, payload=json.dumps(
+            _response('{"ok":true}', "stop", 8)).encode())
     body = N._post_once(
         [{"role": "user", "content": "Return JSON."}], "fake-secret",
         "openai/gpt-oss-20b", "https://api.groq.com/openai/v1", 15,
         2000, 0.3, "groq", json_mode=True)
-    assert seen["url"] == "https://api.groq.com/openai/v1/chat/completions"
-    assert seen["headers"]["Authorization"] == "Bearer fake-secret"
-    assert seen["headers"]["User-agent"].startswith("curio/")
-    assert "python-urllib" not in seen["headers"]["User-agent"]
-    assert seen["body"]["model"] == "openai/gpt-oss-20b"
-    assert seen["body"]["max_tokens"] == 2000
-    assert seen["body"]["temperature"] == 0.3
-    assert seen["body"]["response_format"] == {"type": "json_object"}
-    assert seen["body"]["reasoning_effort"] == "low"
+    method, path, raw, headers = fake.last.request_args
+    assert fake.last.host == "api.groq.com"
+    assert path == "/openai/v1/chat/completions"
+    assert headers["Authorization"] == "Bearer fake-secret"
+    assert headers["User-Agent"].startswith("curio/")
+    assert "python-urllib" not in headers["User-Agent"]
+    payload = json.loads(raw)
+    assert payload["model"] == "openai/gpt-oss-20b"
+    assert payload["max_tokens"] == 2000
+    assert payload["temperature"] == 0.3
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["reasoning_effort"] == "low"
     assert body["choices"][0]["finish_reason"] == "stop"
 
 
 def test_groq_http_403_preserves_api_message_without_calling_it_bad_key(
         monkeypatch):
-    def forbidden(req, timeout):
-        raise urllib.error.HTTPError(
-            req.full_url, 403, "Forbidden", {},
-            io.BytesIO((b'{"detail":"' + b'x' * 400 +
-                        b'","error_name":"browser_signature_banned",'
-                        b'"message":"blocked user agent"}')))
-
-    monkeypatch.setattr(N.urllib.request, "urlopen", forbidden)
+    fake = _install_conn(
+        monkeypatch, status=403,
+        payload=(b'{"detail":"' + b'x' * 400 +
+                 b'","error_name":"browser_signature_banned",'
+                 b'"message":"blocked user agent"}'))
     with pytest.raises(N.NvidiaError) as caught:
         N._post_once([], "fake-secret", "openai/gpt-oss-20b",
                      "https://api.groq.com/openai/v1", 15,
