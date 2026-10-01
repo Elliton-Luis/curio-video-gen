@@ -3,7 +3,7 @@
 - **Data:** 2026-09-30 22:10 (-03:00)
 - **Tipo:** relatorio
 - **Escopo:** substituir o carrossel horizontal do gênero por lista vertical com descrição/metadados dinâmicos.
-- **Commit(s):** `8bfc52b` (`fix(tui): replace genre carousel with vertical list`); documentação: pendente.
+- **Commit(s):** `8bfc52b` (`fix(tui): replace genre carousel with vertical list`), `2548a4a` (`docs: report vertical genre selector`).
 - **Origem:** solicitação para simplificar a seleção de gênero na TUI.
 
 ## 1. O que foi pedido
