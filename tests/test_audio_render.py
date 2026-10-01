@@ -58,6 +58,45 @@ def test_existing_voice_only_mix_keeps_padding_and_no_music_graph(tmp_path, monk
     assert "-shortest" not in cmd
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg/ffprobe ausentes")
+def test_burn_final_title_apostrophe_does_not_break_enable_expression(tmp_path):
+    cfg = CurioConfig()
+    cfg.render_backend = "cpu"
+    cfg.width, cfg.height, cfg.fps = 160, 284, 12
+    font = R.ff.find_font_bold()
+    if not font:
+        pytest.skip("fonte bold ausente")
+
+    silent = tmp_path / "silent.mp4"
+    ass = tmp_path / "subs.ass"
+    out = tmp_path / "final.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+         "color=c=black:s=160x284:d=0.3", "-c:v", "libx264", str(silent)],
+        check=True)
+    ass.write_text(
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: 160\nPlayResY: 284\n"
+        "\n[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+        "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        "Style: Default,Arial,18,&H00FFFFFF,&H000000FF,&H00000000,"
+        "&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n"
+        "\n[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
+        "Effect, Text\n"
+        "Dialogue: 0,0:00:00.00,0:00:00.30,Default,,0,0,0,,escola\n",
+        encoding="utf-8")
+
+    R.burn_final(str(silent), str(ass), None, str(out), cfg, 0.3,
+                 title="Como surgiu a palavra 'escola'?",
+                 title_fontfile=font)
+
+    assert out.is_file() and out.stat().st_size > 0
+
+
 def test_build_sfx_track_uses_local_audio_asset(tmp_path, monkeypatch):
     asset = tmp_path / "paper.mp3"
     asset.write_bytes(b"fixture")

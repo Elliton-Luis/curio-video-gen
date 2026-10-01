@@ -548,7 +548,7 @@ def mix_sfx(narration_wav: str, sfx_wav: str, out_path: str,
 
 def _escape_drawtext(text: str) -> str:
     return (text.replace("\\", "\\\\").replace(":", "\\:")
-            .replace("'", "\\'").replace("%", "\\%").replace(",", "\\,"))
+            .replace("'", r"'\''").replace("%", "\\%").replace(",", "\\,"))
 
 
 def _wrap_title_lines(title: str, width: int = 24,
