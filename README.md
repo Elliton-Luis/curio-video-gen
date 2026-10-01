@@ -397,7 +397,7 @@ transformaria um vídeo rápido em lento.
 ## Estrutura de saída
 
 ```text
-output/<slug>/
+output/[<genero>/]<AAAAMMDD-titulo>/
 ├── script/script.txt + chapters.json
 ├── media/media.json (+ cache/media/ global com licenças)
 ├── timeline/timeline.json (+ visual_timeline.json no modo roteiro-pronto)
@@ -411,6 +411,13 @@ output/<slug>/
 ├── render/silent.mp4 + final.mp4
 └── metadata.json (capítulos, assets, licenças, tempos, visual_report)
 ```
+
+Com gênero escolhido, o projeto cai em `output/<genero>/` (uma pasta por
+gênero: `people/`, `history`, …); sem gênero, fica direto em `output/`.
+O nome da pasta é `AAAAMMDD_titulo` (só a data de hoje + título); se dois
+vídeos do mesmo dia tiverem o mesmo título, o segundo ganha `-2`, `-3`…
+Projetos antigos em `output/<slug>` continuam abrindo normal nos comandos
+`review`, `swap`, `rerender`, `verify`, `sources` e `finalize`.
 
 ## Roteiros via LLM (chain com rodízio)
 

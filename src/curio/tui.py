@@ -20,8 +20,9 @@ import time
 from . import verify as verify_mod
 from .config import ALLOWED_INSERT_STYLES as INSERT_STYLES
 from .config import CurioConfig, parse_duration
-from .pipeline import MediaStandby, run_pipeline, video_paths
-from .slug import slugify
+from .pipeline import (MediaStandby, _paths_for_slug, iter_projects,
+                     run_pipeline)
+from .slug import find_project_root, project_dir, slugify_with_timestamp
 from .stages import nvidia as nvidia_stage
 from .media import providers as media_prov
 
@@ -356,10 +357,18 @@ def _show_verify(c: dict[str, str], mp4: str, srt: str, cfg: CurioConfig) -> boo
 
 
 def _project_status(cfg: CurioConfig, slug: str) -> tuple[str, dict]:
-    """Retorna (situação legível, metadata)."""
-    meta_path = os.path.join(cfg.out_dir, slug, "metadata.json")
-    if not os.path.isfile(meta_path):
+    """Retorna (situação legível, metadata). Aceita `slug` e `genero/slug`."""
+    genre_part, sep, rest = slug.partition("/")
+    root = None
+    if sep:
+        cand = project_dir(cfg.out_dir, genre_part, rest)
+        if os.path.isdir(cand):
+            root = cand
+    else:
+        root = find_project_root(cfg.out_dir, slug)
+    if root is None:
         return "não encontrado", {}
+    meta_path = os.path.join(root, "metadata.json")
     try:
         with open(meta_path, encoding="utf-8") as fh:
             meta = json.load(fh)
@@ -705,15 +714,15 @@ def _clear_output(c: dict[str, str], cfg: CurioConfig) -> None:
     if not os.path.isdir(cfg.out_dir):
         print(f"  {c['yellow']}Pasta não existe.{c['reset']}")
         return
-    # Conta projetos
-    projects = [d for d in os.listdir(cfg.out_dir)
-                if os.path.isdir(os.path.join(cfg.out_dir, d))]
+    # Conta projetos (plano legado + pastas de gênero)
+    projects = [ref for ref, _root in iter_projects(cfg.out_dir)]
+    tops = sorted({ref.split("/")[0] for ref in projects})
     print(f"  Projetos encontrados: {len(projects)}")
     for p in projects:
         print(f"    - {p}")
     if _confirm_twice(f"Apagar TODOS os {len(projects)} projetos em {cfg.out_dir}?", "APAGAR TUDO"):
         try:
-            for p in projects:
+            for p in tops:
                 shutil.rmtree(os.path.join(cfg.out_dir, p))
             print(f"{c['green']}Pasta de saída limpa.{c['reset']}")
         except Exception as exc:
@@ -726,8 +735,10 @@ def _clear_project(c: dict[str, str], cfg: CurioConfig) -> None:
     slug = _ask("Projeto (slug da pasta em output/): ").strip()
     if not slug:
         return
-    proj_path = os.path.join(cfg.out_dir, slug)
-    if not os.path.isdir(proj_path):
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, slug)
+        proj_path = paths.root
+    except FileNotFoundError:
         print(f"{c['red']}Projeto '{slug}' não encontrado.{c['reset']}")
         return
     status, meta = _project_status(cfg, slug)
@@ -1129,8 +1140,8 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
         if not idea:
             print("Ideia vazia — voltando ao menu.")
             return
-        slug = slugify(idea)
-        print(f"Pasta do projeto: {cfg.out_dir}/{slug}/   "
+        slug = slugify_with_timestamp(idea)
+        print(f"Pasta do projeto: {project_dir(cfg.out_dir, cfg.genre, slug)}/   "
               f"idioma: {cfg.language}   gênero: {cfg.genre or 'padrão'}")
         cfg = _ask_duration(c, cfg)
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
@@ -1139,7 +1150,7 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
                             narration="ai", on_progress=_progress,
                             on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nExecução interrompida. Consulte log em output/<slug>/logs/.")
+        print("\nExecução interrompida. Consulte log em output/[<genero>/]<slug>/logs/.")
         return
     except MediaStandby as exc:
         _show_standby(c, exc)
@@ -1173,15 +1184,15 @@ def _human_step1(c: dict[str, str], cfg: CurioConfig) -> str | None:
     if not idea:
         print("Ideia vazia — voltando ao menu.")
         return None
-    slug = slugify(idea)
-    print(f"Pasta do projeto: {cfg.out_dir}/{slug}/")
+    slug = slugify_with_timestamp(idea)
+    print(f"Pasta do projeto: {project_dir(cfg.out_dir, cfg.genre, slug)}/")
     cfg = _ask_duration(c, cfg)
     try:
         meta = run_pipeline(idea, cfg, slug=slug, force=False,
                             narration="human", on_progress=_progress,
                             on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nExecução interrompida. Consulte log em output/<slug>/logs/.")
+        print("\nExecução interrompida. Consulte log em output/[<genero>/]<slug>/logs/.")
         return None
     except MediaStandby as exc:
         _show_standby(c, exc)
@@ -1227,7 +1238,7 @@ def _human_step2(c: dict[str, str], cfg: CurioConfig,
                                 on_progress=_final_progress,
                                 on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nFinalização interrompida. Consulte log em output/<slug>/logs/.")
+        print("\nFinalização interrompida. Consulte log em output/[<genero>/]<slug>/logs/.")
         return
     except Exception as exc:  # noqa: BLE001
         from .runlog import safe_text
@@ -1238,8 +1249,17 @@ def _human_step2(c: dict[str, str], cfg: CurioConfig,
     for w in meta.get("finalize_warnings", []):
         print(f"{c['yellow']}AVISO: {w}{c['reset']}")
     _show_verify(c, meta["artifacts"]["video"], meta["artifacts"].get(
-        "subtitles", os.path.join(cfg.out_dir, slug, "subtitles", "subs.srt")),
+        "subtitles") or _fallback_subs(cfg, slug),
         cfg)
+
+
+def _fallback_subs(cfg: CurioConfig, slug: str) -> str:
+    """subs.srt do projeto, no layout novo ou legado (só p/ fallback)."""
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, slug)
+        return paths.subs_srt
+    except FileNotFoundError:
+        return os.path.join(cfg.out_dir, slug, "subtitles", "subs.srt")
 
 
 def _human_flow(c: dict[str, str], cfg: CurioConfig) -> None:
@@ -1289,7 +1309,7 @@ def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
                                    on_progress=_progress,
                                    on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nExecução interrompida. Consulte log em output/<slug>/logs/.")
+        print("\nExecução interrompida. Consulte log em output/[<genero>/]<slug>/logs/.")
         return
     except MediaStandby as exc:
         _show_standby(c, exc)
@@ -1344,7 +1364,11 @@ def _verify_flow(c: dict[str, str], cfg: CurioConfig) -> None:
         print(f"'{slug}' ainda não tem vídeo final — finalize primeiro "
               f"(opção 'Passo 2: finalizar com minha voz').")
         return
-    paths = video_paths(cfg.out_dir, slug)
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, slug)
+    except FileNotFoundError:
+        print(f"{c['red']}Projeto '{slug}': {status}; sem MP4 final.{c['reset']}")
+        return
     if not os.path.isfile(paths.final_mp4):
         print(f"{c['red']}Projeto '{slug}': {status}; sem MP4 final.{c['reset']}")
         return
@@ -1359,8 +1383,7 @@ def _projects_flow(c: dict[str, str], cfg: CurioConfig) -> None:
             print("Nenhum projeto ainda — comece por 'Criar vídeo'.")
             _pause(c)
             return
-        entries = sorted(e for e in os.listdir(cfg.out_dir)
-                         if os.path.isdir(os.path.join(cfg.out_dir, e)))
+        entries = [ref for ref, _root in iter_projects(cfg.out_dir)]
         if not entries:
             print("Nenhum projeto ainda — comece por 'Criar vídeo'.")
             _pause(c)
@@ -1399,7 +1422,11 @@ def _verify_project(c: dict[str, str], cfg: CurioConfig, slug: str) -> None:
     if "aguardando sua voz" in status:
         print(f"'{slug}' ainda não tem vídeo final — finalize primeiro.")
         return
-    paths = video_paths(cfg.out_dir, slug)
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, slug)
+    except FileNotFoundError:
+        print(f"{c['red']}Projeto '{slug}': {status}; sem MP4 final.{c['reset']}")
+        return
     if not os.path.isfile(paths.final_mp4):
         print(f"{c['red']}Projeto '{slug}': {status}; sem MP4 final.{c['reset']}")
         return
@@ -1422,7 +1449,12 @@ def _show_project(c: dict[str, str], cfg: CurioConfig, slug: str) -> None:
 
 
 def _delete_project(c: dict[str, str], cfg: CurioConfig, slug: str) -> None:
-    proj_path = os.path.join(cfg.out_dir, slug)
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, slug)
+    except FileNotFoundError:
+        print(f"{c['red']}Projeto '{slug}' não encontrado.{c['reset']}")
+        return
+    proj_path = paths.root
     if _confirm_twice(f"Apagar projeto '{slug}'?", slug.upper()):
         try:
             shutil.rmtree(proj_path)

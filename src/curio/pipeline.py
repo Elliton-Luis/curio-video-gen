@@ -29,6 +29,7 @@ from .metrics import RunMetrics, backfill_from_metadata
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
 from .slug import slugify, slugify_with_timestamp
+from .slug import find_project_root, project_dir, unique_slug
 from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
@@ -75,8 +76,8 @@ class VideoPaths:
     metadata_json: str
 
 
-def video_paths(out_dir: str, slug: str) -> VideoPaths:
-    root = os.path.join(out_dir, slug)
+def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
+    root = project_dir(out_dir, genre, slug)
     return VideoPaths(
         root=root,
         script_txt=os.path.join(root, "script", "script.txt"),
@@ -689,14 +690,32 @@ def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
     }
 
 
+def _resolve_paths(out_dir: str, slug: str | None, idea: str,
+                    genre_key: str, force: bool = False,
+                    ) -> tuple[str, VideoPaths]:
+    """Slug final + caminhos, com pasta de gênero e anti-colisão.
+
+    Sem slug explícito, gera `AAAAMMDD_titulo`; com gênero, a pasta é
+    `output/<genero>/<slug>`. Em rerun (`force` ou mesma ideia) reutiliza;
+    em colisão com outra ideia, sufixa `-2`, `-3`…
+    """
+    final = slug or slugify_with_timestamp(idea)
+    if slug is None and not force:
+        # Só o slug AUTOMÁTICO ganha anti-colisão: slug explícito é
+        # endereço exato (retomada de cache/standby/rerun depende disso).
+        final = unique_slug(out_dir, genre_key, final, idea)
+    return final, video_paths(out_dir, final, genre_key)
+
+
 def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                  force: bool = False, narration: str = "ai",
                  on_progress=None, provided_script: str | None = None,
                  max_images: int = 1,
                  visual_overlap: float | None = None,
                  genre: str | None = None, on_event=None) -> dict:
-    run_slug = slug or slugify_with_timestamp(idea)
-    paths = video_paths(cfg.out_dir, run_slug)
+    genre_key = (genre if genre is not None else cfg.genre) or ""
+    run_slug, paths = _resolve_paths(cfg.out_dir, slug, idea, genre_key,
+                                     force)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     log_path = os.path.join(paths.root, "logs", f"run-{stamp}.jsonl")
     started = time.monotonic()
@@ -798,8 +817,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if on_progress:
             on_progress(idx, len(stages), label, status)
 
-    slug = slug or slugify_with_timestamp(idea)
-    paths = video_paths(cfg.out_dir, slug)
+    slug, paths = _resolve_paths(cfg.out_dir, slug, idea, genre_key,
+                                   force)
     if not cfg.audio_enabled and cfg.music_mode == "auto":
         try:
             previous_project = _read_json(paths.metadata_json)
@@ -1384,6 +1403,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                               stage_times, started)
     metadata.update({
         "genre": genre_key,
+        "project_dir": os.path.relpath(paths.root, cfg.out_dir),
         "genre_profile": editorial_stage.summary(perfil),
         "typography": _typography_report(cfg, genre_key),
         "narration": "ai",
@@ -1597,6 +1617,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                               stage_times, started)
     metadata.update({
         "genre": genre_key,
+        "project_dir": os.path.relpath(paths.root, cfg.out_dir),
         "audio_request": audio_plan["metadata"],
         "visual_transition_signature": _transition_signature(
             chapters, genre_key, transition_mode,
@@ -1652,10 +1673,64 @@ def _probe_streams(path: str) -> list[dict]:
     return (_json.loads(proc.stdout).get("streams") or [])
 
 
+def _paths_for_slug(out_dir: str, slug: str) -> tuple[str, VideoPaths]:
+    """Caminhos de um projeto existente, no layout novo ou legado.
+
+    Aceita `output/<genero>/<slug>` e `output/<slug>`; sem achar,
+    levanta FileNotFoundError dizendo onde procurou.
+    """
+    root = None
+    if "/" in slug:
+        genre_part, _, slug = slug.partition("/")
+        cand = project_dir(out_dir, genre_part, slug)
+        if os.path.isdir(cand):
+            root = cand
+    else:
+        root = find_project_root(out_dir, slug)
+    if root is None:
+        raise FileNotFoundError(
+            f"projeto '{slug}' não encontrado em {out_dir}/ "
+            f"(nem em {out_dir}/<genero>/{slug}).")
+    genre = ""
+    if os.path.dirname(root) != out_dir:
+        genre = os.path.basename(os.path.dirname(root))
+    return slug, video_paths(out_dir, slug, genre)
+
+
+def iter_projects(out_dir: str) -> list[tuple[str, str]]:
+    """Projetos com metadata.json: [(ref, root)].
+
+    `ref` é `slug` (layout plano legado) ou `<genero>/<slug>` (novo);
+    aceito de volta por `_paths_for_slug` e pelos comandos `--slug`.
+    """
+    found: list[tuple[str, str]] = []
+    try:
+        entries = sorted(os.listdir(out_dir))
+    except OSError:
+        return found
+    for entry in entries:
+        full = os.path.join(out_dir, entry)
+        if not os.path.isdir(full):
+            continue
+        if os.path.isfile(os.path.join(full, "metadata.json")):
+            found.append((entry, full))
+            continue
+        try:
+            subs = sorted(os.listdir(full))
+        except OSError:
+            continue
+        for sub in subs:
+            sub_full = os.path.join(full, sub)
+            if (os.path.isdir(sub_full) and os.path.isfile(
+                    os.path.join(sub_full, "metadata.json"))):
+                found.append((f"{entry}/{sub}", sub_full))
+    return found
+
+
 def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                      force: bool = False, on_progress=None,
                      on_event=None) -> dict:
-    paths = video_paths(cfg.out_dir, slug)
+    slug, paths = _paths_for_slug(cfg.out_dir, slug)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     log_path = os.path.join(paths.root, "logs", f"finalize-{stamp}.jsonl")
     with RunLog(log_path, slug, on_event) as runlog:
@@ -1680,7 +1755,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                       force: bool = False, on_progress=None) -> dict:
     """Une áudio humano ao vídeo silencioso: transcreve, legenda, merge."""
     started = time.monotonic()
-    paths = video_paths(cfg.out_dir, slug)
+    slug, paths = _paths_for_slug(cfg.out_dir, slug)
     metrics = RunMetrics(slug, audio_src, "human-finalize")
     for need in (paths.chapters_json, paths.timeline_json, paths.media_json,
                  paths.silent_mp4):

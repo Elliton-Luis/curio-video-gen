@@ -304,7 +304,7 @@ def test_finalize_humano_aplica_trilha_salva_no_audio_request(tmp_path, monkeypa
     meta, out_dir = _run(tmp_path, narration="human", genre="people",
                          audio_enabled=True, music_mode="manual",
                          music_file=str(music), visual_sfx=False)
-    paths = video_paths(out_dir, "teste-integracao")
+    paths = video_paths(out_dir, "teste-integracao", "people")
     duration = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=nw=1:nk=1", paths.silent_mp4],

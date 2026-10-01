@@ -19,7 +19,7 @@ from typing import Callable, Optional
 
 from .config import CurioConfig
 from .pipeline import MediaStandby, run_pipeline
-from .slug import slugify
+from .slug import slugify_with_timestamp
 
 
 class QueueItemStatus(str, Enum):
@@ -49,7 +49,8 @@ class QueueItem:
 
     def __post_init__(self):
         if not self.slug:
-            self.slug = slugify(self.idea[:60]) or f"video-{int(time.time())}"
+            self.slug = (slugify_with_timestamp(self.idea[:60])
+                           or f"video-{int(time.time())}")
 
 
 @dataclass
@@ -221,7 +222,7 @@ def process_queue(
             if on_progress:
                 on_progress(queue)
 
-            # Cada ideia vira um projeto independente sob output_dir/<slug>.
+            # Cada ideia vira um projeto independente sob output_dir/[<genero>/]<slug>.
             item_cfg = CurioConfig()
             for key, value in cfg.__dict__.items():
                 setattr(item_cfg, key, value)

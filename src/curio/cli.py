@@ -22,8 +22,9 @@ from .pipeline import (MediaStandby, _build_silent, _build_silent_visual,
                         _mark_audio_used, _narration_with_sfx, _read, _read_json,
                         _transition_mode, _transition_signature,
                         _sfx_track_for,
-                        _write_json, finalize_project, run_pipeline,
-                        run_script_pipeline, video_paths)
+                        _write_json, finalize_project, iter_projects,
+                        run_pipeline,
+                        run_script_pipeline, _paths_for_slug)
 from .stages.scenes import Chapter
 from .slug import slugify, slugify_with_timestamp
 from .stages import nvidia as nvidia_stage
@@ -102,7 +103,7 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
                             narration=narration, on_progress=_progress,
                             on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nExecução interrompida. Log persistente está em output/<slug>/logs/.",
+        print("\nExecução interrompida. Log persistente está em output/[<genero>/]<slug>/logs/.",
               file=sys.stderr)
         return 130
     except MediaStandby as exc:
@@ -176,7 +177,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
             slug=args.slug, force=args.force, narration=narration,
             on_progress=_progress, on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nExecução interrompida. Log persistente está em output/<slug>/logs/.",
+        print("\nExecução interrompida. Log persistente está em output/[<genero>/]<slug>/logs/.",
               file=sys.stderr)
         return 130
     except MediaStandby as exc:
@@ -215,10 +216,25 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     return 0
 
 
+def _lookup_paths(cfg: CurioConfig, slug: str):
+    """(slug, paths) resolvendo layout novo (`genero/`) e legado (plano).
+
+    Devolve None (após avisar) quando o projeto não existe.
+    """
+    try:
+        return _paths_for_slug(cfg.out_dir, slug)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return None
+
+
 def cmd_sources(args, cfg: CurioConfig) -> int:
     """Gerencia o registro de fontes de um projeto."""
     from .stages import sources as sources_stage
-    paths = video_paths(cfg.out_dir, args.slug)
+    found = _lookup_paths(cfg, args.slug)
+    if found is None:
+        return 1
+    _, paths = found
     reg = sources_stage.SourceRegistry.load(paths.sources_json)
     reg.slug = args.slug
     if getattr(args, "add", None):
@@ -254,7 +270,7 @@ def cmd_finalize(args, cfg: CurioConfig) -> int:
                                 force=args.force, on_progress=_final_progress,
                                 on_event=_run_event)
     except KeyboardInterrupt:
-        print("\nFinalização interrompida. Log persistente está em output/<slug>/logs/.",
+        print("\nFinalização interrompida. Log persistente está em output/[<genero>/]<slug>/logs/.",
               file=sys.stderr)
         return 130
     except FileNotFoundError as exc:
@@ -281,17 +297,15 @@ def cmd_list(args, cfg: CurioConfig) -> int:
         print(f"Nenhum vídeo ainda (diretório {cfg.out_dir}/ não existe).")
         return 0
     found = 0
-    for entry in sorted(os.listdir(cfg.out_dir)):
-        meta_path = os.path.join(cfg.out_dir, entry, "metadata.json")
-        if not os.path.isfile(meta_path):
-            continue
+    for ref, root in iter_projects(cfg.out_dir):
+        meta_path = os.path.join(root, "metadata.json")
         try:
             with open(meta_path, encoding="utf-8") as fh:
                 meta = json.load(fh)
         except json.JSONDecodeError:
             continue
         found += 1
-        print(f"- {entry}: {meta.get('title', '?')} "
+        print(f"- {ref}: {meta.get('title', '?')} "
               f"({meta.get('duration_actual', '?')}s, {meta.get('created_at', '?')})")
     if not found:
         print("Nenhum vídeo encontrado.")
@@ -303,10 +317,11 @@ def cmd_info(args, cfg: CurioConfig) -> int:
     if not slug:
         print("Informe --slug ou a ideia.", file=sys.stderr)
         return 2
-    meta_path = os.path.join(cfg.out_dir, slug, "metadata.json")
-    if not os.path.isfile(meta_path):
-        print(f"Vídeo '{slug}' não encontrado em {cfg.out_dir}/.", file=sys.stderr)
+    found = _lookup_paths(cfg, slug)
+    if found is None:
         return 1
+    _, paths = found
+    meta_path = paths.metadata_json
     with open(meta_path, encoding="utf-8") as fh:
         print(json.dumps(json.load(fh), ensure_ascii=False, indent=2))
     return 0
@@ -317,7 +332,10 @@ def cmd_review(args, cfg: CurioConfig) -> int:
     from .stages import review as review_stage
     from .stages import scoring as scoring_stage
     slug = args.slug
-    paths = video_paths(cfg.out_dir, slug)
+    found = _lookup_paths(cfg, slug)
+    if found is None:
+        return 1
+    slug, paths = found
     if not os.path.isfile(paths.chapters_json):
         print(f"Projeto '{slug}' incompleto ({paths.chapters_json} ausente).",
               file=sys.stderr)
@@ -352,7 +370,10 @@ def cmd_swap(args, cfg: CurioConfig) -> int:
     custar uma nova geração de voz.
     """
     from .stages import visual as visual_stage
-    paths = video_paths(cfg.out_dir, args.slug)
+    found = _lookup_paths(cfg, args.slug)
+    if found is None:
+        return 1
+    _, paths = found
     if not os.path.isfile(paths.media_json):
         print(f"Projeto '{args.slug}' sem media.json — rode o generate antes.",
               file=sys.stderr)
@@ -403,7 +424,10 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     """
     from .stages import render as render_stage
     from .stages import subs as subs_stage
-    paths = video_paths(cfg.out_dir, args.slug)
+    found = _lookup_paths(cfg, args.slug)
+    if found is None:
+        return 1
+    _, paths = found
     for need, dica in ((paths.chapters_json, "rode o generate"),
                        (paths.media_json, "rode o generate"),
                        (paths.narration_wav, "rode o generate")):
@@ -505,7 +529,10 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
 
 def cmd_verify(args, cfg: CurioConfig) -> int:
     slug = args.slug
-    paths = video_paths(cfg.out_dir, slug)
+    found = _lookup_paths(cfg, slug)
+    if found is None:
+        return 1
+    slug, paths = found
     if not os.path.isfile(paths.final_mp4):
         print(f"Vídeo '{slug}' não encontrado em {cfg.out_dir}/.", file=sys.stderr)
         return 1
@@ -526,17 +553,18 @@ def cmd_metrics(args, cfg: CurioConfig) -> int:
     """Backfill: métricas a partir do metadata de projetos existentes."""
     if getattr(args, "slug", None):
         slugs = [args.slug]
-    elif os.path.isdir(cfg.out_dir):
-        slugs = sorted(d for d in os.listdir(cfg.out_dir)
-                       if os.path.isfile(os.path.join(cfg.out_dir, d,
-                                                      "metadata.json")))
     else:
-        slugs = []
+        slugs = [ref for ref, _root in iter_projects(cfg.out_dir)]
     if not slugs:
         print("Nenhum projeto com metadata.json.", file=sys.stderr)
         return 1
     for slug in slugs:
-        meta_path = os.path.join(cfg.out_dir, slug, "metadata.json")
+        try:
+            _, paths = _paths_for_slug(cfg.out_dir, slug)
+            meta_path = paths.metadata_json
+        except FileNotFoundError as exc:
+            print(f"PULADO {slug}: {exc}", file=sys.stderr)
+            continue
         try:
             with open(meta_path, encoding="utf-8") as fh:
                 meta = json.load(fh)
