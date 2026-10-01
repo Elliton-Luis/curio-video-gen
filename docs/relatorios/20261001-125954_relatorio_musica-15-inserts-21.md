@@ -3,7 +3,7 @@
 - **Data:** 2026-10-01 12:59 (-03:00)
 - **Tipo:** relatorio
 - **Escopo:** elevar cama musical e sons de inserção dentro das faixas de áudio existentes.
-- **Commit(s):** pendente
+- **Commit(s):** `588bd93` (`fix: raise default music and insert levels`)
 - **Origem:** pedido para tornar música de fundo e sons de inserts mais audíveis.
 
 ## 1. O que foi pedido
