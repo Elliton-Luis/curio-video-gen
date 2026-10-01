@@ -98,10 +98,11 @@ Output: output/salario/render/final.mp4
 
 ## Gêneros editoriais
 
-A TUI pergunta o gênero **antes** da ideia, com um seletor horizontal
-(`← →`, `Enter`, `Esc`): a escolha muda a pesquisa, então pedir o tema
-primeiro seria escrever contra o formato errado. O `dry-run` e a folha de
-contato mostram o gênero escolhido e os números que ele produziu.
+A TUI pergunta o gênero **antes** da ideia, com uma lista vertical
+(`↑ ↓`, `Enter`, `Esc`) que mostra a descrição e o ritmo do perfil selecionado.
+A escolha muda a pesquisa, então pedir o tema primeiro seria escrever contra o
+formato errado. O `dry-run` e a folha de contato mostram o gênero escolhido e
+os números que ele produziu.
 
 O gênero não é um prompt com outro texto em cima. Ele é um perfil
 que age em seis etapas:

@@ -14,7 +14,7 @@ language = "pt-BR"  # pt-BR ou en-US (100% em inglês: roteiro, título, voz e l
 # (segundos por cena), estrutura do roteiro, estratégia de pesquisa,
 # vocabulário visual da cena, medium preferido e densidade das legendas.
 # Chaves: history | etymology | mythology | mystery | science | people
-# A TUI oferece o seletor visual (← →, Enter). O env sobrescreve:
+# A TUI oferece uma lista vertical (↑ ↓, Enter, Esc). O env sobrescreve:
 # CURIO_GENRE=people
 genre = ""
 

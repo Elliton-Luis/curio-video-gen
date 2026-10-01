@@ -93,13 +93,7 @@ def _interactive_supported() -> bool:
 
 
 def _read_key() -> str:
-    """Lê uma tecla: 'up', 'down', 'left', 'right', 'enter', 'esc', 'q' ou o
-    caractere.
-
-    As setas laterais (C/D) são lidas porque o seletor de gênero é
-    horizontal; sem elas, ← → chegariam como bytes de escape soltos e o
-    menu saltaria para o topo em vez de percorrer as categorias.
-    """
+    """Lê uma tecla: 'up', 'down', 'enter', 'esc', 'q' ou o caractere."""
     import tty
     import termios
     fd = sys.stdin.fileno()
@@ -113,10 +107,6 @@ def _read_key() -> str:
                 return "up"
             if seq == "[B":
                 return "down"
-            if seq == "[C":
-                return "right"
-            if seq == "[D":
-                return "left"
             return "esc"
         if ch in ("\r", "\n"):
             return "enter"
@@ -129,9 +119,16 @@ def _read_key() -> str:
 
 def _render_menu(c: dict[str, str], title: str, options: list[str],
                  selected: int, status: list[str] | None = None,
+                 details: list[str] | None = None,
+                 fit_labels: bool = False,
                  footer: str = "↑↓ navegar   Enter selecionar   Q sair   Esc voltar") -> None:
     _clear()
     width = 46
+    if fit_labels:
+        width = max(width, len(title) + 4,
+                    max((len(label) + 7 for label in options), default=0),
+                    len(footer) + 2)
+        width = min(width, 100)
     print(f"{c['dim']}╭{'─' * width}╮{c['reset']}")
     print(f"{c['dim']}│{c['reset']} {c['bold']}{c['cyan']}CURIO{c['reset']}"
           f"{' ' * (width - 7)}{c['dim']}│{c['reset']}")
@@ -143,12 +140,20 @@ def _render_menu(c: dict[str, str], title: str, options: list[str],
         mark = "›" if i == selected else " "
         if i == selected:
             line = f"  {mark} {label}"
-            print(f"{c['dim']}│{c['reset']}{c['bold']}{line}"
+            print(f"{c['dim']}│{c['reset']}{c['bold']}{c['yellow']}{line}"
                   f"{' ' * max(1, width - len(line))}{c['reset']}{c['dim']}│{c['reset']}")
         else:
             line = f"  {mark} {label}"
             print(f"{c['dim']}│{c['reset']}{c['dim']}{line}"
                   f"{' ' * max(1, width - len(line))}{c['reset']}{c['dim']}│{c['reset']}")
+    if details:
+        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
+        for i, detail in enumerate(details):
+            color = c["cyan"] if i == len(details) - 1 else c["dim"]
+            for wrapped in _wrap_text(detail, width - 4):
+                line = f"   {wrapped}"
+                print(f"{c['dim']}│{c['reset']}{color}{line}{c['reset']}"
+                      f"{' ' * max(1, width - len(line))}{c['dim']}│{c['reset']}")
     if status:
         print(f"{c['dim']}│{' ' * width}│{c['reset']}")
         for s in status[:4]:
@@ -159,127 +164,6 @@ def _render_menu(c: dict[str, str], title: str, options: list[str],
     print(f"{c['dim']}│{c['reset']} {c['dim']}{footer}{c['reset']}"
           f"{' ' * max(1, width - len(footer) - 1)}{c['dim']}│{c['reset']}")
     print(f"{c['dim']}╰{'─' * width}╯{c['reset']}")
-
-
-def select_horizontal(c: dict[str, str], title: str, options: list[tuple[str, str]],
-                      selected: int = 0, hint: str = "") -> int | None:
-    """Seletor LATERAL: ← → percorrem, Enter confirma, Esc volta.
-
-    Mesmo esqueleto de `select_option` (caixa, banner, `_read_key`,
-    `_clear`), porque um seletor com cara diferente seria um segundo
-    componente para manter. A diferença é a navegação horizontal e a
-    descrição da categoria selecionada aparecer abaixo quando há espaço —
-    o que importa aqui é o autor entender o que cada gênero FAZ antes de
-    escolher, não só o nome dele.
-
-    `options` é [(chave, rótulo)]; devolve o índice.
-    """
-    from .stages import editorial
-    if not options:
-        return None
-    if not _interactive_supported():
-        _clear()
-        _banner(c)
-        print(f"\n{c['bold']}{title}{c['reset']}")
-        for i, (_k, label) in enumerate(options, 1):
-            desc = editorial.get(_k).description if editorial.get(_k) else ""
-            print(f"  {c['bold']}{i}){c['reset']} {label}")
-            if desc:
-                print(f"     {c['dim']}{desc[:96]}{c['reset']}")
-        raw = _ask(f"\n{c['bold']}Escolha [1-{len(options)}] (0 volta):"
-                   f"{c['reset']} ").strip()
-        if raw in ("0", "q", "Q", ""):
-            return None
-        try:
-            idx = int(raw) - 1
-        except ValueError:
-            return None
-        return idx if 0 <= idx < len(options) else None
-
-    sel = max(0, min(selected, len(options) - 1))
-    while True:
-        _clear()
-        width = 74
-        print(f"{c['dim']}╭{'─' * width}╮{c['reset']}")
-        print(f"{c['dim']}│{c['reset']} {c['bold']}{c['cyan']}CURIO"
-              f"{c['reset']}{' ' * (width - 7)}{c['dim']}│{c['reset']}")
-        if title:
-            print(f"{c['dim']}│{c['reset']} {c['bold']}{title}{c['reset']}"
-                  f"{' ' * max(1, width - len(title) - 1)}"
-                  f"{c['dim']}│{c['reset']}")
-        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-
-        # Uma faixa horizontal. Em terminal estreito ela encolhe para o que
-        # couber, com as setas indicando que há mais para os lados.
-        atual, _i = options[sel]
-        segmentos, visivel = [], 0
-        for k, (_chave, rotulo) in enumerate(options):
-            curto = rotulo if len(rotulo) <= 18 else rotulo[:17] + "…"
-            if k == sel:
-                segmentos.append(f" {c['bold']}{c['yellow']}▌{curto}▐{c['reset']} ")
-            else:
-                segmentos.append(f" {c['dim']}{curto}{c['reset']} ")
-        # Reserva a largura útil e descarta o que não couber, mantendo o
-        # selecionado visível: a faixa é navegável, tem que estar lá.
-        esq = "◀" if sel > 0 else " "
-        dir_ = "▶" if sel < len(options) - 1 else " "
-        branco = width - 6
-        if sum(len(s) for s in segmentos) > branco:
-            inicio = 0
-            while (sum(len(s) for s in segmentos[inicio:inicio + 1]) == 0
-                   or sum(len(s) for s in segmentos[inicio:]) > branco):
-                inicio += 1
-                if inicio >= sel:
-                    break
-            segmentos = segmentos[inicio:]
-        while sum(len(s) for s in segmentos) > branco and len(segmentos) > 1:
-            segmentos.pop()
-        faixa = "".join(segmentos)
-        print(f"{c['dim']}│{c['reset']} {esq} {faixa} {dir_}"
-              f"{c['dim']}{' ' * max(1, branco - len(faixa))}│{c['reset']}")
-
-        perfil = editorial.get(atual)
-        if perfil is not None:
-            print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-            for ln in _wrap_text(perfil.description, width - 4):
-                print(f"{c['dim']}│{c['reset']}   {c['dim']}{ln}{c['reset']}"
-                      f"{' ' * max(1, width - 3 - len(ln))}{c['dim']}│{c['reset']}")
-            p = perfil.pacing
-            resumo = (f"ritmo {p.target_scene_seconds:g}s/cena · "
-                      f"densidade {p.information_density} · "
-                      f"legenda {p.caption_max_words} palavras")
-            print(f"{c['dim']}│{c['reset']}   {c['cyan']}{resumo[:width - 4]}"
-                  f"{c['reset']}{' ' * max(1, width - 3 - len(resumo))}"
-                  f"{c['dim']}│{c['reset']}")
-        if hint:
-            print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-            print(f"{c['dim']}│{c['reset']} {c['dim']}{hint[:width - 2]}"
-                  f"{c['reset']}{' ' * max(1, width - 1 - len(hint))}"
-                  f"{c['dim']}│{c['reset']}")
-        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-        rodape = "← → selecionar   Enter confirmar   Esc voltar"
-        print(f"{c['dim']}│{c['reset']} {c['dim']}{rodape}{c['reset']}"
-              f"{' ' * max(1, width - len(rodape) - 1)}{c['dim']}│{c['reset']}")
-        print(f"{c['dim']}╰{'─' * width}╯{c['reset']}")
-
-        try:
-            key = _read_key()
-        except _TUIExit:
-            raise
-        except Exception:
-            return None
-        if key == "right" or key == "l":
-            sel = (sel + 1) % len(options)
-        elif key == "left" or key == "h":
-            sel = (sel - 1) % len(options)
-        elif key == "down" or key == "j":
-            sel = (sel + 1) % len(options)
-        elif key == "up" or key == "k":
-            sel = (sel - 1) % len(options)
-        elif key == "enter":
-            return sel
-        elif key in ("q", "Q", "esc"):
-            return None
 
 
 def _wrap_text(text: str, width: int) -> list[str]:
@@ -297,7 +181,9 @@ def _wrap_text(text: str, width: int) -> list[str]:
 
 
 def select_option(c: dict[str, str], title: str, options: list[str],
-                  status: list[str] | None = None) -> int | None:
+                  status: list[str] | None = None, selected: int = 0,
+                  details_for=None, fit_labels: bool = False,
+                  footer: str = "↑↓ navegar   Enter selecionar   Q sair   Esc voltar") -> int | None:
     """Menu navegável. Retorna o índice ou None (sair/voltar).
 
     Fora de TTY, usa fallback numerado para não travar pipes/testes.
@@ -314,6 +200,9 @@ def select_option(c: dict[str, str], title: str, options: list[str],
                 print(f"{c['dim']}{s}{c['reset']}")
         for i, label in enumerate(options, 1):
             print(f"  {c['bold']}{i}){c['reset']} {label}")
+        if details_for:
+            for line in details_for(max(0, min(selected, len(options) - 1))):
+                print(f"  {c['dim']}{line}{c['reset']}")
         raw = _ask(f"\n{c['bold']}Escolha [1-{len(options)}] (0 volta):{c['reset']} ").strip()
         if raw in ("0", "q", "Q", ""):
             return None
@@ -322,9 +211,11 @@ def select_option(c: dict[str, str], title: str, options: list[str],
         except ValueError:
             return None
         return idx if 0 <= idx < len(options) else None
-    selected = 0
+    selected = max(0, min(selected, len(options) - 1))
     while True:
-        _render_menu(c, title, options, selected, status)
+        details = details_for(selected) if details_for else None
+        _render_menu(c, title, options, selected, status, details,
+                     fit_labels=fit_labels, footer=footer)
         try:
             key = _read_key()
         except _TUIExit:
@@ -1166,7 +1057,7 @@ def _help_flow(c: dict[str, str]) -> None:
 # ------------------------------------------------------- fluxo A (IA)
 
 def _ask_genre(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
-    """Seletor de gênero editorial, com setas ← →.
+    """Seletor vertical de gênero; mantém as chaves editoriais existentes.
 
     Fica antes da ideia, e não depois: o gênero muda a pesquisa, então
     perguntar o tema primeiro levaria o usuário a escrever o tema pensando
@@ -1176,10 +1067,22 @@ def _ask_genre(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
     opcoes = editorial.choices()
     atual = cfg.genre
     inicial = next((i for i, (k, _l) in enumerate(opcoes) if k == atual), 0)
-    idx = select_horizontal(
-        c, "GÊNERO DO VÍDEO", opcoes, selected=inicial,
-        hint="Cada gênero é um formato editorial: ritmo, estrutura, "
-             "pesquisa e visual próprios.")
+
+    def detalhes(indice: int) -> list[str]:
+        key = opcoes[indice][0]
+        perfil = editorial.get(key)
+        if perfil is None:
+            return ["Sem perfil editorial."]
+        p = perfil.pacing
+        return [perfil.description,
+                f"ritmo {p.target_scene_seconds:g}s/cena · "
+                f"densidade {p.information_density} · "
+                f"legenda {p.caption_max_words} palavras"]
+
+    idx = select_option(
+        c, "GÊNERO DO VÍDEO", [label for _key, label in opcoes],
+        selected=inicial, details_for=detalhes, fit_labels=True,
+        footer="↑ ↓ selecionar   Enter confirmar   Esc voltar")
     if idx is None:
         return cfg
     return dataclasses.replace(cfg, genre=opcoes[idx][0])
