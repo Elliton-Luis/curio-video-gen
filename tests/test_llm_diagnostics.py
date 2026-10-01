@@ -140,6 +140,7 @@ def test_complete_json_records_finish_reason_budget_usage_and_response_size(
     assert "response_bytes=11" in message
     log = capsys.readouterr().err
     assert "max_tokens=2000" in log and "orçamento estendido" in log
+    assert "tentativa estendida solicitada: max_tokens=4000" in log
 
 
 def test_complete_json_distinguishes_invalid_json_from_truncation(monkeypatch):
