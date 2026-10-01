@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-045242_relatorio_diagnostico-scoring-tomas-aquino.md` — replay de scores reais, origem de 34 e decisão de preservar threshold.
 - `relatorios/20261001-043232_relatorio-log-persistente-execucao.md` — eventos curtos de CLI/TUI, log JSONL desde startup, redação de secrets e cobertura de falha/interrupção.
 - `relatorios/20261001-042350_relatorio-log-persistente-execucao.md` — eventos curtos em CLI/TUI, JSONL por execução, sanitização e captura de falhas/interrupções.
 - `relatorios/20261001-034958_relatorio_funil-midia-sem-download.md` — causa do funil de São Francisco, execução pequena, contadores de perdas, URL JPG Unsplash e testes de regressão.
@@ -97,6 +98,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Análises (estado, gaps, riscos)
 
+- `analises/20261001-045242_analise_scores-baixos-tomas-aquino.md` — decomposição de candidatos reais, quebra entre consultas locais e scoring, idioma/denominador e instrumentação mínima recomendada.
 - `analises/20261001-032940_analise_contrato-geracao-roteiro-ia.md` — prompts integrais e dados interpolados, estrutura separada de título/cenas, validação/fallback, consumo downstream e incompatibilidade com `Roteiro Pronto`.
 - `analises/20260928-123219_analise_estado-atual-mvp.md` — veredito: MVP prova a
   tese; riscos altos = voz robótica e falta de pesquisa/fontes.
