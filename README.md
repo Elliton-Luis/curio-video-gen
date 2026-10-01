@@ -496,6 +496,14 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 
 ### Diagnósticos de fontes e mídia
 
+A pesquisa começa pelo tema amplo e consolida trechos literais com suas URLs.
+Com LLM configurado, um planejamento curto seleciona fatos relevantes e lacunas
+essenciais. A mesma etapa executa no máximo três buscas específicas na Wikipedia,
+reutilizando extração e filtro de relevância existentes. Evidência suficiente evita
+novas buscas; lacunas não resolvidas seguem explícitas no contexto, que permanece
+limitado a 2500 caracteres. `sources/research.json` registra fatos, buscas
+complementares e motivos; métricas incluem `research.complementary_queries`.
+
 - Cada execução cria `output/<slug>/logs/run-<timestamp>.jsonl` antes da pesquisa.
   O log registra etapas, providers, fallbacks, erros e tempos, inclusive em
   falhas ou `Ctrl+C`. Terminal mostra resumo; JSONL contém detalhes sanitizados.

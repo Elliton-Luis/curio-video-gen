@@ -253,6 +253,9 @@ class ResearchResult:
         # mas o grounding é fraco e o pipeline deve avisar.
         self.weak = bool(weak)
         self.weak_warnings = list(weak_warnings or [])
+        self.facts: list[dict] = []
+        self.complementary_queries: list[dict] = []
+        self.unresolved_gaps: list[dict] = []
 
     def __iter__(self):
         # Compatibilidade com quem só quer a lista de fontes.
@@ -293,6 +296,7 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
     target = entity_stage.resolve_entity(idea, cfg=cfg, language=language,
                                          metrics=metrics)
     queries: list[str] = []
+    tried_queries: list[str] = []
     seen_q: set[str] = set()
 
     def _add(q: str) -> None:
@@ -300,6 +304,9 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
         if q and q.lower() not in seen_q:
             seen_q.add(q.lower())
             queries.append(q)
+
+    # O primeiro passe é amplo; os termos editoriais refinam somente depois.
+    _add(target.name or idea)
 
     def _contido(termo: str, base: str) -> bool:
         """O termo do gênero já está no nome do alvo?
@@ -365,12 +372,16 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
         sources.append(src)
         if metrics is not None:
             metrics.research_source()
+        run_event("result", f"Fonte aceita: {src.title}", operation="research_source",
+                  title=src.title, url=src.url, query=query)
 
     for query in queries:
         if len(sources) >= max_sources:
             break
         if metrics is not None:
             metrics.research_query()
+        tried_queries.append(query)
+        run_event("search", f"Pesquisa: {query}", operation="research_query", query=query)
         try:
             hits = wikipedia_search(query, language, timeout=timeout)
         except ResearchError:
@@ -393,6 +404,9 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
         if metrics is not None:
             metrics.research_query()
         ddg = duckduckgo_abstract(idea.strip())
+        tried_queries.append(idea.strip())
+        run_event("search", f"Pesquisa DuckDuckGo: {idea.strip()}",
+                  operation="research_query", query=idea.strip(), provider="duckduckgo")
         if ddg is not None:
             _consider(ddg, "duckduckgo")
 
@@ -429,13 +443,16 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             if len(sources) >= max_sources:
                 break
             _add(query)
-            if metrics is not None:
-                metrics.research_query()
             for lang in ([language]
                          + (["en"] if _wiki_lang(language) == "pt" else [])):
                 if len(sources) >= max_sources:
                     break
                 try:
+                    if metrics is not None:
+                        metrics.research_query()
+                    tried_queries.append(query)
+                    run_event("search", f"Pesquisa: {query} ({lang})",
+                              operation="research_query", query=query, language=lang)
                     hits = wikipedia_search(query, lang, timeout=timeout)
                 except ResearchError:
                     continue
@@ -478,15 +495,15 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             msg = ("pesquisa sem fonte aceita; roteiro segue com "
                    "grounding fraco e incerteza explícita")
             run_event("fallback", msg, operation="research",
-                      entity=target.name, query_count=len(queries),
+                      entity=target.name, query_count=len(tried_queries),
                       rejected=len(rejected))
-            res = ResearchResult(target, [], rejected, queries, weak=True,
+            res = ResearchResult(target, [], rejected, tried_queries, weak=True,
                                  weak_warnings=[msg])
             res.genre = genre
             return res
-        run_event("error", f"Pesquisa sem fontes aceitas após {len(queries)} consulta(s)",
+        run_event("error", f"Pesquisa sem fontes aceitas após {len(tried_queries)} consulta(s)",
                   operation="research", entity=target.name,
-                  query_count=len(queries), rejected=len(rejected),
+                  query_count=len(tried_queries), rejected=len(rejected),
                   rejection_reasons={m: sum(1 for _, reason, _ in rejected
                                             if reason == m)
                                      for _, m, _ in rejected})
@@ -497,10 +514,150 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
                      target=target.name, source_titles=[s.title[:60]
                                                         for s in sources[:5]]):
         print(entity_stage.explain(target, sources, rejected))
-    res = ResearchResult(target, sources[:max_sources], rejected, queries,
-                         weak=weak, weak_warnings=weak_warnings)
+    res = ResearchResult(target, sources[:max_sources], rejected, tried_queries,
+                          weak=weak, weak_warnings=weak_warnings)
     res.genre = genre
+    _complete_research(res, idea, language, cfg, metrics, timeout)
     return res
+
+
+def _source_facts(sources) -> list[dict]:
+    """Extract verbatim sentences, deduplicating evidence without inventing claims."""
+    facts, seen = [], set()
+    for source in sources:
+        for quote in re.split(r"(?<=[.!?])\s+", source.snippet.strip()):
+            key = " ".join(quote.casefold().split())
+            if len(quote) < 8 or key in seen:
+                continue
+            seen.add(key)
+            facts.append({"quote": quote, "url": source.url, "title": source.title})
+    return facts
+
+
+def _plan_gaps(idea, sources, language, cfg, metrics):
+    """One small planning call, only when an LLM is already configured."""
+    from . import nvidia
+    if cfg is None or not nvidia.any_llm_available():
+        return {}
+    prompt = (
+        'Return JSON {"facts": [{"quote": "verbatim source sentence", "url": "source URL"}], '
+        '"gaps": [{"query": "specific search", "reason": "why essential to answer the topic", '
+        '"support_terms": ["specific evidence term", "another evidence term"]}]}. '
+        'Select only relevant supported facts; copy quotes exactly. Identify at most 3 '
+        'essential unanswered gaps for a correct, compelling short narration. No trivia, '
+        'no generic background searches, no gaps already answered. Never invent answers. '
+        'Keep queries about the intended subject. Empty gaps when evidence is sufficient.')
+    try:
+        data, _ = nvidia.complete_json(
+            prompt, f"Topic: {idea}\nUse queries and reasons in {language}.\n" +
+            format_for_prompt(sources, language),
+            cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout, metrics,
+            or_model=cfg.openrouter_model, or_base_url=cfg.openrouter_base_url,
+            extra=cfg.llm_overrides())
+        return data
+    except nvidia.NvidiaError as exc:
+        run_event("warning", "Planejamento de lacunas indisponível; preservando fontes",
+                  operation="research_gaps", error=str(exc))
+        return {}
+
+
+def _complete_research(result, idea, language, cfg, metrics, timeout):
+    """Bounded follow-up inside the existing research stage, not a second pipeline."""
+    from . import entity
+    plan = _plan_gaps(idea, result.sources, language, cfg, metrics)
+    if not isinstance(plan, dict):
+        plan = {}
+    initial_urls = {s.url for s in result.sources}
+    result.facts = _source_facts(result.sources)
+    selected = []
+    planned_facts = plan.get("facts") or []
+    if not isinstance(planned_facts, list):
+        planned_facts = []
+    for fact in planned_facts[:12]:
+        if not isinstance(fact, dict):
+            continue
+        quote, url = str(fact.get("quote") or ""), str(fact.get("url") or "")
+        if len(quote) >= 8 and any(s.url == url and quote in s.snippet for s in result.sources):
+            selected.append({"quote": quote, "url": url})
+    queries = {" ".join(q.casefold().split()) for q in result.tried_queries}
+    urls = {s.url for s in result.sources}
+    planned_gaps = plan.get("gaps") or []
+    if not isinstance(planned_gaps, list):
+        planned_gaps = []
+    for gap in planned_gaps[:3]:
+        if not isinstance(gap, dict):
+            continue
+        query = str(gap.get("query") or "").strip()[:180]
+        reason = str(gap.get("reason") or "").strip()[:250]
+        raw_terms = gap.get("support_terms") or []
+        if not isinstance(raw_terms, list):
+            continue
+        terms = [str(t).casefold().strip() for t in raw_terms
+                 if isinstance(t, str) and len(t.strip()) >= 3][:4]
+        key = " ".join(query.casefold().split())
+        if not query or not reason or not terms:
+            continue
+        def supported():
+            return any(all(term in f["quote"].casefold() for term in terms)
+                       for f in result.facts)
+        if supported():
+            continue
+        if key in queries:
+            result.unresolved_gaps.append({"query": query, "reason": reason})
+            run_event("warning", f"Lacuna já pesquisada, ainda sem suporte: {query}",
+                      operation="research_gap_unresolved", query=query, reason=reason)
+            continue
+        queries.add(key)
+        result.tried_queries.append(query)
+        result.complementary_queries.append({"query": query, "reason": reason})
+        if metrics is not None:
+            metrics.research_query()
+            metrics.research_complementary_queries += 1
+        run_event("search", f"Pesquisa complementar: {query}",
+                  operation="research_complementary", query=query, reason=reason)
+        try:
+            hits = wikipedia_search(query, language, timeout=timeout)
+        except ResearchError:
+            hits = []
+        for hit in hits[:3]:
+            if _is_junk_hit(hit["title"]):
+                continue
+            try:
+                source = wikipedia_extract(hit["title"], language, timeout=timeout)
+            except ResearchError:
+                continue
+            if source.url in urls or not source.snippet:
+                continue
+            verdict, detail = entity.source_verdict(source, result.target)
+            if verdict != entity.REASON_OK:
+                result.rejected.append((source, verdict, detail))
+                if metrics is not None:
+                    metrics.research_record_rejection(verdict)
+                continue
+            # Complementary sources must contain evidence for this exact gap.
+            evidence = _source_facts([source])
+            if not any(all(t in f["quote"].casefold() for t in terms) for f in evidence):
+                continue
+            urls.add(source.url)
+            result.sources.append(source)
+            result.facts = _source_facts(result.sources)
+            if metrics is not None:
+                metrics.research_source()
+            run_event("result", f"Fonte complementar aceita: {source.title}",
+                      operation="research_source", url=source.url, title=source.title, query=query)
+            break
+        if not supported():
+            result.unresolved_gaps.append({"query": query, "reason": reason})
+            run_event("warning", f"Lacuna não resolvida: {query}",
+                      operation="research_gap_unresolved", query=query, reason=reason)
+    if selected:
+        # Only validated literal quotes enter the consolidated initial context.
+        selected.extend(f for f in result.facts if f["url"] not in initial_urls)
+        result.facts = selected
+    run_event("result", "Contexto de pesquisa consolidado",
+              operation="research_context", facts=len(result.facts),
+              sources=len(result.sources), complementary_queries=len(result.complementary_queries),
+              unresolved_gaps=result.unresolved_gaps)
 
 
 def _relaxed_nucleus_accept(
@@ -598,12 +755,24 @@ def format_for_prompt(sources: list[ResearchSource],
             "FONTES OBRIGATÓRIAS (pesquisa web — use SOMENTE estes fatos):")
     parts = [head]
     used = len(head)
-    for i, src in enumerate(sources, 1):
-        chunk = f"[{i}] {src.title} — {src.url}\n    trecho: {src.snippet}"
-        if used + len(chunk) > PROMPT_BUDGET_CHARS:
-            break
-        parts.append(chunk)
-        used += len(chunk)
+    for gap in getattr(sources, "unresolved_gaps", [])[:3]:
+        chunk = (("UNSUPPORTED — do not claim: " if english else
+                  "SEM SUPORTE — não afirmar: ") + gap["query"])
+        if used + len(chunk) + 1 <= PROMPT_BUDGET_CHARS:
+            parts.append(chunk)
+            used += len(chunk) + 1
+    facts = getattr(sources, "facts", None) or _source_facts(sources)
+    seen = set()
+    for i, fact in enumerate(facts, 1):
+        quote = fact["quote"]
+        key = " ".join(quote.casefold().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        chunk = f"[{i}] {fact['url']}\n    trecho: {quote}"
+        if used + len(chunk) + 1 <= PROMPT_BUDGET_CHARS:
+            parts.append(chunk)
+            used += len(chunk) + 1
     return "\n".join(parts)
 
 

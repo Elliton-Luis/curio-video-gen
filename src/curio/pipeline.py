@@ -877,11 +877,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         "target_entity": (research_target.to_dict()
                           if research_target is not None else None),
         "queries": research_queries,
+        "facts": getattr(research, "facts", []),
+        "complementary_queries": getattr(research, "complementary_queries", []),
+        "unresolved_gaps": getattr(research, "unresolved_gaps", []),
         "sources": [rs.to_dict() for rs in research_sources],
         "rejected": [{"title": s.title, "url": s.url, "reason": m,
                       "detail": d} for s, m, d in research_rejected],
     })
-    research_pack = research_stage.format_for_prompt(research_sources,
+    research_pack = research_stage.format_for_prompt(research,
                                                      cfg.language)
     print(f"Fontes: {len(research_sources)} "
           f"({', '.join(rs.title[:40] for rs in research_sources)})")

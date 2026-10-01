@@ -89,6 +89,7 @@ class RunMetrics:
         self.media_layer_device = ""
         self.research_queries = 0
         self.research_sources = 0
+        self.research_complementary_queries = 0
         self.research_rejected: dict[str, int] = {}
         self.visual_scene_count = 0
         self.visual_beat_count = 0
@@ -270,7 +271,8 @@ class RunMetrics:
     def research_report(self) -> dict:
         return {"aceitas": self.research_sources,
                 "rejeitadas": dict(sorted(self.research_rejected.items())),
-                "consultas": self.research_queries}
+                "consultas": self.research_queries,
+                "consultas_complementares": self.research_complementary_queries}
 
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1
@@ -405,6 +407,7 @@ class RunMetrics:
                     "rights_blocked": self.media_rights_blocked,
                 },
                 "research": {"queries": self.research_queries,
+                             "complementary_queries": self.research_complementary_queries,
                              "sources": self.research_sources},
                 "whisper": {"calls": self.whisper_calls,
                             "model": self.whisper_model},

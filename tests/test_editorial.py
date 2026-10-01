@@ -348,7 +348,8 @@ def test_consulta_de_entidade_une_o_nome_ao_termo_do_genero(monkeypatch):
     from curio.stages.entity import TargetEntity
     alvo = TargetEntity(name="São Bento de Núrsia", is_entity=True)
     qs = _queries_de(alvo, "people", monkeypatch)
-    assert qs[0] == "São Bento de Núrsia biografia"
+    assert qs[0] == "São Bento de Núrsia"
+    assert qs[1] == "São Bento de Núrsia biografia"
     assert "São Bento de Núrsia obras" in qs
     assert "São Bento de Núrsia legado" in qs
 
@@ -360,7 +361,8 @@ def test_consulta_de_tema_usa_os_topic_terms_do_estagio_de_entidade(
                         topic_terms=["por que o céu é azul?", "cor do céu",
                                      "dispersão de rayleigh"])
     qs = _queries_de(alvo, "science", monkeypatch)
-    assert qs[:3] == ["por que o céu é azul?", "cor do céu",
+    assert qs[0] == "Cor azul do céu"
+    assert qs[1:4] == ["por que o céu é azul?", "cor do céu",
                       "dispersão de rayleigh"]
 
 
@@ -387,8 +389,8 @@ def test_consulta_nao_repete_termo_que_ja_esta_no_nome(monkeypatch):
 def test_genero_muda_a_primeira_consulta_de_mesma_ideia(monkeypatch):
     from curio.stages.entity import TargetEntity
     alvo = TargetEntity(name="São Bento de Núrsia", is_entity=True)
-    assert _queries_de(alvo, "people", monkeypatch)[0] != \
-        _queries_de(alvo, "mystery", monkeypatch)[0]
+    assert _queries_de(alvo, "people", monkeypatch)[1] != \
+        _queries_de(alvo, "mystery", monkeypatch)[1]
 
 
 # --- o portão de relevância precisa aceitar a fonte certa --------------
