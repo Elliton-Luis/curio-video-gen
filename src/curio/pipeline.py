@@ -1276,6 +1276,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         mid = round((prev.end + nxt.start) / 2, 3)
         prev.end = nxt.start = mid
     chapters[-1].end = round(audio_duration, 3)
+    from .stages.visual_beats import BEAT_SECONDS
+    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
     visual_timeline = (_write_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
@@ -1299,14 +1301,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # exatamente como antes.
     cue_count = subs_stage.write_subtitles(
         script_text, audio_duration, paths.subs_srt, paths.subs_ass,
-        cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
+        cfg.width, cfg.height, cfg.sub_font_size,
+        subs_stage.safe_subtitle_margin(cfg.height, cfg.sub_margin_v),
         words=words if tts_info["provider"] == "edge-tts" else None,
         cache_dir=cfg.cache_dir,
-        max_words=(pacing.caption_max_words if pacing is not None
-                   else subs_stage.MAX_WORDS_PER_CUE),
-        highlight=(pacing.caption_highlight if pacing is not None else "word"),
-        **({"upper": cap_style.upper, "karaoke": cap_style.karaoke,
-            "outline": cap_style.outline, "shadow": cap_style.shadow}
+        max_words=min(5, pacing.caption_max_words if pacing is not None else 5),
+        highlight="word", upper=False, karaoke=True,
+        **({"outline": cap_style.outline,
+            "shadow": cap_style.shadow}
            if cap_style is not None else {}))
     subs_changed = _read(paths.subs_ass) != prev_ass
     if subs_changed and not force and os.path.isfile(paths.final_mp4):
@@ -1562,6 +1564,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         ch.start, ch.end = cursor, cursor + ch.duration_estimate
         cursor = ch.end
     estimated_total = round(cursor, 2)
+    from .stages.visual_beats import BEAT_SECONDS
+    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
     visual_timeline = (_write_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
@@ -1841,11 +1845,11 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     _pac = _perfil.pacing if _perfil is not None else None
     cue_count = subs_stage.write_subtitles(
         "", human_dur, paths.subs_srt, paths.subs_ass,
-        cfg.width, cfg.height, cfg.sub_font_size, cfg.sub_margin_v,
+        cfg.width, cfg.height, cfg.sub_font_size,
+        subs_stage.safe_subtitle_margin(cfg.height, cfg.sub_margin_v),
         words=words, cache_dir=cfg.cache_dir,
-        max_words=(_pac.caption_max_words if _pac is not None
-                   else subs_stage.MAX_WORDS_PER_CUE),
-        highlight=(_pac.caption_highlight if _pac is not None else "word"))
+        max_words=min(5, _pac.caption_max_words if _pac is not None else 5),
+        highlight="word", upper=False, karaoke=True)
     run_event("result", f"Legendas: {cue_count} cue(s)",
               operation="subtitles", cues=cue_count)
     emit("Legendando", "OK")

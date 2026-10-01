@@ -36,8 +36,14 @@ SUBTITLE_OUTLINE = 7  # contorno preto grosso no formato das letras
 SUBTITLE_SHADOW = 4  # sombra deslocada (relevo 3D)
 SUBTITLE_MARGIN_LR = 120
 MAX_WORDS_PER_CUE = 5
+SAFE_AREA_BOTTOM_RATIO = 0.22
 HIGHLIGHT_COLOR = "#00F2FE"
 GLITCH_OFFSET_COLOR = "#FF0055"
+
+
+def safe_subtitle_margin(height: int, configured: int = 0) -> int:
+    """Keep essential captions above platform controls in lower 20%."""
+    return max(int(configured or 0), round(int(height) * SAFE_AREA_BOTTOM_RATIO))
 
 
 def _fc_match(family: str) -> tuple[str, str] | None:
@@ -255,7 +261,7 @@ def build_cues(text: str, total_duration: float, lead: float = 0.15,
     if not words:
         raise ValueError("roteiro vazio — nada para legendar")
     # Frases primeiro (quebras naturais), depois limite de palavras/chars.
-    max_words = max(2, min(9, int(max_words or MAX_WORDS_PER_CUE)))
+    max_words = max(2, min(5, int(max_words or MAX_WORDS_PER_CUE)))
     chunks = [c for s in _sentences(text) for c in chunk_words(s.split(), max_words)]
     if not chunks:
         chunks = chunk_words(words, max_words)
@@ -307,7 +313,8 @@ _MARKER_TOKEN = re.compile(r"^\(?\d{1,2}[).,:;\-–—\]]$")
 def cues_from_words(words: list[dict], max_words: int = 5,
                     max_chars: int = 36, max_dur: float = 4.5,
                     min_dur: float = 0.8,
-                    highlight: str = "word") -> list[tuple[float, float, str]]:
+                    highlight: str = "word",
+                    upper: bool = True) -> list[tuple[float, float, str]]:
     """Agrupa WordBoundary reais em blocos legíveis.
 
     Quebra em fim de frase quando o bloco já tem corpo (≥3 palavras ou
@@ -317,6 +324,7 @@ def cues_from_words(words: list[dict], max_words: int = 5,
     `highlight="none"` desliga. Tokens que são só marcadores de lista
     ("0)", "1."...) são descartados.
     """
+    max_words = max(2, min(5, int(max_words or MAX_WORDS_PER_CUE)))
     clean = [w for w in words
              if str(w.get("text", "")).strip()
              and not _MARKER_TOKEN.match(str(w.get("text", "")).strip())]
@@ -333,10 +341,14 @@ def cues_from_words(words: list[dict], max_words: int = 5,
         if boundary or hard:
             start = float(cur[0]["start"])
             end = max(float(cur[-1]["end"]), start + min_dur)
-            # Monta o texto do cue em maiúsculas com destaque
-            cue_text = " ".join(str(x["text"]).upper() for x in cur)
+            # Preserva caixa quando caixa alta prejudicar nomes/siglas.
+            cue_words = [str(x["text"]) for x in cur]
+            if upper:
+                cue_words = [word.upper() for word in cue_words]
+            cue_text = " ".join(cue_words)
             # Aplica destaque na palavra de impacto
-            words_upper = [x["text"].upper() for x in cur]
+            words_upper = [str(x["text"]).upper() if upper else str(x["text"])
+                           for x in cur]
             cue_styled = _apply_highlight(
                 " ".join(words_upper),
                 _select_highlight_word(words_upper) if highlight != "none"
@@ -346,9 +358,12 @@ def cues_from_words(words: list[dict], max_words: int = 5,
     if cur:
         start = float(cur[0]["start"])
         end = max(float(cur[-1]["end"]), start + min_dur)
-        words_upper = [x["text"].upper() for x in cur]
-        highlight_idx = _select_highlight_word(words_upper)
-        cue_styled = _apply_highlight(" ".join(words_upper), highlight_idx)
+        words_display = [str(x["text"]).upper() if upper else str(x["text"])
+                         for x in cur]
+        highlight_idx = (_select_highlight_word(words_display)
+                         if highlight != "none" else -1)
+        cue_styled = (_apply_highlight(" ".join(words_display), highlight_idx)
+                      if highlight_idx >= 0 else " ".join(words_display))
         cues.append((start, end, cue_styled))
     return cues
 
@@ -390,6 +405,7 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
     queimava "0)," no início de TODAS as legendas. Só apresentação —
     tempos, quebras e agrupamento dos cues intocados.
     """
+    margin_v = safe_subtitle_margin(height, margin_v)
     head = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -457,7 +473,8 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
     resolvida uma vez (Archivo Black instalado sob demanda, senão DejaVu
     Bold). Sincronia e agrupamento: intocados.
     """
-    max_words = max(2, min(9, int(max_words or MAX_WORDS_PER_CUE)))
+    max_words = max(2, min(5, int(max_words or MAX_WORDS_PER_CUE)))
+    margin_v = safe_subtitle_margin(height, margin_v)
     if fontname is None or bold is None:
         resolved, resolved_bold, _path = ensure_display_font(cache_dir)
         fontname = resolved if fontname is None else fontname
@@ -465,7 +482,8 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
     font_size = max(20, round(base_font_size * height / 1920))
     if not karaoke:
         highlight = "none"
-    cues = (cues_from_words(words, max_words=max_words, highlight=highlight)
+    cues = (cues_from_words(words, max_words=max_words, highlight=highlight,
+                            upper=upper)
             if words else build_cues(text, total_duration,
                                      max_words=max_words, upper=upper,
                                      karaoke=karaoke))

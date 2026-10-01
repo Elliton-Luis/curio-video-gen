@@ -523,7 +523,7 @@ def _footer(d, narration: str, linhas: int = 2, typo=None) -> None:
     f = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
     for i, line in enumerate(_wrap(d, frase, f, W - 160)[:linhas]):
-        d.text((W // 2, H - 150 + i * 42), line, font=f,
+        d.text((W // 2, H - 620 + i * 42), line, font=f,
                fill=(120, 128, 150), anchor="mm")
 
 
@@ -536,7 +536,7 @@ def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
     tela de uma palavra lê como decisão editorial.
     """
     f_kick = _font(30, typo, "kicker")
-    d.text((W // 2, 520), "THE SUBJECT" if english else "O ASSUNTO",
+    d.text((W // 2, 360), "THE SUBJECT" if english else "O ASSUNTO",
            font=f_kick, fill=ACCENT_2, anchor="mm")
     # O sujeito da cena decide o papel. Em `mythology` o NOME do mito é
     # itálico e o termo não; com o papel fixo em "term" os dois saíam
@@ -546,7 +546,7 @@ def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
              or " ".join(str(narration or "").split()[:8]).strip()
              or "—")
     linhas = _wrap(d, texto.upper(), f_main, W - 160)[:4]
-    y = 720 - (len(linhas) - 1) * 68
+    y = 590 - (len(linhas) - 1) * 68
     for line in linhas:
         d.text((W // 2, y), line, font=f_main, fill=INK, anchor="mm")
         y += 136
@@ -589,14 +589,14 @@ def _draw_contrast(d, left: str, right: str, narration: str,
            font=f_kick, fill=ACCENT_2, anchor="mm")
     f_side = _font(52, typo, papel or "term")
     meio = W // 2
-    d.line([(meio, 340), (meio, 1120)], fill=(70, 78, 102), width=4)
+    d.line([(meio, 460), (meio, 1280)], fill=(70, 78, 102), width=4)
     for x0, x1, texto, cor, marca in (
             (110, meio - 40, left, INK, "✕"),
             (meio + 40, W - 110, right, INK_SOFT, "≠")):
-        d.text(((x0 + x1) // 2, 430), marca, font=_font(44, typo,
+        d.text(((x0 + x1) // 2, 540), marca, font=_font(44, typo,
                                                         papel or "term"),
                fill=ACCENT, anchor="mm")
-        y = 540
+        y = 660
         for line in _wrap(d, str(texto or "—"), f_side, x1 - x0)[:4]:
             d.text(((x0 + x1) // 2, y), line, font=f_side, fill=cor, anchor="mm")
             y += 70
@@ -707,7 +707,10 @@ def render_card(subject: str, terms: list[str], narration: str,
     english = str(language or "").lower().startswith("en")
 
     f_kicker = _font(30, typo, "kicker")
-    d.text((W // 2, 250), "ORIGEM" if english else "A PALAVRA VEM DE",
+    word_card = str(getattr(ch, "visual_type", "") or "") == "typographic"
+    d.text((W // 2, 360),
+           ("ORIGEM" if english else "A PALAVRA VEM DE") if word_card
+           else ("KEY IDEA" if english else "IDEIA-CHAVE"),
            font=f_kicker, fill=ACCENT_2, anchor="mm")
 
     # A palavra principal, grande, quebrada se preciso. Sem assunto
@@ -717,7 +720,7 @@ def render_card(subject: str, terms: list[str], narration: str,
                  or " ".join(str(narration or "").split()[:8]).strip()
                  or "—")
     lines = _wrap(d, principal.upper(), f_main, W - 180)[:4]
-    y = 420
+    y = 520
     for line in lines:
         d.text((W // 2, y), line, font=f_main, fill=INK, anchor="mm")
         y += 118
@@ -732,7 +735,7 @@ def render_card(subject: str, terms: list[str], narration: str,
         # transformação chega.
         f_chain = _font(46, typo, "document")
         f_atual = _font(46, typo, "emphasis")
-        y = max(y + 60, 720)
+        y = max(y + 60, 810)
         d.line([(W // 2, y - 46), (W // 2, y - 18)], fill=ACCENT, width=5)
         d.polygon([(W // 2 - 20, y - 20), (W // 2 + 20, y - 20), (W // 2, y + 14)],
                   fill=ACCENT)
@@ -751,7 +754,7 @@ def render_card(subject: str, terms: list[str], narration: str,
     f_foot = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
     for i, line in enumerate(_wrap(d, frase, f_foot, W - 160)[:3]):
-        d.text((W // 2, H - 210 + i * 42), line, font=f_foot,
+        d.text((W // 2, H - 620 + i * 42), line, font=f_foot,
                fill=(120, 128, 150), anchor="mm")
 
     img.save(out, "PNG")
@@ -784,7 +787,7 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     english = str(language or "").lower().startswith("en")
 
     f_head = _font(34, typo, "kicker")
-    d.text((W // 2, 170), "HOW IT HAPPENS" if english else "COMO ACONTECE",
+    d.text((W // 2, 360), "HOW IT HAPPENS" if english else "COMO ACONTECE",
            font=f_head, fill=ACCENT, anchor="mm")
 
     f_step = _font(42, typo, "term")
@@ -794,7 +797,7 @@ def render_diagram(subject: str, steps: list[str], narration: str,
         # visual coerente, e não um placeholder vazio.
         passos = [str(subject or "—").strip() or "—"]
 
-    top, bottom = 300, H - 300
+    top, bottom = 480, H - 620
     gap = (bottom - top) // max(1, len(passos))
     box_h = min(150, gap - 90)
     centers = [top + i * gap + box_h // 2 for i in range(len(passos))]
@@ -823,7 +826,7 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     f_foot = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
     for i, line in enumerate(_wrap(d, frase, f_foot, W - 160)[:2]):
-        d.text((W // 2, H - 150 + i * 42), line, font=f_foot,
+        d.text((W // 2, H - 620 + i * 42), line, font=f_foot,
                fill=(120, 128, 150), anchor="mm")
 
     img.save(out, "PNG")

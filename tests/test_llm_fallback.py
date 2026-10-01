@@ -60,6 +60,47 @@ def test_nvidia_timeout_keeps_normal_rotation_when_fallback_exists(monkeypatch):
     assert calls == [("nvidia", 15), ("openrouter", 15)]
 
 
+def test_invalid_narration_response_falls_through_to_next_provider(monkeypatch):
+    _keys(monkeypatch, "groq", "openrouter")
+    calls = []
+
+    def fake_post(_messages, _key, _model, _url, _timeout, *_args):
+        provider = _args[-2]
+        calls.append(provider)
+        if provider == "groq":
+            return _body("")
+        return _body("A useful narration with enough content. " * 5)
+
+    monkeypatch.setattr(N, "_post_with_retries", fake_post)
+    validator = lambda body: (
+        "invalid narration" if len(body["choices"][0]["message"]["content"]) < 100
+        else None)
+
+    body, label = N._chat(
+        [{"role": "user", "content": "script"}], 100, 0.0,
+        "nvidia-model", "https://nvidia.test/v1", 15,
+        "or-model", "https://openrouter.test/v1",
+        response_validator=validator)
+
+    assert calls == ["groq", "openrouter"]
+    assert label.startswith("openrouter:")
+    assert len(body["choices"][0]["message"]["content"]) >= 100
+
+
+def test_invalid_narration_diagnostic_reports_sizes_not_response_text():
+    issue = N._script_response_issue({
+        "choices": [{"finish_reason": "stop", "message": {
+            "content": "private response text", "reasoning_content": "thinking"}}],
+        "usage": {"completion_tokens": 12},
+    }, 12000)
+
+    assert "finish_reason=stop" in issue
+    assert "content_chars=21" in issue
+    assert "reasoning_chars=8" in issue
+    assert "completion_tokens=12" in issue
+    assert "private response text" not in issue
+
+
 def test_run_log_records_provider_timeout_and_successful_fallback(
         monkeypatch, tmp_path):
     from curio.runlog import RunLog

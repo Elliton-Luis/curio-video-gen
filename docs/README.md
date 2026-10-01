@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-141308_relatorio_fallback-resposta-invalida.md` — resposta LLM vazia/curta agora cai para próximo provider; inclui diagnóstico sem conteúdo sensível e 37 testes focados.
+- `relatorios/20261001-135550_relatorio_shorts60.md` — duração editorial guiada 45–90 s, beats de câmera com assets existentes, legendas/safe area e métricas; validação focada: 115 testes.
 - `relatorios/20261001-125954_relatorio_musica-15-inserts-21.md` — música −15 dB e inserts −21 dB, ducking intacto.
 - `relatorios/20261001-125631_relatorio_ganho-musica-15db.md` — música `-15 dB`, insert SFX `-21 dB`, ducking intacto.
 - `relatorios/20261001-125404_relatorio_pasta-por-genero-slug-datado.md` — saída em `output/<genero>/<AAAAMMDD_titulo>`, anti-colisão `-2` e compat com projetos legados.

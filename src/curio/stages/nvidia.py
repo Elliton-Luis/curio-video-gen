@@ -138,19 +138,28 @@ SCRIPT_SYSTEM_PROMPT = (
     "técnico, explique na hora com analogia ou definição direta (ex.: 'se o "
     "ângulo for rasante o suficiente, ou seja, se o ângulo for bem próximo "
     "do chão...'); nunca use jargão sem explicar. "
-    "13) SEMPRE encerre assim: depois de responder a ideia principal, faça "
-    "UMA pergunta aberta relacionada ao tema mas NÃO respondida no vídeo "
-    "(gancho para comentários — ex.: 'mas será que se ele tivesse ido mais "
-    "preparado para o frio, teria ganhado?'), e em seguida uma chamada curta "
-    "para like ('deixe seu like e até o próximo vídeo'). "
+     "13) Feche respondendo à pergunta central. Quando houver ligação "
+     "natural, a frase final pode ecoar o gancho inicial para permitir replay; "
+     "não crie pergunta sem resposta nem CTA genérico. "
     "FORMATO DE SAÍDA (obrigatório): responda SOMENTE com o texto da narração. "
     "PROIBIDO: títulos, 'Cena 1', 'Narrador:', rubricas entre colchetes, "
     "markdown, listas, aspas de diálogo, emojis, preâmbulos como 'Aqui está' "
     "ou qualquer explicação sobre o roteiro. Se precisar raciocinar, faça-o "
     "apenas no raciocínio interno, nunca no texto final. "
-    "Princípio editorial: simplificar para tornar acessível, nunca falsificar "
-    "para viralizar. O objetivo é o espectador continuar assistindo porque "
-    "sempre há uma pergunta sendo respondida e outra surgindo."
+     "Princípio editorial: simplificar para tornar acessível, nunca falsificar "
+     "para viralizar. Estrutura e ritmo são referências, não cronômetro: "
+      "como proporção aproximada da duração: primeiros 5% para hook direto "
+      "com quebra de expectativa/fato estranho/contradição ou pergunta implícita; "
+      "próximos 20% para mistério e contexto; parte central para resposta em "
+      "2–3 passos claros, com analogia simples quando útil; trecho final para "
+      "consequência, ironia ou detalhe real surpreendente; últimos 10% para "
+      "fechamento ligado ao hook quando natural. Não invente twist. Em duração automática, mire 45–90s, "
+     "perto de 60s quando o conteúdo permitir; deixe profundidade do tema "
+     "determinar duração, sem preencher nem truncar para caber. Em vídeo acima "
+     "de 60s, expanda explicação necessária, não introdução ou repetição. "
+     "Sem CTA genérico ('curta e siga para mais'). "
+     "O objetivo é o espectador continuar assistindo porque sempre há uma "
+     "pergunta sendo respondida e outra surgindo."
 )
 
 TITLE_SYSTEM_PROMPT = (
@@ -200,18 +209,25 @@ SCRIPT_SYSTEM_PROMPT_EN = (
     "12) explain complex concepts in simple words: whenever you mention "
     "something technical, explain it on the spot with an analogy or a direct "
     "definition; never use unexplained jargon. "
-    "13) ALWAYS end like this: after answering the main idea, ask ONE open "
-    "question related to the topic but NOT answered in the video (comment "
-    "hook — e.g.: 'but would he have won if he had been better prepared "
-    "for the cold?'), followed by a short like call-to-action ('leave a "
-    "like and see you in the next video'). "
+     "13) Close by answering the central question. When semantically natural, "
+     "the final line may echo the opening hook for a smooth replay; do not add "
+     "an unanswered question or generic call to action. "
     "OUTPUT FORMAT (mandatory): answer ONLY with the narration text. "
     "FORBIDDEN: titles, 'Scene 1', 'Narrator:', bracketed stage directions, "
     "markdown, lists, dialogue quotes, emojis, preambles like 'Here is' "
     "or any explanation about the script. If you need to reason, do it "
     "only in internal reasoning, never in the final text. "
-    "Editorial principle: simplify to make accessible, never falsify to "
-    "go viral."
+     "Editorial principle: simplify to make accessible, never falsify to "
+      "go viral. Structure and pacing are approximate proportions, not a timer: "
+      "first 5% for a direct hook with an unexpected fact, contradiction or "
+      "implied question; next 20% for mystery and context; the middle for an "
+      "answer in 2–3 clear steps, with a simple analogy when useful; the late "
+      "section for a real consequence, irony or surprising detail; final 10% "
+      "to close with a semantic link to the hook when natural. Never invent a twist. In "
+     "automatic duration, aim for 45–90 seconds, near 60 when subject allows; "
+     "let content determine duration without padding or cutting. For videos over "
+     "60 seconds, expand needed explanation, not introductions or repetition. "
+     "No generic call to action such as 'like and follow for more'."
 )
 
 TITLE_SYSTEM_PROMPT_EN = (
@@ -773,11 +789,12 @@ def _order_live(live: list[str], prefer: tuple[str, ...] | None) -> list[str]:
 
 
 def _chat(messages: list[dict], max_tokens: int, temperature: float,
-          model: str, base_url: str, timeout: int,
-          or_model: str | None = None, or_base_url: str | None = None,
-          metrics=None, extra: dict | None = None, json_mode: bool = False,
-          prefer: tuple[str, ...] | None = None,
-          timeout_max: int | None = None) -> tuple[dict, str]:
+           model: str, base_url: str, timeout: int,
+           or_model: str | None = None, or_base_url: str | None = None,
+           metrics=None, extra: dict | None = None, json_mode: bool = False,
+           prefer: tuple[str, ...] | None = None,
+           timeout_max: int | None = None,
+           response_validator=None) -> tuple[dict, str]:
     """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
 
     Cada rodada vai ao próximo provider da rotação; erro definitivo (401/403/404)
@@ -849,6 +866,18 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
             body = _post_with_retries(messages, key, use_model, use_base,
                                       teto_pid, max_tokens, temperature, pid,
                                       json_mode)
+            if metrics is not None:
+                metrics.nvidia(f"{pid}:{use_model}", (body or {}).get("usage"))
+            from ..runlog import event as run_event
+            run_event("provider", f"Provider: {PROVIDER_SPECS[pid]['display']} / {use_model}",
+                      provider=pid, model=use_model,
+                      usage=(body or {}).get("usage"))
+            if response_validator is not None:
+                issue = response_validator(body)
+                if issue:
+                    error = NvidiaError(f"[{pid}:{use_model}] {issue}")
+                    error.retryable = False
+                    raise error
         except NvidiaError as exc:
             attempts[pid] = (attempts.get(pid, 0) +
                              max(1, int(getattr(exc, "http_attempts", 1))))
@@ -901,12 +930,6 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
                     json_mode, metrics, budget, made, rounds, attempts,
                     last_err, skipped)
             continue
-        if metrics is not None:
-            metrics.nvidia(f"{pid}:{use_model}", (body or {}).get("usage"))
-        from ..runlog import event as run_event
-        run_event("provider", f"Provider: {PROVIDER_SPECS[pid]['display']} / {use_model}",
-                  provider=pid, model=use_model,
-                  usage=(body or {}).get("usage"))
         return body, f"{pid}:{use_model}"
     if live == ["nvidia"] or (not live and nvidia_last_candidate):
         return _nvidia_resilient_fallback(
@@ -1125,11 +1148,13 @@ def generate_script(idea: str, model: str,
     english = str(language or "").lower().startswith("en")
     if auto:
         duration_clause = (
-            "no fixed duration: cover the subject with beginning, middle and end, "
-            f"no padding and no cutting (technical ceiling of {ceiling} characters)"
+            "automatic content-led duration, usually 45 to 90 seconds and near "
+            "60 when the subject allows; finish the full explanation, no padding "
+            f"or hard cut (technical ceiling {ceiling} characters)"
         ) if english else (
-            "sem duração fixa: complete o assunto com começo, meio e fim, "
-            f"sem enrolar nem cortar (teto técnico de {ceiling} caracteres)")
+            "duração automática definida pelo conteúdo, geralmente 45 a 90 "
+            "segundos e perto de 60 quando o tema permitir; conclua a explicação, "
+            f"sem enrolar nem corte seco (teto técnico de {ceiling} caracteres)")
     else:
         duration_clause = (
             f"about {ceiling / 13.5:.0f} seconds long "
@@ -1171,7 +1196,9 @@ def generate_script(idea: str, model: str,
     for _ in range(2):
         body, label = _chat(messages, max_tokens, 0.7, model, base_url,
                             timeout, or_model, or_base_url, metrics, extra,
-                            timeout_max=timeout_max)
+                            timeout_max=timeout_max,
+                            response_validator=lambda response: (
+                                _script_response_issue(response, ceiling)))
         if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
             break
         max_tokens = 3000
@@ -1219,3 +1246,24 @@ def _sanitize(text: str, max_chars: int) -> str:
         if idx > max_chars * 0.5:
             return cut[: idx + 1].strip()
     return cut.rsplit(" ", 1)[0].rstrip(",;:") + "."
+
+
+def _script_response_issue(body: dict, ceiling: int) -> str | None:
+    """Reject unusably short narration inside provider rotation, without logging text."""
+    choices = body.get("choices") if isinstance(body, dict) else None
+    choice = choices[0] if choices else {}
+    message = choice.get("message") if isinstance(choice, dict) else None
+    if not isinstance(message, dict):
+        message = {}
+    content = message.get("content") or ""
+    cleaned = _sanitize(str(content), ceiling)
+    if len(cleaned) >= 100:
+        return None
+    reasoning = (message.get("reasoning_content") or message.get("reasoning")
+                 or message.get("analysis") or "")
+    usage = body.get("usage") or {}
+    return ("API respondeu com narração inválida; tentando próximo provider "
+            f"(finish_reason={choice.get('finish_reason', 'indisponível')}, "
+            f"content_chars={len(str(content))}, sanitized_chars={len(cleaned)}, "
+            f"reasoning_chars={len(str(reasoning))}, "
+            f"completion_tokens={usage.get('completion_tokens', 'indisponível')}).")

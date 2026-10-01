@@ -12,6 +12,7 @@ import sys
 
 from .. import ffmpeg as ff
 from ..config import CurioConfig
+from .visual_beats import BEAT_SECONDS
 
 
 class RenderError(RuntimeError):
@@ -91,16 +92,12 @@ def _check(proc, what: str) -> None:
 
 def render_image_segment(img_path: str, duration: float, out_path: str,
                          cfg: CurioConfig, variant: int = 0) -> str:
-    """Foto com Ken Burns discreto (zoom-in ou pan), sem distorção."""
+    """Foto com crop/pan/zoom que muda foco a cada visual beat."""
     w, h, fps = cfg.width, cfg.height, cfg.fps
     frames = max(1, round(duration * fps))
     base = (f"scale=2160:3840:force_original_aspect_ratio=increase:"
             f"out_range=mpeg,crop=2160:3840")
-    if variant % 2 == 0:  # zoom-in central lento
-        zb = f"zoompan=z='min(1.0+0.0006*on,{1.0 + 0.0006 * frames:.4f})'"
-    else:  # pan horizontal lento
-        zb = (f"zoompan=z=1.08:x='(iw-iw/zoom)*on/{frames}':"
-              f"y='ih/2-(ih/zoom/2)'")
+    zb = _beat_zoompan(fps, variant)
     vf = (f"{base},{zb}:d={frames}:s={w}x{h}:fps={fps},format=yuv420p")
     backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error",
@@ -111,6 +108,17 @@ def render_image_segment(img_path: str, duration: float, out_path: str,
                          "-r", str(fps)] + vargs + ["-an", out_path])
     _check(proc, "ken-burns")
     return out_path
+
+
+def _beat_zoompan(fps: int, variant: int = 0) -> str:
+    """Ciclo de enquadramento suave, com novo foco a cada ~2,1 s."""
+    beat = max(1, round(BEAT_SECONDS * fps))
+    offset = (variant % 4) * (beat // 4)
+    phase = f"2*PI*(on+{offset})/{beat}"
+    z = f"1.04+0.04*(1-cos({phase}))/2"
+    x = f"(iw-iw/zoom)*(0.5+0.18*sin({phase}))"
+    y = f"(ih-ih/zoom)*(0.5+0.12*cos({phase}/2))"
+    return (f"zoompan=z='{z}':x='{x}':y='{y}'")
 
 
 def _drop_in_y(start: float, entry: float, y0: str) -> str:
@@ -172,11 +180,7 @@ def render_collage_segment(images: list[dict], duration: float,
 
     base_scale = ("scale=2160:3840:force_original_aspect_ratio=increase:"
                   "out_range=mpeg,crop=2160:3840")
-    if variant % 2 == 0:
-        zb = f"zoompan=z='min(1.0+0.0006*on,{1.0 + 0.0006 * frames:.4f})'"
-    else:
-        zb = (f"zoompan=z=1.08:x='(iw-iw/zoom)*on/{frames}':"
-              f"y='ih/2-(ih/zoom/2)'")
+    zb = _beat_zoompan(fps, variant)
     parts = [f"[0:v]{base_scale},{zb}:d={frames}:s={w}x{h}:fps={fps},"
              f"format=yuv420p[base]"]
     for i, im in enumerate(valid[1:], 1):
@@ -600,7 +604,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
         if fontfile:
             # Título em relevo (contorno + sombra), sem caixa — mesmo
             # idioma visual das legendas.
-            y0 = round(cfg.height * 0.12)
+            y0 = round(cfg.height * 0.22)
             for i, line in enumerate(_wrap_title_lines(title)):
                 vf.append(
                     f"drawtext=fontfile='{fontfile}':"

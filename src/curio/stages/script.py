@@ -61,11 +61,9 @@ def _match_curated(idea: str) -> str | None:
     return None
 
 
-# Gancho final padrão (pergunta aberta não respondida + CTA de like).
-CLOSER_PT = (" Mas me conta: o que mais você quer saber sobre esse assunto? "
-             "Deixe seu like e até o próximo vídeo.")
-CLOSER_EN = (" But tell me: what else do you want to know about this? "
-             "Leave a like and see you in the next video.")
+# O roteiro fecha no próprio assunto: sem pergunta pendente nem CTA genérico.
+CLOSER_PT = ""
+CLOSER_EN = ""
 
 
 def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") -> str:
@@ -136,13 +134,14 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None,
     english = str(cfg.language or "").lower().startswith("en")
     if not english:
         curated = _match_curated(idea)
-        if curated and not curated.rstrip().endswith("próximo vídeo."):
+        if curated and CLOSER_PT and not curated.rstrip().endswith("próximo vídeo."):
             curated = curated.rstrip() + CLOSER_PT
         if curated:
             if auto or max_chars is None or len(curated) <= (max_chars or 0):
                 return curated, "curated"
             # Com meta de duração: corta o corpo, mas preserva o gancho final.
-            body = curated[: len(curated) - len(CLOSER_PT)]
+            body = (curated[: len(curated) - len(CLOSER_PT)]
+                    if CLOSER_PT else curated)
             cut = body[: max(0, max_chars - len(CLOSER_PT))]
             for sep in (". ", "! ", "? "):
                 idx = cut.rfind(sep)

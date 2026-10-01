@@ -1428,6 +1428,7 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
     scene_no_insert: set[int] = set()  # cena que ficou sem deepenho
     overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
     timeline = []
+    from .visual_beats import plan as plan_visual_beats
     for idx, ch in enumerate(chapters):
         scene = by_chapter.get(ch.id, {})
         start, end = round(float(ch.start), 3), round(float(ch.end), 3)
@@ -1459,6 +1460,7 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             "start": start,
             "end": end,
             "images": images,
+            "visual_beats": plan_visual_beats(dur, start),
             "fallback": not images,
             "reused_from": scene.get("reused_from"),
             **({"no_insertion": "nenhuma imagem mais precisa que o fundo"
@@ -1500,6 +1502,7 @@ def retime_visual_timeline(visual_timeline: list[dict],
     """
     times = {c.id: (float(c.start), float(c.end)) for c in chapters}
     out = []
+    from .visual_beats import plan as plan_visual_beats
     for trecho in visual_timeline:
         start, end = times.get(trecho["chapter_id"],
                                (trecho["start"], trecho["end"]))
@@ -1524,7 +1527,9 @@ def retime_visual_timeline(visual_timeline: list[dict],
                 img["sfx"] = None
         trecho = dict(trecho)
         trecho.update(start=round(start, 3), end=round(end, 3),
-                      images=images, fallback=not images)
+                      images=images,
+                      visual_beats=plan_visual_beats(dur, start),
+                      fallback=not images)
         out.append(trecho)
     return out
 

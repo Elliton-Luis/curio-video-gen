@@ -90,6 +90,11 @@ class RunMetrics:
         self.research_queries = 0
         self.research_sources = 0
         self.research_rejected: dict[str, int] = {}
+        self.visual_scene_count = 0
+        self.visual_beat_count = 0
+        self.visual_beat_seconds = 0.0
+        self.visual_asset_uses = 0
+        self.visual_asset_ids: set[str] = set()
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -239,6 +244,29 @@ class RunMetrics:
         key = (reason or "motivo desconhecido")[:60]
         self.research_rejected[key] = self.research_rejected.get(key, 0) + 1
 
+    def visual_plan(self, chapters, media_scenes, beat_seconds: float) -> None:
+        """Count camera beats and repeated existing assets; no per-beat log."""
+        import math
+        by_scene = {s.get("chapter_id"): s for s in (media_scenes or [])}
+        for chapter in chapters:
+            duration = max(0.0, float(chapter.end) - float(chapter.start))
+            beats = max(1, math.ceil(duration / beat_seconds)) if duration else 0
+            self.visual_scene_count += 1
+            self.visual_beat_count += beats
+            self.visual_beat_seconds += duration
+            scene = by_scene.get(chapter.id, {})
+            assets = scene.get("assets") or []
+            if not assets and scene.get("asset"):
+                assets = [{"asset": scene["asset"]}]
+            ids = {str((item.get("asset") or {}).get("asset_id"))
+                   for item in assets
+                   if (item.get("asset") or {}).get("asset_id")}
+            self.visual_asset_ids.update(ids)
+            if ids and beats:
+                # Base asset persists across all camera beats. Other selected
+                # photos count once as existing overlays, not new searches.
+                self.visual_asset_uses += beats + max(0, len(ids) - 1)
+
     def research_report(self) -> dict:
         return {"aceitas": self.research_sources,
                 "rejeitadas": dict(sorted(self.research_rejected.items())),
@@ -331,6 +359,14 @@ class RunMetrics:
                 "render_backend": meta.get("render_backend"),
                 "render_encoder": meta.get("render_encoder"),
                 "transcription_model": meta.get("transcription_model"),
+                "visual_scenes": self.visual_scene_count,
+                "visual_beats": self.visual_beat_count,
+                "visual_assets_unique": len(self.visual_asset_ids),
+                "visual_assets_reused": max(
+                    0, self.visual_asset_uses - len(self.visual_asset_ids)),
+                "visual_average_seconds_per_beat": (
+                    round(self.visual_beat_seconds / self.visual_beat_count, 2)
+                    if self.visual_beat_count else None),
             },
             "consumption": {
                 "nvidia": {
