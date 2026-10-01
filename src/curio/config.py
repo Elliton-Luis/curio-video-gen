@@ -79,18 +79,20 @@ class CurioConfig:
     sub_font_size: int = 92  # base p/ altura 1920, em pixels reais (ASS PlayRes=vRes)
     sub_margin_v: int = 200
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    nvidia_model: str = "meta/llama-3.3-70b-instruct"
     nvidia_timeout: int = 15  # timeout estrito para chamadas LLM
     # Teto do mesmo timeout. Antes era 15 e rígido; agora é configurável
     # para que um modelo grande e lento tenha orçamento, e 15 continua
     # sendo o padrão. Ver nvidia.call_timeout_max.
     nvidia_timeout_max: int = 15
-    openrouter_model: str = "google/gemini-2.5-flash"  # modelo padrão via OpenRouter
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     gemini_model: str = "gemini-2.5-flash"  # Gemini direto (GEMINI_API_KEY)
     gemini_base_url: str = ("https://generativelanguage.googleapis.com/v1beta/openai")
     groq_model: str = "openai/gpt-oss-20b"  # Groq (GROQ_API_KEY)
     groq_base_url: str = "https://api.groq.com/openai/v1"
+    mistral_model: str = "mistral-small-latest"
+    mistral_base_url: str = "https://api.mistral.ai/v1"
     media_providers: str = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
     queues_dir: str = "queues"  # pasta padrão das filas de ideias
@@ -185,6 +187,9 @@ class CurioConfig:
         groq = data.get("groq", {}) if isinstance(data.get("groq"), dict) else {}
         cfg.groq_model = str(groq.get("model", cfg.groq_model))
         cfg.groq_base_url = str(groq.get("base_url", cfg.groq_base_url))
+        mistral = data.get("mistral", {}) if isinstance(data.get("mistral"), dict) else {}
+        cfg.mistral_model = str(mistral.get("model", cfg.mistral_model))
+        cfg.mistral_base_url = str(mistral.get("base_url", cfg.mistral_base_url))
 
         # Overrides via ambiente.
         cfg.out_dir = os.environ.get("CURIO_OUT_DIR", cfg.out_dir)
@@ -210,6 +215,8 @@ class CurioConfig:
                                              cfg.gemini_base_url)
         cfg.groq_model = os.environ.get("GROQ_MODEL", cfg.groq_model)
         cfg.groq_base_url = os.environ.get("GROQ_BASE_URL", cfg.groq_base_url)
+        cfg.mistral_model = os.environ.get("MISTRAL_MODEL", cfg.mistral_model)
+        cfg.mistral_base_url = os.environ.get("MISTRAL_BASE_URL", cfg.mistral_base_url)
         cfg.media_providers = os.environ.get("CURIO_MEDIA_PROVIDERS",
                                              cfg.media_providers)
         cfg.cache_dir = os.environ.get("CURIO_CACHE_DIR", cfg.cache_dir)
@@ -373,13 +380,14 @@ class CurioConfig:
         return cfg
 
     def llm_overrides(self) -> dict:
-        """Overrides (model, base_url) p/ fallbacks do chain (gemini, groq).
+        """Overrides de modelo e base_url para fallbacks do chain.
 
         Valores já com precedência CLI > env > config.toml > padrão.
         """
         return {
             "gemini": (self.gemini_model, self.gemini_base_url),
             "groq": (self.groq_model, self.groq_base_url),
+            "mistral": (self.mistral_model, self.mistral_base_url),
         }
 
     def as_dict(self) -> dict:

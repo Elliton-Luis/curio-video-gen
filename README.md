@@ -418,21 +418,23 @@ output/<slug>/
 cp .env.example .env
 # edite .env e preencha ao menos uma chave (gere em):
 # NVIDIA https://build.nvidia.com · OpenRouter https://openrouter.ai/keys
-# Gemini https://aistudio.google.com/apikey · Groq https://console.groq.com/keys
+# Groq https://console.groq.com/keys · Mistral https://console.mistral.ai
+# Gemini https://aistudio.google.com/apikey
 ./scripts/run.sh generate "De onde veio a palavra salário?"
 ```
 
-Ordem do rodízio: NVIDIA → OpenRouter → Gemini → Groq. A NVIDIA falhou
-1x, já troca (intercalado com retries); erro definitivo (401/402/403/404)
-tira o provedor do rodízio; no fim sai um levantamento do que foi
-tentado. `video-gen doctor` mostra o status de cada um. Sem nenhuma
+Ordem preferencial: NVIDIA → Groq → OpenRouter → Mistral → Gemini. O Curio
+para no primeiro provider que responde corretamente. Falha transitória ativa
+fallback; erro definitivo remove provider do rodízio. `video-gen doctor` mostra
+status e modelo de cada provider. Sem nenhuma
 chave, o pipeline usa o gerador local (base curada + template, custo
 zero). Com roteiro em cache, a API **não** é chamada de novo — salvo
 com `--force`.
 
-Modelos padrão: NVIDIA `nvidia/nemotron-3-ultra-550b-a55b`, OpenRouter
-`google/gemini-2.5-flash`, Gemini `gemini-2.5-flash`, Groq
-`openai/gpt-oss-20b` (trocáveis via `*_MODEL` sem mexer no pipeline).
+Modelos: NVIDIA `meta/llama-3.3-70b-instruct`, Groq
+`openai/gpt-oss-20b`, OpenRouter
+`meta-llama/llama-3.3-70b-instruct:free`, Mistral `mistral-small-latest`
+e Gemini `gemini-2.5-flash`. Troque via `*_MODEL`.
 
 Robustez: até **6 rodadas globais de provider** (`CURIO_LLM_ATTEMPTS`,
 1–12) com retries HTTP/backoff internos para erros transitórios. O resumo
@@ -458,14 +460,17 @@ HTTP desse fallback final.
 retries HTTP dentro de cada rodada aparecem separadamente no diagnóstico; um
 provider que esgota os retries transitórios sai do rodízio daquela execução.
 
-O Groq usa a base oficial `https://api.groq.com/openai/v1` e o modelo padrão
-`openai/gpt-oss-20b`. Para GPT-OSS, o Curio solicita `reasoning_effort=low`
+Groq usa base oficial `https://api.groq.com/openai/v1`. Para GPT-OSS,
+Curio solicita `reasoning_effort=low`
 para reservar o orçamento de completion para o conteúdo e envia um User-Agent
 identificando o Curio. Erros HTTP Groq preservam status e mensagem real da API
 em vez de serem presumidos como chave inválida. A etapa JSON de cenas registra
 `finish_reason`, `max_tokens`, tokens de completion disponíveis e tamanho da
 resposta; JSON sintaticamente válido que não reproduza o roteiro continua sendo
 rejeitado pelo gate literal e cai para a divisão local.
+
+Mistral usa API OpenAI-compatible em `https://api.mistral.ai/v1` e chave
+`MISTRAL_API_KEY`. Erros 4xx preservam mensagem original sem expor a chave.
 
 Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 (aceita na config, usa a 1ª; **rotação ainda não implementada**).
@@ -474,7 +479,7 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | chain LLM (NVIDIA → OpenRouter → Gemini → Groq) em rodízio com retries; tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
+| Roteiro | chain LLM (NVIDIA → Groq → OpenRouter → Mistral → Gemini); tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
 | Cenas | divisão semântica via LLM do chain (JSON) ou local; cada cena declara `visual_type`, assunto, entidades, contexto e termos proibidos |
 | Mídia | consulta vários provedores, filtra com motivo, pontua por relevância sobre o assunto e corta abaixo do mínimo; sem foto boa a cena vira diagrama ou cartão, nunca imagem genérica |
 | Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia por obra; CLI `sources`; `FONTES.md` com fontes, imagens e créditos prontos; URLs exatas da pesquisa |

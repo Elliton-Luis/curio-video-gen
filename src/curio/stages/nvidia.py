@@ -2,19 +2,14 @@
 
 Chain OpenAI-compatível (`{base_url}/chat/completions`), nesta ordem —
 cada um pulado sem chave, tentado com retries quando há chave:
-1. NVIDIA (NVIDIA_API_KEY; modelo NVIDIA_MODEL, padrão Nemotron 3 Ultra);
-2. OpenRouter (OPENROUTER_API_KEY; OPENROUTER_MODEL, padrão
-   google/gemini-2.5-flash);
-3. Gemini direto (GEMINI_API_KEY ou GOOGLE_API_KEY; GEMINI_MODEL, padrão
-   gemini-2.5-flash; endpoint OpenAI-compatível do Google);
-4. Groq (GROQ_API_KEY; GROQ_MODEL, padrão openai/gpt-oss-20b).
-- Robustez em rodízio: a NVIDIA falhou 1x, já troca — a rotação
-  intercala a NVIDIA entre os fallbacks (N, OpenRouter, N, Gemini, N,
-  Groq…), até CURIO_LLM_ATTEMPTS rodadas globais (padrão 6); cada rodada
-  pode conter retries HTTP internos com backoff. 401/403 (chave
-  inválida) e 404 (modelo inexistente) eliminam o provedor do rodízio na
-  hora. No fim, erro com levantamento completo: tentativas, últimos erros
-  e chaves ausentes.
+1. NVIDIA;
+2. Groq;
+3. OpenRouter;
+4. Mistral;
+5. Gemini.
+- Rodízio intercalado para texto livre; JSON segue ordem preferencial.
+  Erros definitivos removem provider; erros transitórios seguem budget e
+  retries HTTP configurados. Diagnósticos resumem tentativas e falhas.
 - Somente stdlib (urllib). Erros explícitos; chaves nunca aparecem em
   mensagens, logs ou metadados.
 """
@@ -33,17 +28,20 @@ import urllib.request
 from .. import __version__
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
-DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+DEFAULT_MODEL = "meta/llama-3.3-70b-instruct"
 DEFAULT_TIMEOUT = 60
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_DEFAULT_MODEL = "google/gemini-2.5-flash"
+OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
 
 GROQ_DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_DEFAULT_MODEL = "openai/gpt-oss-20b"
+
+MISTRAL_DEFAULT_BASE_URL = "https://api.mistral.ai/v1"
+MISTRAL_DEFAULT_MODEL = "mistral-small-latest"
 
 # Chain de provedores (ordem fixa): id → exibição, envs de chave (1ª
 # existente vence), envs de modelo/base, padrões e ajuda p/ HTTP 404.
@@ -84,11 +82,19 @@ PROVIDER_SPECS = {
         "default_base": GROQ_DEFAULT_BASE_URL,
         "models_url": "https://console.groq.com/docs/models",
     },
+    "mistral": {
+        "display": "Mistral",
+        "key_envs": ("MISTRAL_API_KEY",),
+        "model_env": "MISTRAL_MODEL",
+        "base_env": "MISTRAL_BASE_URL",
+        "default_model": MISTRAL_DEFAULT_MODEL,
+        "default_base": MISTRAL_DEFAULT_BASE_URL,
+        "models_url": "https://docs.mistral.ai/getting-started/models/models_overview/",
+    },
 }
-PROVIDER_ORDER = ("nvidia", "openrouter", "gemini", "groq")
+PROVIDER_ORDER = ("nvidia", "groq", "openrouter", "mistral", "gemini")
 
-# Tentativas TOTAIS no rodízio (CURIO_LLM_ATTEMPTS=8, por ex.). Padrão 6:
-# NVIDIA, OpenRouter, NVIDIA, Gemini, NVIDIA, Groq.
+# Tentativas totais no rodízio (`CURIO_LLM_ATTEMPTS`). Padrão 6.
 DEFAULT_ATTEMPTS = 6
 RETRY_BASE_DELAY = 2.0  # backoff: 2s, 4s, 8s… (teto 30s)
 
@@ -358,11 +364,19 @@ class GroqCredentials(_SingleKeyCredentials):
     key_envs = ("GROQ_API_KEY",)
 
 
+class MistralCredentials(_SingleKeyCredentials):
+    """Chave do Mistral (MISTRAL_API_KEY)."""
+
+    provider = "mistral"
+    key_envs = ("MISTRAL_API_KEY",)
+
+
 CREDENTIALS = {
     "nvidia": NvidiaCredentials,
     "openrouter": OpenRouterCredentials,
     "gemini": GeminiCredentials,
     "groq": GroqCredentials,
+    "mistral": MistralCredentials,
 }
 
 
@@ -389,15 +403,15 @@ def _http_error_message(status: int, body: str, model: str,
                         key_hint: str = "NVIDIA_API_KEY",
                         models_url: str | None = None) -> str:
     snippet = body.strip()[:300]
-    if provider.lower() == "groq" and 400 <= status < 500:
+    if provider.lower() in ("groq", "mistral") and 400 <= status < 500:
         api_message = body.strip()[:1200] or "corpo vazio"
-        return (f"etapa Groq: API respondeu HTTP {status}. "
+        return (f"etapa {provider}: API respondeu HTTP {status}. "
                 f"Mensagem da API: {api_message}")
     if status in (401, 403):
+        detail = f" Mensagem da API: {body.strip()[:1200]}" if body.strip() else ""
         return (
-            f"etapa {provider}: autenticação rejeitada (HTTP 401/403). "
-            f"Motivo provável: {key_hint} inválida ou expirada. "
-            "Gere outra chave e tente novamente."
+            f"etapa {provider}: acesso rejeitado (HTTP {status}). "
+            f"Verifique {key_hint}, permissões, modelo e endpoint.{detail}"
         )
     if status == 404:
         hint = (f"Confira o ID exato em {models_url}."
@@ -537,10 +551,7 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
     raise last  # inalcançável (loop sempre retorna ou levanta)
 
 
-# Ordem preferida para respostas JSON: modelos rápidos e disciplinados
-# (Gemini Flash via OpenRouter) antes do Nemotron 550B — que é lento e
-# cospe raciocínio junto, quebrando o parse.
-JSON_FIRST_ORDER = ("openrouter", "gemini", "groq", "nvidia")
+JSON_FIRST_ORDER = PROVIDER_ORDER
 
 # Teto por chamada HTTP LLM (s).
 #
@@ -675,7 +686,9 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         "nvidia": (model, base_url),
         "openrouter": (or_model, or_base_url),
     }
-    for pid in PROVIDER_ORDER[2:]:
+    for pid in PROVIDER_ORDER:
+        if pid in resolved:
+            continue
         resolved[pid] = extra.get(pid, (None, None))
     live = [pid for pid in PROVIDER_ORDER
             if CREDENTIALS[pid].from_env().available]
@@ -891,8 +904,7 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
 
     Retorna (dados, rótulo "provedor:modelo"). Falhas levantam NvidiaError
     resumindo pulos e tentativas no chain.
-    Usa response_format: json_object e tenta os provedores rápidos
-    (OpenRouter/Gemini/Groq) antes da NVIDIA.
+    Usa response_format: json_object e segue ordem preferencial global.
     """
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}]

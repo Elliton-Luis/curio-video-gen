@@ -23,7 +23,7 @@ def test_lightning_id_uses_existing_nim_catalog_entry():
     cfg.nvidia_model = N.FUTURE_MODELS["scale"]
     assert cfg.nvidia_model == "nvidia/nemotron-3.5-lightning-30b-a3b"
     # O diagnóstico é temporário: o default persistente não é trocado.
-    assert CurioConfig().nvidia_model == "nvidia/nemotron-3-ultra-550b-a55b"
+    assert CurioConfig().nvidia_model == "meta/llama-3.3-70b-instruct"
 
 
 def test_groq_defaults_are_official_and_use_gpt_oss_20b(monkeypatch):
@@ -35,13 +35,67 @@ def test_groq_defaults_are_official_and_use_gpt_oss_20b(monkeypatch):
     assert cfg.groq_base_url == base == "https://api.groq.com/openai/v1"
 
 
+def test_mistral_uses_openai_compatible_endpoint_and_settings(monkeypatch):
+    monkeypatch.delenv("MISTRAL_MODEL", raising=False)
+    monkeypatch.delenv("MISTRAL_BASE_URL", raising=False)
+    cfg = CurioConfig()
+    assert cfg.mistral_model == N.llm_settings("mistral")[0] == "mistral-small-latest"
+    assert cfg.mistral_base_url == N.llm_settings("mistral")[1] == "https://api.mistral.ai/v1"
+
+
+def test_default_provider_order_and_requested_models():
+    cfg = CurioConfig()
+    assert N.PROVIDER_ORDER == ("nvidia", "groq", "openrouter", "mistral", "gemini")
+    assert cfg.nvidia_model == "meta/llama-3.3-70b-instruct"
+    assert cfg.groq_model == "openai/gpt-oss-20b"
+    assert cfg.openrouter_model == "meta-llama/llama-3.3-70b-instruct:free"
+    assert cfg.mistral_model == "mistral-small-latest"
+    assert cfg.gemini_model == "gemini-2.5-flash"
+
+
+def test_mistral_request_uses_openai_chat_contract(monkeypatch):
+    seen = {}
+
+    def fake_open(req, timeout):
+        seen["url"] = req.full_url
+        seen["headers"] = dict(req.header_items())
+        seen["body"] = json.loads(req.data)
+        return io.BytesIO(json.dumps(_response('{"ok":true}', "stop", 8)).encode())
+
+    monkeypatch.setattr(N.urllib.request, "urlopen", fake_open)
+    N._post_once([{"role": "user", "content": "Return JSON."}],
+                 "fake-secret", "mistral-small-latest",
+                 "https://api.mistral.ai/v1", 15, 128, 0.0, "mistral",
+                 json_mode=True)
+    assert seen["url"] == "https://api.mistral.ai/v1/chat/completions"
+    assert seen["headers"]["Authorization"] == "Bearer fake-secret"
+    assert seen["body"]["model"] == "mistral-small-latest"
+    assert seen["body"]["response_format"] == {"type": "json_object"}
+
+
+def test_mistral_429_preserves_api_message_and_redacts_key(monkeypatch):
+    def rate_limited(req, timeout):
+        raise urllib.error.HTTPError(
+            req.full_url, 429, "Too Many Requests", {},
+            io.BytesIO(b'{"message":"Rate limit exceeded: secret-key"}'))
+
+    monkeypatch.setattr(N.urllib.request, "urlopen", rate_limited)
+    with pytest.raises(N.NvidiaError) as caught:
+        N._post_once([], "secret-key", "mistral-small-latest",
+                     "https://api.mistral.ai/v1", 15, 128, 0.0, "mistral")
+    assert "HTTP 429" in str(caught.value)
+    assert "Rate limit exceeded" in str(caught.value)
+    assert "secret-key" not in str(caught.value)
+
+
 def test_groq_success_remains_a_normal_member_of_provider_rotation(monkeypatch):
     from curio.stages import nvidia as N
     for key in ("NVIDIA_API_KEY", "NVIDIA_API_KEYS", "OPENROUTER_API_KEY",
-                "GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"):
+                "GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
+                "MISTRAL_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     for key in ("NVIDIA_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
-                "GROQ_API_KEY"):
+                "GROQ_API_KEY", "MISTRAL_API_KEY"):
         monkeypatch.setenv(key, "test-key")
     monkeypatch.setenv("CURIO_LLM_ATTEMPTS", "6")
     calls = []
@@ -62,7 +116,7 @@ def test_groq_success_remains_a_normal_member_of_provider_rotation(monkeypatch):
                           extra={"gemini": ("gemini-model", "https://gemini.test"),
                                  "groq": ("openai/gpt-oss-20b",
                                           "https://api.groq.com/openai/v1")})
-    assert calls == ["nvidia", "openrouter", "nvidia", "gemini", "nvidia", "groq"]
+    assert calls == ["nvidia", "groq"]
     assert label == "groq:openai/gpt-oss-20b"
     assert body["choices"][0]["message"]["content"] == "groq answer"
 

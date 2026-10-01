@@ -426,6 +426,7 @@ def _show_current_config(c: dict[str, str], cfg: CurioConfig) -> None:
     print(f"  OpenRouter: {cfg.openrouter_model} (base: {cfg.openrouter_base_url})")
     print(f"  Gemini: {cfg.gemini_model} (base: {cfg.gemini_base_url})")
     print(f"  Groq: {cfg.groq_model} (base: {cfg.groq_base_url})")
+    print(f"  Mistral: {cfg.mistral_model} (base: {cfg.mistral_base_url})")
     print(f"  TTS: {cfg.tts_provider} / {cfg.tts_voice} / speed {cfg.tts_speed}")
     print(f"  Render: {cfg.render_backend} / {cfg.render_encoder}")
     print(f"  Mídia providers: {cfg.media_providers}")

@@ -649,9 +649,10 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
           f"{'' if not _aviso_ua else ' — ' + user_agent()}")
     if _aviso_ua:
         print(f"       {_aviso_ua}")
-    # Chain LLM: NVIDIA → OpenRouter → Gemini → Groq (1º com chave tenta).
+    # Chain LLM: NVIDIA → Groq → OpenRouter → Mistral → Gemini.
     _llm_models = {"nvidia": cfg.nvidia_model, "openrouter": cfg.openrouter_model,
-                   "gemini": cfg.gemini_model, "groq": cfg.groq_model}
+                   "gemini": cfg.gemini_model, "groq": cfg.groq_model,
+                   "mistral": cfg.mistral_model}
     for pid in nvidia_stage.PROVIDER_ORDER:
         spec = nvidia_stage.PROVIDER_SPECS[pid]
         creds = nvidia_stage.CREDENTIALS[pid].from_env()

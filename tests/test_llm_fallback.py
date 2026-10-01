@@ -6,7 +6,7 @@ from curio.stages import nvidia as N
 
 
 KEYS = ("NVIDIA_API_KEY", "NVIDIA_API_KEYS", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
-        "GOOGLE_API_KEY", "GROQ_API_KEY", "CURIO_LLM_ATTEMPTS",
+        "GOOGLE_API_KEY", "GROQ_API_KEY", "MISTRAL_API_KEY", "CURIO_LLM_ATTEMPTS",
         "NVIDIA_TIMEOUT_MAX")
 
 
@@ -14,7 +14,8 @@ def _keys(monkeypatch, *providers):
     for key in KEYS:
         monkeypatch.delenv(key, raising=False)
     env = {"nvidia": "NVIDIA_API_KEY", "openrouter": "OPENROUTER_API_KEY",
-           "gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
+           "gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY",
+           "mistral": "MISTRAL_API_KEY"}
     for provider in providers:
         monkeypatch.setenv(env[provider], f"test-{provider}")
     monkeypatch.setenv("CURIO_LLM_ATTEMPTS", "6")
@@ -59,9 +60,9 @@ def test_nvidia_timeout_keeps_normal_rotation_when_fallback_exists(monkeypatch):
     assert calls == [("nvidia", 15), ("openrouter", 15)]
 
 
-def test_failed_fallbacks_promote_nvidia_to_five_unbounded_attempts(
+def test_provider_order_exhausts_available_fallbacks_within_global_budget(
         monkeypatch, capsys):
-    _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq")
+    _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq", "mistral")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
     normal_calls = []
     final_timeouts = []
@@ -89,16 +90,15 @@ def test_failed_fallbacks_promote_nvidia_to_five_unbounded_attempts(
     with pytest.raises(N.NvidiaError) as caught:
         _chat()
 
-    assert normal_calls == ["nvidia", "openrouter", "nvidia",
-                            "gemini", "nvidia", "groq"]
-    assert final_timeouts == [None] * 5
+    assert normal_calls == ["nvidia", "groq", "nvidia", "openrouter",
+                            "nvidia", "mistral"]
+    assert final_timeouts == []
     message = str(caught.value)
     assert "6/6 rodada(s) globais" in message
-    assert "Gemini: 6 tentativa(s) HTTP em 1 rodada(s)" in message
-    assert "NVIDIA fallback resiliente: 5/5" in message
+    assert "Mistral: 1 tentativa(s) HTTP em 1 rodada(s)" in message
+    assert "NVIDIA fallback resiliente" not in message
     log = capsys.readouterr().out
-    assert "[NVIDIA] último provider viável — fallback resiliente" in log
-    assert "[NVIDIA] tentativa 1/5 — aguardando sem timeout..." in log
+    assert "[NVIDIA] último provider viável — fallback resiliente" not in log
 
 
 def test_nvidia_success_on_final_attempt_returns_pipeline_result(monkeypatch):
@@ -120,7 +120,7 @@ def test_nvidia_success_on_final_attempt_returns_pipeline_result(monkeypatch):
 
 
 def test_nvidia_503_exhaustion_stays_available_for_final_fallback(monkeypatch):
-    _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq")
+    _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq", "mistral")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
     calls = []
 

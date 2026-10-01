@@ -38,7 +38,7 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # Sem chave, o pipeline usa o gerador local (curado + template, custo zero).
 # [nvidia]
 # base_url = "https://integrate.api.nvidia.com/v1"
-# model = "nvidia/nemotron-3-ultra-550b-a55b"
+# model = "meta/llama-3.3-70b-instruct"
 # timeout = 15         # tempo de espera da chamada (é um teto de socket:
 #                       # vale para o handshake e para cada recv; um modelo
 #                       # que transmite algo de tempos em tempos não é cortado)
@@ -51,17 +51,19 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # Fallback automático quando a NVIDIA falha (roteiro e cenas).
 # Chave via .env (OPENROUTER_API_KEY); aqui só modelo/base.
 # [openrouter]
-# model = "google/gemini-2.5-flash"
+# model = "meta-llama/llama-3.3-70b-instruct:free"
 # base_url = "https://openrouter.ai/api/v1"
 
-# Gemini direto e Groq entram no mesmo rodízio (chaves via .env:
-# GEMINI_API_KEY e GROQ_API_KEY). Ordem: NVIDIA → OpenRouter → Gemini → Groq.
+# Provedores LLM usam chaves no .env. Ordem: NVIDIA → Groq → OpenRouter → Mistral → Gemini.
 # [gemini]
 # model = "gemini-2.5-flash"
 # base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 # [groq]
 # model = "openai/gpt-oss-20b"
 # base_url = "https://api.groq.com/openai/v1"
+# [mistral]
+# model = "mistral-small-latest"
+# base_url = "https://api.mistral.ai/v1"
 
 [media]
 providers = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback

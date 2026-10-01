@@ -389,23 +389,25 @@ def _fake_urlopen(req, timeout=None):
 
 
 def _host(u):
-    for h in ("nv.local", "openrouter", "generativelanguage", "groq"):
+    for h in ("nv.local", "openrouter", "generativelanguage", "groq", "mistral"):
         if h in u:
             return {"nv.local": "nv.local", "openrouter": "openrouter.local",
                     "generativelanguage": "generativelanguage",
-                    "groq": "groq"}[h]
+                    "groq": "groq", "mistral": "mistral"}[h]
     return u
 
 
 _urlreq.urlopen = _fake_urlopen
 _saved_env = {k: _os.environ.get(k) for k in
               ("NVIDIA_API_KEY", "NVIDIA_API_KEYS", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
-               "GOOGLE_API_KEY", "GROQ_API_KEY", "CURIO_LLM_ATTEMPTS")}
+               "GOOGLE_API_KEY", "GROQ_API_KEY", "MISTRAL_API_KEY",
+               "CURIO_LLM_ATTEMPTS")}
 _os.environ["NVIDIA_API_KEY"] = "fake-nvidia"
 _os.environ.pop("NVIDIA_API_KEYS", None)
 _os.environ["OPENROUTER_API_KEY"] = "fake-or"
 _os.environ["CURIO_LLM_ATTEMPTS"] = "5"
-for _k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"):
+for _k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
+           "MISTRAL_API_KEY"):
     _os.environ.pop(_k, None)
 try:
     _calls["n"] = 0
@@ -459,7 +461,7 @@ try:
         check("sem fallback: levantamento cita chaves ausentes",
               "OPENROUTER_API_KEY" in str(exc) and "GEMINI_API_KEY" in str(exc)
               and "GROQ_API_KEY" in str(exc) and "NVIDIA" in str(exc))
-    # Rodízio completo: N, OpenRouter, N, Gemini, N, Groq.
+    # Rodízio segue ordem de providers, com NVIDIA intercalada.
     _os.environ["OPENROUTER_API_KEY"] = "fake-or"
     _os.environ["GEMINI_API_KEY"] = "fake-gemini"
     _os.environ["GROQ_API_KEY"] = "fake-groq"
@@ -474,9 +476,9 @@ try:
         check("rodízio intercala NVIDIA entre fallbacks", False)
     except N.NvidiaError as exc:
         check("rodízio intercala NVIDIA entre fallbacks",
-              [_host(u) for u in _urls[:6]] == ["nv.local", "openrouter.local",
-                                                "nv.local", "generativelanguage",
-                                                "nv.local", "groq"]
+              [_host(u) for u in _urls[:6]] == ["nv.local", "groq",
+                                                "nv.local", "openrouter.local",
+                                                "nv.local", "generativelanguage"]
               and [_host(u) for u in _urls[6:]] == ["nv.local"] * 5
               and _timeouts[6:] == [None] * 5
               and "após 6/6 rodada(s) globais" in str(exc)
@@ -485,6 +487,7 @@ try:
     _os.environ.pop("OPENROUTER_API_KEY", None)
     _os.environ.pop("GEMINI_API_KEY", None)
     _os.environ.pop("GROQ_API_KEY", None)
+    _os.environ.pop("MISTRAL_API_KEY", None)
     _calls["n"] = 0
     _urls.clear()
     _BEHAVIOR["mode"] = "nvidia-401"
@@ -508,7 +511,7 @@ try:
           and body["choices"][0]["message"]["content"] == "via gemini"
           and _calls["n"] == 1 and N.any_llm_available())
     for _k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
-               "OPENROUTER_API_KEY", "NVIDIA_API_KEY"):
+                "MISTRAL_API_KEY", "OPENROUTER_API_KEY", "NVIDIA_API_KEY"):
         _os.environ.pop(_k, None)
     check("sem chave nenhuma: chain indisponível",
           not N.any_llm_available())
