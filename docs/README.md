@@ -7,6 +7,10 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-082206_relatorio_som-alto-transicoes-genericas.md` — ganhos audíveis, xfade por gênero, cascata genérica e cartões nunca vazios.
+
+- `relatorios/20261001-081537_relatorio_fontes-garantia-texto-timeout-separado.md` — segundo passe de fontes (núcleo + EN + `allow_weak`, nunca fatal) e timeout NVIDIA separado (10 s handshake / 120 s resposta).
+
 - `relatorios/20261001-071636_relatorio_musica-transicoes-cascata-generica.md` — ganho −24 dB, xfade por gênero, genéricos com núcleo próprio e cartões nunca vazios.
 
 - `relatorios/20261001-063937_relatorio_contexto-visual-audio-auto.md` — contexto visual compartilhado entidade↔scoring, áudio automático padrão, biblioteca people/SFX e validação real.

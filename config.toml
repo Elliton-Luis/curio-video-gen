@@ -4,7 +4,7 @@ transitions = "auto"
 
 [music]
 mode = "auto"
-gain_db = -24
+gain_db = -21
 ducking = true
 auto_fill = true
 

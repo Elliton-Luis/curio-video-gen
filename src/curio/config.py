@@ -80,11 +80,18 @@ class CurioConfig:
     sub_margin_v: int = 200
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "meta/llama-3.3-70b-instruct"
-    nvidia_timeout: int = 15  # timeout estrito para chamadas LLM
-    # Teto do mesmo timeout. Antes era 15 e rígido; agora é configurável
-    # para que um modelo grande e lento tenha orçamento, e 15 continua
-    # sendo o padrão. Ver nvidia.call_timeout_max.
-    nvidia_timeout_max: int = 15
+    # Espera de RESPOSTA/processamento por chamada LLM (s): um 550B no NIM
+    # não responde em 15 s. Separado da espera de CONEXÃO (handshake),
+    # que tem teto próprio e curto (ver nvidia_connect_timeout).
+    nvidia_timeout: int = 60
+    # Teto do mesmo timeout (resposta/processamento). Configurável para
+    # que um modelo grande e lento tenha orçamento; 120 é o padrão.
+    # Ver nvidia.call_timeout_max.
+    nvidia_timeout_max: int = 120
+    # Espera de CONEXÃO/handshake TLS por chamada LLM (s): se o host não
+    # atende aqui, é rede ou endpoint — não modelo lento. Curto de
+    # propósito; não consome o orçamento de geração.
+    nvidia_connect_timeout: int = 10
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     gemini_model: str = "gemini-2.5-flash"  # Gemini direto (GEMINI_API_KEY)
@@ -109,7 +116,7 @@ class CurioConfig:
     # que isso vira slideshow. 0 = nunca insere (só a foto de fundo por cena).
     visual_insertions: int = 2
     visual_insert_style: str = "drop_in"  # entrada estilo "cai do álbum"
-    visual_insert_gain_db: int = -30  # som quase imperceptível da inserção
+    visual_insert_gain_db: int = -24  # som da inserção: audível, sem brigar
     # Música local por gênero, com transições e SFX habilitados por padrão.
     audio_library_dir: str = "assets/library"
     audio_enabled: bool = True
@@ -119,7 +126,7 @@ class CurioConfig:
     music_min_per_genre: int = 3
     music_target_per_genre: int = 6
     music_max_per_genre: int = 10
-    music_gain_db: int = -24
+    music_gain_db: int = -21
     music_ducking: bool = True
     music_transitions: str = "auto"  # auto | none
     sfx_library_enabled: bool = True
@@ -176,6 +183,13 @@ class CurioConfig:
         cfg.nvidia_timeout = int(nvidia.get("timeout", cfg.nvidia_timeout))
         cfg.nvidia_timeout_max = int(
             nvidia.get("timeout_max", cfg.nvidia_timeout_max))
+        try:
+            cfg.nvidia_connect_timeout = int(
+                nvidia.get("connect_timeout", cfg.nvidia_connect_timeout))
+            if cfg.nvidia_connect_timeout <= 0:
+                cfg.nvidia_connect_timeout = 10
+        except (TypeError, ValueError):
+            cfg.nvidia_connect_timeout = 10
         orouter = data.get("openrouter", {}) if isinstance(data.get("openrouter"), dict) else {}
         cfg.openrouter_model = str(orouter.get("model", cfg.openrouter_model))
         cfg.openrouter_base_url = str(orouter.get("base_url", cfg.openrouter_base_url))
@@ -204,6 +218,13 @@ class CurioConfig:
             cfg.nvidia_timeout = int(os.environ["NVIDIA_TIMEOUT"])
         if os.environ.get("NVIDIA_TIMEOUT_MAX"):
             cfg.nvidia_timeout_max = int(os.environ["NVIDIA_TIMEOUT_MAX"])
+        if os.environ.get("NVIDIA_CONNECT_TIMEOUT"):
+            try:
+                v = int(os.environ["NVIDIA_CONNECT_TIMEOUT"])
+                if v > 0:
+                    cfg.nvidia_connect_timeout = v
+            except ValueError:
+                pass
         cfg.openrouter_model = os.environ.get("OPENROUTER_MODEL",
                                               cfg.openrouter_model)
         cfg.openrouter_base_url = os.environ.get("OPENROUTER_BASE_URL",

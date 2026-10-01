@@ -64,7 +64,7 @@ LEGACY_STYLES = ("fade_scale",)
 # inserção) nunca têm SFX.
 SFX_EVERY = 3
 SFX_KINDS = ("swish", "tap")
-SFX_GAIN_DB = -26
+SFX_GAIN_DB = -22
 SFX_DURATION = 0.35
 
 # --- Inserções esparsas (o modo padrão) -------------------------------
@@ -1400,7 +1400,7 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
                           sfx: bool = True,
                           insertions: int | None = None,
                           insert_style: str = "drop_in",
-                          insert_gain_db: int = -30,
+                           insert_gain_db: int = -24,
                           honor_order: bool = False) -> list[dict]:
     """Timeline visual renderizável: um trecho por cena com suas imagens.
 

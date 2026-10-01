@@ -29,11 +29,11 @@ SFX_CATEGORIES = ("paper", "soft_impact")
 
 MUSIC_DIRECTIONS = {
     "people": ("ambient piano", "contemplative"),
-    "history": ("documentary historical ambient instrumental subtle tension", "documentary"),
-    "etymology": ("curious intellectual light minimal instrumental ambient", "curious"),
-    "mythology": ("ancient atmospheric literary instrumental ambient", "ancient"),
-    "mystery": ("investigative documentary subtle suspense ambient instrumental", "investigative"),
-    "science": ("clean modern minimal technical ambient instrumental", "minimal"),
+    "history": ("documentary ambient", "documentary"),
+    "etymology": ("curious ambient", "curious"),
+    "mythology": ("ancient ambient", "ancient"),
+    "mystery": ("suspense ambient", "investigative"),
+    "science": ("minimal ambient", "minimal"),
 }
 
 SFX_QUERIES = {

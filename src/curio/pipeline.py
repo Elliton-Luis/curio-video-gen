@@ -540,7 +540,7 @@ def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],
                            overlap_cap: float, sfx: bool,
                            insertions: int | None = None,
                            insert_style: str = "drop_in",
-                           insert_gain_db: int = -30) -> list[dict]:
+                           insert_gain_db: int = -24) -> list[dict]:
     vt = visual_stage.build_visual_timeline(
         chapters, media_scenes, overlap_cap, seed=slug, sfx=sfx,
         insertions=insertions, insert_style=insert_style,
@@ -823,13 +823,18 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     research = research_stage.research_topic(
         idea, cfg.language, max_sources=cfg.research_max_sources,
         metrics=metrics, timeout=cfg.research_timeout, cfg=cfg,
-        genre=genre_key)
+        genre=genre_key, allow_weak=True)
     research_sources = list(research)
     research_target = getattr(research, "target", None)
     research_rejected = list(getattr(research, "rejected", []))
     research_queries = list(getattr(research, "tried_queries", []))
-    research_status = ("confirmed" if len(research_sources) >= 2
+    research_weak = bool(getattr(research, "weak", False))
+    research_status = ("weak" if research_weak or not research_sources
+                       else "confirmed" if len(research_sources) >= 2
                        else "partial")
+    for w in list(getattr(research, "weak_warnings", []) or []):
+        warnings.append(f"pesquisa: {w}")
+        print(f"AVISO pesquisa: {w}", file=sys.stderr)
     target_name = getattr(research_target, "name", "") or "tema"
     source_titles = [rs.title[:60] for rs in research_sources[:3]]
     run_event(

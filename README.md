@@ -443,15 +443,17 @@ um provider que esgota seus retries não volta a abrir outro bloco de tentativas
 na mesma execução. Erros definitivos (401/402/403/404) tiram o provider do
 rodízio. Sem nenhuma chave, vale o gerador local acima.
 
-Timeout de chamada: **15 s** é o teto (padrão e igual ao comportamento de
-antes), e ele é configurável — `[nvidia] timeout_max` na config ou
-`NVIDIA_TIMEOUT_MAX` no `.env`. É um timeout de socket (handshake +
-cada `recv`), não um orçamento total de geração: modelo que transmite
-algo de tempos em tempos não é cortado por ele. Subir o teto só faz
-sentido se o seu modelo for lento de verdade. Durante o rodízio normal, o
-timeout configurado continua valendo e o Curio tenta os outros providers.
+Timeouts de chamada (separados): **conexão/handshake 10 s**
+(`[nvidia] connect_timeout` ou `NVIDIA_CONNECT_TIMEOUT`) e
+**resposta/processamento 120 s** (`[nvidia] timeout_max` ou
+`NVIDIA_TIMEOUT_MAX`). Rede ou endpoint errado falham rápido no
+handshake sem consumir o orçamento de geração; modelo grande e lento
+que transmite aos poucos não é cortado no meio — só o silêncio além
+do orçamento total mata a chamada. Durante o rodízio normal, os
+tetos configurados continuam valendo e o Curio tenta os outros providers.
 Se todos eles falharem ou esgotarem retries e a NVIDIA for o único caminho
-viável, o Curio entra no fallback resiliente: remove o timeout, tenta até
+viável, o Curio entra no fallback resiliente: remove o orçamento total
+(a conexão curta continua), tenta até
 5 vezes com backoff para falhas transitórias e encerra imediatamente em erro
 definitivo. O resumo informa separadamente as rodadas globais e as tentativas
 HTTP desse fallback final.
@@ -498,6 +500,12 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
   pelo mesmo gate de grounding. O aviso inclui o trecho do roteiro, a causa
   provável e as fontes avaliadas; consulte `sources/FONTES.md` para o relatório
   completo.
+- Pesquisa sem fonte no passe estrito não trava mais o vídeo: um segundo
+  passe aceita por núcleo no título (sem exigir discriminante, homônimos
+  em `forbidden` continuam barrados) e um terceiro tenta núcleo + Wikipedia
+  em inglês; se nada falar do tema, o roteiro sai mesmo assim com status
+  `weak`, aviso explícito e incerteza no texto — nunca erro fatal no
+  `generate`. A precisão vem do portão; a garantia, dos passes.
 - Providers sem configuração necessária, como Pexels sem `PEXELS_API_KEY`,
   avisam uma vez por execução. A cascata de fallback continua usando os outros
   providers disponíveis.

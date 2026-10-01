@@ -39,12 +39,13 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # [nvidia]
 # base_url = "https://integrate.api.nvidia.com/v1"
 # model = "meta/llama-3.3-70b-instruct"
-# timeout = 15         # tempo de espera da chamada (é um teto de socket:
-#                       # vale para o handshake e para cada recv; um modelo
-#                       # que transmite algo de tempos em tempos não é cortado)
-# timeout_max = 15      # teto do mesmo timeout. Padrão 15 = o comportamento
-#                       # antigo. Suba só se o seu modelo for lento demais e
-#                       # você aceitar esperar mais antes do fallback.
+# timeout = 60           # orçamento de RESPOSTA/processamento por chamada (s).
+#                       # Um 550B no NIM não conclui em 15 s; modelo que
+#                       # transmite aos poucos não é cortado no meio.
+# timeout_max = 120     # teto do mesmo orçamento (env NVIDIA_TIMEOUT_MAX).
+# connect_timeout = 10  # handshake TCP+TLS (env NVIDIA_CONNECT_TIMEOUT):
+#                       # curto de propósito — rede/endpoint falham rápido
+#                       # sem consumir o orçamento de geração.
 # Com os outros providers indisponíveis, a NVIDIA entra em fallback final
 # resiliente: até 5 tentativas sem timeout; 401/403/404 encerram sem retry.
 
@@ -123,7 +124,7 @@ transitions = "auto"            # auto | none
 [music]
 mode = "auto"                    # auto | none | manual
 file = ""                        # caminho usado quando mode = "manual"
-gain_db = -24                     # audível sob ducking; permitido: -40..-15 dB
+gain_db = -21                     # cama audível sob ducking; permitido: -40..-15 dB
 ducking = true
 auto_fill = true                  # busca só quando biblioteca < mínimo
 

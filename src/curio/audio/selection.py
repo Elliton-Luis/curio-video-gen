@@ -40,7 +40,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     mode = requested_mode if enabled else "none"
     if mode not in ("auto", "none", "manual"):
         mode = "auto"
-    gain = int(getattr(cfg, "music_gain_db", -30))
+    gain = int(getattr(cfg, "music_gain_db", -21))
     ducking = bool(getattr(cfg, "music_ducking", True))
     previous = previous if isinstance(previous, dict) else {}
     library = AudioLibrary(getattr(cfg, "audio_library_dir", "assets/library"))
