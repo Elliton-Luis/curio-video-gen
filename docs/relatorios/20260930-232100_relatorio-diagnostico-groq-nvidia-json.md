@@ -3,7 +3,7 @@
 - **Data:** 2026-09-30 23:21 (-03:00)
 - **Tipo:** relatorio
 - **Escopo:** verificar modelo Lightning/NIM, corrigir acesso Groq e diagnosticar a etapa JSON de cenas com evidências reais.
-- **Commit(s):** implementação/testes/documentação pendentes.
+- **Commit(s):** `ba73052` (`fix(llm): diagnose Groq access and scene JSON truncation`), `7cc5fe0` (`test(llm): cover provider configuration and scene diagnostics`), `1b0cc79` (`docs: report NVIDIA and Groq diagnostics`).
 - **Origem:** solicitação de diagnóstico focado NVIDIA/Groq após falha de cenas JSON.
 
 ## 1. O que foi pedido
