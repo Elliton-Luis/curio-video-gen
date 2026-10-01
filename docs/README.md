@@ -80,9 +80,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260930-183440_relatorio_fallback-llm-nvidia.md` — NVIDIA como
   último provider viável, timeout removido no fallback final, até 5 retries,
   contagem separada de requests/rodadas e resultados pytest/smoke.
-- `relatorios/20260930-183440_relatorio_fallback-llm-nvidia.md` — NVIDIA como
-  último provider viável, requests sem timeout até 5 vezes, retry interno vs.
-  rodadas globais e resultados do pytest/smoke.
+- `relatorios/20260930-221049_relatorio_tui-seletor-vertical-genero.md` —
+  seletor vertical de gênero com descrição e metadados dinâmicos, testes de
+  teclado/lista e validação da suíte completa.
 
 ## Análises (estado, gaps, riscos)
 
