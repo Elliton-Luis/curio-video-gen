@@ -3,7 +3,7 @@
 - **Data:** 2026-10-01 04:32 -03:00
 - **Tipo:** relatorio
 - **Escopo:** registrar eventos concisos de execução em CLI/TUI e JSONL desde startup, inclusive em falha/interrupção.
-- **Commit(s):** pendente
+- **Commit(s):** `e52a236` (`feat(observability): persist pipeline run logs`)
 - **Origem:** solicitação para melhorar observabilidade sem substituir metrics.
 
 ## 1. O que foi pedido
