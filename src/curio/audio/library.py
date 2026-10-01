@@ -28,13 +28,39 @@ GENRES = ("people", "history", "etymology", "mythology", "mystery", "science")
 SFX_CATEGORIES = ("paper", "soft_impact")
 
 MUSIC_DIRECTIONS = {
-    "people": ("ambient piano", "contemplative"),
-    "history": ("documentary ambient", "documentary"),
-    "etymology": ("curious ambient", "curious"),
-    "mythology": ("ancient ambient", "ancient"),
-    "mystery": ("suspense ambient", "investigative"),
-    "science": ("minimal ambient", "minimal"),
+    "people": ("calm piano ambient", "calm"),
+    "history": ("calm documentary ambient", "calm"),
+    "etymology": ("calm curious ambient", "calm"),
+    "mythology": ("calm ancient ambient", "calm"),
+    "mystery": ("calm investigative ambient", "calm"),
+    "science": ("calm minimal ambient", "calm"),
 }
+
+_CALM_MOODS = {"calm", "contemplative", "soft", "soothing", "peaceful",
+               "gentle", "serene", "minimal"}
+_CALM_TITLE_HINTS = {"ambient", "ambience", "piano", "calm", "soft", "gentle",
+                     "peaceful", "serene", "reflective", "minimal",
+                     "documentary", "contemplative", "quiet", "warm"}
+_DISRUPTIVE_TITLE_HINTS = {
+    "crash", "crashing", "starship", "sci-fi", "drone", "reel", "voice",
+    "twister", "explosion", "weapon", "battle", "noise", "industrial",
+    "distortion", "alarm", "sword", "gun", "impact", "sound effect", "sfx",
+}
+
+
+def is_calm_music_asset(asset: dict) -> bool:
+    """Reject obvious effects/noise; accept explicitly calm or ambient beds."""
+    title = str(asset.get("title") or "").lower()
+    if any(term in title for term in _DISRUPTIVE_TITLE_HINTS):
+        return False
+    moods_raw = asset.get("mood") or []
+    if isinstance(moods_raw, str):
+        moods_raw = [moods_raw]
+    moods = {str(mood).strip().lower() for mood in moods_raw}
+    if moods & _CALM_MOODS:
+        return True
+    words = set(re.findall(r"[a-z]+", title))
+    return bool(words & _CALM_TITLE_HINTS)
 
 SFX_QUERIES = {
     "paper": "paper",
@@ -207,6 +233,8 @@ class AudioLibrary:
     def select(self, kind: str, genre: str, seed: str,
                category: str | None = None, mark_used: bool = False) -> dict | None:
         eligible = self.assets(kind, genre, category)
+        if kind == "music":
+            eligible = [asset for asset in eligible if is_calm_music_asset(asset)]
         if not eligible:
             return None
         least = min(max(0, int(a.get("use_count", 0))) for a in eligible)
@@ -287,7 +315,8 @@ class AudioLibrary:
         missing = max(0, limit - before)
         report = {"kind": kind, "genre": genre, "category": category or "",
                   "before": before, "target": limit, "added": 0,
-                  "rejected_license": 0, "license_rejections": [],
+                  "rejected_license": 0, "rejected_quality": 0,
+                  "license_rejections": [],
                   "duplicates": 0, "errors": []}
         if not missing:
             report["after"] = before
@@ -317,6 +346,10 @@ class AudioLibrary:
                 report["duplicates"] += 1
                 continue
             seen_ids.add(source_id)
+            if kind == "music" and not is_calm_music_asset({
+                    "title": item.get("name"), "mood": [mood]}):
+                report["rejected_quality"] += 1
+                continue
             raw_license = str(item.get("license") or "")
             lic = _license_kind(raw_license)
             if not lic:

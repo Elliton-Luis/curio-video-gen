@@ -99,7 +99,7 @@ def test_mistral_uses_openai_compatible_endpoint_and_settings(monkeypatch):
 
 def test_default_provider_order_and_requested_models():
     cfg = CurioConfig()
-    assert N.PROVIDER_ORDER == ("nvidia", "groq", "openrouter", "mistral", "gemini")
+    assert N.PROVIDER_ORDER == ("groq", "nvidia", "openrouter", "mistral", "gemini")
     assert cfg.nvidia_model == "meta/llama-3.3-70b-instruct"
     assert cfg.groq_model == "openai/gpt-oss-20b"
     assert cfg.openrouter_model == "meta-llama/llama-3.3-70b-instruct:free"
@@ -135,7 +135,19 @@ def test_mistral_429_preserves_api_message_and_redacts_key(monkeypatch):
     assert "secret-key" not in str(caught.value)
 
 
-def test_groq_success_remains_a_normal_member_of_provider_rotation(monkeypatch):
+def test_nvidia_http_400_is_reported_as_a_permanent_provider_error(monkeypatch):
+    _install_conn(monkeypatch, status=400,
+                  payload=b'{"message":"invalid request"}')
+
+    with pytest.raises(N.NvidiaError) as caught:
+        N._post_once([], "test-key", "test-model", "https://nvidia.test/v1",
+                     15, 100, 0.0, "nvidia")
+
+    assert caught.value.http_status == 400
+    assert caught.value.retryable is False
+
+
+def test_groq_success_returns_before_nvidia_is_called(monkeypatch):
     from curio.stages import nvidia as N
     for key in ("NVIDIA_API_KEY", "NVIDIA_API_KEYS", "OPENROUTER_API_KEY",
                 "GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
@@ -163,7 +175,7 @@ def test_groq_success_remains_a_normal_member_of_provider_rotation(monkeypatch):
                           extra={"gemini": ("gemini-model", "https://gemini.test"),
                                  "groq": ("openai/gpt-oss-20b",
                                           "https://api.groq.com/openai/v1")})
-    assert calls == ["nvidia", "groq"]
+    assert calls == ["groq"]
     assert label == "groq:openai/gpt-oss-20b"
     assert body["choices"][0]["message"]["content"] == "groq answer"
 

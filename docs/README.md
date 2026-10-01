@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-161013_relatorio-groq-primeiro-musica-calma.md` — Groq primeiro, NVIDIA segundo sem timeout de resposta e desvio em HTTP 400; seleção rejeita camas com título de ruído e evita reuso de faixa inadequada.
 - `relatorios/20261001-154612_relatorio_escape-apostrofo-ffmpeg.md` — corrige apóstrofos em título no `drawtext`; reproduz e cobre falha do filtergraph com ASS.
 - `relatorios/20261001-153350_relatorio_tui-colar-roteiro.md` — Roteiro Pronto aceita colagem multiline até `<<FIM_DO_ROTEIRO>>`, preserva texto e segue pelo pipeline; suíte completa: 653 testes.
 - `relatorios/20261001-141308_relatorio_fallback-resposta-invalida.md` — resposta LLM vazia/curta agora cai para próximo provider; inclui diagnóstico sem conteúdo sensível e 37 testes focados.

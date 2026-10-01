@@ -252,10 +252,10 @@ def test_auto_usa_trilhas_locais_especificas_por_genero(tmp_path):
             str(track)], check=True)
         (folder / "fixture.json").write_text(json.dumps({
             "asset_id": f"fixture:{genre}", "source_asset_id": genre,
-            "title": f"fixture-{genre}", "author": "Curio test fixture",
+            "title": f"calm ambient {genre}", "author": "Curio test fixture",
             "source": "manual", "source_url": "", "license": "CC0",
             "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-            "downloaded_at": "test", "genres": [genre], "mood": [genre],
+            "downloaded_at": "test", "genres": [genre], "mood": ["calm"],
             "duration": 30, "filename": track.name, "use_count": 0,
         }), encoding="utf-8")
 
@@ -270,8 +270,8 @@ def test_auto_usa_trilhas_locais_especificas_por_genero(tmp_path):
         outputs[genre] = meta
     people = outputs["people"]["audio"]["music"]["track"]
     science = outputs["science"]["audio"]["music"]["track"]
-    assert people["title"] == "fixture-people"
-    assert science["title"] == "fixture-science"
+    assert people["title"] == "calm ambient people"
+    assert science["title"] == "calm ambient science"
     assert people["path"] != science["path"]
     assert os.path.isfile(outputs["people"]["artifacts"]["video"])
     assert os.path.isfile(outputs["science"]["artifacts"]["video"])

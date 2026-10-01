@@ -69,22 +69,17 @@ def test_teto_por_provedor_vazio_nao_muda_nada():
 
 
 def test_o_rodizio_nao_muda():
-    """A ordem e o corte de provedor são sacredos nesta tarefa."""
+    """A rotação segue a preferência Groq, NVIDIA, depois fallbacks."""
     from curio.stages import nvidia as N
     # `_rotation` é um gerador INFINITO de propósito (o budget é quem
     # corta). Materializar com list() trava o teste — daí o islice.
     primeiros = list(itertools.islice(
-        N._rotation(["nvidia", "openrouter", "gemini"], True), 5))
-    assert primeiros == ["nvidia", "openrouter", "nvidia", "gemini", "nvidia"]
+        N._rotation(["groq", "nvidia", "openrouter"]), 5))
+    assert primeiros == ["groq", "nvidia", "openrouter", "groq", "nvidia"]
 
 
-def test_o_teto_configurado_chega_na_chamada(monkeypatch):
-    """O número não fica só num helper: é o timeout da chamada HTTP.
-
-    Sem isto, `call_timeout_max` podia resolver 90 e `_chat` continuar
-    passando 15 — o teste passaria e o caso real continuaria caindo no
-    fallback, que é exatamente o que a execução de São Jerônimo mostrou.
-    """
+def test_teto_nvidia_configurado_nao_limita_resposta(monkeypatch):
+    """Timeout configurado permanece legado; requests NVIDIA esperam sem teto."""
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -102,11 +97,11 @@ def test_o_teto_configurado_chega_na_chamada(monkeypatch):
     body, label = N._chat([{"role": "user", "content": "oi"}], 100, 0.0,
                           "m", "https://x", timeout=120, timeout_max=90)
     assert label.startswith("nvidia")
-    assert vistos["nvidia"] == 90
+    assert vistos["nvidia"] is None
 
 
-def test_teto_padrao_agora_e_folgado(monkeypatch):
-    """Sem configurar nada, a chamada vai com o padrão novo (120)."""
+def test_nvidia_ignora_teto_padrao_de_resposta(monkeypatch):
+    """NVIDIA recebe None em vez do teto global padrão."""
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -123,11 +118,11 @@ def test_teto_padrao_agora_e_folgado(monkeypatch):
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     N._chat([{"role": "user", "content": "oi"}], 100, 0.0, "m", "https://x",
             timeout=120)
-    assert vistos["nvidia"] == 120
+    assert vistos["nvidia"] is None
 
 
-def test_teto_por_provedor_so_muda_este_provedor(monkeypatch):
-    """Um modelo lento na NIM não obriga os provedores rápidos a esperar."""
+def test_timeout_especifico_nvidia_nao_corta_espera_infinita(monkeypatch):
+    """Um limite NVIDIA legado não substitui espera ilimitada."""
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -145,7 +140,7 @@ def test_teto_por_provedor_so_muda_este_provedor(monkeypatch):
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     N._chat([{"role": "user", "content": "oi"}], 100, 0.0, "m", "https://x",
             timeout=120)
-    assert vistos["nvidia"] == 150
+    assert vistos["nvidia"] is None
 
 
 def test_timeout_ainda_cai_no_rodizio():

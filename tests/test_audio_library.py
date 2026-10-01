@@ -217,6 +217,52 @@ def test_selection_is_stable_for_same_seed_and_prefers_least_used(tmp_path, monk
     assert library.select("music", "people", "another-project")["use_count"] == 1
 
 
+def test_music_selection_rejects_noisy_titles_and_keeps_calm_ambient(tmp_path,
+                                                                    monkeypatch):
+    library = AudioLibrary(tmp_path / "lib")
+    noisy = _register(library, tmp_path, monkeypatch, "Crashing Starship")
+    calm = _register(library, tmp_path, monkeypatch, "Curious Ambience")
+
+    selected = library.select("music", "people", "project")
+
+    assert selected["source_asset_id"] == calm["source_asset_id"]
+    assert selected["source_asset_id"] != noisy["source_asset_id"]
+
+
+def test_cached_noisy_music_is_replaced_by_calm_bed(tmp_path, monkeypatch):
+    library = AudioLibrary(tmp_path / "lib")
+    noisy = _register(library, tmp_path, monkeypatch, "Crashing Starship")
+    calm = _register(library, tmp_path, monkeypatch, "Curious Ambience")
+    cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
+                      music_auto_fill=False)
+    previous = {"music": {
+        "mode": "auto", "genre": "people", "gain_db": -15,
+        "ducking": True, "track": {**noisy, "mood": ["curious"]}},
+        "sfx": {"assets": []}}
+
+    plan = resolve_audio(cfg, "people", "project", "title", "script", [],
+                         previous=previous)
+
+    assert plan["music_asset"]["source_asset_id"] == calm["source_asset_id"]
+    assert any("faixa anterior descartada" in warning
+               for warning in plan["warnings"])
+
+
+def test_music_update_queries_calm_and_rejects_effect_like_titles(tmp_path,
+                                                                  monkeypatch):
+    library = AudioLibrary(tmp_path / "lib")
+    candidate = _item("noisy")
+    candidate["name"] = "Crashing Starship"
+    source = FakeSource([candidate])
+
+    report = library.update("music", "etymology", target=1, max_count=5,
+                            source=source)
+
+    assert "calm" in source.queries[0][0]
+    assert report["rejected_quality"] == 1
+    assert source.downloads == []
+
+
 def test_audio_seed_is_stable_and_tracks_script_identity():
     assert audio_seed("p", "title", "script") == audio_seed("p", "title", "script")
     assert audio_seed("p", "title", "script") != audio_seed("p", "title", "changed")

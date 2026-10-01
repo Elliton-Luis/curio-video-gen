@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-from .library import AudioLibrary, AudioLibraryError
+from .library import AudioLibrary, AudioLibraryError, is_calm_music_asset
 from .. import ffmpeg as ff
 
 
@@ -70,9 +70,12 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
         same_music_request = _same_request(old_music, mode, genre, gain, ducking)
         if (same_music_request and "track" in old_music):
             if (old_track.get("asset_id") and
-                    os.path.isfile(str(old_track.get("path") or ""))):
+                    os.path.isfile(str(old_track.get("path") or "")) and
+                    is_calm_music_asset(old_track)):
                 music_asset = dict(old_track)
-        else:
+            else:
+                warnings.append("faixa anterior descartada: não é uma cama musical calma")
+        if music_asset is None:
             current = library.count("music", genre)
             minimum = max(0, int(getattr(cfg, "music_min_per_genre", 3)))
             if current < minimum and bool(getattr(cfg, "music_auto_fill", False)):
@@ -85,6 +88,9 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                         warnings.append(
                             f"Freesound: {report['rejected_license']} asset(s) ignorados; "
                             "a biblioteca aceita apenas CC0 e CC BY")
+                    if report.get("rejected_quality"):
+                        warnings.append(
+                            f"Freesound: {report['rejected_quality']} faixa(s) não calma(s) ignorada(s)")
                     warnings.extend(
                         f"biblioteca musical {genre}: {err}"
                         for err in report.get("errors", [])[:3])
@@ -92,7 +98,10 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                     warnings.append(f"biblioteca musical {genre}: autopreenchimento ignorado ({exc})")
             music_asset = library.select("music", genre, seed)
             if not music_asset:
-                warnings.append(f"biblioteca musical {genre} vazia; render sem música")
+                warnings.append(
+                    f"biblioteca musical {genre} sem faixa calma compatível; render sem música"
+                    if current else
+                    f"biblioteca musical {genre} vazia; render sem música")
 
     # SFX musicais baixados substituem apenas eventos já planejados pelo
     # pipeline. Sem asset local, o SFX sintético existente permanece.

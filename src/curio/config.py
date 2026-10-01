@@ -80,13 +80,10 @@ class CurioConfig:
     sub_margin_v: int = 200
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "meta/llama-3.3-70b-instruct"
-    # Espera de RESPOSTA/processamento por chamada LLM (s): um 550B no NIM
-    # não responde em 15 s. Separado da espera de CONEXÃO (handshake),
-    # que tem teto próprio e curto (ver nvidia_connect_timeout).
+    # Espera de resposta/processamento dos providers rápidos (s). NVIDIA
+    # ignora esse teto e aguarda resposta sem limite. Handshake separado.
     nvidia_timeout: int = 60
-    # Teto do mesmo timeout (resposta/processamento). Configurável para
-    # que um modelo grande e lento tenha orçamento; 120 é o padrão.
-    # Ver nvidia.call_timeout_max.
+    # Teto dos providers rápidos. Mantido com o nome antigo por compatibilidade.
     nvidia_timeout_max: int = 120
     # Espera de CONEXÃO/handshake TLS por chamada LLM (s): se o host não
     # atende aqui, é rede ou endpoint — não modelo lento. Curto de

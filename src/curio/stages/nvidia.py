@@ -91,7 +91,7 @@ PROVIDER_SPECS = {
         "models_url": "https://docs.mistral.ai/getting-started/models/models_overview/",
     },
 }
-PROVIDER_ORDER = ("nvidia", "groq", "openrouter", "mistral", "gemini")
+PROVIDER_ORDER = ("groq", "nvidia", "openrouter", "mistral", "gemini")
 
 # Tentativas totais no rodízio (`CURIO_LLM_ATTEMPTS`). Padrão 6.
 DEFAULT_ATTEMPTS = 6
@@ -613,7 +613,8 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         err = NvidiaError(_http_error_message(status, detail, model,
                                               display, key_hint,
                                               spec["models_url"]))
-        # 401/403/404 são definitivos (repetir não adianta); o resto repete.
+        err.http_status = status
+        # 4xx, exceto 429, são definitivos; 429/5xx seguem retries internos.
         err.retryable = status == 429 or 500 <= status < 600
         err.http_attempts = 1
         raise err
@@ -630,7 +631,7 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
 
 
 def _post_with_retries(messages: list[dict], key: str, model: str,
-                       base_url: str, timeout: int, max_tokens: int,
+                       base_url: str, timeout: int | None, max_tokens: int,
                        temperature: float, pid: str, json_mode: bool = False) -> dict:
     """Até N requests HTTP dentro de uma rodada de provider.
 
@@ -674,7 +675,7 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
 
 JSON_FIRST_ORDER = PROVIDER_ORDER
 
-# Teto por chamada HTTP LLM (s) — espera de RESPOSTA/processamento.
+# Teto padrão por chamada HTTP LLM (s) — espera de RESPOSTA/processamento.
 #
 # Era 15 e RÍGIDO: um modelo grande e lento no NIM não tinha como ser
 # usado. Agora o padrão é 120 e continua CONFIGURÁVEL (`[nvidia]
@@ -759,25 +760,12 @@ def call_timeout_max(configured: int | None = None) -> int:
     return LLM_CALL_TIMEOUT_MAX
 
 
-def _rotation(pids: list[str], interleave_nvidia: bool = True):
-    """Ordem do rodízio.
-
-    Com interleave (padrão, texto livre): NVIDIA intercalada entre os
-    fallbacks — N, OpenRouter, N, Gemini, N, Groq, N, OpenRouter…
-    Sem interleave (JSON): ciclo simples na ordem recebida em `pids`.
-    Infinito (o budget corta).
-    """
-    others = [p for p in pids if p != "nvidia"]
-    if interleave_nvidia and "nvidia" in pids and others:
-        i = 0
-        while True:
-            yield "nvidia" if i % 2 == 0 else others[(i // 2) % len(others)]
-            i += 1
-    else:
-        i = 0
-        while True:
-            yield pids[i % len(pids)]
-            i += 1
+def _rotation(pids: list[str]):
+    """Cycle providers in their declared preference order; budget limits rounds."""
+    i = 0
+    while True:
+        yield pids[i % len(pids)]
+        i += 1
 
 
 def _order_live(live: list[str], prefer: tuple[str, ...] | None) -> list[str]:
@@ -795,7 +783,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
            prefer: tuple[str, ...] | None = None,
            timeout_max: int | None = None,
            response_validator=None) -> tuple[dict, str]:
-    """Chat em rodízio: NVIDIA falha 1x → já troca (intercalado c/ retries).
+    """Chat em ordem de preferência: Groq, NVIDIA, OpenRouter, Mistral, Gemini.
 
     Cada rodada vai ao próximo provider da rotação; erro definitivo (401/403/404)
     elimina o provedor do rodízio. Retorna (body, rótulo-do-provedor).
@@ -803,11 +791,9 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
     à parte. Esgotado o budget, se só NVIDIA restar, usa fallback final sem
     timeout em vez de encerrar com ela ainda viável.
 
-    `prefer` reordena o rodízio sem intercalar a NVIDIA (para JSON).
-    O orçamento de resposta por chamada é limitado ao teto configurado
-    (120 s por padrão), e um provedor pode ter teto próprio via
-    LLM_PROVIDER_TIMEOUT. A conexão/handshake tem teto próprio e curto
-    (10 s). Nenhum dos dois muda o comportamento de fallback.
+    `prefer` reordena providers, sem interleaving. NVIDIA não tem teto de
+    resposta; handshake continua limitado separadamente a 10 s. Outros
+    providers usam o timeout global e eventual teto próprio.
     """
     try:
         timeout = max(1, min(int(timeout), call_timeout_max(timeout_max)))
@@ -837,7 +823,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
     attempts: dict[str, int] = {}
     last_err: dict[str, str] = {}
     nvidia_last_candidate = False
-    for pid in _rotation(list(live), interleave_nvidia=not prefer):
+    for pid in _rotation(list(live)):
         if not live:
             break
         if live == ["nvidia"]:
@@ -853,13 +839,10 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         om, ob = resolved[pid]
         dft_model, dft_base = llm_settings(pid)
         use_model, use_base = om or dft_model, ob or dft_base
-        # O teto deste provedor pode ser maior que o global. A razão de
-        # existir é o caso observado: um modelo grande no NIM precisa de
-        # mais que o padrão, e aumentar o global obriga a aumentar para
-        # todos — inclusive para os provedores rápidos, que passam a
-        # esperar mais para falhar. Vazio = usa o global, sem diferença.
-        teto_pid = timeout
-        if pid in LLM_PROVIDER_TIMEOUT:
+        # NVIDIA pode precisar de tempo arbitrário para concluir. Seu socket
+        # espera sem teto; os outros providers continuam com timeout global.
+        teto_pid = None if pid == "nvidia" else timeout
+        if pid != "nvidia" and pid in LLM_PROVIDER_TIMEOUT:
             teto_pid = max(timeout, int(LLM_PROVIDER_TIMEOUT[pid]))
         try:
             key = CREDENTIALS[pid].from_env().active_key
@@ -882,11 +865,17 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
             attempts[pid] = (attempts.get(pid, 0) +
                              max(1, int(getattr(exc, "http_attempts", 1))))
             last_err[pid] = str(exc)
+            nvidia_bad_request = (pid == "nvidia"
+                                  and getattr(exc, "http_status", None) == 400)
+            if nvidia_bad_request:
+                exc.retryable = False
             from ..runlog import event as run_event
             logged = run_event("fallback", f"{PROVIDER_SPECS[pid]['display']}: "
                                f"{exc}; tentando próximo provider",
                                provider=pid, model=resolved[pid][0],
                                retryable=getattr(exc, "retryable", False),
+                               ignored_for_run=nvidia_bad_request,
+                               http_status=getattr(exc, "http_status", None),
                                error=str(exc))
             if not getattr(exc, "retryable", False):
                 live.remove(pid)  # definitivo: fora do rodízio

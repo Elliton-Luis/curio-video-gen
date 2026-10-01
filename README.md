@@ -432,10 +432,10 @@ cp .env.example .env
 ./scripts/run.sh generate "De onde veio a palavra salário?"
 ```
 
-Ordem preferencial: NVIDIA → Groq → OpenRouter → Mistral → Gemini. O Curio
-para no primeiro provider que responde corretamente. Falha transitória ativa
-fallback; erro definitivo remove provider do rodízio. `video-gen doctor` mostra
-status e modelo de cada provider. Sem nenhuma
+Ordem preferencial: Groq → NVIDIA → OpenRouter → Mistral → Gemini. O Curio
+para no primeiro provider que responde corretamente. NVIDIA espera sem limite
+de resposta e fica em segundo lugar após Groq; HTTP 400 remove NVIDIA do resto
+da execução. `video-gen doctor` mostra status e modelo de cada provider. Sem nenhuma
 chave, o pipeline usa o gerador local (base curada + template, custo
 zero). Com roteiro em cache, a API **não** é chamada de novo — salvo
 com `--force`.
@@ -449,23 +449,18 @@ Robustez: até **6 rodadas globais de provider** (`CURIO_LLM_ATTEMPTS`,
 1–12) com retries HTTP/backoff internos para erros transitórios. O resumo
 final distingue rodadas do rodízio de requests HTTP consumidos dentro delas;
 um provider que esgota seus retries não volta a abrir outro bloco de tentativas
-na mesma execução. Erros definitivos (401/402/403/404) tiram o provider do
-rodízio. Sem nenhuma chave, vale o gerador local acima.
+na mesma execução. Erro HTTP 400 e outros 4xx, exceto 429, tiram o provider
+do rodízio. Sem nenhuma chave, vale o gerador local acima.
 
-Timeouts de chamada (separados): **conexão/handshake 10 s**
+Timeouts de chamada: NVIDIA usa **espera de resposta ilimitada**; sua
+**conexão/handshake continua em 10 s**
 (`[nvidia] connect_timeout` ou `NVIDIA_CONNECT_TIMEOUT`) e
-**resposta/processamento 120 s** (`[nvidia] timeout_max` ou
-`NVIDIA_TIMEOUT_MAX`). Rede ou endpoint errado falham rápido no
-handshake sem consumir o orçamento de geração; modelo grande e lento
-que transmite aos poucos não é cortado no meio — só o silêncio além
-do orçamento total mata a chamada. Durante o rodízio normal, os
-tetos configurados continuam valendo e o Curio tenta os outros providers.
-Se todos eles falharem ou esgotarem retries e a NVIDIA for o único caminho
-viável, o Curio entra no fallback resiliente: remove o orçamento total
-(a conexão curta continua), tenta até
-5 vezes com backoff para falhas transitórias e encerra imediatamente em erro
-definitivo. O resumo informa separadamente as rodadas globais e as tentativas
-HTTP desse fallback final.
+(`[nvidia] connect_timeout` ou `NVIDIA_CONNECT_TIMEOUT`). Rede ou endpoint
+sem handshake continuam falhando rápido. Os outros providers usam o limite
+global padrão de 120 s (`[nvidia] timeout_max` ou `NVIDIA_TIMEOUT_MAX`).
+Assim, Groq pode falhar e liberar o segundo lugar para NVIDIA; depois de um
+HTTP 400 da NVIDIA, o rodízio segue para OpenRouter/Mistral/Gemini sem tentar
+NVIDIA de novo naquela execução.
 
 `CURIO_LLM_ATTEMPTS` limita as rodadas globais de seleção de provider. Os
 retries HTTP dentro de cada rodada aparecem separadamente no diagnóstico; um
@@ -490,7 +485,7 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | chain LLM (NVIDIA → Groq → OpenRouter → Mistral → Gemini); tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
+| Roteiro | chain LLM (Groq → NVIDIA → OpenRouter → Mistral → Gemini; NVIDIA sem timeout de resposta); tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
 | Cenas | divisão semântica via LLM do chain (JSON) ou local; cada cena declara `visual_type`, assunto, entidades, contexto e termos proibidos |
 | Mídia | consulta vários provedores, filtra com motivo, pontua por relevância sobre o assunto e corta abaixo do mínimo; sem foto boa a cena vira diagrama ou cartão, nunca imagem genérica |
 | Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia por obra; CLI `sources`; `FONTES.md` com fontes, imagens e créditos prontos; URLs exatas da pesquisa |
@@ -574,9 +569,11 @@ manuais são marcados como fornecidos pelo usuário, com licença não verificad
 ```
 
 A TUI expõe Automática, Nenhuma, arquivo manual e atualização da biblioteca em
-Configurações → Áudio. A seleção automática usa o gênero, favorece assets menos
-usados e desempata com seed estável do projeto; uma regeneração mantém a faixa
-gravada no metadata. A música usa ganho de −15 dB, fades de
+Configurações → Áudio. A seleção automática busca camas calmas/ambientais,
+rejeita títulos que indiquem efeitos/ruído e revalida faixas em cache. Se não
+houver faixa compatível, o vídeo sai sem música em vez de usar áudio confuso.
+Entre as faixas aprovadas, favorece assets menos usados e desempata com seed
+estável do projeto. A música usa ganho de −15 dB, fades de
 entrada/saída e sidechain ducking sob a voz, com release para atravessar pausas.
 SFX da biblioteca substituem apenas eventos pontuais já existentes; sem asset
 local, o SFX sintético atual continua disponível. Transições de cena têm

@@ -57,7 +57,31 @@ def test_nvidia_timeout_keeps_normal_rotation_when_fallback_exists(monkeypatch):
     body, label = _chat()
     assert label.startswith("openrouter:")
     assert body["choices"][0]["message"]["content"] == "from OpenRouter"
-    assert calls == [("nvidia", 15), ("openrouter", 15)]
+    assert calls == [("nvidia", None), ("openrouter", 15)]
+
+
+def test_groq_runs_first_nvidia_second_without_timeout_and_400_skips_it(
+        monkeypatch):
+    _keys(monkeypatch, "groq", "nvidia", "openrouter")
+    calls = []
+
+    def fake_post(_messages, _key, _model, _url, timeout, *_args):
+        provider = _args[-2]
+        calls.append((provider, timeout))
+        if provider == "groq":
+            raise _error("Groq timed out", retryable=True, fast_fail=True)
+        if provider == "nvidia":
+            error = _error("NVIDIA HTTP 400", retryable=False)
+            error.http_status = 400
+            raise error
+        return _body("OpenRouter response")
+
+    monkeypatch.setattr(N, "_post_with_retries", fake_post)
+    body, label = _chat()
+
+    assert calls == [("groq", 15), ("nvidia", None), ("openrouter", 15)]
+    assert label.startswith("openrouter:")
+    assert body["choices"][0]["message"]["content"] == "OpenRouter response"
 
 
 def test_invalid_narration_response_falls_through_to_next_provider(monkeypatch):
@@ -126,7 +150,7 @@ def test_run_log_records_provider_timeout_and_successful_fallback(
                for e in events)
 
 
-def test_provider_order_exhausts_available_fallbacks_within_global_budget(
+def test_provider_order_ends_with_unlimited_nvidia_fallback_when_alone(
         monkeypatch, capsys):
     _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq", "mistral")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
@@ -156,15 +180,15 @@ def test_provider_order_exhausts_available_fallbacks_within_global_budget(
     with pytest.raises(N.NvidiaError) as caught:
         _chat()
 
-    assert normal_calls == ["nvidia", "groq", "nvidia", "openrouter",
-                            "nvidia", "mistral"]
-    assert final_timeouts == []
+    assert normal_calls == ["groq", "nvidia", "openrouter", "mistral",
+                            "gemini"]
+    assert final_timeouts == [None] * 5
     message = str(caught.value)
-    assert "6/6 rodada(s) globais" in message
+    assert "5/6 rodada(s) globais" in message
     assert "Mistral: 1 tentativa(s) HTTP em 1 rodada(s)" in message
-    assert "NVIDIA fallback resiliente" not in message
+    assert "NVIDIA fallback resiliente: 5/5" in message
     log = capsys.readouterr().out
-    assert "[NVIDIA] último provider viável — fallback resiliente" not in log
+    assert "[NVIDIA] último provider viável — fallback resiliente" in log
 
 
 def test_nvidia_success_on_final_attempt_returns_pipeline_result(monkeypatch):
