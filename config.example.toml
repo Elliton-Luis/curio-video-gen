@@ -60,7 +60,7 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # model = "gemini-2.5-flash"
 # base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 # [groq]
-# model = "openai/gpt-oss-120b"
+# model = "openai/gpt-oss-20b"
 # base_url = "https://api.groq.com/openai/v1"
 
 [media]

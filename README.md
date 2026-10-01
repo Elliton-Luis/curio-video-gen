@@ -432,7 +432,7 @@ com `--force`.
 
 Modelos padrão: NVIDIA `nvidia/nemotron-3-ultra-550b-a55b`, OpenRouter
 `google/gemini-2.5-flash`, Gemini `gemini-2.5-flash`, Groq
-`openai/gpt-oss-120b` (trocáveis via `*_MODEL` sem mexer no pipeline).
+`openai/gpt-oss-20b` (trocáveis via `*_MODEL` sem mexer no pipeline).
 
 Robustez: até **6 rodadas globais de provider** (`CURIO_LLM_ATTEMPTS`,
 1–12) com retries HTTP/backoff internos para erros transitórios. O resumo
@@ -457,6 +457,15 @@ HTTP desse fallback final.
 `CURIO_LLM_ATTEMPTS` limita as rodadas globais de seleção de provider. Os
 retries HTTP dentro de cada rodada aparecem separadamente no diagnóstico; um
 provider que esgota os retries transitórios sai do rodízio daquela execução.
+
+O Groq usa a base oficial `https://api.groq.com/openai/v1` e o modelo padrão
+`openai/gpt-oss-20b`. Para GPT-OSS, o Curio solicita `reasoning_effort=low`
+para reservar o orçamento de completion para o conteúdo e envia um User-Agent
+identificando o Curio. Erros HTTP Groq preservam status e mensagem real da API
+em vez de serem presumidos como chave inválida. A etapa JSON de cenas registra
+`finish_reason`, `max_tokens`, tokens de completion disponíveis e tamanho da
+resposta; JSON sintaticamente válido que não reproduza o roteiro continua sendo
+rejeitado pelo gate literal e cai para a divisão local.
 
 Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 (aceita na config, usa a 1ª; **rotação ainda não implementada**).

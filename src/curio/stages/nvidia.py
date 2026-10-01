@@ -7,7 +7,7 @@ cada um pulado sem chave, tentado com retries quando há chave:
    google/gemini-2.5-flash);
 3. Gemini direto (GEMINI_API_KEY ou GOOGLE_API_KEY; GEMINI_MODEL, padrão
    gemini-2.5-flash; endpoint OpenAI-compatível do Google);
-4. Groq (GROQ_API_KEY; GROQ_MODEL, padrão openai/gpt-oss-120b).
+4. Groq (GROQ_API_KEY; GROQ_MODEL, padrão openai/gpt-oss-20b).
 - Robustez em rodízio: a NVIDIA falhou 1x, já troca — a rotação
   intercala a NVIDIA entre os fallbacks (N, OpenRouter, N, Gemini, N,
   Groq…), até CURIO_LLM_ATTEMPTS rodadas globais (padrão 6); cada rodada
@@ -25,9 +25,12 @@ import json
 import os
 import re
 import socket
+import sys
 import time
 import urllib.error
 import urllib.request
+
+from .. import __version__
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
@@ -40,7 +43,7 @@ GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/open
 GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
 
 GROQ_DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
+GROQ_DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 # Chain de provedores (ordem fixa): id → exibição, envs de chave (1ª
 # existente vence), envs de modelo/base, padrões e ajuda p/ HTTP 404.
@@ -386,6 +389,10 @@ def _http_error_message(status: int, body: str, model: str,
                         key_hint: str = "NVIDIA_API_KEY",
                         models_url: str | None = None) -> str:
     snippet = body.strip()[:300]
+    if provider.lower() == "groq" and 400 <= status < 500:
+        api_message = body.strip()[:1200] or "corpo vazio"
+        return (f"etapa Groq: API respondeu HTTP {status}. "
+                f"Mensagem da API: {api_message}")
     if status in (401, 403):
         return (
             f"etapa {provider}: autenticação rejeitada (HTTP 401/403). "
@@ -428,14 +435,24 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if pid == "groq" and model.startswith("openai/gpt-oss-"):
+        # Groq GPT-OSS gastou os 2000 tokens padrão quase todos em reasoning
+        # (1998 tokens no teste real) e retornou finish_reason=length sem
+        # conteúdo. Low reasoning effort conserva o orçamento para a resposta.
+        payload_dict["reasoning_effort"] = "low"
     if json_mode:
         payload_dict["response_format"] = {"type": "json_object"}
     payload = json.dumps(payload_dict).encode()
+    headers = {"Content-Type": "application/json",
+               "Authorization": "Bearer " + key}
+    if pid == "groq":
+        # Groq/Cloudflare bloqueia o User-Agent Python-urllib padrão (HTTP 403
+        # Cloudflare 1010). Identifique a aplicação sem simular navegador.
+        headers["User-Agent"] = f"curio/{__version__} (LLM API client)"
     req = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
         data=payload,
-        headers={"Content-Type": "application/json",
-                  "Authorization": "Bearer " + key},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -445,6 +462,8 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
             detail = exc.read().decode("utf-8", "replace")
         except Exception:  # noqa: BLE001 — melhor mensagem parcial que nenhuma
             detail = ""
+        if key:
+            detail = detail.replace(key, "[REDACTED]")
         err = NvidiaError(_http_error_message(exc.code, detail, model,
                                               display, key_hint,
                                               spec["models_url"]))
@@ -841,6 +860,28 @@ def _extract_json(text: str) -> dict:
     return json.loads(cleaned[start:end + 1])
 
 
+def _json_completion_diagnostic(body: dict, requested: int) -> dict:
+    choice = (body.get("choices") or [{}])[0] if isinstance(body, dict) else {}
+    message = choice.get("message") or {}
+    content = message.get("content") or ""
+    usage = body.get("usage") or {}
+    return {
+        "finish_reason": choice.get("finish_reason", "unavailable"),
+        "max_tokens": requested,
+        "completion_tokens": usage.get("completion_tokens", "unavailable"),
+        "response_chars": len(content),
+        "response_bytes": len(content.encode("utf-8")),
+    }
+
+
+def _format_json_diagnostics(items: list[dict]) -> str:
+    return "; ".join(
+        "finish_reason={finish_reason}, max_tokens={max_tokens}, "
+        "completion_tokens={completion_tokens}, response_chars={response_chars}, "
+        "response_bytes={response_bytes}".format(**item)
+        for item in items)
+
+
 def complete_json(system_prompt: str, user_prompt: str, model: str,
                   base_url: str, timeout: int, metrics=None,
                   or_model: str | None = None,
@@ -856,12 +897,20 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}]
     max_tokens, body, label = 2000, None, ""
-    for _ in range(2):  # roteiros longos (60 s+) estouram 2000 tokens pensando
+    diagnostics = []
+    for retry in range(2):  # uma escalada, preservada como limite atual
         body, label = _chat(messages, max_tokens, 0.3, model, base_url,
                             timeout, or_model, or_base_url, metrics, extra,
                             json_mode=True, prefer=JSON_FIRST_ORDER)
-        if (body.get("choices") or [{}])[0].get("finish_reason") != "length":
+        diagnostic = _json_completion_diagnostic(body, max_tokens)
+        diagnostics.append(diagnostic)
+        if diagnostic["finish_reason"] != "length":
             break
+        print(f"[{label}] cenas JSON truncadas: "
+              f"finish_reason=length, max_tokens={max_tokens}, "
+              f"completion_tokens={diagnostic['completion_tokens']}, "
+              f"response_bytes={diagnostic['response_bytes']}; "
+              "tentando uma vez com orçamento estendido.", file=sys.stderr)
         max_tokens = 4000
     try:
         choice = body["choices"][0]
@@ -872,13 +921,16 @@ def complete_json(system_prompt: str, user_prompt: str, model: str,
         ) from exc
     if choice.get("finish_reason") == "length":
         raise NvidiaError(
-            f"[{label}] JSON das cenas truncado mesmo com orçamento estendido."
+            f"[{label}] JSON das cenas truncado mesmo com orçamento estendido; "
+            f"tentativas: {_format_json_diagnostics(diagnostics)}."
         )
     try:
         return _extract_json(text), label
     except (ValueError, json.JSONDecodeError) as exc:
         raise NvidiaError(
-            f"[{label}] API não retornou JSON válido para as cenas."
+            f"[{label}] API não retornou JSON válido para as cenas; "
+            f"resposta: {_format_json_diagnostics(diagnostics)}; "
+            f"parse: {exc}."
         ) from exc
 
 

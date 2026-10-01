@@ -89,7 +89,7 @@ class CurioConfig:
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     gemini_model: str = "gemini-2.5-flash"  # Gemini direto (GEMINI_API_KEY)
     gemini_base_url: str = ("https://generativelanguage.googleapis.com/v1beta/openai")
-    groq_model: str = "openai/gpt-oss-120b"  # Groq (GROQ_API_KEY)
+    groq_model: str = "openai/gpt-oss-20b"  # Groq (GROQ_API_KEY)
     groq_base_url: str = "https://api.groq.com/openai/v1"
     media_providers: str = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
