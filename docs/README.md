@@ -80,9 +80,15 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20260930-183440_relatorio_fallback-llm-nvidia.md` — NVIDIA como
   último provider viável, timeout removido no fallback final, até 5 retries,
   contagem separada de requests/rodadas e resultados pytest/smoke.
+- `relatorios/20260930-232100_relatorio-diagnostico-groq-nvidia-json.md` — ID
+  Lightning conferido no NIM, causa HTTP 403 Groq, reasoning do GPT-OSS,
+  telemetria de truncamento JSON e resultados das chamadas reais.
 - `relatorios/20260930-221049_relatorio_tui-seletor-vertical-genero.md` —
   seletor vertical de gênero com descrição e metadados dinâmicos, testes de
   teclado/lista e validação da suíte completa.
+- `relatorios/20260930-232100_relatorio-diagnostico-groq-nvidia-json.md` —
+  validação de NVIDIA Lightning e Groq 20B, causa do 403, reasoning-token
+  budget, telemetria finish_reason e limites da segunda geração NVIDIA.
 
 ## Análises (estado, gaps, riscos)
 
