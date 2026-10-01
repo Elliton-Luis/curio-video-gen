@@ -32,17 +32,22 @@ def test_waterfall_ordem_e_limite():
     # Termos avulsos como o pipeline real entrega (split de "water glass").
     ch = _ch(("water", "glass"),
              glob=("pregnancy test", "water glass"))
-    qs = V._waterfall_queries(ch)
+    qs, generics = V._waterfall_queries(ch)
     assert qs[0] == "water glass"  # L1: exato da IA
     assert "microscope" in qs  # L2: avulso
     assert "pregnancy test" in qs  # L3: tema
     assert any(q.endswith("diagram") for q in qs)  # L3b
     assert "laboratory" in qs  # L4: genérico
+    assert "laboratory" in generics  # genérico marcado p/ núcleo próprio
     assert len(qs) == len(set(q.lower() for q in qs))  # sem dup
     assert len(qs) <= 8
     # sem nada da IA: usa local + genéricos, nunca vazio
-    qs2 = V._waterfall_queries(_ch((), "O sal preservava a comida romana."))
+    qs2, _ = V._waterfall_queries(_ch((), "O sal preservava a comida romana."))
     assert qs2 and "laboratory" in qs2
+    # people: acervo (igreja, biblioteca), não laboratório
+    qs3, gen3 = V._waterfall_queries(_ch(("saint",)), genre="people")
+    assert "church interior" in qs3 and "church interior" in gen3
+    assert "laboratory" not in qs3
 
 
 def test_validate_asset_corrige_gate():

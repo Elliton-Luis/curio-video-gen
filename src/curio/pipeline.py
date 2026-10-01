@@ -427,13 +427,15 @@ def _typography_report(cfg: CurioConfig, genre_key: str = "") -> dict:
 def _build_silent(chapters: list[Chapter], media_scenes: list[dict], idea: str,
                    durations: list[float], paths: VideoPaths,
                    cfg: CurioConfig, out_path: str,
-                   transitions: list[float] | None = None) -> str:
+                   transitions: list[float] | None = None,
+                   kinds: list[str] | None = None) -> str:
     assets = {s["chapter_id"]: s["asset"] for s in media_scenes}
     segs = []
     for i, (ch, dur) in enumerate(zip(chapters, durations)):
         segs.append(_scene_segment(ch, assets.get(ch.id), idea, round(dur, 1),
                                    paths, cfg, variant=i))
-    return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions)
+    return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions,
+                                                 kinds)
             if transitions else render_stage.concat_copy(segs, out_path, cfg))
 
 
@@ -464,7 +466,8 @@ def _visual_segment(trecho: dict, idea: str, duration: float,
 def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
                          idea: str, paths: VideoPaths,
                          cfg: CurioConfig, out_path: str,
-                         transitions: list[float] | None = None) -> str:
+                         transitions: list[float] | None = None,
+                         kinds: list[str] | None = None) -> str:
     trechos = {t["chapter_id"]: t for t in visual_timeline}
     segs = []
     for i, ch in enumerate(chapters):
@@ -475,7 +478,8 @@ def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
              "images": t.get("images", [])} if t else
             {"chapter_id": ch.id, "narration": ch.narration, "images": []},
             idea, dur, paths, cfg, variant=i))
-    return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions)
+    return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions,
+                                                 kinds)
             if transitions else render_stage.concat_copy(segs, out_path, cfg))
 
 
@@ -505,10 +509,26 @@ def _genre_transitions(chapters: list[Chapter], genre: str,
     return result
 
 
+GENRE_XFADE = {"people": "fade", "history": "fade",
+               "etymology": "fade", "mythology": "fadeblack",
+               "mystery": "fadeblack", "science": "slideright"}
+
+
+def _genre_transition_kinds(chapters: list[Chapter], genre: str,
+                            mode: str = "auto") -> list[str]:
+    """Efeito xfade por limite de cena. Corte dramático usa fade (vira corte)."""
+    if mode == "none" or len(chapters) < 2:
+        return ["fade"] * max(0, len(chapters) - 1)
+    kind = GENRE_XFADE.get(genre or "", "fade")
+    return [kind] * (len(chapters) - 1)
+
+
 def _transition_signature(chapters: list[Chapter], genre: str, mode: str,
                            visual_identity: dict | None = None) -> str:
     transitions = _genre_transitions(chapters, genre, mode)
+    kinds = _genre_transition_kinds(chapters, genre, mode)
     payload = {"genre": genre, "mode": mode, "durations": transitions,
+               "kinds": kinds,
                "visual_identity": visual_identity or {},
                "scenes": [(c.id, c.visual_type, c.text_role, c.start, c.end)
                           for c in chapters]}
@@ -1320,12 +1340,15 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if force or transition_dirty or not os.path.isfile(silent):
             transitions = _genre_transitions(
                 chapters, genre_key, transition_mode)
+            kinds = _genre_transition_kinds(
+                chapters, genre_key, transition_mode)
             if visual_timeline:
                 _build_silent_visual(chapters, visual_timeline, idea, paths,
-                                     cfg, silent, transitions=transitions)
+                                     cfg, silent, transitions=transitions,
+                                     kinds=kinds)
             else:
                 _build_silent(chapters, media_scenes, idea, durations, paths,
-                              cfg, silent, transitions=transitions)
+                              cfg, silent, transitions=transitions, kinds=kinds)
         narration_wav = paths.narration_wav
         sfx_path = (_sfx_track_for(visual_timeline, total, paths)
                     if visual_timeline and cfg.visual_sfx else None)
@@ -1540,11 +1563,15 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     if visual_timeline:
         _build_silent_visual(chapters, visual_timeline, idea, paths, cfg,
                              paths.silent_mp4, transitions=_genre_transitions(
+                                 chapters, genre_key, transition_mode),
+                             kinds=_genre_transition_kinds(
                                  chapters, genre_key, transition_mode))
     else:
         durations = [c.end - c.start for c in chapters]
         _build_silent(chapters, media_scenes, idea, durations, paths, cfg,
                       paths.silent_mp4, transitions=_genre_transitions(
+                          chapters, genre_key, transition_mode),
+                      kinds=_genre_transition_kinds(
                           chapters, genre_key, transition_mode))
     stage_times["silent"] = round(time.monotonic() - t0, 2)
     emit(5, "Montando silencioso", "OK")
@@ -1766,12 +1793,16 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
             _write_json(paths.visual_json, visual_timeline)
             _build_silent_visual(chapters, visual_timeline, idea, paths,
                                  cfg, adj, transitions=_genre_transitions(
+                                      chapters, project_genre, transition_mode),
+                                 kinds=_genre_transition_kinds(
                                       chapters, project_genre, transition_mode))
         else:
             durations = [c.end - c.start for c in chapters]
             durations[-1] += diff
             _build_silent(chapters, media_scenes, idea, durations, paths,
                            cfg, adj, transitions=_genre_transitions(
+                               chapters, project_genre, transition_mode),
+                           kinds=_genre_transition_kinds(
                                chapters, project_genre, transition_mode))
         silent = adj
         warnings.append(f"última cena estendida +{diff:.1f}s p/ caber o áudio")

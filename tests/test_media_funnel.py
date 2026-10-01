@@ -26,7 +26,8 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
             return results
 
     monkeypatch.setattr(visual, "CANDIDATE_MULTIPLIER", 2)
-    monkeypatch.setattr(visual, "_waterfall_queries", lambda ch: ["receipt"])
+    monkeypatch.setattr(visual, "_waterfall_queries",
+                          lambda ch, genre="": (["receipt"], set()))
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
@@ -52,6 +53,42 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
     media = metrics.to_dict({"media": scenes}, {}, "metrics")["consumption"]["media"]
     assert media["funnel"] == metrics.media_funnel
     assert media["rejection_reasons"] == metrics.media_rejections
+
+
+def test_generic_candidate_passes_on_own_terms_after_specifics(monkeypatch, tmp_path):
+    def asset(key, title):
+        return MediaAsset(provider="fixture", asset_id=key, title=title,
+                          download_url=f"https://example.test/{key}.jpg",
+                          license="CC0", width=1600, height=1600)
+
+    class Provider:
+        name = "fixture"
+
+        def search(self, query, limit, metrics):
+            metrics.media_search(self.name)
+            if query == "church interior":
+                return [asset("g1", "church interior altar")]
+            return [asset("s1", "unrelated warehouse boxes")]
+
+    monkeypatch.setattr(visual, "CANDIDATE_MULTIPLIER", 4)
+    monkeypatch.setattr(visual, "_waterfall_queries",
+                        lambda ch, genre="": (["specific query", "church interior"],
+                                              {"church interior"}))
+    monkeypatch.setattr(scoring, "threshold", lambda: 34)
+    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
+    from curio.media import cache
+    monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
+    monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
+    ch = Chapter(1, "Tomás de Aquino nasceu em 1225.", 5,
+                 subject="Tomás de Aquino")
+    metrics = RunMetrics("fixture", "tomas", "ai")
+    cfg = CurioConfig(cache_dir=str(tmp_path))
+    scenes, _ = visual._search_scene_with_shortcircuit(
+        ch, [Provider()], cfg, 1, metrics, str(tmp_path))
+    picked = scenes[0]["assets"][0]
+    assert picked["generic"] is True
+    assert scenes[0]["asset"]["asset_id"] == "g1"
+    assert metrics.media_funnel.get("generic_used") == 1
 
 
 def test_synthetic_percentage_counts_generated_assets_not_scene_type():

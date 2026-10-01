@@ -559,14 +559,17 @@ manuais são marcados como fornecidos pelo usuário, com licença não verificad
 A TUI expõe Automática, Nenhuma, arquivo manual e atualização da biblioteca em
 Configurações → Áudio. A seleção automática usa o gênero, favorece assets menos
 usados e desempata com seed estável do projeto; uma regeneração mantém a faixa
-gravada no metadata. A música usa ganho conservador de −30 dB, fades de
+gravada no metadata. A música usa ganho de −24 dB, fades de
 entrada/saída e sidechain ducking sob a voz, com release para atravessar pausas.
 SFX da biblioteca substituem apenas eventos pontuais já existentes; sem asset
-local, o SFX sintético atual continua disponível. Transições de cena são
-cross-dissolves curtos ajustados por gênero/papel da cena, cortes secos em
-mudanças dramáticas e fade final. `[audio].transitions = "none"` desliga a
-camada de transição. O `metadata.json` registra faixa/licença/atribuição, SFX,
-volume, ducking e identidade de cache do áudio efetivamente renderizado.
+local, o SFX sintético atual continua disponível. Transições de cena têm
+efeito por gênero (dissolve, fade a preto, deslizamento), duração ajustada
+por gênero/papel da cena, cortes secos em mudanças dramáticas e fade final.
+`[audio].transitions = "none"` desliga a camada de transição. O `metadata.json`
+registra faixa/licença/atribuição, SFX, volume, ducking e identidade de cache
+do áudio efetivamente renderizado. Sem foto específica, a cena tenta o
+genérico do gênero (igreja, biblioteca, manuscrito) antes do cartão; cartão
+sem assunto mostra a primeira frase da narração, nunca tela vazia.
 
 ## Roadmap
 

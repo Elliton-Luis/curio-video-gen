@@ -352,14 +352,19 @@ def concat_copy(paths: list[str], out_path: str, cfg: CurioConfig | None = None)
     return out_path
 
 
+XFADE_KINDS = ("fade", "fadeblack", "fadewhite", "wipeleft",
+               "slideright", "smoothleft")
+
 def concat_with_transitions(paths: list[str], out_path: str,
                             cfg: CurioConfig,
-                            transitions: list[float]) -> str:
+                            transitions: list[float],
+                            kinds: list[str] | None = None) -> str:
     """Concatena cenas com cross-dissolve curto sem encurtar a timeline.
 
     A próxima entrada recebe um clone de seu primeiro frame durante o overlap;
     assim o xfade consome o intervalo de dissolve mas mantém cada limite de
     cena no timestamp original. Transições ≤0 continuam cortes secos.
+    `kinds` escolhe o efeito xfade por limite; tipo desconhecido cai em fade.
     """
     if len(paths) < 2 or not any(float(x) > 0 for x in transitions):
         return concat_copy(paths, out_path, cfg)
@@ -390,8 +395,10 @@ def concat_with_transitions(paths: list[str], out_path: str,
         filters.append(
             f"[in{i}]tpad=start_mode=clone:start_duration={d:.3f}[{padded}]")
         out = f"out{i}"
+        kind = (kinds[i - 1] if kinds and i - 1 < len(kinds)
+                and kinds[i - 1] in XFADE_KINDS else "fade")
         filters.append(
-            f"[{current}][{padded}]xfade=transition=fade:duration={d:.3f}:"
+            f"[{current}][{padded}]xfade=transition={kind}:duration={d:.3f}:"
             f"offset={max(0.0, elapsed - d):.3f}[{out}]")
         current = out
         elapsed += durations[i]
@@ -565,7 +572,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                title: str | None = None,
                title_fontfile: str | None = None,
                music_path: str | None = None,
-               music_gain_db: float = -30.0,
+                music_gain_db: float = -24.0,
                music_ducking: bool = True,
                final_fade: float = 0.0) -> dict:
     """silent + legendas queimadas + áudio → MP4 final (um encode só).

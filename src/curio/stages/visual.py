@@ -643,11 +643,27 @@ def _provider_priority_order(cfg: CurioConfig, ch=None) -> list[MediaProvider]:
 
 # Cachoeira de buscas (último recurso): termos genéricos de contexto para
 # nunca entregar cena sem imagem quando há rede. Só disparam se tudo
-# específico falhar.
+# específico falhar. Por gênero: biografia/história caem em acervo
+# (igreja, biblioteca, manuscrito), não em laboratório.
 GENERIC_FALLBACK_QUERIES = (
     "laboratory", "microscope", "science", "research", "experiment",
     "test tube",
 )
+
+GENRE_GENERIC_QUERIES = {
+    "people": ("church interior", "old library", "ancient manuscript",
+               "museum hall", "historic portrait", "monastery"),
+    "history": ("church interior", "old library", "ancient manuscript",
+                "museum hall", "historic map", "castle"),
+    "mythology": ("church interior", "ancient sculpture", "old manuscript",
+                  "museum hall", "temple", "painting"),
+}
+
+
+def _generic_queries(genre: str = "") -> tuple[str, ...]:
+    """Genéricos do gênero (L4 da cachoeira). Sem gênero: ciência, como antes."""
+    return GENRE_GENERIC_QUERIES.get((genre or "").strip().lower(),
+                                     GENERIC_FALLBACK_QUERIES)
 
 # Meios que trazem ARTE para a frente numa busca. A ordem é o que o
 # acervo tem de mais primeiro: pintura e fresco são o grosso do
@@ -668,12 +684,15 @@ _MECHANISM_KEYWORDS = (
 )
 
 
-def _waterfall_queries(ch) -> list[str]:
+def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
     """Cachoeira específico→genérico por cena (máx. 8 consultas).
 
     L1: termos exatos da IA ("water glass"); L2: termos avulsos;
     L3: tema do vídeo (global) + variante "diagrama do mecanismo";
     L4: genéricos de contexto (último recurso, nunca vazio).
+    Devolve (consultas, genéricos): genéricos pontuam contra o próprio
+    termo, não contra a narração inteira — foto de igreja entra como
+    genérica honesta, nunca como específica.
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -704,11 +723,15 @@ def _waterfall_queries(ch) -> list[str]:
                 _add(f"{term} {meio}")
     if ai:
         _add(" ".join(ai[:2]) + " diagram")
-    for term in GENERIC_FALLBACK_QUERIES:
+    generics = set()
+    for term in _generic_queries(genre):
+        before = len(out)
         _add(term)
+        if len(out) > before:
+            generics.add(term.lower())
     if not out:
         _add("science")
-    return out[:8]
+    return out[:8], generics
 
 
 def _looks_mechanistic(ch, queries: list[str]) -> bool:
@@ -744,7 +767,7 @@ def _search_scene_with_shortcircuit(
     results_before = sum(metrics.media_results_received.values()) if metrics else 0
     downloads_before = metrics.media_downloads if metrics else 0
     cache_before = metrics.media_cache_hits if metrics else 0
-    queries = _waterfall_queries(ch)
+    queries, generics = _waterfall_queries(ch, genre)
     blocked = media_rules.scene_blocklist(ch)
     vtype = str(getattr(ch, "visual_type", "") or "literal")
     if metrics:
@@ -863,8 +886,24 @@ def _search_scene_with_shortcircuit(
 
     # 3. Ordena por precisão sobre o assunto e corta no orçamento da cena.
     #    Só então baixa: até aqui nada além de metadados saiu da rede.
+    #    Genéricos pontuam contra o próprio termo (igreja mostra igreja);
+    #    entram DEPOIS das específicas, nunca no lugar delas.
     from . import scoring
-    ranked = scoring.rank_candidates(candidates, ch)
+    for entry in candidates:
+        entry["generic"] = entry["query"].lower() in generics
+    specific = scoring.rank_candidates(
+        [e for e in candidates if not e["generic"]], ch)
+    generic_ranked = []
+    for entry in [e for e in candidates if e["generic"]]:
+        info = scoring.generic_score(entry["asset"], entry["query"])
+        entry["score"] = info["score"]
+        entry["score_detail"] = {"base": info["score"],
+                                 "matched": info["matched"],
+                                 "missing": info["missing"],
+                                 "layers": ["base-generic"]}
+        generic_ranked.append(entry)
+    generic_ranked.sort(key=lambda e: (-e["score"], e["query"]))
+    ranked = specific + generic_ranked
     min_score = scoring.threshold()
     ranked, low = scoring.below_threshold(ranked, min_score)
     for entry in low:
@@ -952,6 +991,8 @@ def _search_scene_with_shortcircuit(
             metrics.media_cache_misses += 0
         entry = dict(entry)
         entry["asset"] = asset.to_dict()
+        if entry.get("generic") and metrics:
+            metrics.media_record_funnel("generic_used")
         entry["order"] = len(picked)
         entry["score"] = entry.get("score", 0)
         if metrics:

@@ -542,7 +542,10 @@ def _draw_spotlight(d, sujeito: str, narration: str, english: bool,
     # itálico e o termo não; com o papel fixo em "term" os dois saíam
     # iguais e a distinção que o perfil declara não chegava à tela.
     f_main = _font(112, typo, papel or "term")
-    linhas = _wrap(d, str(sujeito or "—").upper(), f_main, W - 160)[:4]
+    texto = (str(sujeito or "").strip()
+             or " ".join(str(narration or "").split()[:8]).strip()
+             or "—")
+    linhas = _wrap(d, texto.upper(), f_main, W - 160)[:4]
     y = 720 - (len(linhas) - 1) * 68
     for line in linhas:
         d.text((W // 2, y), line, font=f_main, fill=INK, anchor="mm")
@@ -707,9 +710,12 @@ def render_card(subject: str, terms: list[str], narration: str,
     d.text((W // 2, 250), "ORIGEM" if english else "A PALAVRA VEM DE",
            font=f_kicker, fill=ACCENT_2, anchor="mm")
 
-    # A palavra principal, grande, quebrada se preciso
+    # A palavra principal, grande, quebrada se preciso. Sem assunto
+    # declarado, a primeira frase da narração — nunca um travessão vazio.
     f_main = _font(96, typo, "term")
-    principal = str(subject or "").strip() or "—"
+    principal = (str(subject or "").strip()
+                 or " ".join(str(narration or "").split()[:8]).strip()
+                 or "—")
     lines = _wrap(d, principal.upper(), f_main, W - 180)[:4]
     y = 420
     for line in lines:

@@ -156,6 +156,18 @@ def base_score(asset: dict, ch) -> dict:
             "support": matched_sup[:6]}
 
 
+def generic_score(asset: dict, query: str) -> dict:
+    """Nota de candidato genérico contra o próprio termo buscado.
+
+    Foto de igreja entra porque mostra igreja, não porque finge ser o
+    assunto da cena. Mesmo mínimo das específicas; sem veto de aliases.
+    """
+    from types import SimpleNamespace
+    pseudo = SimpleNamespace(subject=query, visual_queries=[],
+                             visual_entities=[], context=[])
+    return base_score(asset, pseudo)
+
+
 def below_threshold(entries: list[dict],
                     threshold: float = DEFAULT_THRESHOLD) -> tuple[list, list]:
     """Separa o que passa do mínimo do que não passa.

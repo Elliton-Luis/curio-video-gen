@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-071636_relatorio_musica-transicoes-cascata-generica.md` — ganho −24 dB, xfade por gênero, genéricos com núcleo próprio e cartões nunca vazios.
+
 - `relatorios/20261001-063937_relatorio_contexto-visual-audio-auto.md` — contexto visual compartilhado entidade↔scoring, áudio automático padrão, biblioteca people/SFX e validação real.
 
 - `relatorios/20261001-045242_relatorio_diagnostico-scoring-tomas-aquino.md` — replay de scores reais, origem de 34 e decisão de preservar threshold.

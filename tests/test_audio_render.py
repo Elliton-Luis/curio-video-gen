@@ -76,6 +76,10 @@ def test_build_sfx_track_uses_local_audio_asset(tmp_path, monkeypatch):
     assert "adelay=1250|1250" in graph
 
 
+def test_default_music_gain_is_audible_under_ducking():
+    assert CurioConfig().music_gain_db == -24
+
+
 def test_genre_transition_plan_distinguishes_genres_and_scene_roles():
     from curio.pipeline import _final_audio_fade, _genre_transitions
     from curio.stages.scenes import Chapter
@@ -91,6 +95,17 @@ def test_genre_transition_plan_distinguishes_genres_and_scene_roles():
     assert people[1] > people[0]
     assert _genre_transitions(chapters, "people", "none") == [0.0, 0.0]
     assert _final_audio_fade("people") > _final_audio_fade("science")
+
+
+def test_genre_transition_kinds_vary_effect_without_changing_lengths():
+    from curio.pipeline import _genre_transition_kinds
+    from curio.stages.scenes import Chapter
+    chapters = [Chapter(id=1, narration="a", duration_estimate=3),
+                Chapter(id=2, narration="b", duration_estimate=3)]
+    assert _genre_transition_kinds(chapters, "mystery") == ["fadeblack"]
+    assert _genre_transition_kinds(chapters, "science") == ["slideright"]
+    assert _genre_transition_kinds(chapters, "people") == ["fade"]
+    assert _genre_transition_kinds(chapters, "people", "none") == ["fade"]
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
