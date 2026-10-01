@@ -210,7 +210,7 @@ def test_ducking_reduces_music_during_voice_and_returns_in_pause(tmp_path):
             return 2 * (real * real + imag * imag) ** 0.5 / max(1, len(values))
 
         outputs[ducking] = (
-            tone_amplitude(1.0, 1.8), tone_amplitude(2.5, 3.3),
+            tone_amplitude(1.0, 1.8), tone_amplitude(2.5, 2.75),
             tone_amplitude(1.0, 1.8, 220))
     ducked_active, ducked_pause, voice_active = outputs[True]
     open_active, open_pause, _voice_open = outputs[False]

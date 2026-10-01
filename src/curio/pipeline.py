@@ -1317,8 +1317,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         warnings.append("legendas atualizadas (rebuild do final.mp4)")
     stage_times["subs"] = round(time.monotonic() - t0, 2)
     run_event("result", f"Legendas: {cue_count} cue(s); "
-              f"{'WordBoundary' if timed_source == 'wordboundary' else 'proporcional'}",
-              operation="subtitles", cues=cue_count, timing=timed_source)
+              f"{'WordBoundary' if words and tts_info['provider'] == 'edge-tts' else 'proporcional'}",
+              operation="subtitles", cues=cue_count,
+              timing=("wordboundary" if words and tts_info['provider'] == 'edge-tts'
+                      else "proporcional"))
     emit(5, "Sincronizando legendas", "OK")
 
     # [6/6] Montagem dinâmica + final

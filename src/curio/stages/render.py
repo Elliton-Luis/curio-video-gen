@@ -641,7 +641,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
             bed_label = "bed"
         bed_filters.append(
             f"[voice][{bed_label}]amix=inputs=2:duration=first:normalize=0,"
-            f"alimiter=limit=0.97:attack=5:release=50,"
+            f"alimiter=limit=0.97:attack=5:release=50:latency=1,"
             f"apad=whole_dur={total:.3f}[aout]")
         audio_graph = ";".join(bed_filters)
         cmd += ["-map", "0:v", "-map", "[aout]",

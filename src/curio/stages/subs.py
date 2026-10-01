@@ -314,7 +314,8 @@ def cues_from_words(words: list[dict], max_words: int = 5,
                     max_chars: int = 36, max_dur: float = 4.5,
                     min_dur: float = 0.8,
                     highlight: str = "word",
-                    upper: bool = True) -> list[tuple[float, float, str]]:
+                    upper: bool = True,
+                    active_word: bool = False) -> list[tuple[float, float, str]]:
     """Agrupa WordBoundary reais em blocos legíveis.
 
     Quebra em fim de frase quando o bloco já tem corpo (≥3 palavras ou
@@ -323,6 +324,8 @@ def cues_from_words(words: list[dict], max_words: int = 5,
     Aplica formatação: maiúsculas + destaque em 1 palavra por cue, que
     `highlight="none"` desliga. Tokens que são só marcadores de lista
     ("0)", "1."...) são descartados.
+    `active_word=True` gera eventos ASS por boundary: grupo permanece visível,
+    mas somente a palavra pronunciada recebe destaque. Pausas ficam neutras.
     """
     max_words = max(2, min(5, int(max_words or MAX_WORDS_PER_CUE)))
     clean = [w for w in words
@@ -330,6 +333,30 @@ def cues_from_words(words: list[dict], max_words: int = 5,
              and not _MARKER_TOKEN.match(str(w.get("text", "")).strip())]
     if not clean:
         raise ValueError("sem timestamps de palavras — nada para legendar")
+    if active_word and highlight != "none":
+        groups, group = [], []
+        for word in clean:
+            group.append(word)
+            if (len(group) >= max_words or _ends_sentence(str(word["text"]))
+                    or sum(len(str(w["text"])) + 1 for w in group) >= max_chars):
+                groups.append(group)
+                group = []
+        if group:
+            groups.append(group)
+        events = []
+        for group in groups:
+            display = [str(w["text"]).upper() if upper else str(w["text"])
+                       for w in group]
+            for index, word in enumerate(group):
+                start, end = float(word["start"]), float(word["end"])
+                if end <= start:
+                    raise ValueError("timestamp de palavra inválido")
+                events.append((start, end, _apply_highlight(" ".join(display), index)))
+                if index + 1 < len(group):
+                    following = float(group[index + 1]["start"])
+                    if following > end:
+                        events.append((end, following, " ".join(display)))
+        return events
     cues, cur = [], []
     for w in clean:
         cur.append(w)
@@ -490,7 +517,9 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
     with open(srt_path, "w", encoding="utf-8") as fh:
         fh.write(cues_to_srt(cues))
     with open(ass_path, "w", encoding="utf-8") as fh:
-        fh.write(cues_to_ass(cues, width, height, font_size, margin_v,
+        ass_cues = (cues_from_words(words, max_words=max_words, highlight=highlight,
+                                   upper=upper, active_word=True) if words else cues)
+        fh.write(cues_to_ass(ass_cues, width, height, font_size, margin_v,
                              fontname=fontname, bold=bold,
                              outline=outline, shadow=shadow))
     return len(cues)
