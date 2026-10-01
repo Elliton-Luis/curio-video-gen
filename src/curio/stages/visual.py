@@ -306,8 +306,7 @@ def _validate_asset(asset: MediaAsset) -> bool:
     dimensões são conhecidas, resolução mínima. Dimensões desconhecidas
     (ex.: NASA) são conferidas via ffprobe APÓS o download.
     """
-    if not asset.download_url or not re.search(
-            r"\.(jpe?g|png|webp)(\?|$)", asset.download_url, re.I):
+    if not media_rules.is_image_url(asset.download_url):
         return False
     if not license_ok(asset.license or ""):
         return False
@@ -329,8 +328,7 @@ def _validate_asset_for(asset: MediaAsset, blocked: list[str]) -> str:
     jogava fora a informação que o autor precisa para corrigir a escolha:
     sem motivo, uma cena que ficou sem foto é indistinguível de um bug.
     """
-    if not asset.download_url or not re.search(
-            r"\.(jpe?g|png|webp)(\?|$)", asset.download_url, re.I):
+    if not media_rules.is_image_url(asset.download_url):
         return "não é imagem (jpg/png/webp)"
     if not license_ok(asset.license or ""):
         return f"licença não permite edição: {asset.license or 'desconhecida'}"
@@ -781,15 +779,24 @@ def _search_scene_with_shortcircuit(
 
     def _consider(cand: MediaAsset, query: str, from_cache: bool) -> None:
         if cand.asset_id in seen_ids:
+            if metrics:
+                metrics.media_record_funnel("duplicates")
             return
         seen_ids.add(cand.asset_id)
+        if metrics:
+            metrics.media_record_funnel("unique_considered")
         why = _validate_asset_for(cand, blocked)
         if why:
             rejected.append({"title": cand.title, "query": query,
                              "reason": why, "provider": cand.provider})
             if metrics:
                 metrics.media_record_asset_rejected()
+                metrics.media_record_funnel("hard_rejected")
+                if classify_rights(cand.license or "", cand.provider) == "blocked":
+                    metrics.media_record_rights("blocked")
             return
+        if metrics:
+            metrics.media_record_funnel("eligible")
         candidates.append({
             "asset": cand.to_dict(),
             "query": query,
@@ -805,6 +812,8 @@ def _search_scene_with_shortcircuit(
         # 1. Cache local primeiro (mesma consulta, resposta antiga)
         cached = _get_cached_asset(cache_dir, query)
         if cached is not None:
+            if metrics:
+                metrics.media_record_funnel("cache_returned")
             _consider(cached, query, from_cache=True)
             if metrics:
                 metrics.media_cache_hits += 1
@@ -815,8 +824,6 @@ def _search_scene_with_shortcircuit(
                 continue
             if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
                 break
-            if metrics:
-                metrics.media_search(prov.name)
             try:
                 results = _search_with_timeout(
                     prov, query, SEARCH_TIMEOUT, metrics)
@@ -831,8 +838,11 @@ def _search_scene_with_shortcircuit(
                 continue
             if metrics:
                 metrics.media_record_results(prov.name, len(results))
-            for cand in results:
+                metrics.media_record_funnel("normalized_returned", len(results))
+            for result_index, cand in enumerate(results):
                 if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
+                    if metrics:
+                        metrics.media_record_funnel("budget_unexamined", len(results) - result_index)
                     break
                 _consider(cand, query, from_cache=False)
 
@@ -854,9 +864,12 @@ def _search_scene_with_shortcircuit(
             "provider": entry["asset"].get("provider", ""),
         })
         if metrics:
-            metrics.media_record_rejection("nota abaixo do mínimo")
+            metrics.media_record_asset_rejected()
+            metrics.media_record_funnel("score_rejected")
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
+        metrics.media_record_funnel("above_threshold", len(ranked))
+        metrics.media_record_funnel("selected", min(len(ranked), max_images))
     for rej in rejected:
         if metrics:
             metrics.media_record_rejection(rej["reason"])
@@ -882,6 +895,8 @@ def _search_scene_with_shortcircuit(
                 msg = f"cena {ch.id}: download falhou ({exc})"
                 warnings.append(msg)
                 print(f"AVISO: {msg}", file=sys.stderr)
+                if metrics:
+                    metrics.media_record_funnel("download_failed")
                 continue
         if not _downloaded_dims_ok(asset):
             msg = (f"cena {ch.id}: '{asset.title[:50]}' rejeitado após "
@@ -892,6 +907,8 @@ def _search_scene_with_shortcircuit(
                              "provider": asset.provider})
             if metrics:
                 metrics.media_record_asset_rejected()
+                metrics.media_record_rejection("resolução/legibilidade após download")
+                metrics.media_record_funnel("post_download_rejected")
             continue
         asset.used_in = f"cena {ch.id}"
         if not asset.rights_status:
@@ -915,6 +932,8 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_score(entry["score"])
         picked.append(entry)
+        if metrics:
+            metrics.media_record_funnel("used_real")
 
     if not picked and _looks_mechanistic(ch, list(ch.visual_queries)):
         synth = _synth_diagram_for_scene(ch, queries, cfg, metrics, genre)

@@ -500,6 +500,10 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 - `metadata.json` registra `provider_downloads` por provider: candidatos
   encontrados, downloads tentados/sucedidos/falhos, HTTP 403 e outros erros.
   Cache hits não contam como novos downloads.
+  `consumption.media.funnel` nas métricas separa candidatos retornados,
+  duplicados, filtros, score, seleção e uso. `rejection_reasons` resume motivos;
+  campos sem ocorrência podem estar ausentes (zero). `assets_rejected` inclui
+  rejeições por score. `synth_diagrams` inclui cards gerados localmente.
 - `media.json` registra assets repetidos em `reuse` com as cenas e o motivo
   `same_top_match`; a reutilização continua permitida. Cenas sem foto adequada
   podem receber cards ou diagramas semânticos.

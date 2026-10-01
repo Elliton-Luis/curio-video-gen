@@ -76,6 +76,7 @@ class RunMetrics:
         self.media_candidates_total = 0
         self.media_candidates_kept = 0
         self.media_rejections: dict[str, int] = {}
+        self.media_funnel: dict[str, int] = {}
         # Estratégia visual por cena. Um diagrama ou cartão NÃO é falha:
         # é a cena certa visualizada do jeito certo.
         self.media_visual_types: dict[str, int] = {}
@@ -202,6 +203,10 @@ class RunMetrics:
         key = (reason or "outro").split(":")[0].strip()[:40] or "outro"
         self.media_rejections[key] = self.media_rejections.get(key, 0) + 1
 
+    def media_record_funnel(self, stage: str, count: int = 1) -> None:
+        """Conta candidatos nos pontos de decisão, sem guardar logs individuais."""
+        self.media_funnel[stage] = self.media_funnel.get(stage, 0) + count
+
     def media_record_visual_type(self, vtype: str) -> None:
         """Como cada cena foi visualizada. Um diagrama NÃO é falha."""
         v = (vtype or "desconhecido").strip()[:20]
@@ -258,8 +263,7 @@ class RunMetrics:
         total = max(1, int(n_scenes or 0))
         # `sem_visual` é a ÚNICA métrica que é problema: uma cena sem
         # estratégia nenhuma. Diagrama e cartão contam como visualizadas.
-        geradas = sum(self.media_visual_types.get(k, 0)
-                      for k in ("diagram", "card", "typographic_card"))
+        geradas = self.media_synth_diagrams
         return {
             "cenas": int(n_scenes or 0),
             "por_tipo": dict(sorted(self.media_visual_types.items())),
@@ -354,6 +358,8 @@ class RunMetrics:
                     "requests_per_provider": dict(self.media_requests_per_provider),
                     "time_per_request": {k: [round(t, 2) for t in v] for k, v in self.media_time_per_request.items()},
                     "results_received": dict(self.media_results_received),
+                    "funnel": dict(self.media_funnel),
+                    "rejection_reasons": dict(self.media_rejections),
                     "assets_rejected": self.media_assets_rejected,
                     "assets_reused": self.media_assets_reused,
                     "timeouts": self.media_timeouts,

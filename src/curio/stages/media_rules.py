@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from urllib.parse import parse_qs, urlsplit
 
 # --- termos decorativos: sempre errados -------------------------------
 # Observados em produção: "papel de parede de montanha/rio/campo/deserto"
@@ -132,6 +133,15 @@ def min_dimension() -> int:
         return 1080
 
 
+def is_image_url(url: str) -> bool:
+    """Reconhece extensão de imagem ou formato explícito do CDN Unsplash."""
+    if re.search(r"\.(jpe?g|png|webp)(\?|$)", url or "", re.I):
+        return True
+    parsed = urlsplit(url or "")
+    return (parsed.scheme == "https" and parsed.hostname == "images.unsplash.com"
+            and parse_qs(parsed.query).get("fm") == ["jpg"])
+
+
 def passes_hard_filters(asset: dict, blocked: list[str],
                         max_bytes: int = 25 * 1024 * 1024) -> str:
     """Filtros eliminatórios de metadados. Devolve "" ou o motivo.
@@ -142,7 +152,7 @@ def passes_hard_filters(asset: dict, blocked: list[str],
     """
     if not asset.get("download_url"):
         return "sem URL de download"
-    if not re.search(r"\.(jpe?g|png|webp)(\?|$)", asset["download_url"], re.I):
+    if not is_image_url(asset["download_url"]):
         return "não é imagem (jpg/png/webp)"
     floor = min_dimension()
     w, h = int(asset.get("width") or 0), int(asset.get("height") or 0)

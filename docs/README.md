@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-034958_relatorio_funil-midia-sem-download.md` — causa do funil de São Francisco, execução pequena, contadores de perdas, URL JPG Unsplash e testes de regressão.
 - `relatorios/20261001-033358_relatorio_contrato-roteiro-ia.md` — documentação do contrato de geração automática, template manual, incompatibilidade com Roteiro Pronto e validações documentais.
 - `relatorios/20261001-031800_relatorio_providers-env-mistral.md` — auditoria e sincronização de `.env`, ordem/modelos LLM, integração Mistral e validações mínimas dos cinco providers.
 - `relatorios/20260928-123219_relatorio_mvp-inicial.md` — scaffolding + pipeline

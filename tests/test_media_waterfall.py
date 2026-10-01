@@ -78,6 +78,8 @@ class _FakeProv:
 
     def search(self, query, limit=5, metrics=None):
         self.calls.append(query)
+        if metrics is not None:
+            metrics.media_search(self.name)
         if self._error:
             raise self._error
         return list(self._results)
