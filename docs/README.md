@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-205829_relatorio-aprendizado-contavel.md` — roteiro exige compreensão sem replay e takeaway retellable; 736 testes verdes.
 - `relatorios/20261002-203402_relatorio-musica-mood-genero.md` — seleção exige mood compatível com adapter; faixa contemplativa/haunting não entra em people; 735 testes verdes.
 - `relatorios/20261002-191200_relatorio-busca-fresca-prompts.md` — nova busca em cada vídeo, cache só de bytes para rerender; prompts reduzidos preservados; 733 testes verdes.
 - `relatorios/20261002-190300_relatorio-ancora-pessoa-e-topico.md` — âncora local exige título coerente com tema/pessoa; 733 testes verdes.
