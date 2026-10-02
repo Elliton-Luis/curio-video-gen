@@ -36,6 +36,13 @@ def test_final_retoma_o_gancho():
     assert "looping back to the opening hook image" in prompts.SCRIPT_SYSTEM_PROMPT_EN.lower()
 
 
+def test_roteiro_deixa_aprendizado_claro_e_contavel():
+    assert "sem rever o vídeo" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "contá-la a alguém" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "without replaying" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+    assert "tell someone what they learned" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+
+
 def test_genero_pessoa_explica_instituicao_e_ancora_legado():
     p = E.get("people")
     assert "quem mandava no quê" in p.narrative.direction
