@@ -668,10 +668,10 @@ def _ask_audio(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
         path = _ask("Arquivo de música (mp3/wav/ogg/flac): ").strip()
         if path:
             cfg = dataclasses.replace(cfg, music_file=os.path.expanduser(path))
-    gain = _ask(f"Volume musical [{cfg.music_gain_db} dB] (-40..-6): ").strip()
+    gain = _ask(f"Volume musical [{cfg.music_gain_db} dB] (-40..-3): ").strip()
     if gain:
         try:
-            cfg = dataclasses.replace(cfg, music_gain_db=max(-40, min(-6, int(gain))))
+            cfg = dataclasses.replace(cfg, music_gain_db=max(-40, min(-3, int(gain))))
         except ValueError:
             print("Volume inválido; mantendo valor anterior.")
     duck = _ask(f"Ducking sob a narração [{cfg.music_ducking}] (s/n): ").strip().lower()

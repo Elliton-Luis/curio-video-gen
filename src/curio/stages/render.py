@@ -607,7 +607,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                title: str | None = None,
                title_fontfile: str | None = None,
                music_path: str | None = None,
-                music_gain_db: float = -7.0,
+                music_gain_db: float = -5.0,
                music_ducking: bool = True,
                final_fade: float = 0.0) -> dict:
     """silent + legendas queimadas + áudio → MP4 final (um encode só).
@@ -655,6 +655,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
     if voice_idx is not None and music_idx is not None:
         bed_filters = [
             f"[{music_idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
+            f"loudnorm=I=-21:TP=-2:LRA=11,"
             f"volume={float(music_gain_db):.1f}dB,atrim=duration={total:.3f},"
             f"asetpts=PTS-STARTPTS,afade=t=in:st=0:d={min(0.8, total / 4):.3f},"
             f"afade=t=out:st={max(0.0, total - min(1.2, total / 3)):.3f}:"
@@ -665,7 +666,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
         ]
         if music_ducking:
             bed_filters.append(
-                "[bed][voice_sc]sidechaincompress=threshold=0.025:ratio=5:"
+                "[bed][voice_sc]sidechaincompress=threshold=0.04:ratio=3:"
                 "attack=400:release=1100[ducked]")
             bed_label = "ducked"
         else:
@@ -681,7 +682,8 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
         cmd += ["-map", "0:v", "-map", f"{voice_idx}:a"]
     elif music_idx is not None:
         cmd += ["-map", "0:v", "-map", f"{music_idx}:a",
-                "-af", f"volume={float(music_gain_db):.1f}dB,"
+                "-af", f"aresample=48000,loudnorm=I=-21:TP=-2:LRA=11,"
+                       f"volume={float(music_gain_db):.1f}dB,"
                        f"afade=t=in:st=0:d={min(0.8, total / 4):.3f},"
                        f"afade=t=out:st={max(0.0,total-min(1.2,total/3)):.3f}:"
                        f"d={min(1.2,total/3):.3f}"]

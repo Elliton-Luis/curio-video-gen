@@ -124,7 +124,7 @@ transitions = "auto"            # auto | none
 [music]
 mode = "auto"                    # auto | none | manual
 file = ""                        # caminho usado quando mode = "manual"
-gain_db = -7                      # cama mais presente sob ducking; permitido: -40..-6 dB
+gain_db = -5                      # cama mais presente sob ducking; permitido: -40..-3 dB
 ducking = true
 auto_fill = true                  # busca só quando biblioteca < mínimo
 

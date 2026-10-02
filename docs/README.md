@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-223646_relatorio_cama-audivel-ducking-suave.md` — cama normalizada (loudnorm), ganho −5 dB e ducking 3:1; +4 dB audível na pausa, voz dominante.
+
 - `relatorios/20261001-222132_relatorio_musica-genero-motion-slide.md` — camas por gênero (violino/tenso), ganho −7 dB, deriva sem tremor e slides de galeria; render real validado.
 
 - `relatorios/20261001-214950_relatorio_providers-museus-met-aic.md` — Met Open Access + Art Institute of Chicago (domínio público, sem chave), prioridade em cenas históricas; suíte completa: 692 testes.

@@ -123,7 +123,7 @@ class CurioConfig:
     music_min_per_genre: int = 3
     music_target_per_genre: int = 6
     music_max_per_genre: int = 10
-    music_gain_db: int = -7
+    music_gain_db: int = -5
     music_ducking: bool = True
     music_transitions: str = "auto"  # auto | none
     sfx_library_enabled: bool = True
@@ -315,7 +315,7 @@ class CurioConfig:
         cfg.music_target_per_genre = max(cfg.music_min_per_genre, min(
             cfg.music_max_per_genre, int(music_lib.get(
                 "target_per_genre", cfg.music_target_per_genre))))
-        cfg.music_gain_db = max(-40, min(-6, int(music.get(
+        cfg.music_gain_db = max(-40, min(-3, int(music.get(
             "gain_db", cfg.music_gain_db))))
         cfg.music_ducking = _as_bool(music.get("ducking", cfg.music_ducking),
                                      cfg.music_ducking)

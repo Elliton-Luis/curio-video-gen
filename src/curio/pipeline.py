@@ -630,7 +630,7 @@ def _apply_audio_request(cfg: CurioConfig, audio: dict | None) -> None:
     if music.get("mode") in ("auto", "none", "manual"):
         cfg.music_mode = music["mode"]
     if music.get("gain_db") is not None:
-        cfg.music_gain_db = max(-40, min(-6, int(music["gain_db"])))
+        cfg.music_gain_db = max(-40, min(-3, int(music["gain_db"])))
     if music.get("ducking") is not None:
         cfg.music_ducking = bool(music["ducking"])
     track = music.get("track") if isinstance(music.get("track"), dict) else {}

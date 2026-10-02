@@ -236,7 +236,7 @@ def test_cached_noisy_music_is_replaced_by_calm_bed(tmp_path, monkeypatch):
     cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
                       music_auto_fill=False)
     previous = {"music": {
-        "mode": "auto", "genre": "people", "gain_db": -7,
+        "mode": "auto", "genre": "people", "gain_db": -5,
         "ducking": True, "track": {**noisy, "mood": ["curious"]}},
         "sfx": {"assets": []}}
 
