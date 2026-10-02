@@ -229,6 +229,8 @@ PT_LEXICON: dict[str, str] = {
     "rosto": "face", "maos": "hands", "pes": "feet", "nacao": "nation",
     "bandeira": "flag", "governo": "government", "eleicao": "election",
     "protesto": "protest", "revolucao": "revolution", "independencia": "independence",
+    "franca": "france", "frances": "french", "francesa": "french",
+    "franceses": "french", "francesas": "french",
     "escravidao": "slavery", "colonia": "colony", "reino": "kingdom",
     "republica": "republic", "senado": "senate", "lei": "law", "justica": "justice",
     "prisao": "prison", "crime": "crime", "pirata": "pirate", "viking": "viking",
@@ -250,6 +252,22 @@ PT_LEXICON: dict[str, str] = {
     "anfiteatro": "amphitheater", "termas": "baths", "vila": "villa",
     "palacio": "palace",
 }
+
+# Multiword subjects whose word-by-word fallback loses identity. Phrase
+# translation wins over token translation: "Revolução Francesa" must search
+# the historical event, not a sun (substring `sol` in `absoluto`) or a flag.
+PT_TOPIC_PHRASES = {
+    "revolucao francesa": "french revolution",
+    "revolucao da franca": "french revolution",
+    "buraco negro": "black hole",
+    "buracos negros": "black hole",
+}
+
+
+def translate_phrase(text: str) -> str | None:
+    """Translate known multiword video topics without token drift."""
+    normalized = fold_phrase(text)
+    return PT_TOPIC_PHRASES.get(normalized)
 
 
 def translate(word: str) -> str | None:

@@ -287,16 +287,21 @@ def _space_boost(narration: str) -> list[str]:
         out.append("black hole")
     if "horizonte de eventos" in hay or "event horizon" in hay:
         out.append("event horizon")
-    for marker, query in (("galaxia", "galaxy"), ("galaxy", "galaxy"),
+    for marker, query in (("galaxia", "galaxy"), ("galaxias", "galaxies"),
+                          ("galaxy", "galaxy"), ("galaxies", "galaxies"),
                           ("nebulosa", "nebula"), ("nebula", "nebula"),
                           ("universo", "universe"), ("universe", "universe"),
                           ("gravidade", "gravity"), ("gravitacional", "gravity"),
                           ("gravitacao", "gravity"),
                           ("estrela", "star"), ("estrelas", "stars"),
-                          ("sol", "sun"), ("telescopio", "telescope"),
+                          ("sol", "sun"), ("solar", "sun"),
+                          ("telescopio", "telescope"),
                           ("luz", "light"), ("massa", "mass"),
                           ("radiacao", "radiation")):
-        if marker in hay and query not in out:
+        # Word boundaries matter: `sol` inside `absoluto` made a French
+        # Revolution video search for Argentine flags as if it were astronomy.
+        if (re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", hay)
+                and query not in out):
             out.append(query)
     return out
 
@@ -775,6 +780,8 @@ def _search_scene_with_shortcircuit(
         generic_ranked = []
         for entry in [e for e in candidates if e["generic"]]:
             info = scoring.generic_score(entry["asset"], entry["query"])
+            if not scoring.topic_anchor_matches(entry["asset"], ch):
+                info["score"] = 0.0
             entry["score"] = info["score"]
             entry["score_detail"] = {"base": info["score"],
                                      "matched": info["matched"],

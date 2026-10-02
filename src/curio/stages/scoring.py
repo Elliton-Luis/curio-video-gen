@@ -96,6 +96,10 @@ def base_score(asset: dict, ch) -> dict:
         # camada opcional (visão) ainda pode avaliar, se existir.
         return {"score": 0.0, "matched": [], "missing": list(core)[:6]}
 
+    if not topic_anchor_matches(asset, ch):
+        return {"score": 0.0, "matched": [],
+                "missing": list(core)[:6], "support": []}
+
     def _hits(terms: dict[str, float]) -> tuple[float, list[str], list[str]]:
         hit, matched, missing = 0.0, [], []
         for tok, weight in terms.items():
@@ -139,6 +143,26 @@ def base_score(asset: dict, ch) -> dict:
     return {"score": round(min(BASE_MAX, base + bonus), 2),
             "matched": matched, "missing": missing[:6],
             "support": matched_sup[:6]}
+
+
+def topic_anchor_matches(asset: dict, ch) -> bool:
+    """Require local-fallback image title to identify the whole video topic.
+
+    A local scene only has a short phrase (`mass`, `nation`, `sun`). Those
+    nouns alone collide with bus station, country flags and landscapes.
+    Local topic anchor is a full phrase such as `black hole` or `French
+    Revolution`; at least one anchor phrase must occur in title tokens.
+    AI-authored scenes keep existing scoring behavior.
+    """
+    if not str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+        return True
+    anchors = list(getattr(ch, "global_visual_queries", []) or [])
+    if not anchors:
+        return True
+    title_tokens = set(_tokens(str(asset.get("title", "") or "")))
+    phrases = [set(_tokens(anchor)) for anchor in anchors]
+    phrases = [phrase for phrase in phrases if phrase]
+    return not phrases or any(phrase.issubset(title_tokens) for phrase in phrases)
 
 
 def generic_score(asset: dict, query: str) -> dict:

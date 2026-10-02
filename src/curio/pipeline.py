@@ -637,7 +637,29 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
     scene_event = ("provider" if scenes_source not in ("local", "cache")
                    else "fallback" if scenes_source == "local" else "cache")
-    from .stages.visual_context import fill_missing_context
+    from .stages.visual_context import anchor_local_topic, fill_missing_context
+    local_scenes = (scenes_source == "local" or
+                    any(str(ch.visual_intent or "").startswith("local fallback")
+                        for ch in chapters))
+    if scenes_source == "cache" and not local_scenes:
+        try:
+            local_scenes = (_read_json(paths.metadata_json).get("scenes_source")
+                            == "local")
+        except (OSError, ValueError, json.JSONDecodeError):
+            local_scenes = False
+    if local_scenes:
+        # Cached local chapters predate the explicit `local fallback` marker.
+        # Tag them before anchoring so scoring applies the same hard topic gate.
+        for chapter in chapters:
+            if not str(chapter.visual_intent or "").startswith("local fallback"):
+                chapter.visual_intent = ("local fallback: cached "
+                                          + str(chapter.visual_intent or "")).strip()
+    if local_scenes and anchor_local_topic(chapters, idea, research_target):
+        force_after_script = True
+        _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
+        run_event("result", "Cenas locais ancoradas no tema do vídeo",
+                  operation="scenes", source=scenes_source,
+                  topic_queries=chapters[0].global_visual_queries if chapters else [])
     if fill_missing_context(chapters, research_target, genre_key,
                             research_sources, cfg.research_timeout):
         force_after_script = True  # mídia em cache precisa refletir o novo contexto

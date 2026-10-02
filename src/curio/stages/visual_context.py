@@ -160,3 +160,28 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
             ch.forbidden = list(dict.fromkeys(ch.forbidden + list(target.forbidden)))
         changed = changed or ch.to_dict() != previous
     return changed
+
+
+def anchor_local_topic(chapters, idea: str, target=None) -> bool:
+    """Add verified video topic to local-fallback scenes as a hard visual anchor.
+
+    Local scene splitting lacks the LLM's scene context. Without this anchor,
+    a scene query `mass` in a black-hole video scored bus station photo at 85;
+    `sun` from `absoluto` selected Argentine flag in French Revolution video.
+    Full phrase anchor prevents scene nouns from drifting to homonyms.
+    """
+    candidates = []
+    if target is not None:
+        candidates.extend([getattr(target, "name", ""),
+                           *(getattr(target, "aliases", []) or [])])
+    candidates.append(idea)
+    query = next((textnorm.translate_phrase(value) for value in candidates
+                  if textnorm.translate_phrase(value)), "")
+    if not query:
+        return False
+    changed = False
+    for chapter in chapters or []:
+        if list(getattr(chapter, "global_visual_queries", []) or []) != [query]:
+            chapter.global_visual_queries = [query]
+            changed = True
+    return changed

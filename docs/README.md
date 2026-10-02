@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-185303_relatorio_anchor-topico-visual.md` — corrige desvio de assunto local; ancora cenas ao tema geral; 732 testes verdes.
 - `relatorios/20261002-183000_relatorio_refatoracao-curio.md` — refatoração estrutural etapas 1–5; adapters, módulos por etapa e performance limitada; suíte: 728 testes.
 - `relatorios/20261002-182037_relatorio_estagio-midia-pipeline.md` — aquisição, mídia manual e standby movidos de `pipeline.py` para `pipeline_media.py`; 29 testes focados verdes.
 - `relatorios/20261002-180859_relatorio_estagio-audio-pipeline.md` — TTS, alinhamento e legendas extraídos para `pipeline_audio.py`; 728 testes verdes.

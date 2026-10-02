@@ -336,7 +336,7 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
             duration_estimate=estimate_duration(narration),
             visual_queries=list(queries),
             global_visual_queries=list(queries),
-            visual_intent=" ".join(queries) if queries else "local fallback",
+            visual_intent=("local fallback: " + " ".join(queries)).strip(),
             # Sem LLM não há estratégia da IA, mas o vocabulário offline
             # ainda é dedutível: sem ele, o scoring compara título em
             # inglês com narração em português e reprova até a foto certa
