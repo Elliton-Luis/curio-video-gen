@@ -30,7 +30,7 @@ QUICK_TEST_IDEA = "De onde veio a palavra salário?"
 QUICK_TEST_SLUG = "teste-rapido"
 
 LLM_PROVIDERS = ("nvidia", "openrouter", "gemini", "groq")
-MEDIA_PROVIDERS = ("pixabay", "unsplash", "pexels", "nasa", "wikimedia", "openverse")
+MEDIA_PROVIDERS = ("pixabay", "unsplash", "pexels", "nasa", "met", "aic", "wikimedia", "openverse")
 
 
 class _TUIExit(Exception):

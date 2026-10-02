@@ -134,6 +134,8 @@ def _strip_html(text: str) -> str:
 PIXABAY_LICENSE_URL = "https://pixabay.com/service/license-summary/"
 PEXELS_LICENSE_URL = "https://www.pexels.com/license/"
 UNSPLASH_LICENSE_URL = "https://unsplash.com/license"
+MET_LICENSE = "Domínio público (Met Museum)"
+AIC_LICENSE = "Domínio público (Art Institute of Chicago)"
 
 
 def _http_get_json(url: str, headers: dict | None = None,
@@ -575,11 +577,125 @@ class NASAProvider(MediaProvider):
         return jpgs[0]
 
 
+class MetMuseumProvider(MediaProvider):
+    """The Met Open Access: sem chave, só obra em domínio público.
+
+    API oficial (`collectionapi.metmuseum.org`): a busca devolve IDs e
+    cada objeto é conferido em `/objects/{id}`. Só entra o que declara
+    `isPublicDomain: true` COM imagem (`primaryImageSmall`/`primaryImage`).
+    Sem dimensões na API — a validação de resolução acontece após o
+    download (sonda ffprobe), como na NASA.
+    """
+
+    name = "met"
+    API = "https://collectionapi.metmuseum.org/public/collection/v1"
+
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
+        try:
+            data = _http_get_json(
+                self.API + "/search?" + urllib.parse.urlencode({"q": query}))
+        except MediaError as exc:
+            raise MediaError(f"met: {exc}") from exc
+        ids = [i for i in (data.get("objectIDs") or []) if i]
+        if metrics is not None:
+            metrics.media_search(self.name)
+        assets = []
+        for object_id in ids[:max(1, limit * 2)]:
+            try:
+                obj = _http_get_json(f"{self.API}/objects/{object_id}")
+            except MediaError:
+                continue  # um objeto falhou: tenta o próximo, nunca aborta
+            if not obj.get("isPublicDomain"):
+                continue
+            img = obj.get("primaryImageSmall") or obj.get("primaryImage") or ""
+            if not img or not re.search(r"\.(jpe?g|png|webp)(\?|$)", img, re.I):
+                continue
+            title = str(obj.get("title") or "").strip()
+            artist = str(obj.get("artistDisplayName") or "").strip()
+            date = str(obj.get("objectDate") or "").strip()
+            detail = str(obj.get("objectURL") or
+                         f"https://www.metmuseum.org/art/collection/search/{object_id}")
+            label = " — ".join(p for p in
+                               (title, artist, f"({date})" if date else "") if p)
+            assets.append(MediaAsset(
+                provider=self.name,
+                asset_id=str(obj.get("objectID", object_id)),
+                title=label or title,
+                author=artist,
+                license=MET_LICENSE,
+                license_url=detail,
+                source_url=detail,
+                download_url=img, width=0, height=0,
+            ))
+            if len(assets) >= limit:
+                break
+        return assets
+
+
+class ArtInstituteProvider(MediaProvider):
+    """Art Institute of Chicago: sem chave, só `is_public_domain=true`.
+
+    API oficial (`api.artic.edu`): a busca já filtra por domínio público e
+    só entra o registro COM `image_id` (a imagem sai via IIIF
+    `artic.edu/iiif/2/.../full/843,/0/default.jpg`). Sem dimensões na API —
+    a validação de resolução acontece após o download, como na NASA.
+    """
+
+    name = "aic"
+    API = "https://api.artic.edu/api/v1/artworks/search"
+
+    def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
+        params = {
+            "q": query,
+            "query[term][is_public_domain]": "true",
+            "fields": "id,title,artist_title,date_display,image_id,is_public_domain",
+            "page[limit]": str(min(max(1, limit * 2), 20)),
+        }
+        try:
+            data = _http_get_json(self.API + "?" + urllib.parse.urlencode(params))
+        except MediaError as exc:
+            raise MediaError(f"aic: {exc}") from exc
+        if metrics is not None:
+            metrics.media_search(self.name)
+        assets = []
+        for item in (data.get("data") or [])[:max(1, limit * 2)]:
+            if not isinstance(item, dict):
+                continue
+            if item.get("is_public_domain") is False:
+                continue
+            image_id = str(item.get("image_id") or "").strip()
+            if not image_id:
+                continue
+            title = str(item.get("title") or "").strip()
+            artist = str(item.get("artist_title") or "").strip()
+            date = str(item.get("date_display") or "").strip()
+            detail = f"https://www.artic.edu/artworks/{item.get('id', '')}"
+            label = " — ".join(p for p in
+                               (title, artist, f"({date})" if date else "") if p)
+            assets.append(MediaAsset(
+                provider=self.name,
+                asset_id=str(item.get("id", "")),
+                title=label or title,
+                author=artist,
+                license=AIC_LICENSE,
+                license_url=detail,
+                source_url=detail,
+                download_url=(f"https://www.artic.edu/iiif/2/{image_id}"
+                              "/full/843,/0/default.jpg"),
+                width=0, height=0,
+            ))
+            if len(assets) >= limit:
+                break
+        return assets
+
+
 PROVIDERS: dict[str, type[MediaProvider]] = {
     "pixabay": PixabayProvider,
     "unsplash": UnsplashProvider,
     "pexels": PexelsProvider,
     "nasa": NASAProvider,
+    "met": MetMuseumProvider,
+    "aic": ArtInstituteProvider,
     "wikimedia": WikimediaProvider,
     "openverse": OpenverseProvider,
 }

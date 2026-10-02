@@ -67,13 +67,13 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # base_url = "https://api.mistral.ai/v1"
 
 [media]
-providers = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback
-# unsplash exige UNSPLASH_ACCESS_KEY; nasa não exige chave (acervo público)
+providers = "pixabay,unsplash,pexels,nasa,met,aic,wikimedia"  # csv; "none" = só fallback
+# unsplash exige UNSPLASH_ACCESS_KEY; nasa/met/aic não exigem chave (acervos públicos)
 # cache em cache/media/<provedor>/<id> (CURIO_CACHE_DIR muda o root)
 #
-# Cenas do tipo historical_art invertem esta ordem: os acervos de arte
-# (wikimedia, openverse) vêm primeiro, porque pintura/fresco/escultura de
-# domínio público são o visual certo para um santo ou um evento antigo, e
+# Cenas do tipo historical_art invertem esta ordem: os museus e acervos
+# (met, aic, wikimedia, openverse) vêm primeiro, porque pintura/fresco/escultura
+# de domínio público são o visual certo para um santo ou um evento antigo, e
 # foto moderna de banco é pior que nenhuma imagem.
 
 # Seleção (variáveis de ambiente — o config.toml não as expõe):

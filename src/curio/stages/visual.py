@@ -211,7 +211,7 @@ DOWNLOAD_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0")
 # próprio de 15 requisições (a cota demo dele é 50/hora e um vídeo estoura
 # isso em duas cenas).
 PROVIDER_PRIORITY = ("pixabay", "pexels", "nasa",
-                     "wikimedia", "openverse", "unsplash")
+                     "wikimedia", "openverse", "met", "aic", "unsplash")
 
 # Cache local de mídia por termo de busca
 MEDIA_CACHE_DIR = "cache/media_query"
@@ -625,16 +625,16 @@ def _relevance(query: str, asset: MediaAsset) -> int:
 def _provider_priority_order(cfg: CurioConfig, ch=None) -> list[MediaProvider]:
     """Provedores na ordem de prioridade para ESTA cena.
 
-    Para `historical_art` os acervos de arte sobem: uma foto de banco
+    Para `historical_art` os museus e acervos sobem: uma foto de banco
     moderno é pior que nenhuma imagem para um santo do século XIII, e o
-    Wikimedia Commons guarda pintura, fresco, manuscrito e escultura em
+    Met/AIC/Wikimedia guardam pintura, fresco, escultura e objeto antigo em
     domínio público sem chave. A ordem global continua valendo para os
     demais tipos - a escada é por cena, não uma preferência permanente.
     """
     all_providers = get_providers(cfg)
     order = list(PROVIDER_PRIORITY)
     if str(getattr(ch, "visual_type", "") or "") == "historical_art":
-        art_first = [p for p in ("wikimedia", "openverse")
+        art_first = [p for p in ("met", "aic", "wikimedia", "openverse")
                      if p in order]
         order = art_first + [p for p in order if p not in art_first]
     priority_map = {name: i for i, name in enumerate(order)}

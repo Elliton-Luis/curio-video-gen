@@ -329,7 +329,9 @@ do mínimo, a cena **não** fica com a imagem "menos ruim" — ela troca de
 estratégia.
 
 Provedores sem chave não quebram o fluxo: `video-gen doctor` lista cada
-um e o motivo de cada exclusão.
+um e o motivo de cada exclusão. Para `historical_art`, os museus (Met, AIC)
+e Wikimedia são consultados antes dos bancos genéricos; só entra obra em
+domínio público com imagem e direitos claros.
 
 ## Revisão humana
 
@@ -374,7 +376,7 @@ não é um erro legível — é `HTTP 429` em toda requisição.
 
 | Chave (config) | Variável | Padrão | O que faz |
 |---|---|---|---|
-| `[media] providers` | `CURIO_MEDIA_PROVIDERS` | `pixabay,unsplash,pexels,nasa,wikimedia` | ordem de tentativa; `none` desliga |
+| `[media] providers` | `CURIO_MEDIA_PROVIDERS` | `pixabay,unsplash,pexels,nasa,met,aic,wikimedia` | ordem de tentativa; `none` desliga |
 | — | `CURIO_MEDIA_SCORE_MIN` | `34` | nota mínima (0–100); `0` desliga o corte || — | `CURIO_MEDIA_MIN_DIMENSION` | `1080` | lado mínimo em px |
 
 ### Pontuação semântica (opcional, desligada)

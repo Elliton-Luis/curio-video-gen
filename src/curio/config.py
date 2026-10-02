@@ -97,7 +97,7 @@ class CurioConfig:
     groq_base_url: str = "https://api.groq.com/openai/v1"
     mistral_model: str = "mistral-small-latest"
     mistral_base_url: str = "https://api.mistral.ai/v1"
-    media_providers: str = "pixabay,unsplash,pexels,nasa,wikimedia"  # csv; "none" = só fallback
+    media_providers: str = "pixabay,unsplash,pexels,nasa,met,aic,wikimedia"  # csv; "none" = só fallback
     cache_dir: str = "cache"
     queues_dir: str = "queues"  # pasta padrão das filas de ideias
     teleprompter_wpm: int = 150
