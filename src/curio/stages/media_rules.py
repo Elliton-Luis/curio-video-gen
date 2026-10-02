@@ -23,6 +23,8 @@ import re
 from urllib.parse import parse_qs, urlsplit
 
 from .. import textnorm
+from ..media.providers import (MAX_BYTES, classify_rights, license_ok,
+                                min_dimension as providers_min_dimension)
 
 # --- termos decorativos: sempre errados -------------------------------
 # Observados em produção: "papel de parede de montanha/rio/campo/deserto"
@@ -157,17 +159,11 @@ def rejection_reason(asset: dict, blocked: list[str]) -> str:
     return ""
 
 
-def min_dimension() -> int:
-    """Lado mínimo em px após o recorte vertical 1080x1920.
-
-    O render recorta e amplia, então a fonte precisa de pelo menos a
-    largura final. 1080 é o piso; 1000 (valor anterior) produzia fotos que
-    borravam exatamente na vertical.
-    """
-    try:
-        return max(320, int(os.environ.get("CURIO_MEDIA_MIN_DIMENSION", "1080")))
-    except ValueError:
-        return 1080
+# O piso de resolução é resolvido em `media/providers.py`, que é onde o
+# filtro roda na busca; reexportar aqui mantém a regra legível a quem decide
+# no gate. Duas constantes para a mesma medida foi o que deixou uma foto de
+# 1023px passar na busca e ser rejeitada depois.
+min_dimension = providers_min_dimension
 
 
 def is_image_url(url: str) -> bool:
@@ -179,23 +175,42 @@ def is_image_url(url: str) -> bool:
             and parse_qs(parsed.query).get("fm") == ["jpg"])
 
 
-def passes_hard_filters(asset: dict, blocked: list[str],
-                        max_bytes: int = 25 * 1024 * 1024) -> str:
-    """Filtros eliminatórios de metadados. Devolve "" ou o motivo.
+def asset_gate_reason(asset: dict, blocked: list[str],
+                      max_bytes: int | None = None) -> str:
+    """O gate único de uma imagem: "" se pode entrar, o motivo se não pode.
 
-    Não baixa nada e não chama rede: decide sobre o que o provedor já
-    devolveu. Dimensões desconhecidas (0) passam — há provedores (NASA) que
-    não as informam, e a conferência real acontece pós-download via ffprobe.
+    Antes havia três implementações da mesma ideia — `_validate_asset`
+    (booleano, só no `visual.py`), `_validate_asset_for` (motivo, no
+    `visual.py`) e `passes_hard_filters` (motivo, aqui) — com divergências
+    reais: uma delas nem checava licença, e o piso de resolução vinha de
+    duas constantes diferentes. Três cópias de um gate não é refatoração,
+    é três oportunidades de o mesmo gate aprovar imagens diferentes.
+
+    A ordem das decisões é a que o autor precisa ler: URL, formato,
+    licença, direitos, resolução, tamanho, e só então o temático da cena.
+    Devolver o MOTIVO (e não um booleano) é o que permite a folha de
+    contato explicar por que a imagem não entrou.
+
+    Aceita `MediaAsset` ou dict (`to_dict()`): o buscador tem o objeto, o
+    relatório tem o dict, e os dois precisam da mesma resposta.
     """
-    if not asset.get("download_url"):
+    data = asset if isinstance(asset, dict) else asset.to_dict()
+    url = str(data.get("download_url") or "")
+    if not url:
         return "sem URL de download"
-    if not is_image_url(asset["download_url"]):
+    if not is_image_url(url):
         return "não é imagem (jpg/png/webp)"
+    license_text = str(data.get("license") or "")
+    if not license_ok(license_text):
+        return f"licença não permite edição: {license_text or 'desconhecida'}"
+    if classify_rights(license_text, str(data.get("provider") or "")) == "blocked":
+        return f"licença bloqueada: {license_text or 'desconhecida'}"
     floor = min_dimension()
-    w, h = int(asset.get("width") or 0), int(asset.get("height") or 0)
+    w, h = int(data.get("width") or 0), int(data.get("height") or 0)
     if w > 0 and h > 0 and min(w, h) < floor:
         return f"resolução {w}x{h} menor que {floor}px"
-    size = int(asset.get("size_bytes") or 0)
-    if size and size > max_bytes:
+    size = int(data.get("size_bytes") or 0)
+    ceiling = MAX_BYTES if max_bytes is None else int(max_bytes)
+    if size and size > ceiling:
         return f"arquivo {size // 1024}KB acima do teto"
-    return rejection_reason(asset, blocked)
+    return rejection_reason(data, blocked)

@@ -199,17 +199,17 @@ def test_resolucao_abaixo_do_piso_e_rejeitada():
     floor = media_rules.min_dimension()
     assert floor == 1080
     pequena = _asset("s", "thermal paper receipt", w=1000, h=2000)
-    why = media_rules.passes_hard_filters(pequena,
+    why = media_rules.asset_gate_reason(pequena,
                                          media_rules.scene_blocklist(_cena_thermal()))
     assert "resolução" in why
     grande = _asset("s", "thermal paper receipt", w=1600, h=2400)
-    assert media_rules.passes_hard_filters(grande, []) == ""
+    assert media_rules.asset_gate_reason(grande, []) == ""
 
 
 def test_asset_com_dimensoes_desconhecidas_passa():
     """NASA não devolve dims; a conferência real é pós-download."""
     a = _asset("n", "thermal paper receipt", w=0, h=0)
-    assert media_rules.passes_hard_filters(a, []) == ""
+    assert media_rules.asset_gate_reason(a, []) == ""
 
 
 # --- o resultado visível: cena fica vazia, não errada -----------------

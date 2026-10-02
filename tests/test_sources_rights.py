@@ -138,23 +138,23 @@ def test_licenca_nd_e_rejeitada_para_video():
 
 def test_licenca_bloqueada_nao_passa_no_gate_do_visual():
     """O gate que roda ANTES do download descarta licença bloqueada."""
-    from curio.stages.visual import _validate_asset
+    from curio.stages.media_rules import asset_gate_reason
     from curio.media.providers import MediaAsset
     blocked = MediaAsset(provider="wikimedia", asset_id="x",
                          title="Foto protegida",
                          download_url="https://exemplo.org/foto.jpg",
                          license="Todos os direitos reservados", width=2000,
                          height=2000)
-    assert not _validate_asset(blocked)
+    assert asset_gate_reason(blocked, [])
 
 
 def test_licenca_livre_passa_no_gate():
-    from curio.stages.visual import _validate_asset
+    from curio.stages.media_rules import asset_gate_reason
     from curio.media.providers import MediaAsset
     ok = MediaAsset(provider="wikimedia", asset_id="y", title="Foto livre",
                     download_url="https://exemplo.org/livre.jpg",
                     license="CC0 1.0", width=2000, height=2000)
-    assert _validate_asset(ok)
+    assert asset_gate_reason(ok, []) == ""
 
 
 # --- registro e relatório ---------------------------------------------

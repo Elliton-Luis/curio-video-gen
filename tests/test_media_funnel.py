@@ -104,12 +104,10 @@ def test_unsplash_jpg_transform_is_not_rejected_for_missing_extension():
     asset = MediaAsset(provider="unsplash", asset_id="photo", title="receipt",
                        download_url="https://images.unsplash.com/photo-123?w=1920&q=80&fm=jpg",
                        license="Licença Unsplash (uso livre)", width=1600, height=1600)
-    assert visual._validate_asset_for(asset, []) == ""
-    assert visual._validate_asset(asset)
-    assert media_rules.passes_hard_filters(asset.to_dict(), []) == ""
+    assert media_rules.asset_gate_reason(asset, []) == ""
     for url in ("https://example.test/page?fm=jpg",
                 "https://images.unsplash.com/photo-123?fm=html",
                 "https://images.unsplash.com/photo-123",
                 "https://images.unsplash.com.evil.test/photo-123?fm=jpg"):
         asset.download_url = url
-        assert visual._validate_asset_for(asset, []) == "não é imagem (jpg/png/webp)"
+        assert media_rules.asset_gate_reason(asset, []) == "não é imagem (jpg/png/webp)"

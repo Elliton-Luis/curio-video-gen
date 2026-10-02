@@ -212,29 +212,47 @@ def duckduckgo_abstract(query: str) -> ResearchSource | None:
 
 
 class ResearchResult:
-    """Fontes aceitas, as rejeitadas e por quê, e a entidade-alvo.
+    """O resultado da pesquisa, com TODOS os campos declarados no contrato.
 
     Não é só uma lista de fontes: é a resposta à pergunta "por que estas
     fontes e não outras?". Sem a parte rejeitada com motivo, um desvio de
     entidade é invisível — foi assim que "Serra Gaúcha" e "Michel Temer"
     entraram como fundamentação para a história de um santo do século VI.
+
+    Todo campo existe no `__init__`. Antes, `genre` e `etymology` eram
+    atribuídos de fora depois da construção (`res.genre = ...`), o que
+    significa que um `ResearchResult` recém-criado por qualquer caminho
+    — teste, fallback, etapa seguinte — podia não ter o atributo, e o
+    `getattr(..., None)` escondia isso. Declarar aqui é o que torna
+    `result.genre` e `result.etymology` contratos, e nãosortudos.
     """
 
     def __init__(self, target, sources: list[ResearchSource],
                  rejected: list[tuple[ResearchSource, str, str]] | None = None,
                  tried_queries: list[str] | None = None,
                  weak: bool = False,
-                 weak_warnings: list[str] | None = None):
+                 weak_warnings: list[str] | None = None,
+                 genre: str = "",
+                 etymology=None):
         self.target = target
         self.sources = sources
         self.rejected = rejected or []
         self.tried_queries = tried_queries or []
-        self.genre = ""
+        # O gênero que a pesquisa serviu: decide fontes especializadas
+        # e como o prompt é montado. Vazio = sem gênero escolhido.
+        self.genre = str(genre or "")
+        # A fonte especializada do gênero (hoje: cadeia etimológica de
+        # `stages.etymology`). None = o gênero não tem uma, ou ela não
+        # respondeu. Nunca exception, nunca atributo ausente.
+        self.etymology = etymology
         # weak=True: fontes vieram do passe relaxado (núcleo, sem
         # discriminante) ou não há fontes — o roteiro pode ser gerado,
         # mas o grounding é fraco e o pipeline deve avisar.
         self.weak = bool(weak)
         self.weak_warnings = list(weak_warnings or [])
+        # Preenchidos em `_complete_research`, declarados aqui desde já:
+        # trechos literais das fontes aceitas, consultas complementares
+        # disparadas por lacuna real, e lacunas que sobraram sem resposta.
         self.facts: list[dict] = []
         self.complementary_queries: list[dict] = []
         self.unresolved_gaps: list[dict] = []
@@ -479,10 +497,9 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             run_event("fallback", msg, operation="research",
                       entity=target.name, query_count=len(tried_queries),
                       rejected=len(rejected))
-            res = ResearchResult(target, [], rejected, tried_queries, weak=True,
-                                 weak_warnings=[msg])
-            res.genre = genre
-            return res
+            return ResearchResult(target, [], rejected, tried_queries,
+                                  weak=True, weak_warnings=[msg],
+                                  genre=genre)
         run_event("error", f"Pesquisa sem fontes aceitas após {len(tried_queries)} consulta(s)",
                   operation="research", entity=target.name,
                   query_count=len(tried_queries), rejected=len(rejected),
@@ -496,10 +513,9 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
                      target=target.name, source_titles=[s.title[:60]
                                                         for s in sources[:5]]):
         print(entity_stage.explain(target, sources, rejected))
-    res = ResearchResult(target, sources[:max_sources], rejected, tried_queries,
-                          weak=weak, weak_warnings=weak_warnings)
-    res.genre = genre
-    res.etymology = None
+    res = ResearchResult(target, sources[:max_sources], rejected,
+                          tried_queries, weak=weak,
+                          weak_warnings=weak_warnings, genre=genre)
     if (genre or "").strip().lower() == "etymology":
         # Fontes especializadas SOMAM às gerais: a cadeia (Wiktionary →
         # Logeion/Perseus) fundamenta o roteiro e as entidades visuais.

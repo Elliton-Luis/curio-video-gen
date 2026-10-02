@@ -11,6 +11,7 @@ derivada por construção (crop, zoom, legenda queimada).
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import urllib.parse
@@ -22,7 +23,24 @@ from ..ua import user_agent
 USER_AGENT = user_agent()  # noqa: N816 — nome histórico, importado pelo cache
 TIMEOUT = 30
 MAX_BYTES = 25 * 1024 * 1024
-MIN_DIMENSION = 1000
+
+
+def min_dimension() -> int:
+    """Lado mínimo em px de uma imagem que pode entrar no vídeo.
+
+    O render recorta e amplia para 1080x1920, então a fonte precisa de pelo
+    menos a largura final: 1000px borrava exatamente na vertical.
+
+    Fica AQUI, e não em `stages/media_rules.py`, porque quem filtra é o
+    provedor (no `search`) e quem decide é a regra (no gate) — as duas
+    camadas precisam do MESMO número. Havia `MIN_DIMENSION = 1000` aqui e
+    `1080` lá: a mesma foto de 1023px era aceita na busca e rejeitada no
+    gate, e o relatório mostrava a rejeição sem explicar de onde ela veio.
+    """
+    try:
+        return max(320, int(os.environ.get("CURIO_MEDIA_MIN_DIMENSION", "1080")))
+    except ValueError:
+        return 1080
 
 
 @dataclass
@@ -208,7 +226,7 @@ class WikimediaProvider(MediaProvider):
                 continue
             w, h = int(info.get("width", 0)), int(info.get("height", 0))
             size = int(info.get("size", 0))
-            if min(w, h) < MIN_DIMENSION or size > MAX_BYTES or size <= 0:
+            if min(w, h) < min_dimension() or size > MAX_BYTES or size <= 0:
                 continue
             meta = info.get("extmetadata") or {}
             page_url = str(page.get("fullurl") or info.get("descriptionurl", ""))
@@ -345,7 +363,7 @@ class PixabayProvider(MediaProvider):
             if not url or not re.search(r"\.(jpe?g|png|webp)(\?|$)", url, re.I):
                 continue
             w, h = int(item.get("imageWidth") or 0), int(item.get("imageHeight") or 0)
-            if w and h and min(w, h) < MIN_DIMENSION:
+            if w and h and min(w, h) < min_dimension():
                 continue
             assets.append(MediaAsset(
                 provider=self.name,
@@ -395,7 +413,7 @@ class PexelsProvider(MediaProvider):
             if not url:
                 continue
             w, h = int(photo.get("width") or 0), int(photo.get("height") or 0)
-            if w and h and min(w, h) < MIN_DIMENSION:
+            if w and h and min(w, h) < min_dimension():
                 continue
             assets.append(MediaAsset(
                 provider=self.name,
@@ -471,7 +489,7 @@ class UnsplashProvider(MediaProvider):
             sep = "&" if "?" in raw else "?"
             url = f"{raw}{sep}w=1920&q=80&fm=jpg"
             w, h = int(photo.get("width") or 0), int(photo.get("height") or 0)
-            if w and h and min(w, h) < MIN_DIMENSION:
+            if w and h and min(w, h) < min_dimension():
                 continue
             user = photo.get("user") or {}
             links = photo.get("links") or {}

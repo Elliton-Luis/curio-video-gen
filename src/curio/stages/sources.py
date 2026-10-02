@@ -36,7 +36,14 @@ def _now() -> str:
 
 @dataclass
 class Source:
-    """Uma fonte que sustenta uma afirmação factual."""
+    """Uma fonte que sustenta uma afirmação factual.
+
+    `license`/`license_url` são campos de primeira classe, não texto dentro
+    de `notes`: a licença é condição de uso da fonte, e auditoria futura
+    precisa poder filtrar por ela (CC BY-SA do Wiktionary pede atribuição;
+    referência de acervo pede conferência manual). Guardar como frase
+    solta transformava um dado verificável em prosa.
+    """
     claim: str
     title: str
     url: str
@@ -46,6 +53,8 @@ class Source:
     evidence: str = ""
     status: str = "confirmed"
     notes: str = ""
+    license: str = ""
+    license_url: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -54,7 +63,8 @@ class Source:
     def from_dict(cls, d: dict) -> "Source":
         allowed = {k: d.get(k, "") for k in
                    ("claim", "title", "url", "consulted_at", "author",
-                    "date", "evidence", "status", "notes")}
+                    "date", "evidence", "status", "notes", "license",
+                    "license_url")}
         if allowed["status"] not in EVIDENCE_STATUS:
             allowed["status"] = "unverified"
         return cls(**allowed)
@@ -109,17 +119,25 @@ class SourceRegistry:
 
     def add_claim(self, claim: str, title: str, url: str, evidence: str,
                   author: str = "", date: str = "", status: str = "confirmed",
-                  notes: str = "") -> Source:
+                  notes: str = "", license: str = "",
+                  license_url: str = "") -> Source:
         """Adiciona (ou reutiliza) fonte de afirmação factual.
 
-        Se a mesma URL+claim já existir, reusa (sem duplicar).
+        Se a mesma URL+claim já existir, reusa (sem duplicar) e completa o
+        que faltar — inclusive a licença, que pode ser descoberta depois
+        da primeira inserção.
         """
         for src in self.claims:
             if src.url == url and src.claim == claim:
+                if license and not src.license:
+                    src.license = license
+                if license_url and not src.license_url:
+                    src.license_url = license_url
                 return src
         src = Source(claim=claim, title=title, url=url, evidence=evidence,
                      author=author, date=date, status=status,
-                     notes=notes, consulted_at=_now())
+                     notes=notes, consulted_at=_now(), license=license,
+                     license_url=license_url)
         self.claims.append(src)
         return src
 
@@ -306,6 +324,9 @@ def write_report(path: str, registry: "SourceRegistry",
             add(f"- Fonte: {c.title or '(sem título)'}")
             add(f"- Link: {c.url or '(sem link)'}")
             add(f"- Status: **{status}**")
+            if c.license:
+                add(f"- Licença: {c.license}"
+                    + (f" ({c.license_url})" if c.license_url else ""))
             if c.author or c.date:
                 add(f"- Autor/data: {c.author or '—'} / {c.date or '—'}")
             if c.evidence:

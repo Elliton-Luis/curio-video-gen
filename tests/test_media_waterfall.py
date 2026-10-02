@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from curio.media.providers import MediaAsset, MediaError
 from curio.metrics import RunMetrics
+from curio.media.providers import min_dimension as media_rules_min_dimension
 from curio.stages import visual as V
 
 
@@ -50,21 +51,26 @@ def test_waterfall_ordem_e_limite():
     assert "laboratory" not in qs3
 
 
-def test_validate_asset_corrige_gate():
-    # pixabay-like (sem size_bytes) agora passa no gate de metadados
-    assert V._validate_asset(_asset())
+def test_gate_unico_de_metadados():
+    """Uma regra só: `media_rules.asset_gate_reason` (era três cópias)."""
+    from curio.stages.media_rules import asset_gate_reason
+    # pixabay-like (sem size_bytes) passa no gate de metadados
+    assert asset_gate_reason(_asset(), []) == ""
     # NASA (dims desconhecidas) passa p/ conferir após o download
-    assert V._validate_asset(_asset(provider="nasa", w=0, h=0,
-                                    url="http://images-assets.nasa.gov/x.jpg"))
+    assert asset_gate_reason(
+        _asset(provider="nasa", w=0, h=0,
+               url="http://images-assets.nasa.gov/x.jpg"), []) == ""
     # licença ND bloqueada em qualquer provedor
-    assert not V._validate_asset(_asset(lic="CC BY-NC-ND 4.0"))
+    assert "licença" in asset_gate_reason(_asset(lic="CC BY-NC-ND 4.0"), [])
     # extensão inválida / oversize
-    assert not V._validate_asset(_asset(url="https://x/foto.tiff"))
+    assert asset_gate_reason(_asset(url="https://x/foto.tiff"), [])
     big = _asset()
     big.size_bytes = 100 * 1024 * 1024
-    assert not V._validate_asset(big)
-    # resolução conhecida abaixo do mínimo
-    assert not V._validate_asset(_asset(w=640, h=480))
+    assert "teto" in asset_gate_reason(big, [])
+    # resolução conhecida abaixo do mínimo, com o motivo naming o piso
+    assert "resolução" in asset_gate_reason(_asset(w=640, h=480), [])
+    # e o piso é o mesmo da busca (fonte única)
+    assert media_rules_min_dimension() == 1080
 
 
 def test_looks_mechanistic():

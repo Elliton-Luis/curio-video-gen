@@ -37,13 +37,11 @@ from .. import textnorm
 from ..config import CurioConfig
 from ..media import download_asset, get_providers
 from ..media.providers import (
-    MAX_BYTES,
-    MIN_DIMENSION,
     MediaAsset,
     MediaError,
     MediaProvider,
     classify_rights,
-    license_ok,
+    min_dimension,
 )
 from . import media_rules
 from . import scenes as scenes_stage
@@ -292,50 +290,10 @@ def _sanitize_query(query: str) -> str:
     return re.sub(r"[^\w\s-]", "", query).strip()
 
 
-def _validate_asset(asset: MediaAsset) -> bool:
-    """Gate de metadados: só baixa o que tem chance real de servir.
-
-    Valida o que cada provedor informa (nem todos dão dims/tamanho):
-    URL de imagem, licença compatível com vídeo (sem ND) e, quando as
-    dimensões são conhecidas, resolução mínima. Dimensões desconhecidas
-    (ex.: NASA) são conferidas via ffprobe APÓS o download.
-    """
-    if not media_rules.is_image_url(asset.download_url):
-        return False
-    if not license_ok(asset.license or ""):
-        return False
-    if classify_rights(asset.license or "",
-                       getattr(asset, "provider", "")) == "blocked":
-        return False  # ex.: "todos os direitos reservados"
-    if asset.width > 0 and asset.height > 0:
-        if min(asset.width, asset.height) < MIN_DIMENSION:
-            return False
-    if asset.size_bytes > MAX_BYTES:
-        return False
-    return True
-
-
-def _validate_asset_for(asset: MediaAsset, blocked: list[str]) -> str:
-    """Gate de metadados + bloqueios temáticos da cena. Devolve "" ou o motivo.
-
-    Versão do `_validate_asset` que devolve o PORQUÊ. Chamar só o booleano
-    jogava fora a informação que o autor precisa para corrigir a escolha:
-    sem motivo, uma cena que ficou sem foto é indistinguível de um bug.
-    """
-    if not media_rules.is_image_url(asset.download_url):
-        return "não é imagem (jpg/png/webp)"
-    if not license_ok(asset.license or ""):
-        return f"licença não permite edição: {asset.license or 'desconhecida'}"
-    if classify_rights(asset.license or "",
-                       getattr(asset, "provider", "")) == "blocked":
-        return f"licença bloqueada: {asset.license or 'desconhecida'}"
-    if asset.width > 0 and asset.height > 0:
-        if min(asset.width, asset.height) < media_rules.min_dimension():
-            return (f"resolução {asset.width}x{asset.height} menor que "
-                    f"{media_rules.min_dimension()}px")
-    if asset.size_bytes > MAX_BYTES:
-        return f"arquivo {asset.size_bytes // 1024}KB acima do teto"
-    return media_rules.rejection_reason(asset.to_dict(), blocked)
+# O gate de metadados é `media_rules.asset_gate_reason`: era a terceira
+# cópia da mesma regra, e a única que devolvia booleano — o que jogava fora
+# a informação que o autor precisa ("por que a cena ficou sem foto").
+_validate_asset_for = media_rules.asset_gate_reason
 
 
 def _probe_dims(path: str) -> tuple[int, int]:
@@ -367,7 +325,7 @@ def _downloaded_dims_ok(asset: MediaAsset) -> bool:
     if w <= 0 or h <= 0:
         return False  # ilegível: o render quebraria depois
     asset.width, asset.height = w, h
-    return min(w, h) >= MIN_DIMENSION
+    return min(w, h) >= min_dimension()
 
 
 # Heurística offline p/ consultas visuais (sem chave NVIDIA as cenas locais

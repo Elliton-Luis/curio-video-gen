@@ -880,7 +880,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         sources.add_claim(
             claim=rs.title, title=rs.title, url=rs.url,
             evidence=rs.snippet[:300], status=research_status,
-            notes=f"RAG web ({rs.origin})")
+            notes=f"RAG web ({rs.origin})", license=rs.license,
+            license_url=rs.license_url)
     if research_etymology is not None:
         # Etimologia especializada SOMADA às gerais: cada fonte com sua
         # atribuição, licença e URL — nunca cópia de verbete.
@@ -888,14 +889,13 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         cadeia = research_etymology.chain_text()
         for rs in (research_etymology.sources or []):
             lic, lic_url = etymology_stage.source_license(rs.origin)
-            nota = f"RAG etimologia ({rs.origin}). Licença: {lic or 'ver página'}"
-            if lic_url:
-                nota += f" — {lic_url}"
             sources.add_claim(
                 claim=f"etimologia: {cadeia}" if cadeia else rs.title,
                 title=rs.title, url=rs.url,
                 evidence=(rs.snippet or "")[:300], status=research_status,
-                notes=nota)
+                notes=f"RAG etimologia ({rs.origin})",
+                license=rs.license or lic,
+                license_url=rs.license_url or lic_url)
     _write_json(paths.research_json, {
         "idea": idea,
         # A entidade-alvo fica no arquivo: sem ela não há como auditar,
