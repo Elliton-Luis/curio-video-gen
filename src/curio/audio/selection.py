@@ -7,7 +7,8 @@ import json
 import os
 from pathlib import Path
 
-from .library import AudioLibrary, AudioLibraryError, is_calm_music_asset, content_hints
+from .library import (AudioLibrary, AudioLibraryError, content_hints,
+                     is_calm_music_asset, matches_music_mood)
 from .. import ffmpeg as ff
 from ..stages import editorial
 
@@ -22,10 +23,13 @@ def _public(asset: dict | None) -> dict | None:
 
 
 def _same_request(previous: dict, mode: str, genre: str, gain: int,
-                  ducking: bool) -> bool:
+                  ducking: bool, music_query: str = "",
+                  music_mood: str = "") -> bool:
     return (previous.get("mode") == mode and previous.get("genre") == genre
             and previous.get("gain_db") == gain
-            and previous.get("ducking") == ducking)
+            and previous.get("ducking") == ducking
+            and previous.get("query", "") == music_query
+            and previous.get("mood", "") == music_mood)
 
 
 def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
@@ -37,6 +41,10 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     """
     requested_mode = str(getattr(cfg, "music_mode", "auto") or "auto").lower()
     genre = genre or "people"  # identidade de áudio neutra, sem mudar gênero editorial
+    adapter = editorial.get(genre) or editorial.get("people")
+    music_query = adapter.music_query
+    music_mood = adapter.music_mood
+    music_mood_terms = adapter.music_mood_terms
     enabled = bool(getattr(cfg, "audio_enabled", False)) or requested_mode != "auto"
     mode = requested_mode if enabled else "none"
     if mode not in ("auto", "none", "manual"):
@@ -68,14 +76,18 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
         else:
             warnings.append("music manual: arquivo não informado ou inexistente; vídeo sem música")
     elif mode == "auto" and genre:
-        same_music_request = _same_request(old_music, mode, genre, gain, ducking)
+        same_music_request = _same_request(old_music, mode, genre, gain, ducking,
+                                           music_query, music_mood)
         if (same_music_request and "track" in old_music):
             if (old_track.get("asset_id") and
                     os.path.isfile(str(old_track.get("path") or "")) and
-                    is_calm_music_asset(old_track)):
+                    is_calm_music_asset(old_track) and
+                    matches_music_mood(old_track, music_mood_terms)):
                 music_asset = dict(old_track)
             else:
                 warnings.append("faixa anterior descartada: não é uma cama musical calma")
+        elif old_track:
+            warnings.append("faixa anterior descartada: preferência musical do gênero mudou")
         if music_asset is None:
             current = library.count("music", genre)
             minimum = max(0, int(getattr(cfg, "music_min_per_genre", 3)))
@@ -97,8 +109,10 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                         for err in report.get("errors", [])[:3])
                 except (AudioLibraryError, OSError) as exc:
                     warnings.append(f"biblioteca musical {genre}: autopreenchimento ignorado ({exc})")
-            hints = content_hints(genre, title, script)
-            music_asset = library.select("music", genre, seed, hints=hints)
+            hints = content_hints(genre, title, script, music_query, music_mood)
+            music_asset = library.select(
+                "music", genre, seed, hints=hints,
+                required_mood_terms=music_mood_terms)
             if not music_asset:
                 warnings.append(
                     f"biblioteca musical {genre} sem faixa calma compatível; render sem música"
@@ -111,7 +125,8 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                    bool(getattr(cfg, "sfx_library_enabled", True)))
     old_sfx = previous.get("sfx") if isinstance(previous.get("sfx"), dict) else {}
     prior_assets = old_sfx.get("assets") or []
-    keep_sfx_selection = (_same_request(old_music, mode, genre, gain, ducking)
+    keep_sfx_selection = (_same_request(old_music, mode, genre, gain, ducking,
+                                         music_query, music_mood)
                            and "assets" in old_sfx
                            and len(prior_assets) == len(sfx_events))
     sfx_assets: list[dict] = []
@@ -125,7 +140,8 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
             category = (preferred if preferred in sfx_categories else
                         sfx_categories[0] if sfx_categories else preferred)
             previous_asset = prior_assets[index] if index < len(prior_assets) else {}
-            if (_same_request(old_music, mode, genre, gain, ducking)
+            if (_same_request(old_music, mode, genre, gain, ducking,
+                              music_query, music_mood)
                     and previous_asset.get("category") == category
                     and os.path.isfile(str(previous_asset.get("path") or ""))):
                 asset = dict(previous_asset)
@@ -165,6 +181,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                        if enabled else "none")
     audio = {
         "music": {"mode": mode, "genre": genre, "track": _public(music_asset),
+                  "query": music_query, "mood": music_mood,
                   "gain_db": gain, "ducking": ducking},
         "sfx": {"mode": "library" if sfx_assets else
                 ("generated" if sfx_enabled and sfx_events else "none"),
@@ -178,6 +195,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     }
     identity = {
         "mode": mode, "genre": genre,
+        "music_query": music_query, "music_mood": music_mood,
         "audio_enabled": enabled,
         "music_id": (music_asset or {}).get("asset_id", ""),
         "music_path": (music_asset or {}).get("path", ""),

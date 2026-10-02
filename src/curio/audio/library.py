@@ -58,6 +58,23 @@ def is_calm_music_asset(asset: dict) -> bool:
     words = set(re.findall(r"[a-z]+", title))
     return bool(words & _CALM_TITLE_HINTS)
 
+
+def matches_music_mood(asset: dict, mood_terms: tuple[str, ...] | list[str]) -> bool:
+    """Require genre mood evidence in file tags or title.
+
+    Calmness alone is not genre fit: the Marco Aurelius project selected
+    "Haunting Music" tagged `contemplative` for a classical-biography bed.
+    """
+    required = {str(term).strip().lower() for term in mood_terms if str(term).strip()}
+    if not required:
+        return True
+    moods = asset.get("mood") or []
+    if isinstance(moods, str):
+        moods = [moods]
+    actual = {str(mood).strip().lower() for mood in moods}
+    title = set(re.findall(r"[a-z]+", str(asset.get("title") or "").lower()))
+    return bool(required & (actual | title))
+
 SFX_QUERIES = {
     "paper": "paper",
     "soft_impact": "soft impact",
@@ -265,11 +282,14 @@ class AudioLibrary:
         return len(self.assets(kind, genre, category))
 
     def select(self, kind: str, genre: str, seed: str,
-                category: str | None = None, mark_used: bool = False,
-                hints: set[str] | None = None) -> dict | None:
+               category: str | None = None, mark_used: bool = False,
+               hints: set[str] | None = None,
+               required_mood_terms: tuple[str, ...] | list[str] = ()) -> dict | None:
         eligible = self.assets(kind, genre, category)
         if kind == "music":
             eligible = [asset for asset in eligible if is_calm_music_asset(asset)]
+            eligible = [asset for asset in eligible
+                        if matches_music_mood(asset, required_mood_terms)]
         if not eligible:
             return None
         if kind == "music" and hints:

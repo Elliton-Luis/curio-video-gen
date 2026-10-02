@@ -46,7 +46,7 @@ def _register(library, tmp_path, monkeypatch, name, use_count=0, category=None):
         "asset_id": name, "source": "freesound", "title": name,
         "author": "A", "license": "CC BY", "license_url": "https://creativecommons.org/licenses/by/3.0/",
         "source_url": f"https://freesound.org/sounds/{name}/",
-        "downloaded_path": str(path), "mood": ["contemplative"],
+        "downloaded_path": str(path), "mood": ["classical"],
     }, category=category, max_count=10, min_duration=1)
     meta_path = Path(asset["path"]).with_suffix(".json")
     data = json.loads(meta_path.read_text())
@@ -227,6 +227,53 @@ def test_music_selection_rejects_noisy_titles_and_keeps_calm_ambient(tmp_path,
 
     assert selected["source_asset_id"] == calm["source_asset_id"]
     assert selected["source_asset_id"] != noisy["source_asset_id"]
+
+
+def test_genre_mood_rejects_calm_but_mismatched_music(tmp_path, monkeypatch):
+    from curio.stages.editorial import get
+    library = AudioLibrary(tmp_path / "lib")
+    haunting = _register(library, tmp_path, monkeypatch, "Haunting Music 1")
+    classical = _register(library, tmp_path, monkeypatch,
+                          "Violin Classical Ambient")
+    for asset, mood in ((haunting, ["contemplative"]),
+                        (classical, ["classical"])):
+        path = Path(asset["path"]).with_suffix(".json")
+        record = json.loads(path.read_text())
+        record["mood"] = mood
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+    people = get("people")
+    chosen = library.select("music", "people", "marcus",
+                            hints={"marcus", "violin", "classical"},
+                            required_mood_terms=people.music_mood_terms)
+    assert chosen["source_asset_id"] == classical["source_asset_id"]
+    assert chosen["source_asset_id"] != haunting["source_asset_id"]
+
+
+def test_old_haunting_track_is_replaced_by_people_genre_match(tmp_path, monkeypatch):
+    library = AudioLibrary(tmp_path / "lib")
+    haunting = _register(library, tmp_path, monkeypatch, "Haunting Music 1")
+    classical = _register(library, tmp_path, monkeypatch,
+                          "Violin Classical Ambient")
+    for asset, mood in ((haunting, ["contemplative"]),
+                        (classical, ["classical"])):
+        path = Path(asset["path"]).with_suffix(".json")
+        record = json.loads(path.read_text())
+        record["mood"] = mood
+        path.write_text(json.dumps(record), encoding="utf-8")
+    cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
+                      music_auto_fill=False)
+    previous = {"music": {"mode": "auto", "genre": "people",
+                          "query": "calm ambient", "mood": "calm",
+                          "gain_db": cfg.music_gain_db,
+                          "ducking": cfg.music_ducking,
+                          "track": haunting}}
+
+    plan = resolve_audio(cfg, "people", "marcus", "title", "script", [],
+                         previous=previous)
+
+    assert plan["music_asset"]["source_asset_id"] == classical["source_asset_id"]
+    assert any("preferência musical" in warning for warning in plan["warnings"])
 
 
 def test_cached_noisy_music_is_replaced_by_calm_bed(tmp_path, monkeypatch):

@@ -242,7 +242,11 @@ def test_musica_manual_e_transicoes_de_genero_chegam_ao_video(tmp_path):
 def test_auto_usa_trilhas_locais_especificas_por_genero(tmp_path):
     """Dois renders FFmpeg reais escolhem assets locais de pastas distintas."""
     library = tmp_path / "assets" / "library" / "music"
-    for genre, freq in (("people", 220), ("science", 880)):
+    fixture_styles = {
+        "people": (220, "violin classical ambient people", ["classical"]),
+        "science": (880, "calm minimal ambient science", ["minimal"]),
+    }
+    for genre, (freq, title, mood) in fixture_styles.items():
         folder = library / genre
         folder.mkdir(parents=True)
         track = folder / "fixture.wav"
@@ -252,10 +256,10 @@ def test_auto_usa_trilhas_locais_especificas_por_genero(tmp_path):
             str(track)], check=True)
         (folder / "fixture.json").write_text(json.dumps({
             "asset_id": f"fixture:{genre}", "source_asset_id": genre,
-            "title": f"calm ambient {genre}", "author": "Curio test fixture",
+            "title": title, "author": "Curio test fixture",
             "source": "manual", "source_url": "", "license": "CC0",
             "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-            "downloaded_at": "test", "genres": [genre], "mood": ["calm"],
+            "downloaded_at": "test", "genres": [genre], "mood": mood,
             "duration": 30, "filename": track.name, "use_count": 0,
         }), encoding="utf-8")
 
@@ -270,8 +274,8 @@ def test_auto_usa_trilhas_locais_especificas_por_genero(tmp_path):
         outputs[genre] = meta
     people = outputs["people"]["audio"]["music"]["track"]
     science = outputs["science"]["audio"]["music"]["track"]
-    assert people["title"] == "calm ambient people"
-    assert science["title"] == "calm ambient science"
+    assert people["title"] == "violin classical ambient people"
+    assert science["title"] == "calm minimal ambient science"
     assert people["path"] != science["path"]
     assert os.path.isfile(outputs["people"]["artifacts"]["video"])
     assert os.path.isfile(outputs["science"]["artifacts"]["video"])

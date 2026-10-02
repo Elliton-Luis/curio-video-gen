@@ -124,6 +124,7 @@ def test_adapters_declaram_fontes_visual_musica_e_transicoes():
             assert source in SOURCE_ADAPTERS or source in (
                 "wiktionary", "logeion", "perseus"), (key, source)
         assert adapter.music_query and adapter.music_mood, key
+        assert adapter.music_mood_terms, key
         assert adapter.transition_kind and adapter.transition_duration > 0, key
         assert adapter.generic_media_queries, key
 

@@ -116,6 +116,7 @@ class GenreAdapter:
     transition_kind: str = "fade"
     music_query: str = "calm ambient"
     music_mood: str = "calm"
+    music_mood_terms: tuple[str, ...] = ("calm",)
     sfx_categories: tuple[str, ...] = ("paper", "soft_impact")
     pacing_note: str = "Moderate and rising, accelerating through the event."
 
@@ -163,6 +164,7 @@ HISTORY = GenreAdapter(
     visual_context_medium="painting",
     transition_duration=0.25, transition_kind="wipeleft",
     music_query="tense ambient", music_mood="tense",
+    music_mood_terms=("tense", "suspense", "dramatic"),
     pacing_note="Moderate and rising, accelerating through the event.",
 )
 
@@ -212,6 +214,7 @@ ETYMOLOGY = GenreAdapter(
     visual_context_medium="",
     transition_duration=0.16, transition_kind="smoothleft",
     music_query="calm curious ambient", music_mood="calm",
+    music_mood_terms=("curious", "curiosity", "reflective"),
     pacing_note="Fast and revelatory, with a feeling of discovery.",
 )
 
@@ -253,6 +256,7 @@ MYTHOLOGY = GenreAdapter(
     visual_context_medium="painting",
     transition_duration=0.40, transition_kind="slideright",
     music_query="calm ancient ambient", music_mood="calm",
+    music_mood_terms=("ancient", "mythical", "mystical"),
     pacing_note="Atmospheric, with rhythm changes.",
 )
 
@@ -295,6 +299,7 @@ MYSTERY = GenreAdapter(
                            "investigation photo", "police archive"),
     transition_duration=0.38, transition_kind="wipeleft",
     music_query="calm investigative ambient", music_mood="calm",
+    music_mood_terms=("investigative", "suspense", "mystery"),
     pacing_note="Controlled, with pauses before the reveal.",
 )
 
@@ -344,6 +349,7 @@ SCIENCE = GenreAdapter(
                            "experiment", "test tube"),
     transition_duration=0.16, transition_kind="slideright",
     music_query="calm minimal ambient", music_mood="calm",
+    music_mood_terms=("minimal", "science", "subtle"),
     pacing_note="Slow enough for the viewer to follow the mechanism.",
 )
 
@@ -412,6 +418,7 @@ PEOPLE = GenreAdapter(
     visual_context_medium="painting",
     transition_duration=0.34, transition_kind="slideright",
     music_query="violin classical ambient", music_mood="classical",
+    music_mood_terms=("classical", "violin", "strings"),
     pacing_note="Varied, with decisive moments allowed to breathe and routine "
                  "information compressed.",
 )
@@ -539,6 +546,7 @@ def summary(profile: GenreAdapter | None) -> dict:
         },
         "audio": {"music_query": profile.music_query,
                   "music_mood": profile.music_mood,
+                  "music_mood_terms": list(profile.music_mood_terms),
                   "sfx_categories": list(profile.sfx_categories)},
         "transitions": {"duration": profile.transition_duration,
                         "kind": profile.transition_kind},
