@@ -1,6 +1,7 @@
 """UX do seletor vertical de gênero, sem alterar os perfis editoriais."""
 
 from curio import tui
+from curio import tui_terminal
 from curio.config import CurioConfig
 from curio.stages import editorial
 
@@ -49,9 +50,9 @@ def test_lista_vertical_atualiza_detalhes_com_up_down_e_enter(monkeypatch):
         selected_seen.append(selected)
         details_seen.append(details)
 
-    monkeypatch.setattr(tui, "_interactive_supported", lambda: True)
-    monkeypatch.setattr(tui, "_render_menu", fake_render)
-    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    monkeypatch.setattr(tui_terminal, "interactive_supported", lambda: True)
+    monkeypatch.setattr(tui_terminal, "_render_menu", fake_render)
+    monkeypatch.setattr(tui_terminal, "read_key", lambda: next(keys))
     result = tui.select_option(
         _colors(), "GÊNERO DO VÍDEO", options, selected=1,
         details_for=lambda i: [f"descrição {i}", f"ritmo {i}"])
@@ -65,9 +66,9 @@ def test_lista_vertical_atualiza_detalhes_com_up_down_e_enter(monkeypatch):
 
 
 def test_lista_vertical_esc_volta_sem_confirmar(monkeypatch):
-    monkeypatch.setattr(tui, "_interactive_supported", lambda: True)
-    monkeypatch.setattr(tui, "_render_menu", lambda *_a, **_kw: None)
-    monkeypatch.setattr(tui, "_read_key", lambda: "esc")
+    monkeypatch.setattr(tui_terminal, "interactive_supported", lambda: True)
+    monkeypatch.setattr(tui_terminal, "_render_menu", lambda *_a, **_kw: None)
+    monkeypatch.setattr(tui_terminal, "read_key", lambda: "esc")
     assert tui.select_option(_colors(), "GÊNERO DO VÍDEO", ["people"]) is None
 
 
@@ -75,7 +76,7 @@ def test_lista_nao_trunca_nomes_nem_descricao(capsys, monkeypatch):
     monkeypatch.setattr(tui, "_clear", lambda: None)
     label = "Mitologia e folclore — tradições e narrativas antigas"
     description = "A trajetória de uma pessoa e por que a vida dela importa."
-    tui._render_menu(
+    tui_terminal._render_menu(
         _colors(), "GÊNERO DO VÍDEO", [label], 0,
         details=[description, "ritmo 13s/cena · densidade medium · legenda 6 palavras"],
         fit_labels=True, footer="↑ ↓ selecionar   Enter confirmar   Esc voltar")
@@ -84,7 +85,7 @@ def test_lista_nao_trunca_nomes_nem_descricao(capsys, monkeypatch):
     metrics = "ritmo 13s/cena · densidade medium · legenda 6 palavras"
     width = max(46, len("GÊNERO DO VÍDEO") + 4, len(label) + 7,
                 len("↑ ↓ selecionar   Enter confirmar   Esc voltar") + 2)
-    assert all(line in output for line in tui._wrap_text(description, width - 4))
-    assert all(line in output for line in tui._wrap_text(metrics, width - 4))
+    assert all(line in output for line in tui_terminal.wrap_text(description, width - 4))
+    assert all(line in output for line in tui_terminal.wrap_text(metrics, width - 4))
     assert "…" not in output
     assert "›" in output

@@ -22,16 +22,15 @@ from .config import CurioConfig, parse_duration
 from .pipeline import (MediaStandby, _paths_for_slug, iter_projects,
                      run_pipeline)
 from .slug import find_project_root, project_dir, slugify_with_timestamp
+from .tui_terminal import (TUIExit as _TUIExit, ask as _ask,
+                          banner as _banner, browse_path, clear as _clear,
+                          colors as _colors, pause as _pause, select_option)
 
 QUICK_TEST_IDEA = "De onde veio a palavra salário?"
 QUICK_TEST_SLUG = "teste-rapido"
 
 LLM_PROVIDERS = ("nvidia", "openrouter", "gemini", "groq")
 MEDIA_PROVIDERS = ("pixabay", "unsplash", "pexels", "nasa", "met", "aic", "wikimedia", "openverse")
-
-
-class _TUIExit(Exception):
-    pass
 
 
 def _confirm_twice(prompt: str, confirm_text: str = "SIM") -> bool:
@@ -41,195 +40,6 @@ def _confirm_twice(prompt: str, confirm_text: str = "SIM") -> bool:
         return False
     second = _ask(f"Tem certeza? Digite '{confirm_text}' para confirmar: ").strip()
     return second == confirm_text
-
-
-def _colors() -> dict[str, str]:
-    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
-        return {k: "" for k in ("bold", "cyan", "green", "yellow", "red", "dim", "reset")}
-    return {
-        "bold": "\033[1m", "cyan": "\033[36m", "green": "\033[32m",
-        "yellow": "\033[33m", "red": "\033[31m", "dim": "\033[2m",
-        "reset": "\033[0m",
-    }
-
-
-def _clear() -> None:
-    if sys.stdout.isatty():
-        print("\033[2J\033[H", end="")
-
-
-def _banner(c: dict[str, str]) -> None:
-    print(f"{c['bold']}{c['cyan']}"
-          "  ____ _   _ ____  ___ ___  \n"
-          " / ___| | | |  _ \\|_ _/ _ \\ \n"
-          "| |   | | | | |_) || | | | |\n"
-          "| |___| |_| |  _ < | | |_| |\n"
-          " \\____|\\___/|_| \\_\\___\\___/ \n"
-          f"{c['reset']}{c['dim']}Máquina de Conteúdo Educativo em Vídeo — v0.2{c['reset']}\n")
-
-
-def _ask(prompt: str) -> str:
-    try:
-        return input(prompt)
-    except (EOFError, KeyboardInterrupt):
-        raise _TUIExit()
-
-
-def _pause(c: dict[str, str]) -> None:
-    _ask(f"\n{c['dim']}Enter para voltar...{c['reset']}")
-
-
-# --------------------------------------------- motor interativo (teclado)
-# Menus navegáveis com ↑↓ + Enter, sem digitar números. stdlib apenas.
-# Fora de TTY (pipe/teste), cai para seleção numerada simples.
-
-def _interactive_supported() -> bool:
-    try:
-        return sys.stdin.isatty() and sys.stdout.isatty()
-    except Exception:
-        return False
-
-
-def _read_key() -> str:
-    """Lê uma tecla: 'up', 'down', 'enter', 'esc', 'q' ou o caractere."""
-    import tty
-    import termios
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = sys.stdin.read(1)
-        if ch == "\x1b":
-            seq = sys.stdin.read(2)
-            if seq == "[A":
-                return "up"
-            if seq == "[B":
-                return "down"
-            return "esc"
-        if ch in ("\r", "\n"):
-            return "enter"
-        if ch == "\x03":
-            raise _TUIExit()
-        return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-
-def _render_menu(c: dict[str, str], title: str, options: list[str],
-                 selected: int, status: list[str] | None = None,
-                 details: list[str] | None = None,
-                 fit_labels: bool = False,
-                 footer: str = "↑↓ navegar   Enter selecionar   Q sair   Esc voltar") -> None:
-    _clear()
-    width = 46
-    if fit_labels:
-        width = max(width, len(title) + 4,
-                    max((len(label) + 7 for label in options), default=0),
-                    len(footer) + 2)
-        width = min(width, 100)
-    print(f"{c['dim']}╭{'─' * width}╮{c['reset']}")
-    print(f"{c['dim']}│{c['reset']} {c['bold']}{c['cyan']}CURIO{c['reset']}"
-          f"{' ' * (width - 7)}{c['dim']}│{c['reset']}")
-    if title:
-        print(f"{c['dim']}│{c['reset']} {c['dim']}{title}{c['reset']}"
-              f"{' ' * max(1, width - len(title) - 1)}{c['dim']}│{c['reset']}")
-    print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-    for i, label in enumerate(options):
-        mark = "›" if i == selected else " "
-        if i == selected:
-            line = f"  {mark} {label}"
-            print(f"{c['dim']}│{c['reset']}{c['bold']}{c['yellow']}{line}"
-                  f"{' ' * max(1, width - len(line))}{c['reset']}{c['dim']}│{c['reset']}")
-        else:
-            line = f"  {mark} {label}"
-            print(f"{c['dim']}│{c['reset']}{c['dim']}{line}"
-                  f"{' ' * max(1, width - len(line))}{c['reset']}{c['dim']}│{c['reset']}")
-    if details:
-        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-        for i, detail in enumerate(details):
-            color = c["cyan"] if i == len(details) - 1 else c["dim"]
-            for wrapped in _wrap_text(detail, width - 4):
-                line = f"   {wrapped}"
-                print(f"{c['dim']}│{c['reset']}{color}{line}{c['reset']}"
-                      f"{' ' * max(1, width - len(line))}{c['dim']}│{c['reset']}")
-    if status:
-        print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-        for s in status[:4]:
-            s = s[: width - 1]
-            print(f"{c['dim']}│{c['reset']} {c['dim']}{s}{c['reset']}"
-                  f"{' ' * max(1, width - len(s) - 1)}{c['dim']}│{c['reset']}")
-    print(f"{c['dim']}│{' ' * width}│{c['reset']}")
-    print(f"{c['dim']}│{c['reset']} {c['dim']}{footer}{c['reset']}"
-          f"{' ' * max(1, width - len(footer) - 1)}{c['dim']}│{c['reset']}")
-    print(f"{c['dim']}╰{'─' * width}╯{c['reset']}")
-
-
-def _wrap_text(text: str, width: int) -> list[str]:
-    """Quebra em linhas que cabem (a caixa do seletor é de largura fixa)."""
-    linhas, atual = [], ""
-    for palavra in str(text or "").split():
-        if len(atual) + len(palavra) + 1 > width and atual:
-            linhas.append(atual)
-            atual = palavra
-        else:
-            atual = f"{atual} {palavra}".strip()
-    if atual:
-        linhas.append(atual)
-    return linhas
-
-
-def select_option(c: dict[str, str], title: str, options: list[str],
-                  status: list[str] | None = None, selected: int = 0,
-                  details_for=None, fit_labels: bool = False,
-                  footer: str = "↑↓ navegar   Enter selecionar   Q sair   Esc voltar") -> int | None:
-    """Menu navegável. Retorna o índice ou None (sair/voltar).
-
-    Fora de TTY, usa fallback numerado para não travar pipes/testes.
-    """
-    if not options:
-        return None
-    if not _interactive_supported():
-        _clear()
-        _banner(c)
-        if title:
-            print(f"\n{c['bold']}{title}{c['reset']}")
-        if status:
-            for s in status:
-                print(f"{c['dim']}{s}{c['reset']}")
-        for i, label in enumerate(options, 1):
-            print(f"  {c['bold']}{i}){c['reset']} {label}")
-        if details_for:
-            for line in details_for(max(0, min(selected, len(options) - 1))):
-                print(f"  {c['dim']}{line}{c['reset']}")
-        raw = _ask(f"\n{c['bold']}Escolha [1-{len(options)}] (0 volta):{c['reset']} ").strip()
-        if raw in ("0", "q", "Q", ""):
-            return None
-        try:
-            idx = int(raw) - 1
-        except ValueError:
-            return None
-        return idx if 0 <= idx < len(options) else None
-    selected = max(0, min(selected, len(options) - 1))
-    while True:
-        details = details_for(selected) if details_for else None
-        _render_menu(c, title, options, selected, status, details,
-                     fit_labels=fit_labels, footer=footer)
-        try:
-            key = _read_key()
-        except _TUIExit:
-            raise
-        except Exception:
-            return None
-        if key == "up" or key == "k":
-            selected = (selected - 1) % len(options)
-        elif key == "down" or key == "j":
-            selected = (selected + 1) % len(options)
-        elif key == "enter":
-            return selected
-        elif key in ("q", "Q"):
-            return None
-        elif key == "esc":
-            return None
 
 
 def _status_summary(cfg: CurioConfig) -> list[str]:
@@ -249,46 +59,6 @@ def _status_summary(cfg: CurioConfig) -> list[str]:
     lang = "EN" if str(cfg.language).lower().startswith("en") else "PT"
     return [f"projetos: {n_projects}   filas: {n_queues}   idioma: {lang}   mídia: {cfg.media_providers}",
             f"out: {cfg.out_dir}   filas em: {qdir}"]
-
-
-def browse_path(c: dict[str, str], start: str, title: str = "Escolher local",
-                dirs_only: bool = False) -> str | None:
-    """Navegador simples de arquivos/diretórios com o mesmo menu navegável.
-
-    Evita digitar caminhos manualmente. Retorna o caminho ou None.
-    """
-    cur = os.path.abspath(os.path.expanduser(start or "."))
-    while True:
-        try:
-            entries = sorted(os.listdir(cur))
-        except OSError:
-            entries = []
-        opts = [".. (subir um nível)"]
-        for e in entries:
-            full = os.path.join(cur, e)
-            if os.path.isdir(full):
-                opts.append(f"{e}/")
-            elif not dirs_only:
-                opts.append(e)
-        opts.append("✔ Usar esta pasta" if dirs_only else "✔ Usar este local")
-        opts.append("Cancelar")
-        idx = select_option(c, f"{title} — {cur}", opts,
-                            status=[f"{len(entries)} itens em {cur}"])
-        if idx is None:
-            return None
-        if idx == 0:
-            cur = os.path.dirname(cur) or "/"
-            continue
-        if idx == len(opts) - 1:
-            return None
-        if idx == len(opts) - 2:
-            return cur
-        chosen = entries[idx - 1]
-        full = os.path.join(cur, chosen)
-        if os.path.isdir(full):
-            cur = full
-        else:
-            return full
 
 
 def _ask_duration(c: dict[str, str], cfg: CurioConfig) -> CurioConfig:
