@@ -1,4 +1,4 @@
-from curio.stages import subs, nvidia
+from curio.stages import subs, nvidia, prompts
 
 
 def test_exact_highlight_uses_boundaries_not_uniform_duration():
@@ -14,9 +14,9 @@ def test_exact_highlight_uses_boundaries_not_uniform_duration():
 
 
 def test_generation_prompt_recovers_topic_related_cta_without_weak_preamble():
-    assert "opinião ou experiência" in nvidia.SCRIPT_SYSTEM_PROMPT
-    assert "sem preâmbulos" in nvidia.SCRIPT_SYSTEM_PROMPT
-    assert "fontes" in nvidia.SCRIPT_SYSTEM_PROMPT.lower()
+    assert "opinião ou experiência" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "sem preâmbulos" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "fontes" in prompts.SCRIPT_SYSTEM_PROMPT.lower()
 
 
 def test_generation_preserves_sources_and_genre_in_actual_request(monkeypatch):

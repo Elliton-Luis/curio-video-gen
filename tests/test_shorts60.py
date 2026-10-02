@@ -1,4 +1,4 @@
-from curio.stages import nvidia, script, subs, visual_beats
+from curio.stages import nvidia, prompts, script, subs, visual_beats
 from curio.metrics import RunMetrics
 
 
@@ -61,8 +61,8 @@ def test_subtitle_safe_area_and_ass_margin():
 
 def test_script_prompts_allow_content_led_45_to_90_seconds():
     for prompt, phrases in (
-        (nvidia.SCRIPT_SYSTEM_PROMPT, ("45–90s", "perto de 60s", "Não invente twist")),
-        (nvidia.SCRIPT_SYSTEM_PROMPT_EN,
+        (prompts.SCRIPT_SYSTEM_PROMPT, ("45–90s", "perto de 60s", "Não invente twist")),
+        (prompts.SCRIPT_SYSTEM_PROMPT_EN,
          ("45–90 seconds", "near 60", "Never invent a twist")),
     ):
         for phrase in phrases:

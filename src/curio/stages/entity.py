@@ -32,6 +32,7 @@ import re
 import sys
 
 from .. import textnorm
+from .prompts import ENTITY_SYSTEM_PROMPT, ENTITY_SYSTEM_PROMPT_EN
 
 # Palavras que indicam que o referente é uma pessoa具/divindade/lugar, e
 # por isso ambíguos. É aqui que a resolução tem mais trabalho a fazer.
@@ -40,56 +41,6 @@ _AMBIGUOUS_HINT = re.compile(
     r"municipio|distrito|bairro|estado|rio|serra|vale|santo|santa|profeta|"
     r"rei|rainha|imperador|papa|filme|personagem|livro|álbum|album|"
     r"bairro|estado)\b")
-
-_ENTITY_SYSTEM_PROMPT = (
-    "You identify which real-world subject a video request is about, so the "
-    "research does not drift to a different subject with the same name. "
-    "Answer ONLY with valid JSON, no markdown, no explanation, in this exact "
-    "format: {\"target\": \"...\", \"aliases\": [\"...\"], "
-    "\"discriminants\": [\"...\"], \"search_queries\": [\"...\"], "
-    "\"forbidden\": [\"...\"], \"ambiguous\": true, \"is_entity\": true}. "
-    "Rules: "
-    "1) target: the full canonical name of the intended subject, in the "
-    "language of the request. If the request is about a saint, use the full "
-    "form with the distinguishing place or epithet: \"São Bento de Núrsia\", "
-    "not \"São Bento\". If it is a person, use the full name. "
-    "2) aliases: other names the same subject goes by, 0 to 4, including the "
-    "short form. "
-    "3) discriminants: the words that PROVE a source is about this subject "
-    "rather than a namesake, 0 to 6. For \"São Bento de Núrsia\": "
-    "[\"Núrsia\", \"Nursia\", \"Benedito\", \"monge italiano\", \"séc. VI\"] "
-    "— NEVER include the shared name itself, because that would accept a "
-    "source about any namesake. "
-    "4) search_queries: 2 to 4 queries that will find THIS subject on "
-    "Wikipedia, in Portuguese, each with the discriminating context: "
-    "[\"São Bento de Núrsia\", \"Benedito de Nursia monge\"] "
-    "— not the bare name. "
-    "5) forbidden: 2 to 5 well-known NAMESPACES of this subject, i.e. other "
-    "real things that share the name and would be found by search: for São "
-    "Bento de Núrsia [\"São Bento RS\", \"São Bento município\", \"Bento "
-    "sobrenome\"]. "
-    "6) ambiguous: true when the name alone genuinely refers to more than "
-    "one thing and the request does not disambiguate it. "
-    "7) is_entity: false when the request is NOT about a proper name and "
-    "therefore has no namesake to confuse - \"Why is the ocean salty?\", "
-    "\"How does a battery work?\". In that case set target to a short "
-    "description of the topic, leave aliases, discriminants and forbidden "
-    "empty, and put 2 to 4 distinctive topic words in search_queries. "
-    "is_entity true only when the subject really is a named thing with a "
-    "specific referent: a person, a place, a work, a saint. "
-    "8) NEVER invent discriminants: author, date, work or epithet you are "
-    "not sure about. An event like \"War of the Bucket\" takes "
-    "discriminants from the request itself (\"Bucket\", \"Bologna, Modena, "
-    "1325\" only if stated or certain), never a guessed author or year. "
-    "When unsure, leave discriminants EMPTY: an empty list accepts by "
-    "name, a guessed one rejects the right source. "
-    "9) events and works follow the same full-name rule as saints: "
-    "\"War of the Bucket\", not \"War\"; qualifiers in the request "
-    "(\"oak\", \"1325\") are context, not part of the canonical title."
-)
-
-_ENTITY_SYSTEM_PROMPT_EN = _ENTITY_SYSTEM_PROMPT
-
 
 def _norm_phrase(phrase: str) -> str:
     """Normaliza uma frase para comparação: sem acento, sem pontuação, espaços
@@ -379,8 +330,8 @@ def resolve_entity(idea: str, cfg=None, language: str = "pt-BR",
         if not nvidia_stage.any_llm_available() or cfg is None:
             return heuristica
         english = str(language or "").lower().startswith("en")
-        system = (_ENTITY_SYSTEM_PROMPT_EN if english
-                  else _ENTITY_SYSTEM_PROMPT)
+        system = (ENTITY_SYSTEM_PROMPT_EN if english
+                  else ENTITY_SYSTEM_PROMPT)
         user = (f"Which subject is this video request about: {idea.strip()}"
                 if english else
                 f"Sobre qual sujeito é este pedido de vídeo: {idea.strip()}")

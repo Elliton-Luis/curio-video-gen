@@ -11,6 +11,7 @@ import sys
 
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
+from .prompts import TITLE_SYSTEM_PROMPT, TITLE_SYSTEM_PROMPT_EN
 
 # ~13,5 caracteres/segundo ≈ ritmo de narração PT-BR confortável.
 CHARS_PER_SECOND = 13.5
@@ -203,8 +204,8 @@ def generate_title(script_text: str, idea: str, cfg: CurioConfig,
     if nvidia_stage.any_llm_available():
         try:
             english = str(cfg.language or "").lower().startswith("en")
-            system_prompt = (nvidia_stage.TITLE_SYSTEM_PROMPT_EN if english
-                             else nvidia_stage.TITLE_SYSTEM_PROMPT)
+            system_prompt = (TITLE_SYSTEM_PROMPT_EN if english
+                             else TITLE_SYSTEM_PROMPT)
             user_prompt = (f"Create the title for this script:\n\n{script_text}"
                            if english else
                            f"Crie o título para este roteiro:\n\n{script_text}")

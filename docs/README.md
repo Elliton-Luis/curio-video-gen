@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-153500_relatorio_prompts-editoriais.md` — prompts de roteiro e título movidos de `nvidia.py` para `stages/prompts.py`; 720 testes verdes.
 - `relatorios/20261001-230902_relatorio_musica-por-afinidade.md` — cama por afinidade com o tema e ganho −3 dB; sem custo de LLM.
 
 - `relatorios/20261001-223646_relatorio_cama-audivel-ducking-suave.md` — cama normalizada (loudnorm), ganho −5 dB e ducking 3:1; +4 dB audível na pausa, voz dominante.
@@ -129,6 +130,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Análises (estado, gaps, riscos)
 
+- `analises/20261002-150849_relatorio_refatoracao-etapas-1-2.md` — implementação das etapas 1–2, gates, `textnorm` e `ResearchResult` explícito.
+- `analises/20261002-131932_analise_refatoracao-codigo-morto.md` — auditoria estrutural, candidatos mortos, duplicações e ordem de refatoração.
 - `analises/20261001-045242_analise_scores-baixos-tomas-aquino.md` — decomposição de candidatos reais, quebra entre consultas locais e scoring, idioma/denominador e instrumentação mínima recomendada.
 - `analises/20261001-032940_analise_contrato-geracao-roteiro-ia.md` — prompts integrais e dados interpolados, estrutura separada de título/cenas, validação/fallback, consumo downstream e incompatibilidade com `Roteiro Pronto`.
 - `analises/20260928-123219_analise_estado-atual-mvp.md` — veredito: MVP prova a
