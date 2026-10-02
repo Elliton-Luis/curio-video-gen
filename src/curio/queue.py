@@ -17,7 +17,8 @@ from enum import Enum
 from typing import Callable, Optional
 
 from .config import CurioConfig
-from .pipeline import MediaStandby, run_pipeline
+from .pipeline import run_pipeline
+from .pipeline_media import MediaStandby
 from .slug import slugify_with_timestamp
 
 

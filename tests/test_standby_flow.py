@@ -9,7 +9,8 @@ import os
 from unittest.mock import patch
 
 from curio.config import CurioConfig
-from curio.pipeline import MediaStandby, manual_media_dir, run_pipeline
+from curio.pipeline import run_pipeline
+from curio.pipeline_media import MediaStandby, manual_media_dir
 from curio.stages.research import ResearchSource
 from curio.stages.scenes import Chapter
 

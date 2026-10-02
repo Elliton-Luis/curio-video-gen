@@ -23,11 +23,10 @@ from . import ffmpeg as ff
 from .audio import selection as audio_selection
 from .audio.library import audio_seed
 from .config import CurioConfig
-from .media import download_asset, get_providers
-from .media.providers import MediaAsset, MediaError, classify_rights
-from . import textnorm
+from .media.providers import classify_rights
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
+from . import pipeline_media as pipeline_media_stage
 from . import pipeline_audio as pipeline_audio_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
@@ -130,231 +129,6 @@ def _write_json(path: str, data) -> None:
 
 def _load_chapters(paths: VideoPaths) -> list[Chapter]:
     return [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
-
-
-def _relevance(query: str, asset: MediaAsset) -> int:
-    haystack = f"{asset.title}".lower()
-    return sum(1 for term in textnorm.query_terms(query) if term in haystack)
-
-
-def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,
-                 paths: VideoPaths, metrics=None) -> tuple[list[dict], list[str]]:
-    """Busca e baixa um asset por cena. Falha vira fallback com aviso."""
-    providers = get_providers(cfg)
-    search_memo: dict[tuple[str, str], list] = {}
-    scenes, warnings = [], []
-    for ch in chapters:
-        # Candidatos de todas as consultas, ordenados por relevância
-        # (sobreposição consulta↔título) — evita associações falsas.
-        ranked: list[tuple[int, str, MediaAsset]] = []
-        seen = set()
-        for query in ch.visual_queries:
-            for prov in providers:
-                memo_key = (prov.name, query)
-                if memo_key not in search_memo:
-                    try:
-                        search_memo[memo_key] = prov.search(query, metrics=metrics)
-                    except MediaError as exc:
-                        print(f"AVISO: {exc} — tentando próxima fonte.",
-                              file=sys.stderr)
-                        search_memo[memo_key] = []
-                for cand in search_memo[memo_key]:
-                    if cand.asset_id in seen:
-                        continue
-                    seen.add(cand.asset_id)
-                    ranked.append((_relevance(query, cand), query, cand))
-        ranked.sort(key=lambda r: -r[0])
-        # Gate de relevância: escore 0 = título sem nada da consulta
-        # (ex.: foto aleatória) — fallback honesto em vez de associação falsa.
-        ranked = [r for r in ranked if r[0] > 0]
-        # Gate de direitos: nunca baixa ativo com licença bloqueada
-        # ("todos os direitos reservados", NoDerivatives). O verificador
-        # também roda depois do download, quando a dims é conferida.
-        blocked = [r for r in ranked
-                   if classify_rights(r[2].license or "", r[2].provider)
-                   == "blocked"]
-        for _score, _q, cand in blocked:
-            msg = (f"cena {ch.id}: '{cand.title[:50]}' descartado — licença "
-                   f"bloqueada ({cand.license or 'sem licença'})")
-            warnings.append(msg)
-            print(f"AVISO: {msg}", file=sys.stderr)
-        ranked = [r for r in ranked
-                  if classify_rights(r[2].license or "", r[2].provider)
-                  != "blocked"]
-        asset = None
-        for _score, _q, cand in ranked:
-            try:
-                asset = download_asset(cand, cfg.cache_dir, metrics)
-                break
-            except MediaError as exc:
-                print(f"AVISO: {exc} — tentando próximo asset.",
-                      file=sys.stderr)
-        if asset is None:
-            msg = (f"cena {ch.id}: sem mídia relevante "
-                   f"({', '.join(ch.visual_queries) or 'sem consultas'}) — fallback")
-            warnings.append(msg)
-            print(f"AVISO: {msg}", file=sys.stderr)
-        scenes.append({"chapter_id": ch.id,
-                       "asset": asset.to_dict() if asset else None,
-                       "reused_from": None})
-    _resolve_reuse(scenes)
-    return scenes, warnings
-
-
-def _resolve_reuse(scenes: list[dict]) -> None:
-    """Garantia de imagem do início ao fim: cena sem asset reusa a imagem
-    relevante mais próxima (com outro movimento Ken Burns) antes de cair no
-    gradiente. Só o gradiente resta se NENHUMA cena tiver mídia."""
-    have = [s for s in scenes if s["asset"]]
-    if not have:
-        return
-    for s in scenes:
-        if s["asset"] is not None:
-            continue
-        cid = s["chapter_id"]
-        nearest = min(have, key=lambda h: (abs(h["chapter_id"] - cid),
-                                           0 if h["chapter_id"] < cid else 1))
-        s["asset"] = nearest["asset"]
-        s["reused_from"] = nearest["chapter_id"]
-        print(f"AVISO: cena {cid} reusa imagem da cena "
-              f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
-
-
-class MediaStandby(RuntimeError):
-    """Nenhuma imagem para o vídeo: projeto em standby até fotos manuais.
-
-    Atributos: slug, manual_dir, n_scenes. O usuário coloca fotos em
-    `manual_dir` e roda o generate de novo (sem --force) para continuar.
-    """
-
-    def __init__(self, slug: str, manual_dir: str, n_scenes: int):
-        self.slug = slug
-        self.manual_dir = manual_dir
-        self.n_scenes = n_scenes
-        super().__init__(
-            f"projeto '{slug}' em STANDBY: nenhuma imagem encontrada para "
-            f"{n_scenes} cena(s). Coloque fotos (.jpg/.png/.webp) em "
-            f"{manual_dir} e rode o generate de novo para continuar o vídeo."
-        )
-
-
-MANUAL_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
-
-
-def manual_media_dir(paths: VideoPaths) -> str:
-    """Pasta onde o usuário deposita fotos manuais quando há standby."""
-    return os.path.join(paths.root, "assets", "manual")
-
-
-def _manual_readme(manual_dir: str, slug: str, n_scenes: int) -> None:
-    os.makedirs(manual_dir, exist_ok=True)
-    readme = os.path.join(manual_dir, "COMO_USAR.txt")
-    if os.path.isfile(readme):
-        return
-    with open(readme, "w", encoding="utf-8") as fh:
-        fh.write(
-            f"Projeto '{slug}' em STANDBY: nenhuma imagem automática.\n"
-            f"1) Coloque fotos aqui (.jpg/.jpeg/.png/.webp) — "
-            f"ideal: 1 por cena ({n_scenes} cenas).\n"
-            f"2) Nomes em ordem alfabética definem a ordem das cenas "
-            f"(ex.: 01-abertura.jpg, 02-meio.jpg).\n"
-            f"3) Rode o generate de novo (sem --force) para continuar.\n"
-            f"Com menos fotos que cenas, as fotos rodiziam entre as cenas.\n"
-        )
-
-
-def _probe_image_dims(path: str) -> tuple[int, int]:
-    """Dimensões via ffprobe; (0, 0) se indisponível (nunca fatal)."""
-    try:
-        proc = ff.run([ff.FFPROBE, "-v", "error", "-select_streams", "v:0",
-                       "-show_entries", "stream=width,height",
-                       "-of", "csv=p=0", path])
-        if proc.returncode == 0:
-            parts = proc.stdout.strip().split(",")
-            return int(parts[0]), int(parts[1])
-    except (OSError, ValueError, IndexError):
-        pass
-    return 0, 0
-
-
-def _manual_media_scenes(chapters: list[Chapter],
-                         manual_dir: str) -> list[dict] | None:
-    """Monta media_scenes a partir de fotos manuais (None se vazia).
-
-    Arquivos em ordem alfabética; rodízio entre cenas se houver menos
-    fotos que cenas. `reused_from` marca de qual cena a foto veio.
-    """
-    if not os.path.isdir(manual_dir):
-        return None
-    files = sorted(f for f in os.listdir(manual_dir)
-                   if f.lower().endswith(MANUAL_IMAGE_EXTS)
-                   and os.path.isfile(os.path.join(manual_dir, f)))
-    if not files:
-        return None
-    scenes = []
-    for i, ch in enumerate(chapters):
-        fname = files[i % len(files)]
-        donor = chapters[i % len(files)].id
-        local = os.path.join(manual_dir, fname)
-        stem = os.path.splitext(fname)[0]
-        w, h = _probe_image_dims(local)
-        asset = {
-            "provider": "manual",
-            "asset_id": f"manual-{stem}",
-            "title": stem.replace("-", " ").replace("_", " "),
-            "author": "",
-            "license": "manual do usuário",
-            "license_url": "",
-            "source_url": "",
-            "download_url": "",
-            "download_fallback_url": "",
-            "width": w,
-            "height": h,
-            "size_bytes": os.path.getsize(local),
-            "kind": "image",
-            "local_path": local,
-            "used_in": f"cena {ch.id}",
-        }
-        scenes.append({"chapter_id": ch.id,
-                        "asset": asset,
-                        "assets": [{"asset": asset, "query": "manual",
-                                    "relevance": 100, "order": 0}],
-                        "reused_from": None if donor == ch.id else donor})
-    return scenes
-
-
-def _scene_label(ch: Chapter) -> str:
-    """Rótulo curto da cena para o registro de procedência.
-
-    Prefere o assunto declarado pela IA (`subject`); sem ele, cai para as
-    entidades visuais e, não havendo nenhuma, para o número da cena. É o
-    que o autor lê no relatório para saber do que se trata.
-    """
-    partes = []
-    for campo in ("subject", "visual_type"):
-        val = str(getattr(ch, campo, "") or "").strip()
-        if campo == "subject" and val:
-            partes.append(val)
-    ents = [str(e).strip() for e in (getattr(ch, "visual_entities", []) or [])
-            if str(e).strip()]
-    if not partes and ents:
-        partes = ents[:2]
-    if not partes:
-        return f"cena {ch.id}"
-    return f"cena {ch.id} · " + " / ".join(partes)[:70]
-
-
-def _count_assets(media_scenes: list[dict]) -> int:
-    """Total de cenas com ao menos uma imagem (formato singular ou multi)."""
-    n = 0
-    for s in media_scenes or []:
-        if s.get("asset") is not None:
-            n += 1
-            continue
-        if any((e.get("asset") or {}).get("local_path")
-               for e in s.get("assets") or []):
-            n += 1
-    return n
 
 
 def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
@@ -596,7 +370,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 max_images=max_images, visual_overlap=visual_overlap,
                 genre=genre)
         except BaseException as exc:
-            if isinstance(exc, MediaStandby):
+            if isinstance(exc, pipeline_media_stage.MediaStandby):
                 runlog.event("run_standby", "Execução em standby",
                              error_type=type(exc).__name__, reason=str(exc))
                 raise
@@ -888,9 +662,9 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # [3/6] Mídia (manual > cache > provedores; zero imagens = standby)
     t0 = time.monotonic()
     emit(3, "Buscando mídia")
-    manual_dir = manual_media_dir(paths)
+    manual_dir = pipeline_media_stage.manual_media_dir(paths)
     media_scenes = None
-    manual = _manual_media_scenes(chapters, manual_dir)
+    manual = pipeline_media_stage.manual_media_scenes(chapters, manual_dir)
     if manual is not None:
         media_scenes = manual
         msg = (f"mídia manual: {len({e['asset']['local_path'] for s in manual for e in s.get('assets') or []})} "
@@ -942,8 +716,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             media_scenes, media_warnings = visual_stage.fetch_media_multi(
                 chapters, cfg, max_images, metrics, genre=genre_key)
         else:
-            media_scenes, media_warnings = _fetch_media(chapters, cfg, paths,
-                                                       metrics)
+            media_scenes, media_warnings = pipeline_media_stage.fetch_media(
+                chapters, cfg, metrics)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
         if media_warnings:
@@ -980,7 +754,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # Rótulo curto do assunto de cada cena, para o título do registro:
     # "cena 3 · rolo de papel térmico [pixabay_12345]" diz do que se trata;
     # "cena 3 [pixabay_12345]" só diz onde.
-    rotulos = {c.id: _scene_label(c) for c in chapters}
+    rotulos = {c.id: pipeline_media_stage.scene_label(c) for c in chapters}
     for scene in media_scenes:
         rotulo = rotulos.get(scene["chapter_id"], f"cena {scene['chapter_id']}")
         for entry in scene.get("assets") or []:
@@ -1047,8 +821,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
          "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")
 
     # Sem nenhuma imagem o vídeo NÃO é produzido: standby até fotos manuais.
-    if _count_assets(media_scenes) == 0:
-        _manual_readme(manual_dir, slug, len(chapters))
+    if pipeline_media_stage.count_assets(media_scenes) == 0:
+        pipeline_media_stage.write_manual_readme(manual_dir, slug, len(chapters))
         sources.save(paths.sources_json)
         sources_stage.write_report(paths.sources_report, sources,
                                    research=research_sources, grounding=grounding)
@@ -1065,7 +839,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "execution_log": current_log_path(),
         })
         emit(3, "Buscando mídia", "STANDBY")
-        raise MediaStandby(slug, manual_dir, len(chapters))
+        raise pipeline_media_stage.MediaStandby(slug, manual_dir, len(chapters))
 
     if narration == "human":
         return _human_prep(idea, slug, cfg, paths, script_text, script_source,

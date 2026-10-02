@@ -18,8 +18,7 @@ from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import RunMetrics, backfill_from_metadata
-from .pipeline import (MediaStandby,
-                         _apply_audio_request, _audio_events,
+from .pipeline import (_apply_audio_request, _audio_events,
                          _final_audio_fade,
                          _mark_audio_used, _narration_with_sfx, _read, _read_json,
                          _transition_mode,
@@ -28,6 +27,7 @@ from .pipeline import (MediaStandby,
                         run_pipeline,
                          run_script_pipeline, _paths_for_slug)
 from . import pipeline_render as pipeline_render_stage
+from . import pipeline_media as pipeline_media_stage
 from .stages.scenes import Chapter
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
@@ -51,7 +51,7 @@ def _run_event(record: dict) -> None:
         print(f"  {safe_text(record.get('message', ''))[:240]}", flush=True)
 
 
-def _standby_exit(exc: MediaStandby) -> int:
+def _standby_exit(exc: pipeline_media_stage.MediaStandby) -> int:
     """Projeto sem imagens: instruções de retomada (código 3, não é erro)."""
     print(f"\nSTANDBY: {exc}", file=sys.stderr)
     print(f"  1) Coloque fotos (.jpg/.png/.webp) em:\n     {exc.manual_dir}",
@@ -110,7 +110,7 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
         print("\nExecução interrompida. Log persistente está em output/[<genero>/]<slug>/logs/.",
               file=sys.stderr)
         return 130
-    except MediaStandby as exc:
+    except pipeline_media_stage.MediaStandby as exc:
         return _standby_exit(exc)
     except research_stage.ResearchError as exc:
         return _fail("pesquisa", exc, "sem fonte real não há roteiro; "
@@ -184,7 +184,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
         print("\nExecução interrompida. Log persistente está em output/[<genero>/]<slug>/logs/.",
               file=sys.stderr)
         return 130
-    except MediaStandby as exc:
+    except pipeline_media_stage.MediaStandby as exc:
         return _standby_exit(exc)
     except research_stage.ResearchError as exc:
         return _fail("pesquisa", exc, "sem fonte real não há vídeo; "

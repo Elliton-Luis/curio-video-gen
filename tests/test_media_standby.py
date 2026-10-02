@@ -3,12 +3,12 @@
 import json
 import os
 
-from curio.pipeline import (
+from curio.pipeline import video_paths
+from curio.pipeline_media import (
     MediaStandby,
-    _count_assets,
-    _manual_media_scenes,
+    count_assets,
+    manual_media_scenes,
     manual_media_dir,
-    video_paths,
 )
 from curio.queue import QueueItemStatus, VideoQueue, retry_failed
 from curio.stages.scenes import Chapter
@@ -22,17 +22,17 @@ def _chapters(n=3):
 def test_count_assets_suporta_os_dois_formatos():
     multi = [{"chapter_id": 1, "asset": {"local_path": "/x.jpg"}, "assets": []},
              {"chapter_id": 2, "asset": None, "assets": []}]
-    assert _count_assets(multi) == 1
+    assert count_assets(multi) == 1
     singular = [{"chapter_id": 1, "asset": None},
                 {"chapter_id": 2, "asset": {"local_path": "/y.jpg"}}]
-    assert _count_assets(singular) == 1
-    assert _count_assets([]) == 0
-    assert _count_assets([{"chapter_id": 1, "asset": None, "assets": []}]) == 0
+    assert count_assets(singular) == 1
+    assert count_assets([]) == 0
+    assert count_assets([{"chapter_id": 1, "asset": None, "assets": []}]) == 0
 
 
 def test_manual_sem_fotos_retorna_none(tmp_path):
     paths = video_paths(str(tmp_path), "slug-teste")
-    assert _manual_media_scenes(_chapters(), manual_media_dir(paths)) is None
+    assert manual_media_scenes(_chapters(), manual_media_dir(paths)) is None
 
 
 def test_manual_mapeia_fotos_em_ordem_e_reusa(tmp_path):
@@ -49,9 +49,9 @@ def test_manual_mapeia_fotos_em_ordem_e_reusa(tmp_path):
             fh.write(png)
     with open(os.path.join(manual, "notas.txt"), "w") as fh:
         fh.write("ignorado")
-    scenes = _manual_media_scenes(_chapters(3), manual)
+    scenes = manual_media_scenes(_chapters(3), manual)
     assert scenes is not None and len(scenes) == 3
-    assert _count_assets(scenes) == 3
+    assert count_assets(scenes) == 3
     # ordem alfabética: cena1=abertura, cena2=meio, cena3=abertura (rodízio)
     assert scenes[0]["asset"]["local_path"].endswith("01-abertura.png")
     assert scenes[1]["asset"]["local_path"].endswith("02-meio.png")
