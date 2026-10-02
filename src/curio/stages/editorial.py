@@ -266,8 +266,15 @@ SCIENCE = GenreProfile(
     ),
     narrative=NarrativeStyle(
         direction="Estrutura: fenômeno ou pergunta, o problema, a observação, "
-                  "a descoberta, o mecanismo, a evidência, a implicação.",
-        avoid="Não acumule curiosidades sem montar o mecanismo."),
+                  "a descoberta, o mecanismo, a evidência, a implicação. "
+                  "Abra pela consequência mais extrema e concreta do fenômeno "
+                  "(a última coisa a existir no fim dos tempos), nunca por "
+                  "definição de dicionário. Cada conceito estranho "
+                  "(horizonte de eventos, singularidade) é explicado na hora, "
+                  "em palavras simples, antes de seguir adiante. "
+                  "Não acumule curiosidades sem montar o mecanismo.",
+        avoid="Não acumule curiosidades sem montar o mecanismo. Não abra com "
+              "definição nem deixe conceito estranho sem explicação imediata."),
     visual=VisualStyle(
         scene_direction="Diagrama, experimento, microscopia, gráfico, modelo, "
                         "animação explicativa, fotografia científica. Para "
@@ -280,7 +287,9 @@ SCIENCE = GenreProfile(
         ladder=("diagram", "literal", "conceptual"),
     ),
     caption="Destaque termos técnicos e medidas; corte de 6 em 6.",
-    ending="Feche na implicação prática, não em 'é muito importante'.",
+    ending="Feche na implicação retomando a imagem do gancho já respondida "
+           "(a era dos buracos negros responde a 'a última coisa a existir'), "
+           "não em 'é muito importante'.",
 )
 
 PEOPLE = GenreProfile(
@@ -299,25 +308,35 @@ PEOPLE = GenreProfile(
                  "distinga tradição hagiográfica de evidência histórica sem "
                  "descartar o contexto religious.",
         queries=("biografia", "nascimento", "formação", "obras", "legado",
-                 "cronologia", "hagiografia", "local da vida"),
+                 "cronologia", "hagiografia", "local da vida", "governo"),
         must_distinguish=("trajetória documentada", "tradição devocional",
                           "atribuição posterior"),
     ),
     narrative=NarrativeStyle(
         direction="Estrutura: gancho humano, quem era, o mundo em que "
-                  "viveu, a primeira transformação importante, o conflito ou "
-                  "desafio, a decisão ou obra central, as consequências, o "
-                  "legado. Adapte à pessoa: uma vida marcada por uma única "
-                  "descoberta pode concentrar o vídeo nela. Não empilhe "
-                  "cronologia seca.",
+               "viveu, a primeira transformação importante, o conflito ou "
+               "desafio, a decisão ou obra central, as consequências, o "
+               "legado. Adapte à pessoa: uma vida marcada por uma única "
+               "descoberta pode concentrar o vídeo nela. Não empilhe "
+               "cronologia seca. Quando a história envolver uma instituição "
+               "estranha ao espectador (dois imperadores ao mesmo tempo, "
+               "adoção como sucessão), explique na hora como funcionava: "
+               "quem mandava no quê. Ancore o legado: a posição da pessoa "
+               "na história (o último dos bons imperadores) é fato-âncora "
+               "e nunca sai do roteiro.",
         avoid="Não reduza a vida a nascimento, estudo, casamento e morte, e "
-              "não transforme biografia em hagiografia nem em propaganda."),
+              "não transforme biografia em hagiografia nem em propaganda. "
+              "Não deixe instituição estranha sem explicação."),
     visual=VisualStyle(
         scene_direction="Retrato, pintura, fotografia, escultura, manuscrito, "
                         "lugar onde a pessoa viveu, objeto relacionado, obra "
                         "produzida, mapa da trajetória, documento. Para santos, "
                         "ícones, mosteiros, igrejas e relíquias documentadas "
-                        "quando existirem.",
+                        "quando existirem. Em todo vídeo, as imagens precisam "
+                        "continuar mostrando A PESSOA (retrato, busto, estátua) "
+                        "em várias cenas, não só lugares e objetos: um vídeo "
+                        "sobre Marco Aurélio sem o rosto de Marco Aurélio é "
+                        "um vídeo errado.",
         preferred_forms=("spotlight", "definition", "enumeration", "quote"),
         media_hints=("portrait painting", "historic photograph", "sculpture",
                      "manuscript page", "monastery", "church interior",
