@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import urllib.parse
 
+from .. import textnorm
 from . import scoring
 
 _HONORIFICS = {"sao", "santo", "santa", "saint"}
@@ -122,9 +123,14 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
                 tokens = set(scoring._tokens(place))
                 if tokens and not tokens.intersection(person_tokens):
                     subject, aliases = place, [place]
-                    from .visual import PT_EN
-                    if len(tokens) == 1 and next(iter(tokens)) in PT_EN:
-                        aliases.append(PT_EN[next(iter(tokens))])
+                    if len(tokens) == 1:
+                        # Correspondência EXATA, sem a queda de plural de
+                        # `translate`: aqui é um nome próprio de lugar, e
+                        # "Paris" não pode casar com "pari".
+                        english_term = textnorm.PT_LEXICON.get(
+                            next(iter(tokens)))
+                        if english_term:
+                            aliases.append(english_term)
                     break
             ch.subject = subject
             # Não aceitar apelido isolado como identidade de uma pessoa ambígua.

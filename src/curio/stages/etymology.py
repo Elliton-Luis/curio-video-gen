@@ -34,6 +34,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .. import textnorm
 from ..ua import user_agent
 
 TIMEOUT = 20
@@ -83,8 +84,7 @@ _MEDIUM_WORDS = frozenset({
 
 
 def _fold(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", str(text or ""))
-    return "".join(c for c in norm if not unicodedata.combining(c)).lower()
+    return textnorm.fold(text)
 
 
 def _norm_term(term: str) -> str:

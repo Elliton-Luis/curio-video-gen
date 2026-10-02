@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import re
 import sys
-import unicodedata
+
+from .. import textnorm
 
 # Palavras que indicam que o referente é uma pessoa具/divindade/lugar, e
 # por isso ambíguos. É aqui que a resolução tem mais trabalho a fazer.
@@ -90,16 +91,10 @@ _ENTITY_SYSTEM_PROMPT = (
 _ENTITY_SYSTEM_PROMPT_EN = _ENTITY_SYSTEM_PROMPT
 
 
-def _fold(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", text or "")
-    return "".join(c for c in norm
-                   if not unicodedata.combining(c)).lower()
-
-
 def _norm_phrase(phrase: str) -> str:
     """Normaliza uma frase para comparação: sem acento, sem pontuação, espaços
     colapsados. 'São Bento de Núrsia' e 'sao bento de nursia' precisam casar."""
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", _fold(phrase))).strip()
+    return textnorm.fold_phrase(phrase)
 
 
 class TargetEntity:
@@ -307,13 +302,10 @@ _COMUN_INICIAIS = {
 }
 
 
-# Stopwords de 3 letras: nunca entraram em STOP_PT porque
-# `extract_keywords` exige 4+, então ficariam de fora aqui, onde o piso
-# é 3. "Por que o mar é salgado?" dava topics ['mar', 'por', 'que', ...].
-_STOP_CURTAS = {
-    "por", "que", "com", "sem", "uma", "uns", "das", "dos", "seu", "sua",
-    "the", "and", "you", "how", "why", "what", "for", "not", "are", "was",
-}
+# Stopwords de 3 letras (vivem em `textnorm`, porque o piso deste extrator é
+# 3 e o da pesquisa é 4): "Por que o mar é salgado?" sem elas dava topics
+# ['mar', 'por', 'que', ...].
+_STOP_CURTAS = textnorm.STOP_SHORT
 
 
 def topic_terms_of(idea: str, language: str = "pt-BR") -> list[str]:
@@ -325,12 +317,10 @@ def topic_terms_of(idea: str, language: str = "pt-BR") -> list[str]:
     uma lista que o descarta deixa a fonte do próprio mar sem nenhuma
     palavra em comum com o tema.
     """
-    from . import research as _research
-    stop = set(_research.STOP_EN if str(language or "").lower().startswith("en")
-               else _research.STOP_PT) | _STOP_CURTAS
+    stop = textnorm.stopwords(language) | _STOP_CURTAS
     freq: dict[str, int] = {}
     for bruto in re.findall(r"[A-Za-zÀ-ÿ]{3,}", idea or ""):
-        base = _fold(bruto)
+        base = textnorm.fold(bruto)
         if base in stop or len(base) < 3:
             continue
         freq[base] = freq.get(base, 0) + 1

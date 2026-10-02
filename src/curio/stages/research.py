@@ -12,12 +12,12 @@ Sem nenhuma fonte: falha explícita (ResearchError) — nunca roteiro
 from __future__ import annotations
 
 import re
-import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 
+from .. import textnorm
 from ..ua import user_agent
 from ..runlog import event as run_event
 
@@ -26,31 +26,10 @@ WIKI_TIMEOUT = 20
 EXTRACT_CHARS = 1200  # por fonte: suficiente p/ fatos, cabe no prompt
 PROMPT_BUDGET_CHARS = 2500  # teto total do pack injetado no LLM
 
-STOP_PT = {
-    "para", "como", "mais", "muito", "isso", "esse", "esta", "este",
-    "aquele", "aquela", "foram", "eram", "sido", "entre", "sobre",
-    "quando", "onde", "qual", "quais", "todo", "toda", "todos", "todas",
-    "cada", "muita", "muitas", "muitos", "pouco", "pouca", "mesmo",
-    "mesma", "outro", "outra", "outros", "outras", "depois", "antes",
-    "durante", "sempre", "nunca", "também", "através", "porque", "porém",
-    "entretanto", "portanto", "então", "assim", "aqui", "agora", "hoje",
-    "ainda", "coisa", "algo", "alguém", "ninguém", "tudo", "nada",
-    "seja", "sejam", "pode", "podem", "deve", "devem", "fazer", "fez",
-    "fazem", "seria", "seriam", "tinha", "tinham", "esteve", "sendo",
-    "teria", "teriam", "pois", "qualquer", "tanto", "quanto", "desde",
-    "até", "meio", "grande", "pequeno", "novo", "velho", "primeiro",
-    "último", "você", "eles", "elas", "nós", "isso", "isto", "aquilo",
-    "meu", "minha", "seu", "sua", "nosso", "nossa", "esse", "essa",
-    "este", "esta", "fato", "verdade", "mentira", "realmente", "anos",
-}
-
-STOP_EN = {
-    "what", "why", "how", "when", "where", "who", "which", "that",
-    "this", "with", "from", "into", "about", "really", "does", "happen",
-    "when", "your", "there", "their", "they", "them", "then", "than",
-    "also", "just", "like", "more", "most", "very", "much", "many",
-    "some", "such", "only", "over", "under", "between", "through",
-}
+# As listas de stopword são de `textnorm`: a pesquisa e o extrator de
+# termos da entidade já usavam versões diferentes das mesmas.
+STOP_PT = textnorm.STOP_PT
+STOP_EN = textnorm.STOP_EN
 
 
 class ResearchError(RuntimeError):
@@ -80,9 +59,8 @@ class ResearchSource:
                    license_url=str(d.get("license_url", "") or ""))
 
 
-def _strip_acc(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in norm if not unicodedata.combining(c))
+# Minúsculas sem acento, para comparar "imperdível" com "imperdivel".
+_strip_acc = textnorm.fold
 
 
 def extract_keywords(text: str, language: str = "pt-BR",

@@ -30,10 +30,10 @@ import os
 import re
 import sys
 import time
-import unicodedata
 from pathlib import Path
 
 from .. import ffmpeg as ff
+from .. import textnorm
 from ..config import CurioConfig
 from ..media import download_asset, get_providers
 from ..media.providers import (
@@ -375,151 +375,31 @@ def _downloaded_dims_ok(asset: MediaAsset) -> bool:
 # palavras-cheia do trecho e verte substantivos visuais PT→EN, pois os
 # bancos de mídia respondem melhor em inglês. O gate de relevância continua
 # valendo: só entra imagem cujo título contenha a consulta.
-PT_STOP = {
-    "para", "como", "mais", "muito", "isso", "esse", "esta", "este", "aquele",
-    "aquela", "foram", "eram", "sido", "entre", "sobre", "quando", "onde",
-    "qual", "quais", "todo", "toda", "todos", "todas", "cada", "muita",
-    "muitas", "muitos", "pouco", "pouca", "mesmo", "mesma", "outro", "outra",
-    "outros", "outras", "depois", "antes", "durante", "sempre", "nunca",
-    "também", "através", "porque", "porém", "entretanto", "portanto",
-    "então", "assim", "aqui", "agora", "hoje", "ainda", "mesmo", "coisa",
-    "algo", "alguém", "ninguém", "tudo", "nada", "seja", "sejam", "pode",
-    "podem", "deve", "devem", "fazer", "fez", "fazem", "seria", "seriam",
-    "tinha", "tinham", "esteve", "foram", "sendo", "teria", "teriam",
-    "semper", "pois", "qualquer", "tanto", "quanto", "desde", "até",
-    "meio", "grande", "pequeno", "novo", "velho", "primeiro", "último",
-    "embora", "essa", "essas", "esses", "dessa", "desse", "nesta", "neste",
-}
-
-PT_EN = {
-    "roma": "rome", "romano": "roman", "romanos": "roman", "imperio": "empire",
-    "imperador": "emperor", "legiao": "roman legion", "legioes": "roman legion",
-    "soldado": "soldier", "exercito": "army", "guerra": "war",
-    "batalha": "battle", "fronteira": "frontier", "barbaro": "barbarian",
-    "barbaros": "barbarians", "guarda": "guard", "capacete": "helmet",
-    "espada": "sword", "escudo": "shield", "moeda": "coin", "salario": "salary",
-    "dinheiro": "money", "pagamento": "payment", "comercio": "trade",
-    "mercado": "market", "sal": "salt", "pao": "bread", "vinho": "wine",
-    "comida": "food", "igreja": "church", "templo": "temple", "castelo": "castle",
-    "piramide": "pyramid", "estatua": "statue", "pintura": "painting",
-    "retrato": "portrait", "mapa": "map", "livro": "book", "carta": "letter",
-    "documento": "document", "fotografia": "photograph", "cerebro": "brain",
-    "mente": "mind", "cabeca": "head", "mao": "hand", "corpo": "body",
-    "doenca": "disease", "peste": "plague", "medico": "doctor", "hospital": "hospital",
-    "cidade": "city", "rua": "street", "casa": "house", "aldeia": "village",
-    "campo": "field", "colheita": "harvest", "mar": "sea", "navio": "ship",
-    "rio": "river", "montanha": "mountain", "arvore": "tree", "flor": "flower",
-    "floresta": "forest", "deserto": "desert", "ceu": "sky", "sol": "sun",
-    "lua": "moon", "estrela": "star", "terra": "earth", "fogo": "fire",
-    "agua": "water", "pedra": "stone", "ouro": "gold", "prata": "silver",
-    "ferro": "iron", "cobre": "copper", "bronze": "bronze", "cavalo": "horse",
-    "cao": "dog", "cachorro": "dog", "gato": "cat", "passaro": "bird",
-    "peixe": "fish", "homem": "man", "mulher": "woman", "crianca": "child",
-    "criancas": "children", "povo": "people", "multidao": "crowd", "rei": "king",
-    "rainha": "queen", "campones": "peasant", "trabalho": "work",
-    "trabalhador": "worker", "escola": "school", "teatro": "theater",
-    "musica": "music", "danca": "dance", "festa": "festival", "religiao": "religion",
-    "deus": "god", "mito": "myth", "lenda": "legend", "historia": "history",
-    "antigo": "ancient", "ruina": "ruins", "ruinas": "ruins", "muralha": "wall",
-    "ponte": "bridge", "estrada": "road", "trem": "train", "carro": "car",
-    "aviao": "airplane", "fabrica": "factory", "maquina": "machine",
-    "ciencia": "science", "laboratorio": "laboratory", "experimento": "experiment",
-    "planeta": "planet", "planetas": "planets", "satelite": "satellite",
-    "telescopio": "telescope", "observatorio": "observatory",
-    "galaxia": "galaxy", "galaxias": "galaxies",
-    "universo": "universe", "cosmos": "cosmos", "espaco": "space",
-    "espacial": "space", "astronomia": "astronomy",
-    "astronomico": "astronomy", "astronomica": "astronomy",
-    "astrofisica": "astrophysics", "astrofisico": "astrophysics",
-    "buraco": "black hole", "buracos": "black hole",
-    "negro": "black hole", "negros": "black hole",
-    "nebulosa": "nebula", "nebulosas": "nebulae",
-    "quasar": "quasar", "quasares": "quasars",
-    "singularidade": "singularity", "horizonte": "event horizon",
-    "gravidade": "gravity", "gravitacional": "gravity",
-    "gravitacao": "gravity", "relatividade": "relativity",
-    "orbita": "orbit", "orbitas": "orbits", "eclipse": "eclipse",
-    "constelacao": "constellation", "luz": "light",
-    "sombra": "shadow", "massa": "mass", "massas": "masses",
-    "denso": "dense", "densa": "dense", "radiacao": "radiation",
-    "temperatura": "temperature", "kelvin": "kelvin",
-    "fisica": "physics", "quantica": "quantum", "quantico": "quantum",
-    "teoria": "theory", "estrelas": "stars",
-    "estelar": "stellar", "estelares": "stellar",
-    "livraria": "bookstore", "biblioteca": "library", "escrita": "writing",
-    "palavra": "word", "lingua": "language", "numero": "number", "tempo": "time",
-    "inverno": "winter", "verao": "summer", "chuva": "rain", "neve": "snow",
-    "vulcao": "volcano", "terremoto": "earthquake", "navio": "ship",
-    "porto": "harbor", "farol": "lighthouse", "ilha": "island", "praia": "beach",
-    "jardim": "garden", "parque": "park", "mercado": "market", "loja": "shop",
-    "padaria": "bakery", "cozinha": "kitchen", "mesa": "table", "cadeira": "chair",
-    "janela": "window", "porta": "door", "chave": "key", "relogio": "clock",
-    "espelho": "mirror", "vela": "candle", "faca": "knife", "panela": "pot",
-    "prato": "plate", "copo": "glass", "garrafa": "bottle", "cesta": "basket",
-    "roupa": "clothes", "sapato": "shoe", "chapeu": "hat", "coroa": "crown",
-    "anel": "ring", "colar": "necklace", "joia": "jewel", "tesouro": "treasure",
-    "tumba": "tomb", "mumia": "mummy", "fossil": "fossil", "dinossauro": "dinosaur",
-    "esqueleto": "skeleton", "crânio": "skull", "cranio": "skull",
-    "sangue": "blood", "coração": "heart", "coracao": "heart", "olho": "eye",
-    "rosto": "face", "maos": "hands", "pes": "feet", "nacao": "nation",
-    "bandeira": "flag", "governo": "government", "eleicao": "election",
-    "protesto": "protest", "revolucao": "revolution", "independencia": "independence",
-    "escravidao": "slavery", "colonia": "colony", "reino": "kingdom",
-    "republica": "republic", "senado": "senate", "lei": "law", "justica": "justice",
-    "prisao": "prison", "crime": "crime", "pirata": "pirate", "viking": "viking",
-    "nordico": "norse", "egito": "egypt", "grecia": "greece", "grego": "greek",
-    "troia": "troy", "atenas": "athens", "esparta": "sparta", "gladiador": "gladiator",
-    "coliseu": "colosseum", "aqueduto": "aqueduct", "foro": "forum",
-    "cesar": "caesar", "augusto": "augustus", "nero": "nero",
-    "constantinopla": "constantinople", "bizancio": "byzantium",
-    "idade": "age", "seculo": "century", "medieval": "medieval",
-    "renascimento": "renaissance", "iluminismo": "enlightenment",
-    "industrial": "industrial", "moderno": "modern", "contemporaneo": "contemporary",
-    "provincia": "province", "imposto": "tax", "tributo": "tribute",
-    "germanico": "germanic", "mosaico": "mosaic", "invasao": "invasion",
-    "queda": "fall", "crise": "crisis", "corrupcao": "corruption",
-    "sucessao": "succession", "inflacao": "inflation", "muralhas": "walls",
-    "pretoriana": "praetorian guard", "reforma": "reform", "senador": "senator",
-    "tribuno": "tribune", "consul": "consul", "ditador": "dictator",
-    "escravo": "slave", "gladiadores": "gladiators", "circo": "circus",
-    "anfiteatro": "amphitheater", "termas": "baths", "vila": "villa",
-    "palacio": "palace", "tesouro": "treasure",
-}
+# Stopword e léxico PT→EN vivem em `curio.textnorm`: são dado linguístico
+# compartilhado com a pesquisa e com o filtro de mídia, e manter cópia
+# própria por estágio é o que faz "buraco negro" virar query "field"
+# num lugar e continuar certo em outro.
+PT_STOP = textnorm.STOP_PT
+PT_EN = textnorm.PT_LEXICON
 
 
-def _en(base: str) -> str | None:
-    """Verte PT→EN tentando singular (plurais -s/-es) antes de desistir."""
-    hit = PT_EN.get(base)
-    if hit:
-        return hit
-    for cand in (base[:-1] if base.endswith("s") else "",
-                 base[:-2] if base.endswith("es") else ""):
-        if cand and cand in PT_EN:
-            return PT_EN[cand]
-    return None
+# Verte PT→EN (singular/plural) usando o léxico compartilhado.
+_en = textnorm.translate
 
 
-def _strip_acc(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in norm if not unicodedata.combining(c))
+# Minúsculas sem acento: mesma comparação de texto da pesquisa e do scoring.
+_strip_acc = textnorm.fold
 
 
 # --- tópico espacial: nunca ilustrar com laboratório -------------------
 # Sinais (já sem acento/minúsculas) de que a cena é sobre espaço/
 # astronomia. "buraco negro" precisa estar aqui como expressão: sem isso,
 # "campo gravitacional" virava query "field" e o vídeo recebia microscópio.
-_SPACE_MARKERS = (
-    "buraco negro", "buracos negros", "black hole", "corpo negro",
-    "horizonte de eventos", "event horizon",
-    "galaxia", "galaxias", "galaxy", "galaxies",
-    "nebulosa", "nebula", "quasar", "supermassivo",
-    "universo", "universe", "cosmos", "espaco-tempo",
-    "gravidade", "gravitacional", "gravitacao", "gravity",
-    "relatividade", "relativity", "singularidade", "singularity",
-    "astronomia", "astronomico", "astronomica", "astronomy",
-    "constelacao", "constellation", "orbita", "orbit",
-    "hawking", "kelvin", "ano-luz",
-)
+# O que é "tema espacial" é uma decisão de `textnorm`, não deste arquivo:
+# a busca, o gate de imagem e o classificador de cena precisam
+# reconhecer o mesmo conjunto.
+is_space_topic = textnorm.is_space_topic
+
 
 # Prioridade quando o assunto é espaço: o termo do tema vence a palavra
 # mais frequente ("campo", "tempo") — que é genérica e puxa foto errada.
@@ -538,21 +418,6 @@ SPACE_GENERIC_QUERIES = (
     "black hole", "galaxy", "nebula", "starry sky", "telescope",
     "observatory",
 )
-
-# Laboratório não pode representar espaço: bloqueia o falso positivo da
-# NASA ("Mars Science Laboratory" casa com "laboratory") e fotos de
-# bancada quando a cena é sobre o céu.
-_SPACE_FORBIDDEN = (
-    "laboratory", "microscope", "test tube", "petri dish",
-    "Mars Science Laboratory",
-)
-
-
-def is_space_topic(text: str) -> bool:
-    """A cena/consulta é sobre espaço/astronomia? Sem rede, sem LLM."""
-    hay = _strip_acc(str(text or ""))
-    return any(m in hay for m in _SPACE_MARKERS)
-
 
 def _space_boost(narration: str) -> list[str]:
     """Queries do tema espacial presentes NESTA narração, em ordem."""
@@ -704,10 +569,9 @@ def validate_preserved(original: str, chapters) -> None:
             "recusando para não adulterar a narração")
 
 
-def _query_terms(query: str) -> list[str]:
-    stop = {"the", "and", "with", "from", "into", "para", "uma", "para"}
-    return [t.lower() for t in query.replace(",", " ").split()
-            if len(t) > 2 and t.lower() not in stop]
+# Palavras úteis de uma consulta: >2 letras, sem stopword. Havia uma cópia
+# idêntica em `pipeline.py`, e as duas podiam divergir em silêncio.
+_query_terms = textnorm.query_terms
 
 
 def _relevance(query: str, asset: MediaAsset) -> int:

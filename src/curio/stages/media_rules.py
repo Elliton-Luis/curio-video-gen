@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import os
 import re
-import unicodedata
 from urllib.parse import parse_qs, urlsplit
+
+from .. import textnorm
 
 # --- termos decorativos: sempre errados -------------------------------
 # Observados em produção: "papel de parede de montanha/rio/campo/deserto"
@@ -52,10 +53,10 @@ def _pattern(term: str) -> re.Pattern:
     return pat
 
 
-def _fold(text: str) -> str:
-    """Minúsculas sem acento, para comparar "imperdível" com "imperdivel"."""
-    norm = unicodedata.normalize("NFKD", text or "")
-    return "".join(c for c in norm if not unicodedata.combining(c)).lower()
+# Comparar "imperdível" com "imperdivel" (minúsculas sem acento) é a mesma
+# conta que o scoring e a pesquisa fazem; a implementação mora em
+# `curio.textnorm`.
+_fold = textnorm.fold
 
 
 # --- termos negativos da cena -----------------------------------------
@@ -96,21 +97,6 @@ def scene_forbidden(ch) -> list[str]:
     return out
 
 
-# Sinais de tópico espacial (sem acento/minúsculas): a cena é sobre o
-# céu, e bancada de laboratório seria misinformation — foi o que ilustrou
-# buraco negro com microscópio e com o rover Curiosity ("Mars Science
-# Laboratory" casa com a query "laboratory").
-_SPACE_MARKERS = (
-    "buraco negro", "buracos negros", "black hole", "corpo negro",
-    "horizonte de eventos", "event horizon",
-    "galaxia", "galaxy", "nebulosa", "nebula", "quasar",
-    "universo", "universe", "cosmos", "espaco-tempo",
-    "gravidade", "gravitacional", "gravitacao",
-    "relatividade", "singularidade", "supermassivo",
-    "astronomia", "astronomico", "astronomica",
-    "hawking", "kelvin",
-)
-
 # Bloqueio automático para cena espacial: foto de bancada não representa
 # o céu, e "Mars Science Laboratory" é o rover em Marte, não um laboratório.
 _SPACE_FORBIDDEN = (
@@ -120,14 +106,20 @@ _SPACE_FORBIDDEN = (
 
 
 def _is_space_scene(ch) -> bool:
-    hay = _fold(" ".join([
+    """A cena é sobre espaço/astronomia?
+
+    Usa os marcadores de `textnorm`, os mesmos da busca de mídia e do
+    classificador de cena. Ter três listas aqui foi como o vídeo de buraco
+    negro acabou com bancada: cada estágio reconhecia um conjunto
+    diferente do que os outros dois.
+    """
+    return textnorm.is_space_topic(" ".join([
         str(getattr(ch, "narration", "") or ""),
         str(getattr(ch, "subject", "") or ""),
         " ".join(list(getattr(ch, "visual_queries", []) or [])),
         " ".join(list(getattr(ch, "visual_entities", []) or [])),
         " ".join(list(getattr(ch, "context", []) or [])),
     ]))
-    return any(m in hay for m in _SPACE_MARKERS)
 
 
 def _dedup(terms) -> list[str]:

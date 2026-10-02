@@ -25,6 +25,7 @@ from .audio.library import audio_seed
 from .config import CurioConfig
 from .media import download_asset, get_providers
 from .media.providers import MediaAsset, MediaError, classify_rights
+from . import textnorm
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
@@ -128,15 +129,9 @@ def _load_chapters(paths: VideoPaths) -> list[Chapter]:
     return [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
 
 
-def _query_terms(query: str) -> list[str]:
-    stop = {"the", "and", "with", "from", "into", "para", "uma", "para"}
-    return [t.lower() for t in query.replace(",", " ").split()
-            if len(t) > 2 and t.lower() not in stop]
-
-
 def _relevance(query: str, asset: MediaAsset) -> int:
     haystack = f"{asset.title}".lower()
-    return sum(1 for term in _query_terms(query) if term in haystack)
+    return sum(1 for term in textnorm.query_terms(query) if term in haystack)
 
 
 def _fetch_media(chapters: list[Chapter], cfg: CurioConfig,

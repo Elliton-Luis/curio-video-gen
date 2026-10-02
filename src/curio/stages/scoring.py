@@ -15,8 +15,7 @@ nota é baixa — assim a folha de contato consegue explicar a troca.
 
 from __future__ import annotations
 
-import re
-import unicodedata
+from .. import textnorm
 
 # A nota é 0–100 e se divide em duas parcelas que NÃO competem entre si:
 # o núcleo prova o que a cena É (até 75) e o apoio mostra o que foi
@@ -31,26 +30,12 @@ BASE_MAX = 100.0
 DEFAULT_THRESHOLD = 34.0
 
 
-def _fold(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", text or "")
-    return "".join(c for c in norm if not unicodedata.combining(c)).lower()
-
-
-def _tokens(text: str) -> list[str]:
-    """Palavras úteis de um texto: sem acento, sem ruído de 1-2 letras.
-
-    Separa por QUALQUER caractere não-alfanumérico, não só por espaço.
-    Isso não é detalhe: títulos do Wikimedia chegam como "File:Saint
-    Francis in Ecstasy.jpg" e, separando só por espaço, o "Saint" virava
-    "file:saint" e nunca casava. Ou seja: todo título de acervo perdia a
-    PRIMEIRA palavra — justamente nos provedores sem chave que guardam a
-    arte de domínio público.
-    """
-    out = []
-    for raw in re.split(r"[^0-9a-z]+", _fold(text)):
-        if len(raw) >= 3:
-            out.append(raw)
-    return out
+# A normalização e a tokenização vivem em `curio.textnorm`: são a MESMA
+# comparação de texto que a pesquisa e o filtro de mídia fazem, e manter
+# cópia própria foi o que deixou `scoring` casando "File:Saint…" de um
+# jeito e a busca de outro.
+_fold = textnorm.fold
+_tokens = textnorm.tokens
 
 
 def _scene_terms(ch) -> tuple[dict[str, float], dict[str, float]]:

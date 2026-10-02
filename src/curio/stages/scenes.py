@@ -24,6 +24,7 @@ import re
 import sys
 from dataclasses import asdict, dataclass, field
 
+from .. import textnorm
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
 
@@ -243,16 +244,10 @@ _TYPOGRAPHIC_HINTS = (
 # Sinais de tópico espacial: a cena é sobre o céu, não sobre história.
 # Sem esta guarda, "Isso não é um mito de ficção científica" virava
 # `historical_art` por causa de "mito" — e o vídeo de buraco negro ia
-# parar em acervo de igreja em vez de telescópio.
-_SPACE_HINTS = (
-    "buraco negro", "buracos negros", "black hole", "corpo negro",
-    "horizonte de eventos", "event horizon",
-    "galaxia", "galáxia", "galaxy", "nebulosa", "nebula", "quasar",
-    "universo", "universe", "cosmos", "espaço-tempo", "espaco-tempo",
-    "gravidade", "gravitacional", "gravitação", "gravitacao",
-    "relatividade", "relativity", "singularidade", "supermassiv",
-    "astronomia", "astronomia", "astrofisica", "hawking", "kelvin",
-)
+# parar em acervo de igreja em vez de telescópio. O conjunto é o mesmo da
+# busca e do gate de imagem (`textnorm.is_space_topic`): três listas
+# diferentes garantiriam uma delas errada.
+_SPACE_HINTS = textnorm.SPACE_MARKERS
 
 # Palavras que, juntas, indicam latim. Uma sozinha não prova nada — "et"
 # aparece em português em "e o et" — mas um conjunto delas numa frase curta
@@ -342,7 +337,7 @@ def classify_visual_type(narration: str) -> str:
         return "mechanism"
     if any(h in text for h in _TYPOGRAPHIC_HINTS):
         return "typographic"
-    if any(h in text for h in _SPACE_HINTS):
+    if textnorm.is_space_topic(text):
         return "literal"
     if any(h in text for h in _HISTORICAL_HINTS):
         return "historical_art"
