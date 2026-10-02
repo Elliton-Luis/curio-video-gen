@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 18:20 (UTC)
 - **Tipo:** relatorio
 - **Escopo:** mover busca legacy, mídia manual, labels e standby para `pipeline_media.py`
-- **Commit(s):** pendente
+- **Commit(s):** `2c7e38b refactor: isolate media acquisition and standby stage`
 - **Origem:** análise `20261002-131932_analise_refatoracao-codigo-morto.md`
 
 ## 1. O que foi pedido

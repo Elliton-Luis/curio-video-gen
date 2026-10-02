@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 18:30 (UTC)
 - **Tipo:** relatorio
 - **Escopo:** etapas 1–5 da auditoria: limpeza, fontes únicas, adapters, responsabilidades e performance
-- **Commit(s):** `2afe77b` a `2c7e38b` (lista completa abaixo)
+- **Commit(s):** `2afe77b`, `5985a65`, `2c25cc5`, `3c93b7f`, `beb0653`, `4b106d9`, `2968972`, `b98d3ee`, `3a07e64`, `2c7e38b`
 - **Origem:** `docs/analises/20261002-131932_analise_refatoracao-codigo-morto.md`
 
 ## 1. O que foi pedido

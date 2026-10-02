@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 16:30 (local)
 - **Tipo:** relatorio
 - **Escopo:** mover entrada, teclado, menu e browser de caminho para módulo terminal
-- **Commit(s):** pendente
+- **Commit(s):** `4b106d9 refactor: separate terminal mechanics from TUI flows`
 - **Origem:** `docs/analises/20261002-131932_analise_refatoracao-codigo-morto.md`
 
 ## 1. O que foi pedido

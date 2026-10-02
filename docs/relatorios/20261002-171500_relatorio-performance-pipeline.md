@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 17:15 (local)
 - **Tipo:** relatorio
 - **Escopo:** limitar e paralelizar buscas/downloads; cache ffprobe; reduzir chamadas LLM sem lacuna visível
-- **Commit(s):** pendente
+- **Commit(s):** `b98d3ee perf: bound and parallelize pipeline network work`
 - **Origem:** auditoria `20261002-131932_analise_refatoracao-codigo-morto.md`, seção 5
 
 ## 1. O que foi pedido

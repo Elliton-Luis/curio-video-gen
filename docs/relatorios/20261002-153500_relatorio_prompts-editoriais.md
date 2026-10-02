@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 15:35 (local)
 - **Tipo:** relatorio
 - **Escopo:** mover prompts de roteiro e título de `nvidia.py` para `prompts.py`
-- **Commit(s):** pendente
+- **Commit(s):** `3c93b7f refactor: move editorial prompts to prompts module`
 - **Origem:** `docs/analises/20261002-131932_analise_refatoracao-codigo-morto.md`
 
 ## 1. O que foi pedido

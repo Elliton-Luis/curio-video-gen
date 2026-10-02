@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 17:00 (local)
 - **Tipo:** relatorio
 - **Escopo:** mover timeline/SFX, preparação de segmentos e estágio de pesquisa para módulos com dono claro
-- **Commit(s):** pendente
+- **Commit(s):** `2968972 refactor: separate pipeline render and visual timeline stages`
 - **Origem:** análise `20261002-131932_analise_refatoracao-codigo-morto.md`
 
 ## 1. O que foi pedido

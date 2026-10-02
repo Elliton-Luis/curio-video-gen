@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 18:08 (UTC)
 - **Tipo:** relatorio
 - **Escopo:** mover TTS, alinhamento temporal e geração de legendas para estágio coeso
-- **Commit(s):** pendente
+- **Commit(s):** `3a07e64 refactor: isolate narration timing and subtitle stage`
 - **Origem:** `docs/relatorios/20261002-170000_relatorio_separacao-etapas-render.md`
 
 ## 1. O que foi pedido

@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 16:00 (local)
 - **Tipo:** relatorio
 - **Escopo:** consolidar políticas de gênero em `GenreAdapter` e resolver fontes por registro
-- **Commit(s):** pendente
+- **Commit(s):** `beb0653 refactor: centralize genre adapters and source registry`
 - **Origem:** `docs/analises/20261002-131932_analise_refatoracao-codigo-morto.md`
 
 ## 1. O que foi pedido
