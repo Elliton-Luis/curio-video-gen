@@ -110,9 +110,9 @@ insertions = 2         # 0-5 (CURIO_VISUAL_INSERTIONS)
 insert_style = "drop_in"  # caiu do álbum; alternatives: slide_left, slide_right,
                           # fade, scale_in, tilt_in (CURIO_VISUAL_INSERT_STYLE)
 # Pico alvo do som da inserção, em dBFS (negativo = mais baixo).
-# -21 = insert mais audível sem competir com narração.
+# -15 = insert mais presente sem competir com narração.
 # Abaixo de -45 some; acima de -12 briga com a voz. Faixa aceita: -45..-12.
-insert_gain_db = -21   # insert SFX (CURIO_VISUAL_INSERT_GAIN_DB)
+insert_gain_db = -15   # insert SFX (CURIO_VISUAL_INSERT_GAIN_DB)
 
 # Biblioteca persistente. Só `video-gen music update` baixa assets; o render
 # normal consulta os arquivos locais e não pesquisa a cada vídeo. Para permitir
@@ -124,7 +124,7 @@ transitions = "auto"            # auto | none
 [music]
 mode = "auto"                    # auto | none | manual
 file = ""                        # caminho usado quando mode = "manual"
-gain_db = -15                     # cama presente sob ducking; permitido: -40..-15 dB
+gain_db = -9                      # cama mais presente sob ducking; permitido: -40..-6 dB
 ducking = true
 auto_fill = true                  # busca só quando biblioteca < mínimo
 

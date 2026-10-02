@@ -221,12 +221,10 @@ def _select_highlight_word(words: list[str]) -> int:
 
 
 def _apply_highlight(text: str, highlight_idx: int) -> str:
-    """Aplica efeito de aberração cromática na palavra de destaque.
+    """Aplica preenchimento dourado e borda azul-marinho ao destaque.
 
-    Preenchimento ciano + CONTORNO magenta (sem vírgulas nas tags):
-    {\\c&HFEF200&\\3c&H5500FF&}PALAVRA{\\r}
-    - Ciano (#00F2FE) = &HFEF200 (BBGGRR)
-    - Magenta (#FF0055) = &H5500FF (BBGGRR)
+    ASS usa ordem BGR nas tags inline: #F0D064 → &H64D0F0;
+    #0F3C96 → &H963C0F.
     """
     words = text.split()
     if highlight_idx >= len(words):
@@ -234,8 +232,7 @@ def _apply_highlight(text: str, highlight_idx: int) -> str:
     highlighted = []
     for i, word in enumerate(words):
         if i == highlight_idx:
-            # Ciano com contorno magenta (aberração cromática em relevo)
-            highlighted.append(r"{\c&HFEF200&\3c&H5500FF&}" + word + r"{\r}")
+            highlighted.append(r"{\c&H64D0F0&\3c&H963C0F&}" + word + r"{\r}")
         else:
             highlighted.append(word)
     return " ".join(highlighted)

@@ -8,8 +8,10 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 ## Relatórios (o que foi feito e como)
 
 - `relatorios/20261001-214950_relatorio_providers-museus-met-aic.md` — Met Open Access + Art Institute of Chicago (domínio público, sem chave), prioridade em cenas históricas; suíte completa: 692 testes.
+
 - `relatorios/20261001-203053_relatorio_variedade-assets-render.md` — seleção repetia IDs e overlays descartavam fundos; associa assets a beats, corrige cobertura central/cache e valida seis assets reais de César no render.
 - `relatorios/20261001-184320_relatorio_rag-iterativo.md` — busca ampla, fatos literais com URLs e até três complementações por lacuna; logs/métricas e contexto de 2500 caracteres.
+- `relatorios/20261001-182038_relatorio_volume-audio-aumentado.md` — música padrão −9 dB e SFX de inserção −15 dB; ducking preservado.
 - `relatorios/20261001-174317_relatorio_qualidade-roteiro-legenda-audio.md` — highlight por WordBoundary e compensação temporal do limiter; render real validado, recuperação editorial ainda reprovada no grounding.
 - `relatorios/20261001-161013_relatorio-groq-primeiro-musica-calma.md` — Groq primeiro, NVIDIA segundo sem timeout de resposta e desvio em HTTP 400; seleção rejeita camas com título de ruído e evita reuso de faixa inadequada.
 - `relatorios/20261001-154612_relatorio_escape-apostrofo-ffmpeg.md` — corrige apóstrofos em título no `drawtext`; reproduz e cobre falha do filtergraph com ASS.

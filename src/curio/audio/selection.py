@@ -40,7 +40,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     mode = requested_mode if enabled else "none"
     if mode not in ("auto", "none", "manual"):
         mode = "auto"
-    gain = int(getattr(cfg, "music_gain_db", -15))
+    gain = int(getattr(cfg, "music_gain_db", -9))
     ducking = bool(getattr(cfg, "music_ducking", True))
     previous = previous if isinstance(previous, dict) else {}
     library = AudioLibrary(getattr(cfg, "audio_library_dir", "assets/library"))
@@ -180,7 +180,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
         "sfx": [a.get("asset_id") for a in sfx_assets],
         "sfx_mtimes": [_mtime(a.get("path")) for a in sfx_assets],
         "sfx_content": [_content_hash(a.get("path")) for a in sfx_assets],
-        "sfx_gain_db": getattr(cfg, "visual_insert_gain_db", -21),
+        "sfx_gain_db": getattr(cfg, "visual_insert_gain_db", -15),
         "sfx_events": [{k: e.get(k) for k in
                         ("kind", "at", "duration", "gain_db", "asset_id")}
                        for e in sfx_events],

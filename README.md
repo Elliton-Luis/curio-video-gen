@@ -597,7 +597,8 @@ Configurações → Áudio. A seleção automática busca camas calmas/ambientai
 rejeita títulos que indiquem efeitos/ruído e revalida faixas em cache. Se não
 houver faixa compatível, o vídeo sai sem música em vez de usar áudio confuso.
 Entre as faixas aprovadas, favorece assets menos usados e desempata com seed
-estável do projeto. A música usa ganho de −15 dB, fades de
+estável do projeto. A música usa ganho padrão de −9 dB (configurável entre
+−40 e −6 dB), fades de
 entrada/saída e sidechain ducking sob a voz, com release para atravessar pausas.
 SFX da biblioteca substituem apenas eventos pontuais já existentes; sem asset
 local, o SFX sintético atual continua disponível. Transições de cena têm

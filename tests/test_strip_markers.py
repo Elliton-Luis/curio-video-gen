@@ -107,11 +107,11 @@ def test_ass_estilo_contorno_3d_sem_caixa():
     assert int(fields[16]) >= 3, fields  # Shadow deslocada
 
 
-def test_destaque_usa_contorno_magenta():
-    """Palavra de impacto: ciano com contorno magenta (sem vírgulas)."""
+def test_destaque_usa_dourado_com_borda_azul_marinho():
+    """Palavra de impacto: #F0D064 com borda #0F3C96 em ASS BGR."""
     ass = cues_to_ass(build_cues("Palavra impacto aqui.", 5.0),
                       1080, 1920, 60, 180)
-    assert r"{\c&HFEF200&\3c&H5500FF&}" in ass
+    assert r"{\c&H64D0F0&\3c&H963C0F&}" in ass
     assert r"\shad3\4c" not in ass
 
 

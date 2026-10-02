@@ -113,7 +113,7 @@ class CurioConfig:
     # que isso vira slideshow. 0 = nunca insere (só a foto de fundo por cena).
     visual_insertions: int = 2
     visual_insert_style: str = "drop_in"  # entrada estilo "cai do álbum"
-    visual_insert_gain_db: int = -21  # SFX do insert: audível, sem brigar
+    visual_insert_gain_db: int = -15  # SFX do insert: mais presente
     # Música local por gênero, com transições e SFX habilitados por padrão.
     audio_library_dir: str = "assets/library"
     audio_enabled: bool = True
@@ -123,7 +123,7 @@ class CurioConfig:
     music_min_per_genre: int = 3
     music_target_per_genre: int = 6
     music_max_per_genre: int = 10
-    music_gain_db: int = -15
+    music_gain_db: int = -9
     music_ducking: bool = True
     music_transitions: str = "auto"  # auto | none
     sfx_library_enabled: bool = True
@@ -315,7 +315,7 @@ class CurioConfig:
         cfg.music_target_per_genre = max(cfg.music_min_per_genre, min(
             cfg.music_max_per_genre, int(music_lib.get(
                 "target_per_genre", cfg.music_target_per_genre))))
-        cfg.music_gain_db = max(-40, min(-15, int(music.get(
+        cfg.music_gain_db = max(-40, min(-6, int(music.get(
             "gain_db", cfg.music_gain_db))))
         cfg.music_ducking = _as_bool(music.get("ducking", cfg.music_ducking),
                                      cfg.music_ducking)
