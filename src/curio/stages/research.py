@@ -64,6 +64,8 @@ class ResearchSource:
     url: str
     snippet: str = ""
     origin: str = "wikipedia"
+    license: str = ""
+    license_url: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -73,7 +75,9 @@ class ResearchSource:
         return cls(title=str(d.get("title", "")),
                    url=str(d.get("url", "")),
                    snippet=str(d.get("snippet", "")),
-                   origin=str(d.get("origin", "wikipedia")))
+                   origin=str(d.get("origin", "wikipedia")),
+                   license=str(d.get("license", "") or ""),
+                   license_url=str(d.get("license_url", "") or ""))
 
 
 def _strip_acc(text: str) -> str:
@@ -517,6 +521,33 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
     res = ResearchResult(target, sources[:max_sources], rejected, tried_queries,
                           weak=weak, weak_warnings=weak_warnings)
     res.genre = genre
+    res.etymology = None
+    if (genre or "").strip().lower() == "etymology":
+        # Fontes especializadas SOMAM às gerais: a cadeia (Wiktionary →
+        # Logeion/Perseus) fundamenta o roteiro e as entidades visuais.
+        # Best-effort isolada: nunca derruba a pesquisa geral.
+        try:
+            from . import etymology as etymology_stage
+            head = (etymology_stage.headword_of(idea)
+                    or etymology_stage.headword_of(
+                        "", getattr(target, "name", "") or ""))
+            if head:
+                res.etymology = etymology_stage.lookup(
+                    head, idea, language,
+                    getattr(cfg, "cache_dir", "cache") or "cache",
+                    metrics, timeout)
+                if res.etymology is not None:
+                    run_event("result",
+                              "Etimologia: " + res.etymology.chain_text(),
+                              operation="research_etymology",
+                              word=res.etymology.word,
+                              origin=res.etymology.origin_language,
+                              sources=len(res.etymology.sources))
+        except Exception as exc:  # noqa: BLE001 — segue só com gerais
+            run_event("warning", f"Etimologia indisponível ({exc}); "
+                      "seguindo só com fontes gerais",
+                      operation="research_etymology", error=str(exc))
+            res.etymology = None
     _complete_research(res, idea, language, cfg, metrics, timeout)
     return res
 
@@ -755,6 +786,17 @@ def format_for_prompt(sources: list[ResearchSource],
             "FONTES OBRIGATÓRIAS (pesquisa web — use SOMENTE estes fatos):")
     parts = [head]
     used = len(head)
+    # Etimologia especializada tem PRIORIDADE: entra primeiro no prompt,
+    # antes das fontes gerais — mas sem deslocá-las (orçamento manda).
+    try:
+        from . import etymology as etymology_stage
+        block = etymology_stage.prompt_block(
+            getattr(sources, "etymology", None), language)
+        if block and used + len(block) + 1 <= PROMPT_BUDGET_CHARS:
+            parts.append(block)
+            used += len(block) + 1
+    except Exception:  # noqa: BLE001 — bloco opcional nunca é fatal
+        pass
     for gap in getattr(sources, "unresolved_gaps", [])[:3]:
         chunk = (("UNSUPPORTED — do not claim: " if english else
                   "SEM SUPORTE — não afirmar: ") + gap["query"])

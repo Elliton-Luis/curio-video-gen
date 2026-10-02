@@ -863,6 +863,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     research_target = getattr(research, "target", None)
     research_rejected = list(getattr(research, "rejected", []))
     research_queries = list(getattr(research, "tried_queries", []))
+    research_etymology = getattr(research, "etymology", None)
     research_weak = bool(getattr(research, "weak", False))
     research_status = ("weak" if research_weak or not research_sources
                        else "confirmed" if len(research_sources) >= 2
@@ -885,6 +886,21 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             claim=rs.title, title=rs.title, url=rs.url,
             evidence=rs.snippet[:300], status=research_status,
             notes=f"RAG web ({rs.origin})")
+    if research_etymology is not None:
+        # Etimologia especializada SOMADA às gerais: cada fonte com sua
+        # atribuição, licença e URL — nunca cópia de verbete.
+        from .stages import etymology as etymology_stage
+        cadeia = research_etymology.chain_text()
+        for rs in (research_etymology.sources or []):
+            lic, lic_url = etymology_stage.source_license(rs.origin)
+            nota = f"RAG etimologia ({rs.origin}). Licença: {lic or 'ver página'}"
+            if lic_url:
+                nota += f" — {lic_url}"
+            sources.add_claim(
+                claim=f"etimologia: {cadeia}" if cadeia else rs.title,
+                title=rs.title, url=rs.url,
+                evidence=(rs.snippet or "")[:300], status=research_status,
+                notes=nota)
     _write_json(paths.research_json, {
         "idea": idea,
         # A entidade-alvo fica no arquivo: sem ela não há como auditar,
@@ -893,6 +909,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         "target_entity": (research_target.to_dict()
                           if research_target is not None else None),
         "queries": research_queries,
+        "etymology": (research_etymology.to_dict()
+                      if research_etymology is not None else None),
         "facts": getattr(research, "facts", []),
         "complementary_queries": getattr(research, "complementary_queries", []),
         "unresolved_gaps": getattr(research, "unresolved_gaps", []),
@@ -1016,10 +1034,25 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             n = scenes_stage.scenes_for_duration(cfg.duration_target,
                                                  alvo_cena, teto_cena)
         try:
+            scene_directive_eff = scene_directive
+            if (genre_key == "etymology" and research_etymology is not None
+                    and len(getattr(research_etymology, "chain", []) or []) >= 2):
+                # A cadeia etimológica entra no prompt das cenas para que as
+                # entidades visuais usem as formas reais (candidatus,
+                # candidus) e o cenário cultural (Roma, toga) — nunca cópia
+                # do verbete, só os termos.
+                from .stages import etymology as etymology_stage
+                chain = research_etymology
+                bloco = (f"\n\nCADEIA ETIMOLÓGICA (use as formas como "
+                         f"entidades visuais e o cenário como contexto): "
+                         f"{chain.chain_text()}")
+                if chain.visual_context:
+                    bloco += " | cenário: " + ", ".join(chain.visual_context)
+                scene_directive_eff = (scene_directive_eff or "") + bloco
             chapters, scenes_source = scenes_stage.build_chapters(
                 script_text, cfg, n_scenes=n, metrics=metrics,
                 genre=genre_key, target_seconds=alvo_cena,
-                genre_directive=scene_directive, max_scenes=teto_cena)
+                genre_directive=scene_directive_eff, max_scenes=teto_cena)
         except nvidia_stage.NvidiaError as exc:
             if not script_mode:
                 raise
@@ -1045,6 +1078,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
         run_event("result", "Contexto visual recuperado da entidade pesquisada",
                   operation="scenes", source=scenes_source)
+    if genre_key == "etymology" and research_etymology is not None:
+        from .stages import etymology as etymology_stage
+        if etymology_stage.enrich_chapters(chapters, research_etymology):
+            force_after_script = True
+            _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
+            run_event("result", "Cenas enriquecidas com a cadeia etimológica",
+                      operation="scenes", source=scenes_source,
+                      word=getattr(research_etymology, "word", ""))
     run_event(scene_event, f"Cenas: {scenes_source}; {len(chapters)} cena(s)",
               operation="scenes", source=scenes_source,
               scenes=len(chapters))
@@ -1493,6 +1534,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "sources": len(research_sources),
             "status": research_status,
             "titles": [rs.title for rs in research_sources],
+            "etymology": (research_etymology.to_dict()
+                          if research_etymology is not None else None),
             "grounding": grounding,
             "target_entity": (research_target.to_dict()
                               if research_target is not None else None),
