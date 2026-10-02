@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .library import AudioLibrary, AudioLibraryError, is_calm_music_asset, content_hints
 from .. import ffmpeg as ff
+from ..stages import editorial
 
 
 def _public(asset: dict | None) -> dict | None:
@@ -115,9 +116,14 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                            and len(prior_assets) == len(sfx_events))
     sfx_assets: list[dict] = []
     if sfx_enabled and genre:
+        adapter = editorial.get(genre)
+        sfx_categories = adapter.sfx_categories if adapter else ()
         updated_categories: set[str] = set()
         for index, event in enumerate(sfx_events):
-            category = "paper" if event.get("kind") == "swish" else "soft_impact"
+            preferred = ("paper" if event.get("kind") == "swish"
+                         else "soft_impact")
+            category = (preferred if preferred in sfx_categories else
+                        sfx_categories[0] if sfx_categories else preferred)
             previous_asset = prior_assets[index] if index < len(prior_assets) else {}
             if (_same_request(old_music, mode, genre, gain, ducking)
                     and previous_asset.get("category") == category

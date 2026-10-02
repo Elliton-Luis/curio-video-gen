@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-160000_relatorio_adapters-genero-fonte-musica.md` — adapters declarativos, fontes especialistas e política de áudio por gênero; 721 testes verdes.
 - `relatorios/20261002-153500_relatorio_prompts-editoriais.md` — prompts de roteiro e título movidos de `nvidia.py` para `stages/prompts.py`; 720 testes verdes.
 - `relatorios/20261001-230902_relatorio_musica-por-afinidade.md` — cama por afinidade com o tema e ganho −3 dB; sem custo de LLM.
 

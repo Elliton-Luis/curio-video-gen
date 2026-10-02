@@ -537,7 +537,8 @@ def _relevance(query: str, asset: MediaAsset) -> int:
     return sum(1 for term in _query_terms(query) if term in haystack)
 
 
-def _provider_priority_order(cfg: CurioConfig, ch=None) -> list[MediaProvider]:
+def _provider_priority_order(cfg: CurioConfig, ch=None,
+                            genre: str = "") -> list[MediaProvider]:
     """Provedores na ordem de prioridade para ESTA cena.
 
     Para `historical_art` os museus e acervos sobem: uma foto de banco
@@ -548,9 +549,13 @@ def _provider_priority_order(cfg: CurioConfig, ch=None) -> list[MediaProvider]:
     """
     all_providers = get_providers(cfg)
     order = list(PROVIDER_PRIORITY)
+    from . import editorial
+    adapter = editorial.get(genre or getattr(cfg, "genre", ""))
+    adapter_priority = list(adapter.media_provider_priority) if adapter else []
     if str(getattr(ch, "visual_type", "") or "") == "historical_art":
-        art_first = [p for p in ("met", "aic", "wikimedia", "openverse")
-                     if p in order]
+        adapter_priority = adapter_priority or ["met", "aic", "wikimedia", "openverse"]
+    if adapter_priority:
+        art_first = [p for p in adapter_priority if p in order]
         order = art_first + [p for p in order if p not in art_first]
     priority_map = {name: i for i, name in enumerate(order)}
     return sorted(all_providers, key=lambda p: priority_map.get(p.name, 999))
@@ -564,16 +569,6 @@ GENERIC_FALLBACK_QUERIES = (
     "laboratory", "microscope", "science", "research", "experiment",
     "test tube",
 )
-
-GENRE_GENERIC_QUERIES = {
-    "people": ("church interior", "old library", "ancient manuscript",
-               "museum hall", "historic portrait", "monastery"),
-    "history": ("church interior", "old library", "ancient manuscript",
-                "museum hall", "historic map", "castle"),
-    "mythology": ("church interior", "ancient sculpture", "old manuscript",
-                  "museum hall", "temple", "painting"),
-}
-
 
 def _generic_queries(genre: str = "", ch=None) -> tuple[str, ...]:
     """Genéricos do gênero (L4 da cachoeira). Sem gênero: ciência, como antes.
@@ -594,8 +589,11 @@ def _generic_queries(genre: str = "", ch=None) -> tuple[str, ...]:
                 return SPACE_GENERIC_QUERIES
         except Exception:  # noqa: BLE001 — genérico nunca é fatal
             pass
-    return GENRE_GENERIC_QUERIES.get((genre or "").strip().lower(),
-                                     GENERIC_FALLBACK_QUERIES)
+    from . import editorial
+    adapter = editorial.get(genre)
+    if adapter and adapter.generic_media_queries:
+        return adapter.generic_media_queries
+    return GENERIC_FALLBACK_QUERIES
 
 # Meios que trazem ARTE para a frente numa busca. A ordem é o que o
 # acervo tem de mais primeiro: pintura e fresco são o grosso do
@@ -1098,7 +1096,7 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     providers = []
     seen_names: set[str] = set()
     for ch in chapters:
-        for prov in _provider_priority_order(cfg, ch):
+        for prov in _provider_priority_order(cfg, ch, genre):
             if prov.name not in seen_names:
                 seen_names.add(prov.name)
                 providers.append(prov)

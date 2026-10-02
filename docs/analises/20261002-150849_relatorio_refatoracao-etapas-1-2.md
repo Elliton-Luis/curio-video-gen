@@ -1,6 +1,6 @@
 # Relatório de implementação — Etapas 1 e 2 (limpeza + unificações)
 
-Data: 2026-10-02. Fonte de verdade: `20261002-131932_analise_refatoracao-codigo-marto.md`.
+Data: 2026-10-02. Fonte de verdade: `20261002-131932_analise_refatoracao-codigo-morto.md`.
 Commits: `2afe77b` (etapa 1), `5985a65` (etapa 2a), `2c25cc5` (etapa 2b).
 Suíte: **720/720** em todos os três commits (nenhum teste removido ou afrouxado).
 

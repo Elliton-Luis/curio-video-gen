@@ -6,6 +6,7 @@ import re
 import urllib.parse
 
 from .. import textnorm
+from . import editorial
 from . import scoring
 
 _HONORIFICS = {"sao", "santo", "santa", "saint"}
@@ -108,7 +109,8 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
     english_subject = english
     if english and names[0].startswith(("São ", "Santo ", "Santa ")):
         english_subject = english if english.startswith("Saint ") else f"Saint {english}"
-    medium = ("painting" if genre in ("people", "history", "mythology") else "")
+    perfil = editorial.get(genre)
+    medium = perfil.visual_context_medium if perfil else ""
     changed = False
     for ch in needs:
         previous = ch.to_dict()

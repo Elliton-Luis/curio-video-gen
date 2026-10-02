@@ -20,22 +20,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import ffmpeg as ff
+from ..stages import editorial
 from ..ua import user_agent
 
 API_ROOT = "https://freesound.org/apiv2"
 MAX_DOWNLOAD_BYTES = 80 * 1024 * 1024
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aiff", ".aif"}
-GENRES = ("people", "history", "etymology", "mythology", "mystery", "science")
+GENRES = editorial.GENRE_ORDER
 SFX_CATEGORIES = ("paper", "soft_impact")
-
-MUSIC_DIRECTIONS = {
-    "people": ("violin classical ambient", "classical"),
-    "history": ("tense ambient", "tense"),
-    "etymology": ("calm curious ambient", "calm"),
-    "mythology": ("calm ancient ambient", "calm"),
-    "mystery": ("calm investigative ambient", "calm"),
-    "science": ("calm minimal ambient", "calm"),
-}
 
 _CALM_MOODS = {"calm", "contemplative", "soft", "soothing", "peaceful",
                "gentle", "serene", "minimal", "classical", "tense",
@@ -373,7 +365,8 @@ class AudioLibrary:
         if source is None:
             source = FreesoundAudioSource()
         if kind == "music":
-            query, mood = MUSIC_DIRECTIONS.get(genre, MUSIC_DIRECTIONS["history"])
+            adapter = editorial.get(genre) or editorial.get("history")
+            query, mood = adapter.music_query, adapter.music_mood
             min_duration, max_duration = 20.0, 900.0
         else:
             if category not in SFX_QUERIES:

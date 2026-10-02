@@ -500,9 +500,8 @@ def _genre_transitions(chapters: list[Chapter], genre: str,
     """Cross-dissolve por gênero e papel de cena; cortes dramáticos são secos."""
     if mode == "none" or len(chapters) < 2:
         return [0.0] * max(0, len(chapters) - 1)
-    defaults = {"people": 0.34, "history": 0.25, "etymology": 0.16,
-                "mythology": 0.40, "mystery": 0.38, "science": 0.16}
-    base = defaults.get(genre, 0.20)
+    adapter = editorial_stage.get(genre)
+    base = adapter.transition_duration if adapter else 0.20
     result = []
     for chapter in chapters[1:]:
         text = (chapter.narration or "").lower()
@@ -521,17 +520,13 @@ def _genre_transitions(chapters: list[Chapter], genre: str,
     return result
 
 
-GENRE_XFADE = {"people": "slideright", "history": "wipeleft",
-               "etymology": "smoothleft", "mythology": "slideright",
-               "mystery": "wipeleft", "science": "slideright"}
-
-
 def _genre_transition_kinds(chapters: list[Chapter], genre: str,
                             mode: str = "auto") -> list[str]:
     """Efeito xfade por limite de cena. Corte dramático usa fade (vira corte)."""
     if mode == "none" or len(chapters) < 2:
         return ["fade"] * max(0, len(chapters) - 1)
-    kind = GENRE_XFADE.get(genre or "", "fade")
+    adapter = editorial_stage.get(genre)
+    kind = adapter.transition_kind if adapter else "fade"
     return [kind] * (len(chapters) - 1)
 
 
@@ -1030,7 +1025,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                                  alvo_cena, teto_cena)
         try:
             scene_directive_eff = scene_directive
-            if (genre_key == "etymology" and research_etymology is not None
+            if (perfil and "wiktionary" in perfil.specialized_sources
+                    and research_etymology is not None
                     and len(getattr(research_etymology, "chain", []) or []) >= 2):
                 # A cadeia etimológica entra no prompt das cenas para que as
                 # entidades visuais usem as formas reais (candidatus,
@@ -1073,7 +1069,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
         run_event("result", "Contexto visual recuperado da entidade pesquisada",
                   operation="scenes", source=scenes_source)
-    if genre_key == "etymology" and research_etymology is not None:
+    if (perfil and "wiktionary" in perfil.specialized_sources
+            and research_etymology is not None):
         from .stages import etymology as etymology_stage
         if etymology_stage.enrich_chapters(chapters, research_etymology):
             force_after_script = True

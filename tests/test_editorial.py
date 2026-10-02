@@ -115,6 +115,21 @@ def test_estrategia_de_pesquisa_difere_por_genero():
     assert consultas["etymology"] != consultas["people"]
 
 
+def test_adapters_declaram_fontes_visual_musica_e_transicoes():
+    from curio.stages.research_sources import SOURCE_ADAPTERS
+
+    for key, adapter in E.GENRES.items():
+        assert adapter.specialized_sources, key
+        for source in adapter.specialized_sources:
+            assert source in SOURCE_ADAPTERS or source in (
+                "wiktionary", "logeion", "perseus"), (key, source)
+        assert adapter.music_query and adapter.music_mood, key
+        assert adapter.transition_kind and adapter.transition_duration > 0, key
+        assert adapter.generic_media_queries, key
+
+    assert E.GENRE_ORDER == tuple(E.GENRES)
+
+
 def test_etimologia_exige_separar_origem_de_hipotese():
     d = E.get("etymology").research.must_distinguish
     assert "origem documentada" in d and "hipótese" in d

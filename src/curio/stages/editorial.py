@@ -87,11 +87,18 @@ class VisualStyle:
     ladder: tuple[str, ...] = ()
     # Termos que a cena deve declarar como proibidos, além dos da IA.
     forbidden: tuple[str, ...] = ()
+    continuity: str = ""
+    focus: str = ""
 
 
 @dataclass(frozen=True)
-class GenreProfile:
-    """Um gênero editorial. Diretrizes, não template."""
+class GenreAdapter:
+    """Contrato declarativo de gênero. Não executa I/O nem renderização.
+
+    Adapter escolhe políticas. Infraestrutura executa pesquisa, LLM, mídia,
+    áudio e render. Campos têm defaults para gênero novo não precisar
+    implementar comportamento que não usa.
+    """
     key: str
     label: str
     description: str
@@ -101,11 +108,21 @@ class GenreProfile:
     visual: VisualStyle = field(default_factory=VisualStyle)
     caption: str = ""
     ending: str = ""
+    specialized_sources: tuple[str, ...] = ()
+    generic_media_queries: tuple[str, ...] = ()
+    media_provider_priority: tuple[str, ...] = ()
+    visual_context_medium: str = ""
+    transition_duration: float = 0.20
+    transition_kind: str = "fade"
+    music_query: str = "calm ambient"
+    music_mood: str = "calm"
+    sfx_categories: tuple[str, ...] = ("paper", "soft_impact")
+    pacing_note: str = "Moderate and rising, accelerating through the event."
 
 
 # --- os perfis ---------------------------------------------------------
 
-HISTORY = GenreProfile(
+HISTORY = GenreAdapter(
     key="history",
     label="História geral / Dark History",
     description="Quedas de impérios, batalhas, revoluções, crimes e "
@@ -139,9 +156,17 @@ HISTORY = GenreProfile(
     ),
     caption="Destaque nomes de pessoas, lugares e datas; corte de 5 em 5.",
     ending="Feche no legado ou na consequência que dura até hoje.",
+    specialized_sources=("loc", "perseus"),
+    generic_media_queries=("church interior", "old library", "ancient manuscript",
+                           "museum hall", "historic map", "castle"),
+    media_provider_priority=("met", "aic", "wikimedia", "openverse"),
+    visual_context_medium="painting",
+    transition_duration=0.25, transition_kind="wipeleft",
+    music_query="tense ambient", music_mood="tense",
+    pacing_note="Moderate and rising, accelerating through the event.",
 )
 
-ETYMOLOGY = GenreProfile(
+ETYMOLOGY = GenreAdapter(
     key="etymology",
     label="Etimologia e origem de palavras",
     description="De onde veio a palavra e como o significado se transformou.",
@@ -175,12 +200,22 @@ ETYMOLOGY = GenreProfile(
         avoid="Não use a linguagem visual de uma biografia: aqui o objeto da "
               "cena é a PALAVRA.",
         ladder=("typographic", "conceptual", "literal"),
+        focus=("The subject is usually a WORD, not an object: prefer the word "
+               "or its historical form as subject; put its real components "
+               "and cultural setting in visual_entities and context."),
     ),
     caption="Destaque a própria palavra a cada menção; corte de 4 em 4.",
     ending="Feche na transformação do sentido, não numa curiosidade solta.",
+    specialized_sources=("wiktionary", "logeion", "perseus"),
+    generic_media_queries=("ancient manuscript", "stone inscription",
+                           "old dictionary", "handwriting", "lettering"),
+    visual_context_medium="",
+    transition_duration=0.16, transition_kind="smoothleft",
+    music_query="calm curious ambient", music_mood="calm",
+    pacing_note="Fast and revelatory, with a feeling of discovery.",
 )
 
-MYTHOLOGY = GenreProfile(
+MYTHOLOGY = GenreAdapter(
     key="mythology",
     label="Mitologia e folclore",
     description="Mitos, lendas e tradições, distinguindo tradição de fato.",
@@ -211,9 +246,17 @@ MYTHOLOGY = GenreProfile(
     ),
     caption="Destaque o nome da entidade e da tradição; corte de 6 em 6.",
     ending="Feche no significado que a tradição carrega até hoje.",
+    specialized_sources=("perseus", "logeion"),
+    generic_media_queries=("church interior", "ancient sculpture", "old manuscript",
+                           "museum hall", "temple", "painting"),
+    media_provider_priority=("met", "aic", "wikimedia", "openverse"),
+    visual_context_medium="painting",
+    transition_duration=0.40, transition_kind="slideright",
+    music_query="calm ancient ambient", music_mood="calm",
+    pacing_note="Atmospheric, with rhythm changes.",
 )
 
-MYSTERY = GenreProfile(
+MYSTERY = GenreAdapter(
     key="mystery",
     label="Mistérios e casos não resolvidos",
     description="Um caso, suas evidências e o que continua sem resposta.",
@@ -247,9 +290,15 @@ MYSTERY = GenreProfile(
     ),
     caption="Destaque a palavra do status: fato, hipótese, não confirmado.",
     ending="Feche no que continua aberto, sem resolver por conveniência.",
+    specialized_sources=("fbi_wanted",),
+    generic_media_queries=("case file document", "evidence board", "archive map",
+                           "investigation photo", "police archive"),
+    transition_duration=0.38, transition_kind="wipeleft",
+    music_query="calm investigative ambient", music_mood="calm",
+    pacing_note="Controlled, with pauses before the reveal.",
 )
 
-SCIENCE = GenreProfile(
+SCIENCE = GenreAdapter(
     key="science",
     label="Ciência e descobertas",
     description="Fenômeno, mecanismo, evidência e o que muda com isso.",
@@ -290,9 +339,15 @@ SCIENCE = GenreProfile(
     ending="Feche na implicação retomando a imagem do gancho já respondida "
            "(a era dos buracos negros responde a 'a última coisa a existir'), "
            "não em 'é muito importante'.",
+    specialized_sources=("nasa", "pubmed"),
+    generic_media_queries=("laboratory", "microscope", "science", "research",
+                           "experiment", "test tube"),
+    transition_duration=0.16, transition_kind="slideright",
+    music_query="calm minimal ambient", music_mood="calm",
+    pacing_note="Slow enough for the viewer to follow the mechanism.",
 )
 
-PEOPLE = GenreProfile(
+PEOPLE = GenreAdapter(
     key="people",
     label="História de pessoas",
     description="A trajetória de uma pessoa e por que a vida dela importa.",
@@ -344,25 +399,36 @@ PEOPLE = GenreProfile(
         avoid="Não repita a mesma imagem do rosto em cena após cena: "
               "biographical visual continuity é pessoa + época + lugar + obra.",
         forbidden=("modern studio portrait", "celebrity lookalike"),
+        continuity=("This is a person's trajectory: across the video visuals "
+                    "must move between the PERSON, ERA, PLACES and WORKS, "
+                    "not repeat one portrait."),
     ),
     caption="Destaque nome, lugar e data; corte de 6 em 6.",
     ending="Feche no legado: o que da pessoa continua presente.",
+    specialized_sources=("wikidata",),
+    generic_media_queries=("church interior", "old library", "ancient manuscript",
+                           "museum hall", "historic portrait", "monastery"),
+    media_provider_priority=("met", "aic", "wikimedia", "openverse"),
+    visual_context_medium="painting",
+    transition_duration=0.34, transition_kind="slideright",
+    music_query="violin classical ambient", music_mood="classical",
+    pacing_note="Varied, with decisive moments allowed to breathe and routine "
+                 "information compressed.",
 )
 
-GENRES: dict[str, GenreProfile] = {
+GENRES: dict[str, GenreAdapter] = {
     p.key: p for p in (HISTORY, ETYMOLOGY, MYTHOLOGY, MYSTERY, SCIENCE, PEOPLE)
 }
 
 # Ordem de exibição na TUI: do mais cinematográfico ao mais conceitual.
-GENRE_ORDER: tuple[str, ...] = ("history", "etymology", "mythology",
-                                 "mystery", "science", "people")
+GENRE_ORDER: tuple[str, ...] = tuple(GENRES)
 
 # Perfil usado quando não há gênero escolhido. NÃO é um gênero: é a
 # ausência dele, que preserva o comportamento anterior ao recurso.
 DEFAULT_KEY = ""
 
 
-def get(key: str | None) -> GenreProfile | None:
+def get(key: str | None) -> GenreAdapter | None:
     """Perfil do gênero, ou None quando nenhum foi escolhido.
 
     `None` é o modo compatível: com gênero vazio o pipeline não muda
@@ -388,7 +454,7 @@ def choices() -> list[tuple[str, str]]:
 # o pipeline saiba que existe um segundo caminho.
 
 
-def script_directive(profile: GenreProfile | None) -> str:
+def script_directive(profile: GenreAdapter | None) -> str:
     """Bloco de direção narrativa para o prompt do roteiro."""
     if profile is None:
         return ""
@@ -404,19 +470,8 @@ def script_directive(profile: GenreProfile | None) -> str:
                   f"density, roughly {profile.pacing.target_scene_seconds:g} "
                   f"seconds of narration per scene "
                   f"(between {profile.pacing.min_scene_seconds:g} and "
-                  f"{profile.pacing.max_scene_seconds:g}). "
-                  + ("Fast and revelatory, with a feeling of discovery."
-                     if profile.key == "etymology" else
-                     "Varied, with decisive moments allowed to breathe and "
-                     "routine information compressed."
-                     if profile.key == "people" else
-                     "Slow enough for the viewer to follow the mechanism."
-                     if profile.key == "science" else
-                     "Controlled, with pauses before the reveal."
-                     if profile.key == "mystery" else
-                     "Atmospheric, with rhythm changes."
-                     if profile.key == "mythology" else
-                     "Moderate and rising, accelerating through the event."))
+                  f"{profile.pacing.max_scene_seconds}). "
+                  + profile.pacing_note)
     if profile.research.must_distinguish:
         partes.append("You MUST keep these separate in the narration and never "
                       "present one as another: "
@@ -428,7 +483,7 @@ def script_directive(profile: GenreProfile | None) -> str:
     return "\n".join(partes)
 
 
-def scene_directive(profile: GenreProfile | None) -> str:
+def scene_directive(profile: GenreAdapter | None) -> str:
     """Direção visual e de queries que entra no prompt das cenas."""
     if profile is None:
         return ""
@@ -444,19 +499,14 @@ def scene_directive(profile: GenreProfile | None) -> str:
     if profile.visual.forbidden:
         partes.append("NEVER SHOW: " + ", ".join(profile.visual.forbidden)
                       + ".")
-    if profile.key == "people":
-        partes.append("This is a person's trajectory: across the video the "
-                      "visuals must keep moving between the PERSON, their "
-                      "ERA, their PLACES and their WORKS, so the viewer gets a "
-                      "visual continuity and not the same portrait repeated.")
-    if profile.key == "etymology":
-        partes.append("The subject of a scene here is usually a WORD, not an "
-                      "object: prefer subject = the word or its old form, and "
-                      "visual_entities = the parts it is built from.")
+    if profile.visual.continuity:
+        partes.append(profile.visual.continuity)
+    if profile.visual.focus:
+        partes.append(profile.visual.focus)
     return "\n".join(partes)
 
 
-def summary(profile: GenreProfile | None) -> dict:
+def summary(profile: GenreAdapter | None) -> dict:
     """Resumo do perfil para metadata e para o dry-run."""
     if profile is None:
         return {"key": "", "label": DEFAULT_KEY, "pacing": {},
@@ -477,10 +527,21 @@ def summary(profile: GenreProfile | None) -> dict:
             "preferred_forms": list(profile.visual.preferred_forms),
             "media_hints": list(profile.visual.media_hints),
             "ladder": list(profile.visual.ladder),
+            "continuity": profile.visual.continuity,
+            "focus": profile.visual.focus,
+            "generic_media_queries": list(profile.generic_media_queries),
+            "media_provider_priority": list(profile.media_provider_priority),
         },
         "research": {
             "queries": list(profile.research.queries),
             "must_distinguish": list(profile.research.must_distinguish),
+            "specialized_sources": list(profile.specialized_sources),
         },
+        "audio": {"music_query": profile.music_query,
+                  "music_mood": profile.music_mood,
+                  "sfx_categories": list(profile.sfx_categories)},
+        "transitions": {"duration": profile.transition_duration,
+                        "kind": profile.transition_kind},
+        "pacing_note": profile.pacing_note,
         "ending": profile.ending,
     }

@@ -356,6 +356,7 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
     seen_urls: set[str] = set()
     sources: list[ResearchSource] = []
     rejected: list[tuple[ResearchSource, str, str]] = []
+    specialized_payload = None
 
     def _consider(src: ResearchSource, query: str) -> None:
         """Portão de relevância. Só daqui para baixo a fonte é groundwork."""
@@ -374,6 +375,34 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             metrics.research_source()
         run_event("result", f"Fonte aceita: {src.title}", operation="research_source",
                   title=src.title, url=src.url, query=query)
+
+    # Adapters declaram fontes especializadas; registro resolve os nomes.
+    # Fontes gerais continuam depois e entram quando passam pelo mesmo gate.
+    # Nenhum adapter faz rede por conta própria durante setup/configuração.
+    from . import editorial as editorial_stage
+    adapter = editorial_stage.get(genre)
+    if adapter and adapter.specialized_sources:
+        source_query = (getattr(target, "name", "") or "").strip()
+        if not source_query and getattr(target, "topic_terms", None):
+            source_query = " ".join(target.topic_terms[:3])
+        source_query = source_query or idea.strip()
+        from . import research_sources
+        try:
+            specialized, specialized_payload = research_sources.fetch_specialized(
+                adapter.specialized_sources, source_query, idea, language,
+                getattr(cfg, "cache_dir", "cache") or "cache", metrics, timeout)
+        except Exception as exc:  # noqa: BLE001 — geral continua disponível
+            specialized = []
+            run_event("warning", f"Fontes especializadas indisponíveis: {exc}",
+                      operation="research_specialized", sources=list(adapter.specialized_sources))
+        specialized_limit = max(0, max_sources - 1)
+        for src in specialized:
+            if len(sources) >= specialized_limit:
+                break
+            if metrics is not None:
+                metrics.research_query()
+            tried_queries.append(f"{src.origin}: {source_query}")
+            _consider(src, f"{src.origin}: {source_query}")
 
     for query in queries:
         if len(sources) >= max_sources:
@@ -497,9 +526,10 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             run_event("fallback", msg, operation="research",
                       entity=target.name, query_count=len(tried_queries),
                       rejected=len(rejected))
-            return ResearchResult(target, [], rejected, tried_queries,
-                                  weak=True, weak_warnings=[msg],
-                                  genre=genre)
+            result = ResearchResult(target, [], rejected, tried_queries,
+                                    weak=True, weak_warnings=[msg], genre=genre,
+                                    etymology=specialized_payload)
+            return result
         run_event("error", f"Pesquisa sem fontes aceitas após {len(tried_queries)} consulta(s)",
                   operation="research", entity=target.name,
                   query_count=len(tried_queries), rejected=len(rejected),
@@ -515,33 +545,8 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
         print(entity_stage.explain(target, sources, rejected))
     res = ResearchResult(target, sources[:max_sources], rejected,
                           tried_queries, weak=weak,
-                          weak_warnings=weak_warnings, genre=genre)
-    if (genre or "").strip().lower() == "etymology":
-        # Fontes especializadas SOMAM às gerais: a cadeia (Wiktionary →
-        # Logeion/Perseus) fundamenta o roteiro e as entidades visuais.
-        # Best-effort isolada: nunca derruba a pesquisa geral.
-        try:
-            from . import etymology as etymology_stage
-            head = (etymology_stage.headword_of(idea)
-                    or etymology_stage.headword_of(
-                        "", getattr(target, "name", "") or ""))
-            if head:
-                res.etymology = etymology_stage.lookup(
-                    head, idea, language,
-                    getattr(cfg, "cache_dir", "cache") or "cache",
-                    metrics, timeout)
-                if res.etymology is not None:
-                    run_event("result",
-                              "Etimologia: " + res.etymology.chain_text(),
-                              operation="research_etymology",
-                              word=res.etymology.word,
-                              origin=res.etymology.origin_language,
-                              sources=len(res.etymology.sources))
-        except Exception as exc:  # noqa: BLE001 — segue só com gerais
-            run_event("warning", f"Etimologia indisponível ({exc}); "
-                      "seguindo só com fontes gerais",
-                      operation="research_etymology", error=str(exc))
-            res.etymology = None
+                          weak_warnings=weak_warnings, genre=genre,
+                          etymology=specialized_payload)
     _complete_research(res, idea, language, cfg, metrics, timeout)
     return res
 
