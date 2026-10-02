@@ -70,11 +70,20 @@ def scene_forbidden(ch) -> list[str]:
     foto genérica de laboratório.
     """
     out: list[str] = []
+    identities = [set(_fold(name).split()) for name in
+                  [getattr(ch, "subject", ""), *(getattr(ch, "subject_aliases", []) or [])] if name]
     for term in list(getattr(ch, "forbidden", []) or []):
         s = str(term).strip()
+        if s and any(set(_fold(s).split()).issubset(identity) for identity in identities):
+            continue  # Contradictory cached model metadata must not veto its own subject.
         if s and s not in out:
             out.append(s)
     vtype = str(getattr(ch, "visual_type", "") or "literal")
+    context = _fold(" ".join(getattr(ch, "subject_aliases", []) or []) + " " +
+                    str(getattr(ch, "narration", "") or ""))
+    if (_fold(getattr(ch, "subject", "")) == "medusa" and
+            any(term in context for term in ("mitolog", "gorgona", "gorgon"))):
+        out.extend(["jellyfish", "sea jelly", "cnidarian", "medusa-phase"])
     if vtype == "historical_art":
         out.extend(_dedup(["modern photo", "stock photo", "contemporary"]))
     elif vtype == "mechanism":

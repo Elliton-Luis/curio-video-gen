@@ -133,6 +133,12 @@ class TargetEntity:
                                for q in (search_queries or []) if str(q).strip()]
         self.forbidden = [str(f).strip()
                           for f in (forbidden or []) if str(f).strip()]
+        identities = [set(_norm_phrase(n).split()) for n in [self.name, *self.aliases] if n]
+        # A model may blacklist the very name it just identified (e.g. Júlio,
+        # César). Reject contradictory negatives, not genuine named homonyms.
+        self.forbidden = [term for term in self.forbidden
+                          if not any(set(_norm_phrase(term).split()).issubset(identity)
+                                     for identity in identities)]
         self.ambiguous = bool(ambiguous)
         self.source = source
         self.is_entity = bool(is_entity)

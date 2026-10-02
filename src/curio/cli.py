@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+import time
 
 from . import __version__
 from .audio.library import (AudioLibrary, AudioLibraryError, GENRES,
@@ -15,7 +17,7 @@ from . import ffmpeg as ff
 from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
-from .metrics import backfill_from_metadata
+from .metrics import RunMetrics, backfill_from_metadata
 from .pipeline import (MediaStandby, _build_silent, _build_silent_visual,
                         _apply_audio_request, _audio_events,
                         _final_audio_fade, _genre_transitions,
@@ -440,13 +442,14 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
               file=sys.stderr)
         return 1
 
-    chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
+    chapters = [Chapter.from_dict(d) for d in _read_json(paths.timeline_json)]
     media = _read_json(paths.media_json)
     try:
         old_meta = _read_json(paths.metadata_json)
     except (OSError, ValueError, json.JSONDecodeError):
         old_meta = {}
     previous_audio = old_meta.get("audio") or {}
+    metrics = RunMetrics(args.slug, old_meta.get("input", args.slug), "rerender")
     if previous_audio:
         _apply_audio_request(cfg, previous_audio)
     else:
@@ -504,6 +507,15 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         music_gain_db=cfg.music_gain_db, music_ducking=cfg.music_ducking,
         final_fade=_final_audio_fade(project_genre, transition_mode))
     _mark_audio_used(cfg, audio_plan)
+    from .stages.visual_beats import BEAT_SECONDS
+    metrics.visual_plan(chapters, media, BEAT_SECONDS, visual_timeline, rendered_duration=total)
+    old_meta["visual_plan_signature"] = hashlib.sha256(
+        json.dumps(visual_timeline or [], sort_keys=True).encode()).hexdigest()
+    old_meta["duration_actual"] = info["duration"]
+    old_meta["audio_duration"] = audio_duration
+    old_meta["render_backend"] = info["backend"]
+    old_meta["render_encoder"] = info["encoder"]
+    old_meta["processing_time_seconds"] = round(time.monotonic() - metrics.started_monotonic, 2)
     old_meta["audio"] = audio_plan["metadata"]
     old_meta["visual_transition_signature"] = _transition_signature(
         chapters, project_genre, transition_mode,
@@ -521,6 +533,8 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         old_meta["artifacts"]["sfx"] = sfx_path
     if music_asset:
         old_meta["artifacts"]["music"] = music_asset["path"]
+    old_meta["metrics_file"] = metrics.save(
+        old_meta, {"render": old_meta["processing_time_seconds"]}, cfg.metrics_dir)
     _write_json(paths.metadata_json, old_meta)
     print(f"Refeito: {info['path']} ({info['duration']}s, {info['encoder']})")
     print("Narração, roteiro e legendas vieram do cache — não foram refeitos.")

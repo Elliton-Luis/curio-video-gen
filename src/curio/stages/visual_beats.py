@@ -27,3 +27,33 @@ def average_seconds(beats: list[dict]) -> float | None:
         return None
     return round(sum(float(b["end"]) - float(b["start"]) for b in beats)
                  / len(beats), 2)
+
+
+def asset_key(asset: dict) -> str:
+    """Provider-qualified identity; numeric IDs alone collide between providers."""
+    return ((f"{asset['provider']}:" if asset.get("provider") else "") + str(asset["asset_id"])
+            if asset.get("asset_id") else str(asset.get("local_path") or ""))
+
+
+def bind_assets(beats: list[dict], assets: list[dict], start: float) -> list[dict]:
+    """Assign all usable distinct backgrounds to consecutive existing beats."""
+    distinct, seen = [], set()
+    for asset in assets:
+        key = asset_key(asset)
+        if key and key not in seen:
+            distinct.append(asset)
+            seen.add(key)
+    distinct = distinct[:len(beats)]
+    backgrounds = []
+    for index, asset in enumerate(distinct):
+        first = index * len(beats) // len(distinct)
+        last = (index + 1) * len(beats) // len(distinct)
+        backgrounds.append({**asset,
+                            "start": round(beats[first]["start"] - start, 3),
+                            "duration": round(beats[last - 1]["end"] - beats[first]["start"], 3)})
+        for beat in beats[first:last]:
+            beat.update(asset_id=asset.get("asset_id", ""),
+                        provider=asset.get("provider", ""),
+                        local_path=asset.get("local_path", ""),
+                        asset_ids=[asset_key(asset)])
+    return backgrounds

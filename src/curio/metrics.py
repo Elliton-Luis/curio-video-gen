@@ -96,6 +96,12 @@ class RunMetrics:
         self.visual_beat_seconds = 0.0
         self.visual_asset_uses = 0
         self.visual_asset_ids: set[str] = set()
+        self.media_selected_ids: set[str] = set()
+        self.media_available_ids: set[str] = set()
+        self.media_available_acquisitions: dict[str, int] = {}
+        self.visual_asset_beat_counts: dict[str, int] = {}
+        self.visual_asset_scene_counts: dict[str, int] = {}
+        self.visual_asset_details: dict[str, dict] = {}
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -245,28 +251,75 @@ class RunMetrics:
         key = (reason or "motivo desconhecido")[:60]
         self.research_rejected[key] = self.research_rejected.get(key, 0) + 1
 
-    def visual_plan(self, chapters, media_scenes, beat_seconds: float) -> None:
-        """Count camera beats and repeated existing assets; no per-beat log."""
-        import math
+    def visual_plan(self, chapters, media_scenes, beat_seconds: float,
+                    visual_timeline=None, rendered_duration: float | None = None) -> None:
+        """Snapshot selected/available assets and renderer-bound beat identities."""
+        from .stages.visual_beats import asset_key, plan
         by_scene = {s.get("chapter_id"): s for s in (media_scenes or [])}
+        by_timeline = {s["chapter_id"]: s for s in (visual_timeline or [])}
+        cached_selection = not self.media_funnel.get("selected") and not self.media_downloads
+        self.visual_scene_count = self.visual_beat_count = self.visual_asset_uses = 0
+        self.visual_beat_seconds = 0.0
+        self.visual_asset_ids.clear()
+        self.media_available_ids.clear()
+        self.media_available_acquisitions.clear()
+        self.visual_asset_beat_counts.clear()
+        self.visual_asset_scene_counts.clear()
+        self.visual_asset_details.clear()
         for chapter in chapters:
-            duration = max(0.0, float(chapter.end) - float(chapter.start))
-            beats = max(1, math.ceil(duration / beat_seconds)) if duration else 0
-            self.visual_scene_count += 1
-            self.visual_beat_count += beats
+            timeline = by_timeline.get(chapter.id)
+            start = float(timeline["start"]) if timeline else float(chapter.start)
+            end = float(timeline["end"]) if timeline else float(chapter.end)
+            if rendered_duration is not None:
+                end = min(end, rendered_duration)
+            duration = max(0.0, end - start)
+            self.visual_scene_count += int(duration > 0)
             self.visual_beat_seconds += duration
             scene = by_scene.get(chapter.id, {})
             assets = scene.get("assets") or []
             if not assets and scene.get("asset"):
                 assets = [{"asset": scene["asset"]}]
-            ids = {str((item.get("asset") or {}).get("asset_id"))
-                   for item in assets
-                   if (item.get("asset") or {}).get("asset_id")}
-            self.visual_asset_ids.update(ids)
-            if ids and beats:
-                # Base asset persists across all camera beats. Other selected
-                # photos count once as existing overlays, not new searches.
-                self.visual_asset_uses += beats + max(0, len(ids) - 1)
+            for item in assets:
+                asset = item.get("asset") or {}
+                key = asset_key(asset)
+                if key:
+                    self.media_available_ids.add(key)
+                    self.visual_asset_beat_counts.setdefault(key, 0)
+                    acquisition = ("cache" if cached_selection else "generated"
+                                   if asset.get("provider") == "synth" else
+                                   item.get("acquisition", "unknown"))
+                    self.media_available_acquisitions[acquisition] = (
+                        self.media_available_acquisitions.get(acquisition, 0) + 1)
+                    if asset.get("provider") != "synth":
+                        self.media_selected_ids.add(key)
+                    self.visual_asset_details[key] = {
+                        "title": asset.get("title", ""),
+                        "provider": asset.get("provider", ""),
+                        "local_path": asset.get("local_path", ""),
+                        "acquisition": acquisition}
+            beats = timeline.get("visual_beats", []) if timeline else plan(duration, start)
+            beats = [beat for beat in beats if beat["start"] < end]
+            self.visual_beat_count += len(beats)
+            base = asset_key(scene.get("asset") or (assets[0].get("asset") if assets else {}) or {})
+            scene_keys = set()
+            for beat in beats:
+                if timeline:
+                    images = timeline.get("images") or []
+                    background = asset_key(beat) or (asset_key(images[0]) if images else "")
+                    keys = [background] if background else []
+                    keys.extend(asset_key(image) for image in images[1:]
+                                if image["start"] < min(beat["end"], end) - start)
+                else:
+                    keys = [base] if base else []
+                for key in set(keys):
+                    if not key:
+                        continue
+                    self.visual_asset_ids.add(key)
+                    scene_keys.add(key)
+                    self.visual_asset_uses += 1
+                    self.visual_asset_beat_counts[key] = self.visual_asset_beat_counts.get(key, 0) + 1
+            for key in scene_keys:
+                self.visual_asset_scene_counts[key] = self.visual_asset_scene_counts.get(key, 0) + 1
 
     def research_report(self) -> dict:
         return {"aceitas": self.research_sources,
@@ -364,8 +417,11 @@ class RunMetrics:
                 "visual_scenes": self.visual_scene_count,
                 "visual_beats": self.visual_beat_count,
                 "visual_assets_unique": len(self.visual_asset_ids),
+                "visual_asset_beat_counts": dict(self.visual_asset_beat_counts),
+                "visual_asset_scene_counts": dict(self.visual_asset_scene_counts),
+                "visual_asset_details": dict(self.visual_asset_details),
                 "visual_assets_reused": max(
-                    0, self.visual_asset_uses - len(self.visual_asset_ids)),
+                    0, sum(self.visual_asset_scene_counts.values()) - len(self.visual_asset_ids)),
                 "visual_average_seconds_per_beat": (
                     round(self.visual_beat_seconds / self.visual_beat_count, 2)
                     if self.visual_beat_count else None),
@@ -379,6 +435,11 @@ class RunMetrics:
                 },
                 "tts": {"calls": list(self.tts_calls)},
                 "media": {
+                    "selected_unique": len(self.media_selected_ids),
+                    "selection_attempts": self.media_funnel.get("selected", 0),
+                    "available_unique": len(self.media_available_ids),
+                    "available_occurrences": sum(self.media_available_acquisitions.values()),
+                    "available_by_acquisition": dict(self.media_available_acquisitions),
                     "searches": dict(self.media_searches),
                     "downloads": self.media_downloads,
                     "bytes": self.media_bytes,

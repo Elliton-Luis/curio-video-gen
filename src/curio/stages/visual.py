@@ -704,7 +704,12 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
             out.append(query)
 
     ai = [t.strip() for t in (list(ch.visual_queries) or []) if t.strip()]
-    if len(ai) >= 2:
+    from .scoring import _tokens
+    names = [set(_tokens(name)) for name in [getattr(ch, "subject", ""),
+             *(getattr(ch, "subject_aliases", []) or [])] if _tokens(name)]
+    same_subject = len(ai) >= 2 and all(
+        any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
+    if len(ai) >= 2 and not same_subject:
         _add(" ".join(ai[:2]))
     for term in ai:
         _add(term)
@@ -749,6 +754,7 @@ def _search_scene_with_shortcircuit(
     cache_dir: str,
     visual_state=None,
     genre: str = "",
+    asset_uses: dict | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Busca mídia de uma cena: COLETA candidatos, depois FILTRA e PONTUA.
 
@@ -810,11 +816,12 @@ def _search_scene_with_shortcircuit(
     seen_ids: set[str] = set()
 
     def _consider(cand: MediaAsset, query: str, from_cache: bool) -> None:
-        if cand.asset_id in seen_ids:
+        identity = f"{cand.provider}:{cand.asset_id}"
+        if identity in seen_ids:
             if metrics:
                 metrics.media_record_funnel("duplicates")
             return
-        seen_ids.add(cand.asset_id)
+        seen_ids.add(identity)
         if metrics:
             metrics.media_record_funnel("unique_considered")
         why = _validate_asset_for(cand, blocked)
@@ -835,77 +842,85 @@ def _search_scene_with_shortcircuit(
             "relevance": 0,  # preenchido pelo scoring, não pela ordem de chegada
             "order": 0,
             "from_cache": from_cache,
+            "generic": query.lower() in generics,
         })
 
-    for query in queries:
-        if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
-            break
-
-        # 1. Cache local primeiro (mesma consulta, resposta antiga)
-        cached = _get_cached_asset(cache_dir, query)
-        if cached is not None:
-            if metrics:
-                metrics.media_record_funnel("cache_returned")
-            _consider(cached, query, from_cache=True)
-            if metrics:
-                metrics.media_cache_hits += 1
-
-        # 2. Coleta de TODOS os provedores, não só do primeiro que responde
-        for prov in providers:
-            if getattr(prov, "_disabled", False):
-                continue
-            if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
-                break
-            try:
-                results = _search_with_timeout(
-                    prov, query, SEARCH_TIMEOUT, metrics)
-            except MediaError as exc:
-                if (any(code in str(exc) for code in ("429", "401", "403"))
-                        or "Too Many Requests" in str(exc)):
-                    prov._disabled = True
-                    if metrics:
-                        metrics.media_record_timeout()
-                    from ..runlog import event as run_event
-                    logged = run_event(
-                        "fallback", f"{prov.name}: provider desativado; {exc}",
-                        operation="media_search", provider=prov.name,
-                        error=str(exc))
-                    if not logged:
-                        print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
-                              file=sys.stderr)
-                continue
-            if metrics:
-                metrics.media_record_results(prov.name, len(results))
-                metrics.media_record_funnel("normalized_returned", len(results))
-            for result_index, cand in enumerate(results):
-                if len(candidates) >= max_images * CANDIDATE_MULTIPLIER:
-                    if metrics:
-                        metrics.media_record_funnel("budget_unexamined", len(results) - result_index)
-                    break
-                _consider(cand, query, from_cache=False)
-
-    # 3. Ordena por precisão sobre o assunto e corta no orçamento da cena.
-    #    Só então baixa: até aqui nada além de metadados saiu da rede.
-    #    Genéricos pontuam contra o próprio termo (igreja mostra igreja);
-    #    entram DEPOIS das específicas, nunca no lugar delas.
     from . import scoring
-    for entry in candidates:
-        entry["generic"] = entry["query"].lower() in generics
-    specific = scoring.rank_candidates(
-        [e for e in candidates if not e["generic"]], ch)
-    generic_ranked = []
-    for entry in [e for e in candidates if e["generic"]]:
-        info = scoring.generic_score(entry["asset"], entry["query"])
-        entry["score"] = info["score"]
-        entry["score_detail"] = {"base": info["score"],
-                                 "matched": info["matched"],
-                                 "missing": info["missing"],
-                                 "layers": ["base-generic"]}
-        generic_ranked.append(entry)
-    generic_ranked.sort(key=lambda e: (-e["score"], e["query"]))
-    ranked = specific + generic_ranked
     min_score = scoring.threshold()
-    ranked, low = scoring.below_threshold(ranked, min_score)
+
+    def collect(query_list: list[str], limit: int) -> None:
+        for query in query_list:
+            if len(candidates) >= limit:
+                break
+            cached = _get_cached_asset(cache_dir, query)
+            if cached is not None:
+                if metrics:
+                    metrics.media_record_funnel("cache_returned")
+                _consider(cached, query, from_cache=True)
+                if metrics:
+                    metrics.media_cache_hits += 1
+            for prov in providers:
+                if getattr(prov, "_disabled", False):
+                    continue
+                if len(candidates) >= limit:
+                    break
+                try:
+                    results = _search_with_timeout(
+                        prov, query, SEARCH_TIMEOUT, metrics)
+                except MediaError as exc:
+                    if (any(code in str(exc) for code in ("429", "401", "403"))
+                            or "Too Many Requests" in str(exc)):
+                        prov._disabled = True
+                        if metrics:
+                            metrics.media_record_timeout()
+                        from ..runlog import event as run_event
+                        logged = run_event(
+                            "fallback", f"{prov.name}: provider desativado; {exc}",
+                            operation="media_search", provider=prov.name,
+                            error=str(exc))
+                        if not logged:
+                            print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
+                                  file=sys.stderr)
+                    continue
+                if metrics:
+                    metrics.media_record_results(prov.name, len(results))
+                    metrics.media_record_funnel("normalized_returned", len(results))
+                for result_index, cand in enumerate(results):
+                    if len(candidates) >= limit:
+                        if metrics:
+                            metrics.media_record_funnel(
+                                "budget_unexamined", len(results) - result_index)
+                        break
+                    _consider(cand, query, from_cache=False)
+
+    def score_specific(entries: list[dict]):
+        ranked = scoring.rank_candidates(entries, ch)
+        return scoring.below_threshold(ranked, min_score)
+
+    # Colete e pontue específicos antes de buscar fotos genéricas do gênero.
+    # Generic queries só rodam quando nenhuma foto específica passa o gate.
+    specific_queries = [q for q in queries if q.lower() not in generics]
+    generic_queries = [q for q in queries if q.lower() in generics]
+    phase_budget = max_images * CANDIDATE_MULTIPLIER
+    collect(specific_queries, phase_budget)
+    specific, low_specific = score_specific(
+        [entry for entry in candidates if not entry["generic"]])
+    if specific:
+        ranked, low = specific, low_specific
+    else:
+        collect(generic_queries, len(candidates) + phase_budget)
+        generic_ranked = []
+        for entry in [e for e in candidates if e["generic"]]:
+            info = scoring.generic_score(entry["asset"], entry["query"])
+            entry["score"] = info["score"]
+            entry["score_detail"] = {"base": info["score"],
+                                     "matched": info["matched"],
+                                     "missing": info["missing"],
+                                     "layers": ["base-generic"]}
+            generic_ranked.append(entry)
+        generic_ranked.sort(key=lambda e: (-e["score"], e["query"]))
+        ranked, low_generic = scoring.below_threshold(generic_ranked, min_score)
+        low = low_specific + low_generic
     for entry in low:
         # Descartado por NOTA, não por filtro: é o caso que mais importa
         # registrar, porque a imagem passou em todos os testes e ainda
@@ -923,7 +938,6 @@ def _search_scene_with_shortcircuit(
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
-        metrics.media_record_funnel("selected", min(len(ranked), max_images))
     for rej in rejected:
         if metrics:
             metrics.media_record_rejection(rej["reason"])
@@ -935,13 +949,26 @@ def _search_scene_with_shortcircuit(
             str(getattr(ch, "visual_type", "") or "literal"))
 
     picked: list[dict] = []
-    for i, entry in enumerate(ranked[:max_images]):
+    from .visual_beats import asset_key
+    if asset_uses is not None:
+        # All candidates already passed relevance. Prefer fresh assets without
+        # altering scores or allowing generic imagery ahead of specific imagery.
+        ranked = sorted(ranked, key=lambda entry: (
+            bool(entry.get("generic")), asset_uses.get(asset_key(entry["asset"]), 0),
+            -entry.get("score", 0)))
+    for entry in ranked:
+        if len(picked) >= max_images:
+            break
         asset_dict = entry["asset"]
+        if metrics:
+            metrics.media_record_funnel("selected")
+            metrics.media_selected_ids.add(asset_key(asset_dict))
         try:
             asset = MediaAsset.from_dict(asset_dict)
         except TypeError:
             continue
         local = asset.local_path
+        downloaded_before = metrics.media_downloads if metrics else 0
         if not (local and os.path.isfile(local)):
             try:
                 asset = download_asset(asset, cfg.cache_dir, metrics)
@@ -994,10 +1021,19 @@ def _search_scene_with_shortcircuit(
         if entry.get("generic") and metrics:
             metrics.media_record_funnel("generic_used")
         entry["order"] = len(picked)
+        entry["acquisition"] = ("download" if metrics.media_downloads > downloaded_before
+                                else "cache") if metrics else (
+                                    "cache" if local and os.path.isfile(local)
+                                    else "download_or_cache")
         entry["score"] = entry.get("score", 0)
         if metrics:
             metrics.media_record_score(entry["score"])
         picked.append(entry)
+        if asset_uses is not None:
+            key = asset_key(entry["asset"])
+            if asset_uses.get(key, 0):
+                entry["reuse_reason"] = "eligible_pool_exhausted"
+            asset_uses[key] = asset_uses.get(key, 0) + 1
         if metrics:
             metrics.media_record_funnel("used_real")
 
@@ -1144,11 +1180,12 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     # conceituais de virarem seis cards idênticos.
     from . import visuals as _visuals
     visual_state = _visuals.VisualState()
+    asset_uses: dict[str, int] = {}
 
     for ch in chapters:
         scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
             ch, providers, cfg, max_images, metrics, cfg.cache_dir,
-            visual_state=visual_state, genre=genre,
+            visual_state=visual_state, genre=genre, asset_uses=asset_uses,
         )
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)
@@ -1179,15 +1216,17 @@ def _annotate_reuse(scenes: list[dict]) -> None:
     mesmo asset em cenas 1 e 3 só aparecia se alguém fosse comparar o
     media.json na mão.
 
-    O motivo aqui é ALWAYS `same_top_match`: duas cenas independentes
-    receberam o mesmo asset. Não é `thematic_reuse`, e isso é
-    deliberado. Reuso editorial intencional é uma decisão do autor, e o
+    Entradas antigas mantêm `same_top_match`; novas seleções registram
+    `eligible_pool_exhausted` quando faltam candidatas elegíveis inéditas.
+    Não se inventa um motivo `thematic_reuse`. Reuso editorial intencional
+    é uma decisão do autor, e o
     curio não tem como ler decisão nenhuma nos dados — afirmar
     "reuso temático" seria inventar o motivo e chamar de diagnóstico. O
     que o registro entrega é o par de cenas e o asset, para o autor
     decidir em um segundo se foi intencional.
     """
     primeira: dict[str, int] = {}
+    from .visual_beats import asset_key
     for s in scenes:
         ids = []
         for entry in s.get("assets") or []:
@@ -1195,16 +1234,16 @@ def _annotate_reuse(scenes: list[dict]) -> None:
             aid = str(a.get("asset_id") or "")
             if not aid:
                 continue
-            ids.append((aid, a))
-        for aid, a in ids:
+            ids.append((asset_key(a), a, entry))
+        for aid, a, entry in ids:
             if aid in primeira:
                 s.setdefault("reuse", []).append({
-                    "asset": aid,
+                    "asset": a.get("asset_id", ""),
                     "title": a.get("title", "")[:120],
                     "provider": a.get("provider", ""),
                     "previous_scene": primeira[aid],
                     "current_scene": s.get("chapter_id"),
-                    "reason": "same_top_match",
+                    "reason": entry.get("reuse_reason", "same_top_match"),
                 })
             else:
                 primeira[aid] = s.get("chapter_id")
@@ -1326,7 +1365,9 @@ def _spec_images(entries: list[dict], duration: float,
             "sfx": None,
         }], 0
     plan = plan_scene_images(duration, len(entries), overlap_cap,
-                             styles, start)
+                              styles, start)
+    if not plan and entries:
+        return _spec_images(entries[:1], duration, overlap_cap, styles, start)
     # Plano pode encurtar a conta (cena curta): corta as excedentes.
     images = []
     for spec, entry in zip(plan, entries):
@@ -1400,7 +1441,7 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
                           sfx: bool = True,
                           insertions: int | None = None,
                           insert_style: str = "drop_in",
-                           insert_gain_db: int = -24,
+                           insert_gain_db: int = -15,
                           honor_order: bool = False) -> list[dict]:
     """Timeline visual renderizável: um trecho por cena com suas imagens.
 
@@ -1428,12 +1469,19 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
     scene_no_insert: set[int] = set()  # cena que ficou sem deepenho
     overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
     timeline = []
-    from .visual_beats import plan as plan_visual_beats
+    from .visual_beats import plan as plan_visual_beats, bind_assets, asset_key
+    background_uses: dict[str, int] = {}
     for idx, ch in enumerate(chapters):
         scene = by_chapter.get(ch.id, {})
         start, end = round(float(ch.start), 3), round(float(ch.end), 3)
         dur = max(0.5, end - start)
         entries = list(scene.get("assets") or [])
+        background_entries = list(entries)
+        if not honor_order:
+            background_entries.sort(key=lambda entry: (
+                bool(entry.get("generic")),
+                background_uses.get(asset_key(entry.get("asset") or {}), 0),
+                -entry.get("score", 0)))
         if sparse:
             # A inserção tem de ser a imagem MAIS PRECISA sobre o assunto da
             # cena — é o que a diferencia do fundo. Sem candidata que bata o
@@ -1454,14 +1502,28 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             style_pos += consumed
             overlay_counter, sfx_ordinal = _assign_sfx(
                 images, start, overlay_counter, sfx_ordinal, sfx)
+        beats = plan_visual_beats(dur, start)
+        available = [_spec_images([entry], dur)[0][0] for entry in background_entries]
+        backgrounds = bind_assets(beats, available, start)
+        for background in backgrounds:
+            key = asset_key(background)
+            background_uses[key] = background_uses.get(key, 0) + 1
+        for beat in beats:
+            visible = beat.setdefault("asset_ids", [])
+            for image in images[1:]:
+                if image["start"] < beat["end"] - start:
+                    key = asset_key(image)
+                    if key and key not in visible:
+                        visible.append(key)
         timeline.append({
             "chapter_id": ch.id,
             "narration": ch.narration,  # original, intocado
             "start": start,
             "end": end,
             "images": images,
-            "visual_beats": plan_visual_beats(dur, start),
-            "fallback": not images,
+            "visual_beats": beats,
+            "backgrounds": backgrounds,
+            "fallback": not images and not backgrounds,
             "reused_from": scene.get("reused_from"),
             **({"no_insertion": "nenhuma imagem mais precisa que o fundo"
                } if ch.id in scene_no_insert else {}),
@@ -1502,7 +1564,7 @@ def retime_visual_timeline(visual_timeline: list[dict],
     """
     times = {c.id: (float(c.start), float(c.end)) for c in chapters}
     out = []
-    from .visual_beats import plan as plan_visual_beats
+    from .visual_beats import plan as plan_visual_beats, bind_assets, asset_key
     for trecho in visual_timeline:
         start, end = times.get(trecho["chapter_id"],
                                (trecho["start"], trecho["end"]))
@@ -1526,10 +1588,18 @@ def retime_visual_timeline(visual_timeline: list[dict],
             else:
                 img["sfx"] = None
         trecho = dict(trecho)
+        beats = plan_visual_beats(dur, start)
+        backgrounds = bind_assets(beats, trecho.get("backgrounds") or images[:1], start)
+        for beat in beats:
+            beat.setdefault("asset_ids", [])
+            for image in images[1:]:
+                key = asset_key(image)
+                if image["start"] < beat["end"] - start and key not in beat["asset_ids"]:
+                    beat["asset_ids"].append(key)
         trecho.update(start=round(start, 3), end=round(end, 3),
                       images=images,
-                      visual_beats=plan_visual_beats(dur, start),
-                      fallback=not images)
+                      visual_beats=beats, backgrounds=backgrounds,
+                      fallback=not images and not backgrounds)
         out.append(trecho)
     return out
 
@@ -1544,8 +1614,10 @@ def visual_summary(visual_timeline: list[dict]) -> str:
         tr = ",".join(i["transition"] for i in t["images"][1:])
         nsfx = sum(1 for i in t["images"] if i.get("sfx"))
         parts.append(f"cena {t['chapter_id']}: {len(t['images'])} img"
-                     + (f" [{tr}]" if tr else " [base]")
-                     + (f" +{nsfx}sfx" if nsfx else ""))
+                      + (f" [{tr}]" if tr else " [base]")
+                      + (f" +{nsfx}sfx" if nsfx else "")
+                      + (f"; {len(t['backgrounds'])} fundos alternados"
+                         if len(t.get("backgrounds") or []) > 1 else ""))
     return "; ".join(parts)
 
 

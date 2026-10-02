@@ -147,8 +147,9 @@ def _drop_in_y(start: float, entry: float, y0: str) -> str:
 
 
 def render_collage_segment(images: list[dict], duration: float,
-                           out_path: str, cfg: CurioConfig,
-                           variant: int = 0) -> str:
+                            out_path: str, cfg: CurioConfig,
+                            variant: int = 0,
+                            backgrounds: list[dict] | None = None) -> str:
     """Cena-álbum: base em tela cheia + fotos entrando por cima com sobreposição.
 
     `images` segue o plano de `stages.visual` (ordem, início/duração na
@@ -162,11 +163,15 @@ def render_collage_segment(images: list[dict], duration: float,
     import math
     import os as _os
     valid = [im for im in images
-             if im.get("local_path") and _os.path.isfile(im["local_path"])]
+              if im.get("local_path") and _os.path.isfile(im["local_path"])]
+    backgrounds = [im for im in (backgrounds or [])
+                   if im.get("local_path") and _os.path.isfile(im["local_path"])]
+    if not valid and backgrounds:
+        valid = [backgrounds[0]]
     if not valid:
         return render_fallback_segment(
             duration, out_path, cfg, _wrap_title("curio"))
-    if len(valid) == 1 or valid[0].get("kind") == "video":
+    if len(valid) == 1 and len(backgrounds) <= 1:
         only = valid[0]
         if only.get("kind") == "video":
             return render_video_segment(only["local_path"], duration,
@@ -178,11 +183,25 @@ def render_collage_segment(images: list[dict], duration: float,
     frames = max(1, round(duration * fps))
     card_w = max(320, round(w * 0.85))
 
-    base_scale = ("scale=2160:3840:force_original_aspect_ratio=increase:"
-                  "out_range=mpeg,crop=2160:3840")
-    zb = _beat_zoompan(fps, variant)
-    parts = [f"[0:v]{base_scale},{zb}:d={frames}:s={w}x{h}:fps={fps},"
-             f"format=yuv420p[base]"]
+    base_scale = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase:"
+                  f"out_range=mpeg,crop={w * 2}:{h * 2}")
+    sources = backgrounds or [valid[0]]
+    parts = []
+    remaining = frames
+    weight = sum(float(im.get("duration", duration)) for im in sources)
+    for index, source in enumerate(sources):
+        count = (remaining if index == len(sources) - 1 else
+                 max(1, min(remaining - len(sources) + index + 1,
+                            round(frames * float(source.get("duration", duration)) / weight))))
+        remaining -= count
+        if source.get("kind") == "video":
+            motion = f"scale={w}:{h},fps={fps}"
+        else:
+            motion = f"{_beat_zoompan(fps, variant + index)}:d={count}:s={w}x{h}:fps={fps}"
+        parts.append(f"[{index}:v]{base_scale},{motion},trim=end_frame={count},"
+                     f"setpts=PTS-STARTPTS,format=yuv420p,setsar=1[bg{index}]")
+    parts.append("".join(f"[bg{i}]" for i in range(len(sources))) +
+                 f"concat=n={len(sources)}:v=1:a=0[base]")
     for i, im in enumerate(valid[1:], 1):
         rot = float(im.get("rotation_deg", 0.0)) * math.pi / 180
         start = float(im.get("start", 0.0))
@@ -214,7 +233,7 @@ def render_collage_segment(images: list[dict], duration: float,
         else:
             chain = (f"{base_card},rotate={rot:.4f}:fillcolor=none,"
                      f"fade=t=in:st={start:.3f}:d={fade_d:.2f}:alpha=1")
-        parts.append(f"[{i}:v]{chain}[c{i}]")
+        parts.append(f"[{len(sources) + i - 1}:v]{chain}[c{i}]")
 
     def _target(i: int) -> tuple[str, str]:
         dx = int(valid[i].get("dx", 0))
@@ -260,11 +279,12 @@ def render_collage_segment(images: list[dict], duration: float,
     tail = ("format=nv12,hwupload" if _is_vaapi(encoder)
             else "format=yuv420p")
     # O último overlay já sai em [vout]; só converte o formato final.
-    fc = ";".join(parts) + f";[vout]{tail}[vend]"
+    fc = ";".join(parts) + f";{prev}{tail}[vend]"
     out_label = "[vend]"
     cmd = ["ffmpeg", "-y", "-v", "error"]
-    for im in valid:
-        cmd += ["-loop", "1", "-framerate", str(fps), "-i", im["local_path"]]
+    for im in [*sources, *valid[1:]]:
+        cmd += (["-stream_loop", "-1"] if im.get("kind") == "video" else
+                ["-loop", "1", "-framerate", str(fps)]) + ["-i", im["local_path"]]
     if _is_vaapi(encoder):
         cmd += ["-vaapi_device", _hw_device()]
     proc = ff.run(cmd + ["-filter_complex", fc, "-map", out_label,

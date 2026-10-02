@@ -81,15 +81,19 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
     assunto já é o nome da entidade apenas ganham aliases e uma consulta
     ancorada na entidade; assunto, narração e consultas existentes ficam.
     """
-    if target is None or not getattr(target, "is_entity", False):
+    if target is None:
         return False
     names = list(dict.fromkeys(n.strip() for n in target.all_names() if n.strip()))
     if not names:
         return False
+    if not getattr(target, "is_entity", False) and not any(
+            _subject_matches_entity(source.title, names) for source in sources):
+        return False  # Anchor a topic only to a verified canonical source title.
     empty = [ch for ch in chapters
              if not ch.subject and not ch.visual_queries]
-    bare = [ch for ch in chapters
-            if ch not in empty and not ch.subject_aliases]
+    bare = [ch for ch in chapters if ch not in empty and
+            (not ch.subject_aliases or (_subject_matches_entity(ch.subject, names)
+             and not any(alias not in names for alias in ch.subject_aliases)))]
     if not empty and not bare:
         return False
     english = _language_alias(names, sources, timeout) if sources else ""
@@ -103,7 +107,7 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
     english_subject = english
     if english and names[0].startswith(("São ", "Santo ", "Santa ")):
         english_subject = english if english.startswith("Saint ") else f"Saint {english}"
-    medium = "painting" if genre in ("people", "history", "mythology") else "portrait"
+    medium = ("painting" if genre in ("people", "history", "mythology") else "")
     changed = False
     for ch in needs:
         previous = ch.to_dict()
@@ -118,14 +122,18 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
                 tokens = set(scoring._tokens(place))
                 if tokens and not tokens.intersection(person_tokens):
                     subject, aliases = place, [place]
+                    from .visual import PT_EN
+                    if len(tokens) == 1 and next(iter(tokens)) in PT_EN:
+                        aliases.append(PT_EN[next(iter(tokens))])
                     break
             ch.subject = subject
             # Não aceitar apelido isolado como identidade de uma pessoa ambígua.
             ch.subject_aliases = [name for name in aliases
-                                  if len(_identity_tokens(name)) >= 2 or name == subject]
-            queries = [subject]
+                                   if len(_identity_tokens(name)) >= 2 or name == subject
+                                   or subject != names[0]]
+            queries = list(dict.fromkeys(aliases))
             if subject == names[0]:
-                queries = [f"{english_subject or subject} {medium}", subject,
+                queries = [f"{english_subject or subject} {medium}".strip(), subject,
                            *([english] if english else [])]
             ch.visual_queries = list(dict.fromkeys(queries))[:5]
             ch.global_visual_queries = list(ch.visual_queries)
@@ -133,10 +141,10 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
         else:
             # Cena da IA com assunto da entidade: só aliases e consulta
             # ancorada; assunto e consultas existentes ficam intactas.
-            ch.subject_aliases = [name for name in names
-                                  if len(_identity_tokens(name)) >= 2
-                                  or name == ch.subject]
-            anchored = f"{english_subject or names[0]} {medium}"
+            ch.subject_aliases = list(dict.fromkeys([
+                *ch.subject_aliases, *(name for name in names
+                                     if len(_identity_tokens(name)) >= 2 or name == ch.subject)]))
+            anchored = f"{english_subject or names[0]} {medium}".strip()
             existing = {q.lower() for q in ch.visual_queries}
             if anchored.lower() not in existing:
                 ch.visual_queries = [anchored, *ch.visual_queries][:5]

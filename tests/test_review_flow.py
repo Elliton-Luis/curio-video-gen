@@ -275,3 +275,28 @@ def test_rerender_nao_reexecuta_pesquisa_nem_roteiro(tmp_path, monkeypatch):
     monkeypatch.setattr(research_stage, "research_topic", _boom)
     monkeypatch.setattr(script_stage, "generate_script", _boom)
     assert run(cfg.out_dir, "rerender", "--slug", slug) == 0
+
+
+def test_rerender_uses_timed_chapters_and_records_asset_usage(tmp_path, monkeypatch):
+    from curio import cli
+    cfg, slug, paths, chapters, media, root = _mk(tmp_path, n_cenas=1)
+    untimed = [ch.to_dict() for ch in chapters]
+    untimed[0]["start"] = untimed[0]["end"] = 0
+    with open(paths.chapters_json, "w", encoding="utf-8") as stream:
+        json.dump(untimed, stream)
+    with open(paths.visual_json, "w", encoding="utf-8") as stream:
+        json.dump(visual_stage.build_visual_timeline(chapters, media, insertions=0), stream)
+    captured = {}
+    def build(timed, *args, **kwargs):
+        captured["duration"] = timed[0].end - timed[0].start
+    monkeypatch.setattr(cli, "_build_silent_visual", build)
+    monkeypatch.setattr(cli.ff, "probe_duration", lambda *args: 4.0)
+    monkeypatch.setattr("curio.stages.render.burn_final", lambda *a, **kw: {
+        "path": paths.final_mp4, "duration": 4.0, "backend": "cpu", "encoder": "libx264"})
+    assert run(cfg.out_dir, "rerender", "--slug", slug) == 0
+    assert captured["duration"] == 4.0
+    meta = json.load(open(paths.metadata_json, encoding="utf-8"))
+    report = json.load(open(meta["metrics_file"], encoding="utf-8"))
+    assert report["pipeline"]["visual_assets_unique"] == 2
+    assert report["pipeline"]["visual_asset_beat_counts"]
+    assert report["consumption"]["media"]["available_by_acquisition"] == {"cache": 2}

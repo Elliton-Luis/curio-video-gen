@@ -362,8 +362,9 @@ def _count_assets(media_scenes: list[dict]) -> int:
 def _scene_segment(ch: Chapter, asset_dict: dict | None, idea: str,
                    duration: float, paths: VideoPaths, cfg: CurioConfig,
                    variant: int) -> str:
+    identity = _segment_identity([asset_dict] if asset_dict else [], cfg, variant)
     seg = os.path.join(paths.root, "render", "segments",
-                       f"scene{ch.id}_{duration:.1f}s.mp4")
+                       f"scene{ch.id}_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(seg):
         return seg
     os.makedirs(os.path.dirname(seg), exist_ok=True)
@@ -440,6 +441,18 @@ def _build_silent(chapters: list[Chapter], media_scenes: list[dict], idea: str,
             if transitions else render_stage.concat_copy(segs, out_path, cfg))
 
 
+def _segment_identity(assets: list, cfg: CurioConfig, variant: int) -> str:
+    """Invalidate segment cache when assets, file contents or presentation change."""
+    files = []
+    for asset in assets:
+        path = (asset or {}).get("local_path")
+        if path and os.path.isfile(path):
+            stat = os.stat(path)
+            files.append((path, stat.st_size, stat.st_mtime_ns))
+    payload = [assets, files, cfg.width, cfg.height, cfg.fps, cfg.render_backend, variant]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
+
+
 def _visual_segment(trecho: dict, idea: str, duration: float,
                     paths: VideoPaths, cfg: CurioConfig,
                     variant: int) -> str:
@@ -447,15 +460,18 @@ def _visual_segment(trecho: dict, idea: str, duration: float,
     images = [dict(img) for img in trecho.get("images", [])]
     images = [im for im in images
               if im.get("local_path") and os.path.isfile(im["local_path"])]
+    backgrounds = [dict(im) for im in trecho.get("backgrounds", [])
+                   if im.get("local_path") and os.path.isfile(im["local_path"])]
+    identity = _segment_identity([*images, *backgrounds], cfg, variant)
     seg = os.path.join(paths.root, "render", "segments",
-                       f"scene{trecho['chapter_id']}_visual_{duration:.1f}s.mp4")
+                       f"scene{trecho['chapter_id']}_visual_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(seg):
         return seg
     os.makedirs(os.path.dirname(seg), exist_ok=True)
-    if len(images) >= 2:
+    if len(backgrounds) >= 2 or len(images) >= 2:
         return render_stage.render_collage_segment(images, duration, seg,
-                                                   cfg, variant)
-    asset = images[0] if images else None
+                                                   cfg, variant, backgrounds=backgrounds)
+    asset = backgrounds[0] if backgrounds else images[0] if images else None
     return _scene_segment(
         Chapter(id=trecho["chapter_id"], narration=trecho.get("narration", ""),
                 duration_estimate=duration),
@@ -476,7 +492,7 @@ def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
         dur = round(max(0.5, ch.end - ch.start), 1)
         segs.append(_visual_segment(
             {"chapter_id": ch.id, "narration": ch.narration,
-             "images": t.get("images", [])} if t else
+              "images": t.get("images", []), "backgrounds": t.get("backgrounds", [])} if t else
             {"chapter_id": ch.id, "narration": ch.narration, "images": []},
             idea, dur, paths, cfg, variant=i))
     return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions,
@@ -786,8 +802,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # Fotos complementares: o orçamento de EXIBIÇÃO é do vídeo (1–2), não da
     # cena. A busca, porém, traz 3 candidatos por cena de propósito: a
     # inserção tem de ser a imagem mais precisa sobre o assunto, e escolher
-    # a melhor exige mais de uma opção. A exibição continua em 2 (fundo +
-    # uma complementar): o terceiro candidato existe só para a comparação.
+    # a melhor exige mais de uma opção. Todas as fotos aprovadas podem alternar
+    # como fundos; o orçamento de inserções limita somente as sobreposições.
     insert_budget = int(cfg.visual_insertions)
     if insert_budget > 0:
         max_images = 3
@@ -1057,6 +1073,16 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                           [c.id for c in chapters])
             files_ok = True
             for s in saved:
+                chapter = next((ch for ch in chapters if ch.id == s["chapter_id"]), None)
+                if chapter is None:
+                    files_ok = False
+                    break
+                blocked = visual_stage.media_rules.scene_blocklist(chapter)
+                if any(visual_stage.media_rules.rejection_reason(
+                        entry.get("asset") or {}, blocked) for entry in s.get("assets", [])
+                       if (entry.get("asset") or {}).get("provider") != "synth"):
+                    files_ok = False  # Old cached homonyms must pass current identity rules.
+                    break
                 first = s.get("asset")
                 if first is not None and not os.path.isfile(
                         first.get("local_path", "")):
@@ -1280,13 +1306,13 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         prev.end = nxt.start = mid
     chapters[-1].end = round(audio_duration, 3)
     from .stages.visual_beats import BEAT_SECONDS
-    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
     visual_timeline = (_write_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
         insertions=insert_budget, insert_style=cfg.visual_insert_style,
         insert_gain_db=cfg.visual_insert_gain_db)
         if max_images > 1 else [])
+    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS, visual_timeline)
     if visual_timeline:
         print(f"Inserções: {count_insertions(visual_timeline)} foto(s) "
               f"complementar(es) caindo sobre o fundo "
@@ -1337,6 +1363,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     except (OSError, ValueError, json.JSONDecodeError):
         previous_meta = {}
     previous_audio = previous_meta.get("audio") or {}
+    visual_plan_signature = hashlib.sha256(
+        json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
     transition_mode = _transition_mode(cfg)
     transition_sig = _transition_signature(
         chapters, genre_key, transition_mode,
@@ -1348,6 +1376,9 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     transition_dirty = (
         previous_meta.get("visual_transition_signature") != transition_sig
         and not (legacy_audio_cache and transition_mode == "none"))
+    transition_dirty = transition_dirty or (
+        any(t.get("backgrounds") for t in visual_timeline) and
+        previous_meta.get("visual_plan_signature") != visual_plan_signature)
     events = _audio_events(visual_timeline)
     audio_plan = audio_selection.resolve_audio(
         cfg, genre_key,
@@ -1441,6 +1472,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         } if max_images > 1 else None),
         "audio": new_audio_meta,
         "visual_transition_signature": transition_sig,
+        "visual_plan_signature": visual_plan_signature,
         "visual_transitions": {
             "genre": genre_key,
             "mode": transition_mode,
@@ -1570,13 +1602,13 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         cursor = ch.end
     estimated_total = round(cursor, 2)
     from .stages.visual_beats import BEAT_SECONDS
-    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
     visual_timeline = (_write_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
         insertions=insert_budget, insert_style=cfg.visual_insert_style,
         insert_gain_db=cfg.visual_insert_gain_db)
         if max_images > 1 else [])
+    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS, visual_timeline)
     audio_events = _audio_events(visual_timeline)
     try:
         previous_meta = _read_json(paths.metadata_json)
@@ -1777,7 +1809,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     if not any(s.get("codec_type") == "audio" for s in _probe_streams(audio_src)):
         raise ValueError(f"arquivo sem trilha de áudio: {audio_src}")
 
-    chapters = _load_chapters(paths)
+    chapters = [Chapter.from_dict(row) for row in _read_json(paths.timeline_json)]
     media_scenes = _read_json(paths.media_json)
     try:
         meta = _read_json(paths.metadata_json)
@@ -1901,6 +1933,9 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
 
     emit("Merge final")
     total = round(human_dur + 0.5, 2)
+    from .stages.visual_beats import BEAT_SECONDS
+    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS, visual_timeline,
+                        rendered_duration=total)
     human_wav = paths.human_wav
     sfx_path = None
     events = _audio_events(visual_timeline or [])

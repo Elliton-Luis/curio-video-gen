@@ -494,6 +494,20 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 | Título | pergunta curta gerada pela IA a partir do roteiro (metadados `video_title`), queimada nos primeiros 5 s |
 | Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |
 
+### Variedade de mídia no render
+
+Assets relevantes selecionados alternam como fundos nos beats já planejados.
+O orçamento de inserções limita fotos sobrepostas, não a variedade dos fundos.
+Entre candidatos aprovados, o Curio prefere assets ainda não usados; repetição
+por falta de alternativas fica marcada como `eligible_pool_exhausted`.
+
+Métricas distinguem tentativas de seleção, assets únicos selecionados/disponíveis,
+origem (`download` ou `cache`) e `visual_asset_beat_counts` por provider/asset.
+`visual_assets_reused` conta reuso entre cenas; manter uma foto durante vários
+beats de câmera não conta como nova seleção. O cache de segmentos considera
+assets, arquivos e apresentação. `rerender` usa a timeline temporizada e grava
+novas métricas sem gerar outra narração.
+
 ### Diagnósticos de fontes e mídia
 
 A pesquisa começa pelo tema amplo e consolida trechos literais com suas URLs.
