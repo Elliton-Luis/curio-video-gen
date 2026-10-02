@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-170000_relatorio_separacao-etapas-render.md` — timeline/SFX, segmentos de render e pesquisa separados; `visual.py` reduzido; 727 testes verdes.
 - `relatorios/20261002-163000_relatorio_tui-terminal.md` — terminal, teclado, menu e caminho movidos para `tui_terminal.py`; TUI permanece stdlib only; 721 testes verdes.
 - `relatorios/20261002-160000_relatorio_adapters-genero-fonte-musica.md` — adapters declarativos, fontes especialistas e política de áudio por gênero; 721 testes verdes.
 - `relatorios/20261002-153500_relatorio_prompts-editoriais.md` — prompts de roteiro e título movidos de `nvidia.py` para `stages/prompts.py`; 720 testes verdes.

@@ -10,6 +10,7 @@ Contratos garantidos aqui (o resto é escolha estética):
 import pytest
 
 from curio.stages import visual as V
+from curio.stages import visual_timeline as VT
 from curio.stages.scenes import Chapter
 
 
@@ -91,20 +92,20 @@ def test_cena_curta_nao_quebra_orcamento():
 
 def test_abertura_e_fecho_nao_recebem_insercao():
     for n in (6, 8, 12, 20):
-        picked = V.insertion_scenes(n, 2)
+        picked = VT.insertion_scenes(n, 2)
         assert 0 not in picked, f"abertura recebeu inserção (n={n})"
         assert (n - 1) not in picked, f"fecho recebeu inserção (n={n})"
 
 
 def test_insercoes_espalhadas_nao_coladas():
-    picked = sorted(V.insertion_scenes(12, 2))
+    picked = sorted(VT.insertion_scenes(12, 2))
     assert len(picked) == 2
     assert picked[1] - picked[0] >= 3, f"inserções coladas: {picked}"
 
 
 def test_determinismo():
     """Mesmo tema, mesmo vídeo: a posição não muda entre execuções."""
-    assert V.insertion_scenes(12, 2) == V.insertion_scenes(12, 2)
+    assert VT.insertion_scenes(12, 2) == VT.insertion_scenes(12, 2)
 
 
 # --- conteúdo das inserções -------------------------------------------
@@ -185,7 +186,7 @@ def test_retime_preserva_estilo_e_som():
     slower = [Chapter(id=c.id, narration=c.narration,
                       duration_estimate=20.0, start=c.start * 2.5,
                       end=c.end * 2.5) for c in chapters]
-    out = V.retime_visual_timeline(vt, slower)
+    out = VT.retime_visual_timeline(vt, slower)
     ins = _overlays(out)
     assert len(ins) == 2, "retime furou o orçamento"
     assert all(im["transition"] == "drop_in" for im in ins)
@@ -231,7 +232,7 @@ def test_insercao_vence_o_fundo_em_precisao():
     ch = _ch("thermal paper receipt")
     entries = [_entry(0, "power plant cooling towers"),
                _entry(1, "thermal paper receipt roll")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert bg[0]["asset"]["title"] == "power plant cooling towers"
     assert ins[0]["asset"]["title"] == "thermal paper receipt roll"
 
@@ -241,7 +242,7 @@ def test_ordem_da_busca_nao_decide_o_papel_da_foto():
     ch = _ch("thermal paper receipt printer")
     entries = [_entry(0, "steam and smoke background"),
                _entry(1, "thermal paper receipt printer")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert ins[0]["asset"]["title"] == "thermal paper receipt printer"
     assert bg[0]["asset"]["title"] == "steam and smoke background"
 
@@ -251,7 +252,7 @@ def test_nada_mais_preciso_que_o_fundo_nao_insere():
     ch = _ch("thermal paper receipt")
     entries = [_entry(0, "thermal paper receipt roll"),
                _entry(1, "thermal paper receipt sheet")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert len(ins) == 0
     assert len(bg) == 1
 
@@ -260,27 +261,27 @@ def test_nada_relevante_alguma_nao_insere():
     ch = _ch("thermal paper receipt")
     entries = [_entry(0, "starry night sky"),
                _entry(1, "day of the dead woman")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert ins == [] and len(bg) == 1
 
 
 def test_uma_imagem_so_nunca_insere():
     ch = _ch("thermal paper receipt")
-    assert V.order_for_insertion([_entry(0, "thermal paper")], ch)[1] == []
+    assert VT.order_for_insertion([_entry(0, "thermal paper")], ch)[1] == []
 
 
 def test_sem_termos_de_assunto_nao_insere():
     ch = Chapter(id=1, narration="", duration_estimate=8.0,
                  visual_queries=[], start=0.0, end=8.0)
     entries = [_entry(0, "a"), _entry(1, "b")]
-    assert V.order_for_insertion(entries, ch)[1] == []
+    assert VT.order_for_insertion(entries, ch)[1] == []
 
 
 def test_tres_candidatos_escolhe_o_melhor_dos_tres():
     ch = _ch("thermal paper receipt roll")
     entries = [_entry(0, "power plant"), _entry(1, "generic paper"),
                _entry(2, "thermal paper receipt roll closeup")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert ins[0]["asset"]["title"] == "thermal paper receipt roll closeup"
     assert bg[0]["asset"]["title"] == "generic paper"
 
@@ -313,11 +314,11 @@ def test_titulo_vazio_nunca_vira_insercao():
     foto sem título fica de fundo (ou fora) e nunca é promovida."""
     ch = _ch("thermal paper receipt")
     entries = [_entry(0, "thermal paper receipt"), _entry(1, "")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert ins[0]["asset"]["title"] == "thermal paper receipt"
     assert bg[0]["asset"]["title"] == ""
 
     # o inverso: se a única descrita é a genérica, nada é promovido
     entries = [_entry(0, ""), _entry(1, "power plant cooling tower")]
-    bg, ins = V.order_for_insertion(entries, ch)
+    bg, ins = VT.order_for_insertion(entries, ch)
     assert ins == []

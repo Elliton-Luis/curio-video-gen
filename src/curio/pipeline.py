@@ -26,6 +26,8 @@ from .config import CurioConfig
 from .media import download_asset, get_providers
 from .media.providers import MediaAsset, MediaError, classify_rights
 from . import textnorm
+from . import pipeline_render as pipeline_render_stage
+from . import pipeline_research as pipeline_research_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
@@ -44,6 +46,7 @@ from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
 from .stages import sources as sources_stage
 from .stages import visual as visual_stage
+from .stages import visual_timeline as visual_timeline_stage
 from .stages.scenes import Chapter
 
 STAGES_AI = ["roteiro", "cenas", "mídia", "narração", "legendas", "montagem"]
@@ -354,26 +357,6 @@ def _count_assets(media_scenes: list[dict]) -> int:
     return n
 
 
-def _scene_segment(ch: Chapter, asset_dict: dict | None, idea: str,
-                   duration: float, paths: VideoPaths, cfg: CurioConfig,
-                   variant: int) -> str:
-    identity = _segment_identity([asset_dict] if asset_dict else [], cfg, variant)
-    seg = os.path.join(paths.root, "render", "segments",
-                       f"scene{ch.id}_{identity}_{duration:.1f}s.mp4")
-    if os.path.isfile(seg):
-        return seg
-    os.makedirs(os.path.dirname(seg), exist_ok=True)
-    if asset_dict and asset_dict.get("local_path"):
-        local = asset_dict["local_path"]
-        if asset_dict.get("kind") == "video":
-            return render_stage.render_video_segment(local, duration, seg, cfg)
-        if os.path.isfile(local):
-            return render_stage.render_image_segment(local, duration, seg,
-                                                     cfg, variant)
-    return render_stage.render_fallback_segment(
-        duration, seg, cfg, render_stage._wrap_title(idea))
-
-
 def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
     """A fonte do título queimado, para este gênero.
 
@@ -421,127 +404,6 @@ def _typography_report(cfg: CurioConfig, genre_key: str = "") -> dict:
         genre_key, (cfg.typography or {}).get(genre_key)).report()
 
 
-def _build_silent(chapters: list[Chapter], media_scenes: list[dict], idea: str,
-                   durations: list[float], paths: VideoPaths,
-                   cfg: CurioConfig, out_path: str,
-                   transitions: list[float] | None = None,
-                   kinds: list[str] | None = None) -> str:
-    assets = {s["chapter_id"]: s["asset"] for s in media_scenes}
-    segs = []
-    for i, (ch, dur) in enumerate(zip(chapters, durations)):
-        segs.append(_scene_segment(ch, assets.get(ch.id), idea, round(dur, 1),
-                                   paths, cfg, variant=i))
-    return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions,
-                                                 kinds)
-            if transitions else render_stage.concat_copy(segs, out_path, cfg))
-
-
-def _segment_identity(assets: list, cfg: CurioConfig, variant: int) -> str:
-    """Invalidate segment cache when assets, file contents or presentation change."""
-    files = []
-    for asset in assets:
-        path = (asset or {}).get("local_path")
-        if path and os.path.isfile(path):
-            stat = os.stat(path)
-            files.append((path, stat.st_size, stat.st_mtime_ns))
-    payload = [assets, files, cfg.width, cfg.height, cfg.fps, cfg.render_backend, variant]
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
-
-
-def _visual_segment(trecho: dict, idea: str, duration: float,
-                    paths: VideoPaths, cfg: CurioConfig,
-                    variant: int) -> str:
-    """Um segmento do modo roteiro-pronto: colagem se houver 2+ fotos."""
-    images = [dict(img) for img in trecho.get("images", [])]
-    images = [im for im in images
-              if im.get("local_path") and os.path.isfile(im["local_path"])]
-    backgrounds = [dict(im) for im in trecho.get("backgrounds", [])
-                   if im.get("local_path") and os.path.isfile(im["local_path"])]
-    identity = _segment_identity([*images, *backgrounds], cfg, variant)
-    seg = os.path.join(paths.root, "render", "segments",
-                       f"scene{trecho['chapter_id']}_visual_{identity}_{duration:.1f}s.mp4")
-    if os.path.isfile(seg):
-        return seg
-    os.makedirs(os.path.dirname(seg), exist_ok=True)
-    if len(backgrounds) >= 2 or len(images) >= 2:
-        return render_stage.render_collage_segment(images, duration, seg,
-                                                   cfg, variant, backgrounds=backgrounds)
-    asset = backgrounds[0] if backgrounds else images[0] if images else None
-    return _scene_segment(
-        Chapter(id=trecho["chapter_id"], narration=trecho.get("narration", ""),
-                duration_estimate=duration),
-        {"local_path": asset["local_path"],
-         "kind": asset.get("kind", "image")} if asset else None,
-        idea, duration, paths, cfg, variant)
-
-
-def _build_silent_visual(chapters: list[Chapter], visual_timeline: list[dict],
-                         idea: str, paths: VideoPaths,
-                         cfg: CurioConfig, out_path: str,
-                         transitions: list[float] | None = None,
-                         kinds: list[str] | None = None) -> str:
-    trechos = {t["chapter_id"]: t for t in visual_timeline}
-    segs = []
-    for i, ch in enumerate(chapters):
-        t = trechos.get(ch.id, {})
-        dur = round(max(0.5, ch.end - ch.start), 1)
-        segs.append(_visual_segment(
-            {"chapter_id": ch.id, "narration": ch.narration,
-              "images": t.get("images", []), "backgrounds": t.get("backgrounds", [])} if t else
-            {"chapter_id": ch.id, "narration": ch.narration, "images": []},
-            idea, dur, paths, cfg, variant=i))
-    return (render_stage.concat_with_transitions(segs, out_path, cfg, transitions,
-                                                 kinds)
-            if transitions else render_stage.concat_copy(segs, out_path, cfg))
-
-
-def _genre_transitions(chapters: list[Chapter], genre: str,
-                       mode: str = "auto") -> list[float]:
-    """Cross-dissolve por gênero e papel de cena; cortes dramáticos são secos."""
-    if mode == "none" or len(chapters) < 2:
-        return [0.0] * max(0, len(chapters) - 1)
-    adapter = editorial_stage.get(genre)
-    base = adapter.transition_duration if adapter else 0.20
-    result = []
-    for chapter in chapters[1:]:
-        text = (chapter.narration or "").lower()
-        if any(k in text for k in ("morreu", "invadiu", "destruiu", "assassinado",
-                                   "eclodiu", "de repente")):
-            duration = 0.04  # dissolve de 1 frame: corte editorial seco
-        elif any(k in text for k in ("na verdade", "descobriu", "revelou",
-                                     "pela primeira vez", "mas foi")):
-            duration = min(0.55, base + 0.18)
-        elif chapter.text_role == "quote" or chapter.visual_type in (
-                "typographic", "historical_art"):
-            duration = min(0.55, base + 0.12)
-        else:
-            duration = base
-        result.append(duration)
-    return result
-
-
-def _genre_transition_kinds(chapters: list[Chapter], genre: str,
-                            mode: str = "auto") -> list[str]:
-    """Efeito xfade por limite de cena. Corte dramático usa fade (vira corte)."""
-    if mode == "none" or len(chapters) < 2:
-        return ["fade"] * max(0, len(chapters) - 1)
-    adapter = editorial_stage.get(genre)
-    kind = adapter.transition_kind if adapter else "fade"
-    return [kind] * (len(chapters) - 1)
-
-
-def _transition_signature(chapters: list[Chapter], genre: str, mode: str,
-                           visual_identity: dict | None = None) -> str:
-    transitions = _genre_transitions(chapters, genre, mode)
-    kinds = _genre_transition_kinds(chapters, genre, mode)
-    payload = {"genre": genre, "mode": mode, "durations": transitions,
-               "kinds": kinds,
-               "visual_identity": visual_identity or {},
-               "scenes": [(c.id, c.visual_type, c.text_role, c.start, c.end)
-                          for c in chapters]}
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-
-
 def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],
                            paths: VideoPaths, slug: str,
                            overlap_cap: float, sfx: bool,
@@ -553,7 +415,7 @@ def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],
         insertions=insertions, insert_style=insert_style,
         insert_gain_db=insert_gain_db)
     _write_json(paths.visual_json, vt)
-    print(f"Timeline visual: {visual_stage.visual_summary(vt)}")
+    print(f"Timeline visual: {visual_timeline_stage.visual_summary(vt)}")
     return vt
 
 
@@ -839,81 +701,20 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     sources = sources_stage.SourceRegistry.load(paths.sources_json)
     sources.slug = slug
 
-    # [0/6] Pesquisa web (RAG): todo texto exige ≥1 fonte real.
-    # Roda antes de qualquer roteiro — inclusive roteiro-pronto (as fontes
-    # vão p/ o registry mesmo sem alterar o texto do usuário). Falha
-    # explícita se nada for encontrado: nunca roteiro "só IA".
-    t0 = time.monotonic()
-    emit(0, "Pesquisando fontes")
-    research = research_stage.research_topic(
-        idea, cfg.language, max_sources=cfg.research_max_sources,
-        metrics=metrics, timeout=cfg.research_timeout, cfg=cfg,
-        genre=genre_key, allow_weak=True)
-    research_sources = list(research)
-    research_target = getattr(research, "target", None)
-    research_rejected = list(getattr(research, "rejected", []))
-    research_queries = list(getattr(research, "tried_queries", []))
-    research_etymology = getattr(research, "etymology", None)
-    research_weak = bool(getattr(research, "weak", False))
-    research_status = ("weak" if research_weak or not research_sources
-                       else "confirmed" if len(research_sources) >= 2
-                       else "partial")
-    for w in list(getattr(research, "weak_warnings", []) or []):
-        warnings.append(f"pesquisa: {w}")
-        print(f"AVISO pesquisa: {w}", file=sys.stderr)
-    target_name = getattr(research_target, "name", "") or "tema"
-    source_titles = [rs.title[:60] for rs in research_sources[:3]]
-    run_event(
-        "result", f"Entidade: {target_name}; consultas: {len(research_queries)}; "
-        f"fontes aceitas: {len(research_sources)}, rejeitadas: "
-        f"{len(research_rejected)}",
-        operation="research", entity=target_name,
-        query_count=len(research_queries), found=len(research_sources) +
-        len(research_rejected), accepted=len(research_sources),
-        rejected=len(research_rejected), sources=source_titles)
-    for rs in research_sources:
-        sources.add_claim(
-            claim=rs.title, title=rs.title, url=rs.url,
-            evidence=rs.snippet[:300], status=research_status,
-            notes=f"RAG web ({rs.origin})", license=rs.license,
-            license_url=rs.license_url)
-    if research_etymology is not None:
-        # Etimologia especializada SOMADA às gerais: cada fonte com sua
-        # atribuição, licença e URL — nunca cópia de verbete.
-        from .stages import etymology as etymology_stage
-        cadeia = research_etymology.chain_text()
-        for rs in (research_etymology.sources or []):
-            lic, lic_url = etymology_stage.source_license(rs.origin)
-            sources.add_claim(
-                claim=f"etimologia: {cadeia}" if cadeia else rs.title,
-                title=rs.title, url=rs.url,
-                evidence=(rs.snippet or "")[:300], status=research_status,
-                notes=f"RAG etimologia ({rs.origin})",
-                license=rs.license or lic,
-                license_url=rs.license_url or lic_url)
-    _write_json(paths.research_json, {
-        "idea": idea,
-        # A entidade-alvo fica no arquivo: sem ela não há como auditar,
-        # depois, por que uma fonte sobre "Serra Gaúcha" entrou num vídeo
-        # sobre um santo do século VI.
-        "target_entity": (research_target.to_dict()
-                          if research_target is not None else None),
-        "queries": research_queries,
-        "etymology": (research_etymology.to_dict()
-                      if research_etymology is not None else None),
-        "facts": getattr(research, "facts", []),
-        "complementary_queries": getattr(research, "complementary_queries", []),
-        "unresolved_gaps": getattr(research, "unresolved_gaps", []),
-        "sources": [rs.to_dict() for rs in research_sources],
-        "rejected": [{"title": s.title, "url": s.url, "reason": m,
-                      "detail": d} for s, m, d in research_rejected],
-    })
-    research_pack = research_stage.format_for_prompt(research,
-                                                     cfg.language)
-    print(f"Fontes: {len(research_sources)} "
-          f"({', '.join(rs.title[:40] for rs in research_sources)})")
-    stage_times["research"] = round(time.monotonic() - t0, 2)
-    emit(0, "Pesquisando fontes", "OK")
+    # [0/6] Pesquisa é um estágio. Pipeline só passa dependências e recebe
+    # contexto/estado para roteiro, cenas e metadados seguintes.
+    research_output = pipeline_research_stage.run_research_stage(
+        idea, cfg, paths, metrics, genre_key, warnings, sources, emit,
+        _write_json)
+    research = research_output.result
+    research_sources = research_output.sources
+    research_target = research_output.target
+    research_rejected = research_output.rejected
+    research_queries = research_output.queries
+    research_etymology = research_output.etymology
+    research_status = research_output.status
+    research_pack = research_output.prompt
+    stage_times["research"] = research_output.elapsed
 
     # [1/6] Roteiro (modo roteiro-pronto: usa o texto verbatim, nunca gera)
     t0 = time.monotonic()
@@ -1399,7 +1200,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     visual_plan_signature = hashlib.sha256(
         json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
     transition_mode = _transition_mode(cfg)
-    transition_sig = _transition_signature(
+    transition_sig = pipeline_render_stage.transition_signature(
         chapters, genre_key, transition_mode,
         {"insertions": insert_budget,
          "insert_style": cfg.visual_insert_style,
@@ -1433,16 +1234,16 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     else:
         silent = paths.silent_mp4
         if force or transition_dirty or not os.path.isfile(silent):
-            transitions = _genre_transitions(
+            transitions = pipeline_render_stage.genre_transitions(
                 chapters, genre_key, transition_mode)
-            kinds = _genre_transition_kinds(
+            kinds = pipeline_render_stage.genre_transition_kinds(
                 chapters, genre_key, transition_mode)
             if visual_timeline:
-                _build_silent_visual(chapters, visual_timeline, idea, paths,
+                pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths,
                                      cfg, silent, transitions=transitions,
                                      kinds=kinds)
             else:
-                _build_silent(chapters, media_scenes, idea, durations, paths,
+                pipeline_render_stage.build_silent(chapters, media_scenes, idea, durations, paths,
                               cfg, silent, transitions=transitions, kinds=kinds)
         narration_wav = paths.narration_wav
         sfx_path = (_sfx_track_for(visual_timeline, total, paths)
@@ -1509,7 +1310,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         "visual_transitions": {
             "genre": genre_key,
             "mode": transition_mode,
-            "boundary_durations": _genre_transitions(
+            "boundary_durations": pipeline_render_stage.genre_transitions(
                 chapters, genre_key, transition_mode),
             "final_fade": _final_audio_fade(genre_key, transition_mode),
         },
@@ -1662,17 +1463,17 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     t0 = time.monotonic()
     emit(5, "Montando silencioso")
     if visual_timeline:
-        _build_silent_visual(chapters, visual_timeline, idea, paths, cfg,
-                             paths.silent_mp4, transitions=_genre_transitions(
+        pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths, cfg,
+                             paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
                                  chapters, genre_key, transition_mode),
-                             kinds=_genre_transition_kinds(
+                             kinds=pipeline_render_stage.genre_transition_kinds(
                                  chapters, genre_key, transition_mode))
     else:
         durations = [c.end - c.start for c in chapters]
-        _build_silent(chapters, media_scenes, idea, durations, paths, cfg,
-                      paths.silent_mp4, transitions=_genre_transitions(
+        pipeline_render_stage.build_silent(chapters, media_scenes, idea, durations, paths, cfg,
+                      paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
                           chapters, genre_key, transition_mode),
-                      kinds=_genre_transition_kinds(
+                      kinds=pipeline_render_stage.genre_transition_kinds(
                           chapters, genre_key, transition_mode))
     stage_times["silent"] = round(time.monotonic() - t0, 2)
     emit(5, "Montando silencioso", "OK")
@@ -1695,7 +1496,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         "genre": genre_key,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),
         "audio_request": audio_plan["metadata"],
-        "visual_transition_signature": _transition_signature(
+        "visual_transition_signature": pipeline_render_stage.transition_signature(
             chapters, genre_key, transition_mode,
             {"insertions": insert_budget,
              "insert_style": cfg.visual_insert_style,
@@ -1703,7 +1504,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
              "visual_sfx": cfg.visual_sfx}),
         "visual_transitions": {
             "genre": genre_key, "mode": transition_mode,
-            "boundary_durations": _genre_transitions(
+            "boundary_durations": pipeline_render_stage.genre_transitions(
                 chapters, genre_key, transition_mode),
             "final_fade": _final_audio_fade(genre_key, transition_mode),
         },
@@ -1944,21 +1745,21 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
             chapters[-1].end = round(chapters[-1].end + diff, 3)
             _write_json(paths.timeline_json,
                         [c.to_dict() for c in chapters])
-            visual_timeline = visual_stage.retime_visual_timeline(
+            visual_timeline = visual_timeline_stage.retime_visual_timeline(
                 visual_timeline, chapters)
             _write_json(paths.visual_json, visual_timeline)
-            _build_silent_visual(chapters, visual_timeline, idea, paths,
-                                 cfg, adj, transitions=_genre_transitions(
+            pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths,
+                                 cfg, adj, transitions=pipeline_render_stage.genre_transitions(
                                       chapters, project_genre, transition_mode),
-                                 kinds=_genre_transition_kinds(
+                                 kinds=pipeline_render_stage.genre_transition_kinds(
                                       chapters, project_genre, transition_mode))
         else:
             durations = [c.end - c.start for c in chapters]
             durations[-1] += diff
-            _build_silent(chapters, media_scenes, idea, durations, paths,
-                           cfg, adj, transitions=_genre_transitions(
+            pipeline_render_stage.build_silent(chapters, media_scenes, idea, durations, paths,
+                           cfg, adj, transitions=pipeline_render_stage.genre_transitions(
                                chapters, project_genre, transition_mode),
-                           kinds=_genre_transition_kinds(
+                           kinds=pipeline_render_stage.genre_transition_kinds(
                                chapters, project_genre, transition_mode))
         silent = adj
         warnings.append(f"última cena estendida +{diff:.1f}s p/ caber o áudio")
@@ -2017,7 +1818,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         "subtitle_source": "whisper",
         "transcription_model": f"faster-whisper/{cfg.whisper_model}",
         "audio": audio_plan["metadata"],
-        "visual_transition_signature": _transition_signature(
+        "visual_transition_signature": pipeline_render_stage.transition_signature(
             chapters, project_genre, transition_mode,
             {"insertions": cfg.visual_insertions,
              "insert_style": cfg.visual_insert_style,
@@ -2025,7 +1826,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
              "visual_sfx": cfg.visual_sfx}),
         "visual_transitions": {
             "genre": project_genre, "mode": transition_mode,
-            "boundary_durations": _genre_transitions(
+            "boundary_durations": pipeline_render_stage.genre_transitions(
                 chapters, project_genre, transition_mode),
             "final_fade": _final_audio_fade(
                 project_genre, transition_mode),

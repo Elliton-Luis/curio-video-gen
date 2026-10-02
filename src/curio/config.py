@@ -22,11 +22,12 @@ def _as_bool(value, default: bool = True) -> bool:
 
 DURATION_AUTO = 0.0  # Automático/Ilimitado: o conteúdo determina a duração.
 
-# Estilos de entrada válidos para as inserções esparsas. Mesmos nomes de
-# `stages.visual.ENTRY_STYLES` (+ o legado "fade_scale"), declarados aqui
-# para a config validar sem importar o pacote de estágios (evita ciclo).
-ALLOWED_INSERT_STYLES = ("drop_in", "slide_left", "slide_right", "fade",
-                         "scale_in", "tilt_in", "fade_scale")
+# Estilos são valores persistidos em timeline.json. Config declara contrato
+# estável; renderer e timeline consomem a mesma tupla sem importar um estágio.
+ENTRY_STYLES = ("drop_in", "slide_left", "slide_right", "fade",
+                "scale_in", "tilt_in")
+LEGACY_ENTRY_STYLES = ("fade_scale",)
+ALLOWED_INSERT_STYLES = ENTRY_STYLES + LEGACY_ENTRY_STYLES
 
 
 def normalize_language(raw) -> str:

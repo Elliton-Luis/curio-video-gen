@@ -18,15 +18,16 @@ from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import RunMetrics, backfill_from_metadata
-from .pipeline import (MediaStandby, _build_silent, _build_silent_visual,
-                        _apply_audio_request, _audio_events,
-                        _final_audio_fade, _genre_transitions,
-                        _mark_audio_used, _narration_with_sfx, _read, _read_json,
-                        _transition_mode, _transition_signature,
+from .pipeline import (MediaStandby,
+                         _apply_audio_request, _audio_events,
+                         _final_audio_fade,
+                         _mark_audio_used, _narration_with_sfx, _read, _read_json,
+                         _transition_mode,
                         _sfx_track_for,
                         _write_json, finalize_project, iter_projects,
                         run_pipeline,
-                        run_script_pipeline, _paths_for_slug)
+                         run_script_pipeline, _paths_for_slug)
+from . import pipeline_render as pipeline_render_stage
 from .stages.scenes import Chapter
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
@@ -36,6 +37,7 @@ from .stages import tts as tts_stage
 from .stages import media_rules
 from .stages import scoring as scoring_stage
 from .stages import visual as visual_stage
+from .stages import visual_timeline as visual_timeline_stage
 from .runlog import safe_text
 
 
@@ -470,18 +472,19 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
             visual_timeline = None
     if visual_timeline is not None:
         # Replaneja só a geometria: as imagens podem ter mudado de ordem.
-        visual_timeline = visual_stage.rebuild_visual_timeline(
-            chapters, media, visual_timeline, cfg)
+        visual_timeline = visual_timeline_stage.rebuild_visual_timeline(
+            chapters, media, cfg)
         _write_json(paths.visual_json, visual_timeline)
 
     transition_mode = _transition_mode(cfg)
-    transitions = _genre_transitions(chapters, project_genre, transition_mode)
+    transitions = pipeline_render_stage.genre_transitions(
+        chapters, project_genre, transition_mode)
     if visual_timeline:
-        _build_silent_visual(chapters, visual_timeline, args.slug, paths,
+        pipeline_render_stage.build_silent_visual(chapters, visual_timeline, args.slug, paths,
                              cfg, paths.silent_mp4, transitions=transitions)
     else:
         durations = [max(0.5, c.end - c.start) for c in chapters]
-        _build_silent(chapters, media, args.slug, durations, paths, cfg,
+        pipeline_render_stage.build_silent(chapters, media, args.slug, durations, paths, cfg,
                       paths.silent_mp4, transitions=transitions)
 
     total = round(audio_duration + 0.8, 2)
@@ -517,7 +520,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     old_meta["render_encoder"] = info["encoder"]
     old_meta["processing_time_seconds"] = round(time.monotonic() - metrics.started_monotonic, 2)
     old_meta["audio"] = audio_plan["metadata"]
-    old_meta["visual_transition_signature"] = _transition_signature(
+    old_meta["visual_transition_signature"] = pipeline_render_stage.transition_signature(
         chapters, project_genre, transition_mode,
         {"insertions": cfg.visual_insertions,
          "insert_style": cfg.visual_insert_style,

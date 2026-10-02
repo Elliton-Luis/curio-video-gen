@@ -24,6 +24,8 @@ NOVO PIPELINE DE MÍDIA (short-circuit):
 from __future__ import annotations
 
 import concurrent.futures
+import contextvars
+import functools
 import hashlib
 import json
 import os
@@ -45,154 +47,9 @@ from ..media.providers import (
 )
 from . import media_rules
 from . import scenes as scenes_stage
-
-# Entradas suaves e variadas, sem repetição consecutiva no vídeo inteiro.
-# Nomes estáveis: vão para timeline.json e para o render — renomear quebra
-# compatibilidade ("fade_scale" legado ainda renderiza; novos planos usam
-# "fade"). A ordem por vídeo é embaralhada com seed do slug (reprodutível),
-# e o contador global atravessa cenas: inserções consecutivas nunca repetem.
-ENTRY_STYLES = ("drop_in", "slide_left", "slide_right", "fade",
-                "scale_in", "tilt_in")
-LEGACY_STYLES = ("fade_scale",)
-
-# SFX discretos em ALGUMAS inserções (nunca todas): 1 a cada 3 overlays,
-# alternando swish (ruído filtrado) e tap (pulso grave curto). Baixos o
-# suficiente para nunca competir com a narração; cenas de 1 foto (sem
-# inserção) nunca têm SFX.
-SFX_EVERY = 3
-SFX_KINDS = ("swish", "tap")
-SFX_GAIN_DB = -22
-SFX_DURATION = 0.35
-
-# --- Inserções esparsas (o modo padrão) -------------------------------
-# A imagem de fundo ocupa a cena inteira; a foto COMPLEMENTAR cai por
-# cima dela como um cartão de álbum e fica. O usuário pediu
-# "não ficar fazendo toda hora": o orçamento é do VÍDEO inteiro, não da
-# cena. Uma a duas no vídeo é o ponto ideal — acima disso vira slideshow.
-# O SFX é propositalmente quase imperceptível: existe para marcar a
-# diferença da foto que entra, não para chamar atenção.
-INSERT_SFX_KIND = "tap"  # toque grave curto = objeto pousando no álbum
-INSERT_SFX_DURATION = 0.4
-
-
-def insertion_scenes(n_scenes: int, budget: int) -> set[int]:
-    """Cenas (0-based) que recebem UMA inserção, espalhadas no vídeo.
-
-    Determinístico: as posições saem igualmente espaçadas entre as cenas
-    do miolo — a abertura (índice 0) nunca recebe inserção (é o gancho,
-    a primeira imagem precisa entrar limpa) nem o fecho (última cena,
-    que carrega a resposta). Sem aleatoriedade: o mesmo tema gera o mesmo
-    vídeo, e a escolha continua previsível para quem revisa o roteiro.
-    """
-    if budget <= 0 or n_scenes < 2:
-        return set()
-    budget = min(budget, n_scenes - 1)
-    inner = list(range(1, n_scenes - 1))  # ignora abertura e fecho
-    slots = len(inner)
-    if slots <= 0:
-        return set()
-    positions: list[int] = []
-    for k in range(1, budget + 1):
-        # Centros igualmente espaçados: (k-0.5)/budget evita o viés de ancorar
-        # a primeira inserção no começo (que colaria as duas).
-        pos = min(slots - 1, max(0, round((k - 0.5) * slots / budget)))
-        # Colisão (budget alto p/ poucas cenas): desloca p/ a direita e,
-        # se não couber, p/ a esquerda.
-        while pos in positions and pos + 1 < slots:
-            pos += 1
-        if pos in positions:
-            pos = min(positions) - 1 if min(positions) > 0 else 0
-            while pos in positions and pos > 0:
-                pos -= 1
-        if pos not in positions:
-            positions.append(pos)
-    return {inner[p] for p in positions}
-
-
-def _topic_terms(ch) -> set[str]:
-    """Vocabulário que define o ASSUNTO da cena (não uma consulta só).
-
-    Reúne os termos visuais que a IA deu para a cena e, na falta deles, as
-    palavras da narração. É contra este conjunto que a precisão da imagem
-    é medida — medir contra uma única consulta premiaria a foto que
-    casou com a palavra mais genérica em vez da mais informativa.
-    """
-    terms: set[str] = set()
-    for query in list(getattr(ch, "visual_queries", []) or []):
-        terms.update(_query_terms(query))
-        for w in query.replace(",", " ").split():
-            base = _strip_acc(w)
-            if len(base) >= 3 and base not in PT_STOP:
-                terms.add(base)
-    if not terms:  # sem consulta da IA: a narração é a única pista
-        for w in re.findall(r"[a-zà-ÿ]{4,}", (ch.narration or "").lower()):
-            base = _strip_acc(w)
-            if base and base not in PT_STOP:
-                terms.add(base)
-    return terms
-
-
-def _topic_score(asset: dict, terms: set[str]) -> int:
-    """Quantos termos do assunto da cena aparecem no título da imagem.
-
-    Só o título: o provedor também devolve tags, e tag é o que produziu
-    "wallpaper", "4k" e "usina" numa cena sobre papel térmico. O título
-    descreve a foto; a tag é palpite de quem doou o acervo.
-    """
-    hay = _strip_acc(str(asset.get("title", "") or ""))
-    if not hay:
-        return 0
-    return sum(1 for t in terms if t in hay)
-
-
-def order_for_insertion(entries: list, ch) -> tuple[list, list]:
-    """Reparte (fundo, inserção) exigindo que a inserção seja a mais precisa.
-
-    A foto complementar existe para APROFUNDAR o tema; repetir a imagem
-    genérica do fundo não acrescenta nada e só polui o vídeo. Por isso a
-    inserção é a de maior nota de assunto, e o fundo é a melhor foto que
-    ainda é **estritamente menos** precisa que ela. Empate não é
-    aprofundamento, é repetição: nesse caso a cena fica só com uma imagem.
-
-    Sem isso, a ordem da busca definia o papel da foto e o waterfall
-    genérico ("science", "laboratory") às vezes fornecia justamente a
-    inserção — que é a imagem que não tem nada a ver.
-    """
-    if len(entries) < 2:
-        return list(entries), []
-    terms = _topic_terms(ch)
-    if not terms:
-        return [entries[0]], []
-    scored = sorted(
-        ((_topic_score(e.get("asset") or {}, terms), i, e)
-         for i, e in enumerate(entries)),
-        key=lambda r: (-r[0], r[1]))
-    best_score, _, insert_entry = scored[0]
-    if best_score <= 0:
-        return [entries[0]], []  # nada no lote fala do assunto
-    rest = scored[1:]
-    # Fundo = melhor foto que ainda perde para a inserção. Se todas empatam
-    # com ela, a inserção não é mais precisa que o resto: não insere.
-    below = [r for r in rest if r[0] < best_score]
-    if not below:
-        return [entries[0]], []
-    background_entry = below[0][2]
-    return [background_entry], [insert_entry]
-
-
-# Pequenas diferenças de composição entre fotos sobrepostas (álbum natural).
-# Índices por ordem da imagem na cena.
-ROTATIONS_DEG = (-5.0, 4.0, -3.0, 6.0, -4.0)
-OFFSET_DX = (0, -34, 30, -22, 26)
-OFFSET_DY = (0, -24, 18, 26, -18)
-
-# Largura do cartão-foto em relação ao vídeo (0.85 ≈ 920/1080). O cartão
-# fica centralizado na metade superior: a base inferior (~360 px) é reserva
-# das legendas — imagens nunca cobrem a área de leitura.
-CARD_WIDTH_RATIO = 0.85
-SUBTITLE_RESERVE_PX = 360
-
-MIN_IMAGE_SECONDS = 1.0
+from .visual_timeline import (_assign_sfx, _shuffled_styles, _spec_images,
+                              insertion_scenes, mark_insertion,
+                              order_for_insertion)
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 import os as _os
@@ -200,6 +57,10 @@ MAX_CONCURRENT_SEARCHES = int(_os.environ.get("CURIO_MAX_CONCURRENT_SEARCHES", "
 MAX_CONCURRENT_DOWNLOADS = int(_os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS", "2"))
 SEARCH_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
 DOWNLOAD_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
+_SEARCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=max(1, MAX_CONCURRENT_SEARCHES), thread_name_prefix="curio-search")
+_DOWNLOAD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=max(1, MAX_CONCURRENT_DOWNLOADS), thread_name_prefix="curio-download")
 
 # Hierarquia de provedores (ordem de prioridade). Do mais específico para
 # o mais genérico: primeiro os bancos de foto com chave, depois os acervos
@@ -221,20 +82,48 @@ CANDIDATE_MULTIPLIER = 4
 REJECTED_KEPT = 8
 
 
-def _search_with_timeout(provider_obj, query: str, timeout: float, metrics=None) -> list[MediaAsset]:
-    """Executa busca com timeout."""
-    import concurrent.futures
-    import contextvars
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        context = contextvars.copy_context()
-        future = executor.submit(context.run, provider_obj.search,
-                                 query, 5, metrics)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            if metrics:
-                metrics.media_record_timeout()
-            raise MediaError(f"{provider_obj.name}: busca timeout ({timeout}s)")
+def _submit_search(provider_obj, query: str, metrics=None):
+    """Submit one provider search, preserving run-log context in worker."""
+    context = contextvars.copy_context()
+    return _SEARCH_EXECUTOR.submit(context.run, provider_obj.search,
+                                   query, 5, metrics)
+
+
+def _search_with_timeout(provider_obj, query: str, timeout: float,
+                         metrics=None) -> list[MediaAsset]:
+    """Bound wait without executor context-manager's blocking shutdown.
+
+    Old `with ThreadPoolExecutor` waited for worker exit while leaving the
+    context, so timeout never returned at timeout. Provider HTTP calls have
+    their own finite network timeout; cancel stops queued work and caller
+    returns immediately. A running urllib call ends on its socket timeout.
+    """
+    future = _submit_search(provider_obj, query, metrics)
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError as exc:
+        future.cancel()
+        if metrics:
+            metrics.media_record_timeout()
+        raise MediaError(f"{provider_obj.name}: busca timeout ({timeout}s)") from exc
+
+
+def _submit_download(asset: MediaAsset, cache_dir: str, metrics=None):
+    """Submit one download while preserving execution log context."""
+    context = contextvars.copy_context()
+    return _DOWNLOAD_EXECUTOR.submit(context.run, _download_with_origin,
+                                     asset, cache_dir, metrics)
+
+
+def _download_with_origin(asset: MediaAsset, cache_dir: str, metrics=None):
+    """Download one asset and report whether bytes came from local cache."""
+    from ..media.cache import _safe_ext
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", asset.asset_id) or "asset"
+    path = os.path.join(cache_dir, "media", asset.provider,
+                        safe_id + _safe_ext(asset.download_url))
+    cached = os.path.isfile(path) and os.path.isfile(path + ".json")
+    result = download_asset(asset, cache_dir, metrics)
+    return result, "cache" if cached else "download"
 
 
 def _cache_key(query: str) -> str:
@@ -297,7 +186,19 @@ _validate_asset_for = media_rules.asset_gate_reason
 
 
 def _probe_dims(path: str) -> tuple[int, int]:
-    """Dimensões reais via ffprobe; (0, 0) se ilegível (nunca fatal)."""
+    """Dimensões reais via ffprobe; cache por caminho, tamanho e mtime."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return 0, 0
+    return _probe_dims_cached(path, stat.st_size, stat.st_mtime_ns)
+
+
+@functools.lru_cache(maxsize=512)
+def _probe_dims_cached(path: str, size: int,
+                       mtime_ns: int) -> tuple[int, int]:
+    """Cache invalida quando imagem muda; evita repetir subprocesso ffprobe."""
+    _ = size, mtime_ns
     try:
         proc = ff.run([ff.FFPROBE, "-v", "error", "-select_streams", "v:0",
                        "-show_entries", "stream=width,height",
@@ -337,7 +238,7 @@ def _downloaded_dims_ok(asset: MediaAsset) -> bool:
 # compartilhado com a pesquisa e com o filtro de mídia, e manter cópia
 # própria por estágio é o que faz "buraco negro" virar query "field"
 # num lugar e continuar certo em outro.
-PT_STOP = textnorm.STOP_PT
+PT_STOP = textnorm.VISUAL_STOP_PT
 PT_EN = textnorm.PT_LEXICON
 
 
@@ -791,14 +692,26 @@ def _search_scene_with_shortcircuit(
                 _consider(cached, query, from_cache=True)
                 if metrics:
                     metrics.media_cache_hits += 1
-            for prov in providers:
-                if getattr(prov, "_disabled", False):
-                    continue
+            active = [prov for prov in providers
+                      if not getattr(prov, "_disabled", False)]
+            futures = [(prov, _submit_search(prov, query, metrics))
+                       for prov in active]
+            deadline = time.monotonic() + SEARCH_TIMEOUT
+            # Wait in provider-priority order, even though requests run at
+            # once. Candidate order and tie-breaks remain deterministic.
+            for prov, future in futures:
                 if len(candidates) >= limit:
+                    for _later_provider, later in futures:
+                        later.cancel()
                     break
                 try:
-                    results = _search_with_timeout(
-                        prov, query, SEARCH_TIMEOUT, metrics)
+                    remaining = max(0.0, deadline - time.monotonic())
+                    results = future.result(timeout=remaining)
+                except concurrent.futures.TimeoutError:
+                    future.cancel()
+                    if metrics:
+                        metrics.media_record_timeout()
+                    continue
                 except MediaError as exc:
                     if (any(code in str(exc) for code in ("429", "401", "403"))
                             or "Too Many Requests" in str(exc)):
@@ -888,7 +801,27 @@ def _search_scene_with_shortcircuit(
         ranked = sorted(ranked, key=lambda entry: (
             bool(entry.get("generic")), asset_uses.get(asset_key(entry["asset"]), 0),
             -entry.get("score", 0)))
-    for entry in ranked:
+
+    download_window = min(max(1, MAX_CONCURRENT_DOWNLOADS), max(1, max_images))
+    download_futures: dict[int, object] = {}
+    next_download = 0
+
+    def fill_download_window() -> None:
+        nonlocal next_download
+        while len(download_futures) < download_window and next_download < len(ranked):
+            index = next_download
+            next_download += 1
+            try:
+                candidate = MediaAsset.from_dict(ranked[index]["asset"])
+            except TypeError:
+                continue
+            if candidate.local_path and os.path.isfile(candidate.local_path):
+                continue
+            download_futures[index] = _submit_download(
+                candidate, cfg.cache_dir, metrics)
+
+    fill_download_window()
+    for rank_index, entry in enumerate(ranked):
         if len(picked) >= max_images:
             break
         asset_dict = entry["asset"]
@@ -900,11 +833,18 @@ def _search_scene_with_shortcircuit(
         except TypeError:
             continue
         local = asset.local_path
-        downloaded_before = metrics.media_downloads if metrics else 0
+        acquisition = "cache" if local and os.path.isfile(local) else "download"
         if not (local and os.path.isfile(local)):
+            future = download_futures.pop(rank_index, None)
             try:
-                asset = download_asset(asset, cfg.cache_dir, metrics)
-            except MediaError as exc:
+                if future is None:
+                    future = _submit_download(asset, cfg.cache_dir, metrics)
+                asset, acquisition = future.result(timeout=DOWNLOAD_TIMEOUT)
+                fill_download_window()
+            except (MediaError, concurrent.futures.TimeoutError) as exc:
+                if future is not None:
+                    future.cancel()
+                fill_download_window()
                 msg = f"cena {ch.id}: download falhou ({exc})"
                 warnings.append(msg)
                 from ..runlog import event as run_event
@@ -951,10 +891,7 @@ def _search_scene_with_shortcircuit(
         if entry.get("generic") and metrics:
             metrics.media_record_funnel("generic_used")
         entry["order"] = len(picked)
-        entry["acquisition"] = ("download" if metrics.media_downloads > downloaded_before
-                                else "cache") if metrics else (
-                                    "cache" if local and os.path.isfile(local)
-                                    else "download_or_cache")
+        entry["acquisition"] = acquisition
         entry["score"] = entry.get("score", 0)
         if metrics:
             metrics.media_record_score(entry["score"])
@@ -1203,168 +1140,6 @@ def _resolve_reuse_multi(scenes: list[dict]) -> None:
               f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
 
 
-def _overlap_for(duration: float, n: int, cap: float) -> float:
-    if n <= 1:
-        return 0.0
-    return max(0.4, min(cap, duration * 0.15))
-
-
-def plan_scene_images(duration: float, n: int,
-                      overlap_cap: float = 0.9,
-                      styles: tuple = ENTRY_STYLES,
-                      start: int = 0) -> list[dict]:
-    """Distribui `n` imagens na cena com sobreposição entre elas.
-
-    Retorna por imagem: ordem, início (offset na cena), duração, transição,
-    escala do cartão, rotação e deslocamentos. A primeira imagem abre em
-    tela cheia; as seguintes entram como foto sobre foto e permanecem por
-    cima até o fim da cena (pilha de álbum). `styles`/`start` posicionam a
-    cena na sequência global do vídeo (sem repetição consecutiva); com 1
-    imagem, o plano é vazio (render usa Ken Burns).
-    """
-    duration = max(0.5, float(duration))
-    # Garante ≥1 s por imagem: reduz a conta em vez de piscar fotos.
-    while n > 1 and duration / n < MIN_IMAGE_SECONDS:
-        n -= 1
-    if n <= 1:
-        return []
-    overlap = _overlap_for(duration, n, overlap_cap)
-    step = duration / n
-    base_entry = min(0.9, max(0.4, step * 0.3))
-    plan = []
-    for i in range(n):
-        start_t = round(i * step, 3)
-        dur = round(duration - start_t if i == n - 1 else step + overlap, 3)
-        if i == 0:
-            transition, entry_dur = "base", 0.0
-        else:
-            transition = styles[(start + i - 1) % len(styles)]
-            # Micro-variação determinística: inserções vizinhas assentam
-            # em ritmos levemente distintos (nada mecânico, nada exagerado).
-            entry_dur = round(base_entry + ((start + i) % 3) * 0.05, 3)
-        plan.append({
-            "order": i,
-            "start": start_t,
-            "duration": dur,
-            # i=0 é a base (tela cheia): sem transição de entrada.
-            "transition": transition,
-            "scale": 1.0 if i == 0 else CARD_WIDTH_RATIO,
-            "rotation_deg": 0.0 if i == 0 else ROTATIONS_DEG[i % len(ROTATIONS_DEG)],
-            "dx": 0 if i == 0 else OFFSET_DX[i % len(OFFSET_DX)],
-            "dy": 0 if i == 0 else OFFSET_DY[i % len(OFFSET_DY)],
-            "entry_dur": entry_dur,
-        })
-    return plan
-
-
-def _spec_images(entries: list[dict], duration: float,
-                 overlap_cap: float = 0.9,
-                 styles: tuple = ENTRY_STYLES,
-                 start: int = 0) -> tuple[list[dict], int]:
-    """Monta a lista `images` de um trecho (0, 1 ou N fotos).
-
-    Uma única imagem adequada vira base em tela cheia (o render aplica Ken
-    Burns sutil) em vez de fallback — nunca se inventa uma segunda foto.
-    Retorna (images, consumidos), onde consumidos é quantas transições da
-    sequência global foram usadas (para a próxima cena não repetir).
-    """
-    duration = max(0.5, float(duration))
-    if len(entries) == 1:
-        entry = entries[0]
-        asset = entry.get("asset") or {}
-        return [{
-            "order": 0,
-            "query": entry.get("query", ""),
-            "asset_id": asset.get("asset_id", ""),
-            "title": asset.get("title", ""),
-            "provider": asset.get("provider", ""),
-            "author": asset.get("author", ""),
-            "license": asset.get("license", ""),
-            "source_url": asset.get("source_url", ""),
-            "local_path": asset.get("local_path", ""),
-            "kind": asset.get("kind", "image"),
-            "start": 0.0,
-            "duration": round(duration, 3),
-            "transition": "base",
-            "scale": 1.0,
-            "rotation_deg": 0.0,
-            "dx": 0,
-            "dy": 0,
-            "entry_dur": 0.0,
-            "sfx": None,
-        }], 0
-    plan = plan_scene_images(duration, len(entries), overlap_cap,
-                              styles, start)
-    if not plan and entries:
-        return _spec_images(entries[:1], duration, overlap_cap, styles, start)
-    # Plano pode encurtar a conta (cena curta): corta as excedentes.
-    images = []
-    for spec, entry in zip(plan, entries):
-        asset = entry.get("asset") or {}
-        images.append({
-            "order": spec["order"],
-            "query": entry.get("query", ""),
-            "asset_id": asset.get("asset_id", ""),
-            "title": asset.get("title", ""),
-            "provider": asset.get("provider", ""),
-            "author": asset.get("author", ""),
-            "license": asset.get("license", ""),
-            "source_url": asset.get("source_url", ""),
-            "local_path": asset.get("local_path", ""),
-            "kind": asset.get("kind", "image"),
-            "start": spec["start"],
-            "duration": spec["duration"],
-            "transition": spec["transition"],
-            "scale": spec["scale"],
-            "rotation_deg": spec["rotation_deg"],
-            "dx": spec["dx"],
-            "dy": spec["dy"],
-            "entry_dur": spec["entry_dur"],
-            "sfx": None,
-        })
-    consumed = len([im for im in images if im["order"] > 0])
-    return images, consumed
-
-
-def _shuffled_styles(seed: str) -> list[str]:
-    """Ordem de entradas do vídeo: embaralhada com seed, sem repetição.
-
-    Embaralhar os 6 estilos e ciclar garante vizinhas sempre distintas;
-    o seed (slug do projeto) torna o resultado reprodutível entre runs.
-    """
-    import random
-    order = list(ENTRY_STYLES)
-    random.Random(seed or "curio").shuffle(order)
-    return order
-
-
-def _assign_sfx(images: list[dict], scene_start: float,
-                overlay_counter: int, sfx_ordinal: int,
-                enabled: bool) -> tuple[int, int]:
-    """Marca SFX em ~1/3 das inserções (nunca na base, nunca em todas).
-
-    Contadores globais ao vídeo: a cadência não recomeça a cada cena e os
-    dois tipos (swish/tap) alternam. Tempos absolutos (cena+offset) para o
-    render posicionar o som junto da entrada da foto.
-    """
-    for img in images:
-        if img["order"] == 0:
-            img["sfx"] = None
-            continue
-        if enabled and overlay_counter % SFX_EVERY == 0:
-            img["sfx"] = {
-                "kind": SFX_KINDS[sfx_ordinal % len(SFX_KINDS)],
-                "at": round(scene_start + img["start"], 3),
-                "gain_db": SFX_GAIN_DB,
-                "duration": SFX_DURATION,
-            }
-            sfx_ordinal += 1
-        else:
-            img["sfx"] = None
-        overlay_counter += 1
-    return overlay_counter, sfx_ordinal
-
-
 def build_visual_timeline(chapters, media_scenes: list[dict],
                           overlap_cap: float = 0.9, seed: str = "",
                           sfx: bool = True,
@@ -1426,7 +1201,7 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             # ritmo de álbum e sempre marca com som, independentemente da
             # cadência ~1/3 do modo álbum cheio. `style_pos` não anda:
             # a sequência variada pertence só ao álbum cheio.
-            _mark_insertion(images, start, insert_style, insert_gain_db, sfx)
+            mark_insertion(images, start, insert_style, insert_gain_db, sfx)
         else:
             style_pos += consumed
             overlay_counter, sfx_ordinal = _assign_sfx(
@@ -1458,109 +1233,3 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
                } if ch.id in scene_no_insert else {}),
         })
     return timeline
-
-
-def _mark_insertion(images: list[dict], scene_start: float, style: str,
-                    gain_db: int, sfx: bool) -> None:
-    """Força o estilo de queda e marca o SFX discreto da foto complementar.
-
-    Só toca nas fotos de ordem > 0 (a de fundo é a base em tela cheia e
-    nunca vira cartão). `at` é absoluto (cena + offset) para o render
-    alinhar o som com o instante em que a foto entra.
-    """
-    for img in images:
-        if img.get("order", 0) == 0:
-            continue
-        img["transition"] = style
-        if sfx:
-            img["sfx"] = {
-                "kind": INSERT_SFX_KIND,
-                "at": round(scene_start + img.get("start", 0.0), 3),
-                "gain_db": gain_db,
-                "duration": INSERT_SFX_DURATION,
-            }
-        else:
-            img["sfx"] = None
-
-
-def retime_visual_timeline(visual_timeline: list[dict],
-                           chapters) -> list[dict]:
-    """Replaneja tempos das imagens após mudança de duração (ex.: finalize).
-
-    Mantém ordem, consultas, assets, transições, SFX e geometria; só
-    recalcula início/duração de cada imagem (e o instante `at` do SFX) a
-    partir dos novos `start/end`.
-    """
-    times = {c.id: (float(c.start), float(c.end)) for c in chapters}
-    out = []
-    from .visual_beats import plan as plan_visual_beats, bind_assets, asset_key
-    for trecho in visual_timeline:
-        start, end = times.get(trecho["chapter_id"],
-                               (trecho["start"], trecho["end"]))
-        dur = max(0.5, end - start)
-        old = {im["order"]: im for im in trecho["images"]}
-        entries = [{"query": im.get("query", ""),
-                    "asset": {k: im.get(k, "") for k in
-                              ("asset_id", "title", "provider", "author",
-                               "license", "source_url", "download_url",
-                               "local_path", "kind")}}
-                   for im in trecho["images"]]
-        images, _consumed = _spec_images(entries, dur)
-        for img in images:
-            prev = old.get(img["order"], {})
-            if prev.get("transition") not in (None, "base"):
-                img["transition"] = prev["transition"]
-            sfx = prev.get("sfx")
-            if img["order"] > 0 and isinstance(sfx, dict):
-                img["sfx"] = {**sfx,
-                              "at": round(start + img["start"], 3)}
-            else:
-                img["sfx"] = None
-        trecho = dict(trecho)
-        beats = plan_visual_beats(dur, start)
-        backgrounds = bind_assets(beats, trecho.get("backgrounds") or images[:1], start)
-        for beat in beats:
-            beat.setdefault("asset_ids", [])
-            for image in images[1:]:
-                key = asset_key(image)
-                if image["start"] < beat["end"] - start and key not in beat["asset_ids"]:
-                    beat["asset_ids"].append(key)
-        trecho.update(start=round(start, 3), end=round(end, 3),
-                      images=images,
-                      visual_beats=beats, backgrounds=backgrounds,
-                      fallback=not images and not backgrounds)
-        out.append(trecho)
-    return out
-
-
-def visual_summary(visual_timeline: list[dict]) -> str:
-    """Linha legível por trecho p/ logs: cena, nº de imagens, transições."""
-    parts = []
-    for t in visual_timeline:
-        if t["fallback"]:
-            parts.append(f"cena {t['chapter_id']}: fallback")
-            continue
-        tr = ",".join(i["transition"] for i in t["images"][1:])
-        nsfx = sum(1 for i in t["images"] if i.get("sfx"))
-        parts.append(f"cena {t['chapter_id']}: {len(t['images'])} img"
-                      + (f" [{tr}]" if tr else " [base]")
-                      + (f" +{nsfx}sfx" if nsfx else "")
-                      + (f"; {len(t['backgrounds'])} fundos alternados"
-                         if len(t.get("backgrounds") or []) > 1 else ""))
-    return "; ".join(parts)
-
-
-def rebuild_visual_timeline(chapters, media_scenes: list[dict],
-                            previous: list[dict], cfg: CurioConfig,
-                            seed: str = "") -> list[dict]:
-    """Replaneja a geometria depois de um `swap`, sem reescolher as fotos.
-
-    Só tempos, transições e sobreposição são recalculados. A ordem das
-    imagens vem do `media.json` já editado à mão pelo autor: a decisão dele
-    é a última palavra. Passar por `build_visual_timeline` aqui desfaria o
-    swap, porque o scoring reporia a foto mais pontuada na frente.
-    """
-    return build_visual_timeline(
-        chapters, media_scenes,
-        overlap_cap=float(cfg.visual_overlap), seed=seed,
-        sfx=bool(cfg.visual_sfx), honor_order=True)

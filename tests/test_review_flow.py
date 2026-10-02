@@ -21,7 +21,7 @@ from curio.stages import scoring as scoring_stage
 from curio.stages import research as research_stage
 from curio.stages import script as script_stage
 from curio.stages import tts as tts_stage
-from curio.stages import visual as visual_stage
+from curio.stages import visual as visual_stage, visual_timeline
 from curio.stages.scenes import Chapter
 
 pytest.importorskip("PIL")
@@ -233,8 +233,8 @@ def test_swap_respeita_a_ordem_na_reconstrucao(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
     run(cfg.out_dir, "swap", "--slug", slug, "--scene", "1", "--pick", "1")
     media = json.load(open(paths.media_json, encoding="utf-8"))
-    vt = visual_stage.rebuild_visual_timeline(chapters, media, [], cfg,
-                                              seed=slug)
+    vt = visual_timeline.rebuild_visual_timeline(chapters, media, cfg,
+                                                 seed=slug)
     ids = [im["asset_id"] for im in vt[0]["images"]]
     assert ids[0] == "a1", f"swap desfeito pelo replanejamento: {ids}"
 
@@ -289,7 +289,7 @@ def test_rerender_uses_timed_chapters_and_records_asset_usage(tmp_path, monkeypa
     captured = {}
     def build(timed, *args, **kwargs):
         captured["duration"] = timed[0].end - timed[0].start
-    monkeypatch.setattr(cli, "_build_silent_visual", build)
+    monkeypatch.setattr(cli.pipeline_render_stage, "build_silent_visual", build)
     monkeypatch.setattr(cli.ff, "probe_duration", lambda *args: 4.0)
     monkeypatch.setattr("curio.stages.render.burn_final", lambda *a, **kw: {
         "path": paths.final_mp4, "duration": 4.0, "backend": "cpu", "encoder": "libx264"})

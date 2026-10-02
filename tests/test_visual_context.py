@@ -124,7 +124,7 @@ def test_religious_order_is_not_mistaken_for_place():
 
 
 def test_real_candidates_allow_existing_insertion_rule_without_synthetic_assets(monkeypatch):
-    from curio.stages.visual import order_for_insertion
+    from curio.stages.visual_timeline import order_for_insertion
     monkeypatch.setattr("curio.stages.research._get_json", lambda *a, **k: {
         "query": {"pages": {"1": {"langlinks": [{"lang": "en", "*": "Thomas Aquinas"}]}}}})
     ch = Chapter(1, "Tomás de Aquino escreveu sobre filosofia.", 5)

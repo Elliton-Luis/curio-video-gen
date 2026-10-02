@@ -2,7 +2,7 @@ import subprocess
 
 from curio.config import CurioConfig
 from curio.metrics import RunMetrics
-from curio.stages import visual, render
+from curio.stages import visual, visual_timeline, render
 from curio.stages.scenes import Chapter
 from curio.stages.visual_beats import asset_key
 
@@ -87,7 +87,7 @@ def test_real_render_switches_all_backgrounds(tmp_path):
 
 
 def test_segment_cache_tracks_asset_identity_and_render_size(tmp_path):
-    from curio.pipeline import _segment_identity
+    from curio.pipeline_render import _segment_identity
     cfg = CurioConfig()
     path = tmp_path / "asset.png"
     path.write_bytes(b"first")
@@ -158,7 +158,7 @@ def test_retiming_preserves_background_variety():
     timeline = visual.build_visual_timeline([ch], [{"chapter_id": 1, "assets":
                                                   [entry(i) for i in range(3)]}], insertions=0)
     ch.start, ch.end = 2, 14
-    updated = visual.retime_visual_timeline(timeline, [ch])[0]
+    updated = visual_timeline.retime_visual_timeline(timeline, [ch])[0]
     assert {asset_key(im) for im in updated["backgrounds"]} == {"fixture:0", "fixture:1", "fixture:2"}
     assert updated["visual_beats"][0]["start"] == 2
     assert updated["visual_beats"][-1]["end"] == 14
