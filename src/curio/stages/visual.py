@@ -298,7 +298,8 @@ def local_queries(narration: str, k: int = 2) -> list[str]:
     # Tópico espacial vence frequência: "campo"/"tempo" são frequentes e
     # genéricos — "buraco negro" é o assunto e precisa vir primeiro, ou a
     # busca pede "field" e o vídeo recebe microscópio.
-    boost = _space_boost(narration)
+    boost = list(dict.fromkeys([
+        *textnorm.topic_phrases(narration), *_space_boost(narration)]))
     if boost:
         ordered = [t for t in boost if t in keywords or t in entities]
         ordered += [t for t in boost if t not in ordered]

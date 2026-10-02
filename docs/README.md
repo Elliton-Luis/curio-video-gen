@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-205941_relatorio-queries-eletricas-tesla.md` — queries compostas para corrente elétrica e filtro contra rio/homônimos Tesla; 738 testes verdes.
 - `relatorios/20261002-205829_relatorio-aprendizado-contavel.md` — roteiro exige compreensão sem replay e takeaway retellable; 736 testes verdes.
 - `relatorios/20261002-203402_relatorio-musica-mood-genero.md` — seleção exige mood compatível com adapter; faixa contemplativa/haunting não entra em people; 735 testes verdes.
 - `relatorios/20261002-191200_relatorio-busca-fresca-prompts.md` — nova busca em cada vídeo, cache só de bytes para rerender; prompts reduzidos preservados; 733 testes verdes.
@@ -142,6 +143,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Análises (estado, gaps, riscos)
 
+- `analises/20261002-205941_analise-imagens-tesla-corrente.md` — fallback local descontextualizou corrente e Tesla; métricas mostram pontes, Gigafactory e rua no lugar de invenções.
 - `analises/20261002-190300_analise-midia-marco-revolucao.md` — métricas e títulos confirmam desvio lexical em dois vídeos locais.
 - `analises/20261002-150849_relatorio_refatoracao-etapas-1-2.md` — implementação das etapas 1–2, gates, `textnorm` e `ResearchResult` explícito.
 - `analises/20261002-131932_analise_refatoracao-codigo-morto.md` — auditoria estrutural, candidatos mortos, duplicações e ordem de refatoração.

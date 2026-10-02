@@ -163,7 +163,9 @@ def topic_anchor_matches(asset: dict, ch) -> bool:
     """
     if not str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
         return True
-    anchors = list(getattr(ch, "global_visual_queries", []) or [])
+    anchors = [*list(getattr(ch, "global_visual_queries", []) or []),
+               *textnorm.topic_phrases(
+                   str(getattr(ch, "narration", "") or ""))]
     if not anchors:
         return True
     title_tokens = set(_tokens(str(asset.get("title", "") or "")))

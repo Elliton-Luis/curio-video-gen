@@ -61,3 +61,27 @@ def test_person_video_keeps_person_portrait_across_local_context_scenes():
     assert scoring.base_score(portrait, ch)["score"] >= scoring.threshold()
     assert not scoring.topic_anchor_matches(namesake, ch)
     assert scoring.base_score(namesake, ch)["score"] == 0
+
+
+def test_tesla_current_queries_distinguish_electricity_from_river():
+    narration = ("Tesla desenvolveu o motor de indução de corrente alternada; "
+                 "Edison defendia corrente contínua.")
+    queries = visual.local_queries(narration)
+    assert "induction motor" in queries
+    assert "alternating current" in queries
+    assert "direct current" in visual.local_queries(
+        "Edison defendia corrente contínua.")
+    assert "river" not in queries
+
+
+def test_tesla_anchor_accepts_invention_but_rejects_river_bridge():
+    ch = Chapter(id=2,
+                 narration="Tesla desenvolveu corrente alternada e um motor de indução.",
+                 duration_estimate=5, subject="current",
+                 visual_queries=["alternating current", "induction motor"],
+                 global_visual_queries=["nikola tesla"],
+                 visual_intent="local fallback: current induction motor")
+    river = {"title": "Ponte sobre o Rio Corrente"}
+    ac_motor = {"title": "Alternating current induction motor, Nikola Tesla"}
+    assert not scoring.topic_anchor_matches(river, ch)
+    assert scoring.topic_anchor_matches(ac_motor, ch)

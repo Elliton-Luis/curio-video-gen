@@ -264,13 +264,36 @@ PT_TOPIC_PHRASES = {
     "marco aurelio": "marcus aurelius",
     "imperador marco aurelio": "marcus aurelius",
     "marcos aurelio": "marcus aurelius",
+    "nikola tesla": "nikola tesla",
+    "guerra das correntes": "war of currents",
+    "batalha das correntes": "war of currents",
+    "corrente alternada": "alternating current",
+    "corrente continua": "direct current",
+    "motor de inducao": "induction motor",
+    "energia sem fio": "wireless power",
+    "transmissao sem fio": "wireless transmission",
+    "rede eletrica": "electrical grid",
+    "campo magnetico": "magnetic field",
 }
+
+
+def topic_phrases(text: str) -> list[str]:
+    """Known ambiguous domain phrases present in text, earliest first."""
+    hay = fold_phrase(text)
+    matches = []
+    for phrase, translation in PT_TOPIC_PHRASES.items():
+        pattern = rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])"
+        match = re.search(pattern, hay)
+        if match:
+            matches.append((match.start(), -len(phrase), translation))
+    return [translation for _start, _length, translation in sorted(matches)]
 
 
 def translate_phrase(text: str) -> str | None:
     """Translate known multiword video topics without token drift."""
     normalized = fold_phrase(text)
-    return PT_TOPIC_PHRASES.get(normalized)
+    return PT_TOPIC_PHRASES.get(normalized) or next(
+        iter(topic_phrases(text)), None)
 
 
 def translate(word: str) -> str | None:
