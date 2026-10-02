@@ -25,10 +25,10 @@ from .audio.library import audio_seed
 from .config import CurioConfig
 from .media import download_asset, get_providers
 from .media.providers import MediaAsset, MediaError, classify_rights
-from .metrics import RunMetrics, backfill_from_metadata
+from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
-from .slug import slugify, slugify_with_timestamp
+from .slug import slugify_with_timestamp
 from .slug import find_project_root, project_dir, unique_slug
 from .stages import render as render_stage
 from .stages import nvidia as nvidia_stage

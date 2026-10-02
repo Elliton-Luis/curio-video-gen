@@ -14,7 +14,6 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Callable, Optional
 
 from .config import CurioConfig
@@ -320,21 +319,6 @@ def reorder_items(queue: VideoQueue, from_index: int, to_index: int) -> bool:
     item = queue.items.pop(from_index)
     queue.items.insert(to_index, item)
     return True
-
-
-def pause_queue(queue: VideoQueue) -> None:
-    queue.paused = True
-
-
-def resume_queue(queue: VideoQueue) -> None:
-    queue.paused = False
-
-
-def cancel_queue(queue: VideoQueue) -> None:
-    queue.cancelled = True
-    current = queue.get_current()
-    if current and current.status == QueueItemStatus.PROCESSING:
-        current.status = QueueItemStatus.CANCELLED
 
 
 def default_queues_dir(cfg: CurioConfig) -> str:

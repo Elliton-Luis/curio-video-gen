@@ -127,10 +127,6 @@ class RunMetrics:
             self.media_bytes += bytes_
             self.media_cache_misses += 1
 
-    def media_record_search_time(self, provider: str, elapsed: float) -> None:
-        self.media_provider_search_time[provider] = self.media_provider_search_time.get(provider, 0.0) + elapsed
-        self.media_time_per_request.setdefault(provider, []).append(elapsed)
-
     def media_record_results(self, provider: str, count: int) -> None:
         self.media_results_received[provider] = self.media_results_received.get(provider, 0) + count
 
@@ -183,14 +179,8 @@ class RunMetrics:
     def media_record_timeout(self) -> None:
         self.media_timeouts += 1
 
-    def media_record_retry(self) -> None:
-        self.media_retries += 1
-
     def media_record_asset_rejected(self) -> None:
         self.media_assets_rejected += 1
-
-    def media_record_asset_reused(self) -> None:
-        self.media_assets_reused += 1
 
     def media_record_synth(self) -> None:
         self.media_synth_diagrams += 1
@@ -229,12 +219,6 @@ class RunMetrics:
         self.media_scored_count += 1
         if float(score or 0.0) < 0.34 * 100:
             self.media_low_score += 1
-
-    def media_record_layer(self, layer: str, device: str = "") -> None:
-        """Camada opcional usada (clip/vision) e em que dispositivo."""
-        self.media_layers_used[layer] = self.media_layers_used.get(layer, 0) + 1
-        if device:
-            self.media_layer_device = device
 
     def media_record_fallback(self, strategy: str) -> None:
         """Cena que trocou de estratégia visual (não encontrou foto boa)."""
@@ -320,12 +304,6 @@ class RunMetrics:
                     self.visual_asset_beat_counts[key] = self.visual_asset_beat_counts.get(key, 0) + 1
             for key in scene_keys:
                 self.visual_asset_scene_counts[key] = self.visual_asset_scene_counts.get(key, 0) + 1
-
-    def research_report(self) -> dict:
-        return {"aceitas": self.research_sources,
-                "rejeitadas": dict(sorted(self.research_rejected.items())),
-                "consultas": self.research_queries,
-                "consultas_complementares": self.research_complementary_queries}
 
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1

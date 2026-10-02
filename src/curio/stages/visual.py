@@ -31,7 +31,6 @@ import re
 import sys
 import time
 import unicodedata
-from dataclasses import dataclass
 from pathlib import Path
 
 from .. import ffmpeg as ff
@@ -222,14 +221,6 @@ MEDIA_CACHE_DIR = "cache/media_query"
 CANDIDATE_MULTIPLIER = 4
 # Rejeições que a folha de contato guarda por cena (o resto é ruído).
 REJECTED_KEPT = 8
-
-
-@dataclass
-class SearchTask:
-    """Representa uma tarefa de busca: (provider, query)."""
-    provider: str
-    query: str
-    provider_obj: MediaProvider
 
 
 def _search_with_timeout(provider_obj, query: str, timeout: float, metrics=None) -> list[MediaAsset]:
@@ -713,18 +704,6 @@ def validate_preserved(original: str, chapters) -> None:
             "recusando para não adulterar a narração")
 
 
-def split_script(script_text: str, cfg: CurioConfig,
-                 n_scenes: int | None = None,
-                 metrics=None) -> tuple[list, str]:
-    """Divide o roteiro preservado em cenas (fonte: 'nvidia' | 'local')."""
-    chapters, source = scenes_stage.build_chapters(
-        script_text, cfg,
-        n_scenes=n_scenes or scenes_for_script(script_text, cfg),
-        metrics=metrics)
-    validate_preserved(script_text, chapters)
-    return chapters, source
-
-
 def _query_terms(query: str) -> list[str]:
     stop = {"the", "and", "with", "from", "into", "para", "uma", "para"}
     return [t.lower() for t in query.replace(",", " ").split()
@@ -1147,8 +1126,6 @@ def _search_scene_with_shortcircuit(
             if not logged:
                 print(f"AVISO: {msg}", file=sys.stderr)
         _save_to_cache(cache_dir, entry["query"], asset)
-        if entry["from_cache"] and metrics:
-            metrics.media_cache_misses += 0
         entry = dict(entry)
         entry["asset"] = asset.to_dict()
         if entry.get("generic") and metrics:
@@ -1190,8 +1167,7 @@ def _search_scene_with_shortcircuit(
             picked.append({"asset": synth.to_dict(),
                            "query": queries[0] if queries else "",
                            "relevance": 0, "order": 0, "from_cache": False,
-                           "score": 0.0, "strategy": "synth"})
-            from . import visuals as _v
+                            "score": 0.0, "strategy": "synth"})
             strategy_used = ("diagram"
                              if synth.title.startswith("Diagrama")
                              else synth.title.split(" — ")[0].lower())
@@ -1752,12 +1728,6 @@ def visual_summary(visual_timeline: list[dict]) -> str:
                       + (f"; {len(t['backgrounds'])} fundos alternados"
                          if len(t.get("backgrounds") or []) > 1 else ""))
     return "; ".join(parts)
-
-
-def _slug_from_text(text: str, fallback: str = "roteiro") -> str:
-    from ..slug import slugify
-    first = re.split(r"(?<=[.!?…])\s+|\n+", text.strip())[0]
-    return slugify(first[:60]) or fallback
 
 
 def rebuild_visual_timeline(chapters, media_scenes: list[dict],

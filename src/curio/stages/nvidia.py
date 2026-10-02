@@ -352,13 +352,6 @@ class NvidiaCredentials:
             )
         return self.keys[0]
 
-    def rotate(self) -> str:
-        """NÃO IMPLEMENTADO nesta etapa (sem round-robin/sorteio/fallback)."""
-        raise NotImplementedError(
-            "rotação de chaves NVIDIA ainda não implementada "
-            "(usar sempre a primeira chave configurada)."
-        )
-
 
 class OpenRouterCredentials:
     """Chave do fallback OpenRouter (OPENROUTER_API_KEY, única)."""
@@ -459,11 +452,6 @@ def llm_settings(provider: str) -> tuple[str, str]:
     model = os.environ.get(spec["model_env"], spec["default_model"]).strip()
     base = os.environ.get(spec["base_env"], spec["default_base"]).strip().rstrip("/")
     return model or spec["default_model"], base or spec["default_base"]
-
-
-def openrouter_settings() -> tuple[str, str]:
-    """Retorna (model, base_url) do fallback (env > padrões)."""
-    return llm_settings("openrouter")
 
 
 def _http_error_message(status: int, body: str, model: str,

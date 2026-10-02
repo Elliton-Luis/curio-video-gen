@@ -11,7 +11,6 @@ derivada por construção (crop, zoom, legenda queimada).
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import urllib.parse

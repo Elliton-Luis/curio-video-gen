@@ -28,7 +28,7 @@ from .pipeline import (MediaStandby, _build_silent, _build_silent_visual,
                         run_pipeline,
                         run_script_pipeline, _paths_for_slug)
 from .stages.scenes import Chapter
-from .slug import slugify, slugify_with_timestamp
+from .slug import slugify
 from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
 from .stages import transcribe as transcribe_stage

@@ -402,9 +402,6 @@ class VisualState:
         if s and s not in self.subjects:
             self.subjects.append(s)
 
-    def form_used(self, form: str) -> int:
-        return self.forms.count(form) if self.forms.count(form) else 0
-
 
 def choose_form(ch, state: "VisualState | None" = None,
                 genre: str = "") -> str:

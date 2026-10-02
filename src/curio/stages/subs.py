@@ -460,13 +460,6 @@ def cues_to_ass(cues: list[tuple[float, float, str]], width: int, height: int,
     return head + "\n".join(body) + "\n"
 
 
-def write_srt(text: str, total_duration: float, srt_path: str) -> tuple[str, int]:
-    srt = build_srt(text, total_duration)
-    with open(srt_path, "w", encoding="utf-8") as fh:
-        fh.write(srt)
-    return srt_path, srt.count("-->")
-
-
 def write_subtitles(text: str, total_duration: float, srt_path: str,
                     ass_path: str, width: int, height: int,
                     base_font_size: int, margin_v: int,

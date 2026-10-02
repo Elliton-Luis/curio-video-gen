@@ -28,7 +28,6 @@ de nome próprio não é evidência de que o referente é o mesmo.
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 import unicodedata

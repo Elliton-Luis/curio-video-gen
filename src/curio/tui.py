@@ -15,7 +15,6 @@ import json
 import os
 import shutil
 import sys
-import time
 
 from . import verify as verify_mod
 from .config import ALLOWED_INSERT_STYLES as INSERT_STYLES
@@ -23,8 +22,6 @@ from .config import CurioConfig, parse_duration
 from .pipeline import (MediaStandby, _paths_for_slug, iter_projects,
                      run_pipeline)
 from .slug import find_project_root, project_dir, slugify_with_timestamp
-from .stages import nvidia as nvidia_stage
-from .media import providers as media_prov
 
 QUICK_TEST_IDEA = "De onde veio a palavra salário?"
 QUICK_TEST_SLUG = "teste-rapido"
@@ -881,7 +878,7 @@ def _queue_open(c, cfg) -> None:
 
 def _queue_detail(c, cfg, path: str) -> None:
     from .queue import (VideoQueue, process_queue, retry_failed,
-                        cancel_item, reorder_items, remove_item)
+                        reorder_items, remove_item)
     try:
         queue = VideoQueue.load(path)
     except Exception as exc:
@@ -1342,27 +1339,6 @@ def _script_flow(c: dict[str, str], cfg: CurioConfig) -> None:
 
 
 # ------------------------------------------------------- projetos
-
-def _list_flow(c: dict[str, str], cfg: CurioConfig) -> None:
-    if not os.path.isdir(cfg.out_dir):
-        print("Nenhum projeto ainda — comece pela opção 1 ou 2.")
-        return
-    rows = 0
-    for entry in sorted(os.listdir(cfg.out_dir)):
-        status, meta = _project_status(cfg, entry)
-        if not meta and status == "não encontrado":
-            continue
-        rows += 1
-        if "STANDBY" in status:
-            mark = c["yellow"] + "◷"
-        elif "aguardando" in status:
-            mark = c["yellow"] + "○"
-        else:
-            mark = c["green"] + "●"
-        print(f"{mark}{c['reset']} {c['cyan']}{entry}{c['reset']}: {status}")
-    if not rows:
-        print("Nenhum projeto ainda — comece pela opção 1 ou 2.")
-
 
 def _verify_flow(c: dict[str, str], cfg: CurioConfig) -> None:
     slug = _ask("Projeto (slug da pasta em output/): ").strip()

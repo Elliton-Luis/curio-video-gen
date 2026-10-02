@@ -406,21 +406,3 @@ class CurioConfig:
             "groq": (self.groq_model, self.groq_base_url),
             "mistral": (self.mistral_model, self.mistral_base_url),
         }
-
-    def as_dict(self) -> dict:
-        return {
-            "duration_target": self.duration_target,
-            "out_dir": self.out_dir,
-            "queues_dir": self.queues_dir,
-            "language": self.language,
-            "tts_provider": self.tts_provider,
-            "tts_voice": self.tts_voice,
-            "tts_speed": self.tts_speed,
-            "render_backend": self.render_backend,
-            "width": self.width,
-            "height": self.height,
-            "fps": self.fps,
-            "music_mode": self.music_mode,
-            "audio_library_dir": self.audio_library_dir,
-            "audio_enabled": self.audio_enabled,
-        }
