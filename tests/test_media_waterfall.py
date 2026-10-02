@@ -51,6 +51,97 @@ def test_waterfall_ordem_e_limite():
     assert "laboratory" not in qs3
 
 
+def test_provider_searches_run_bounded_concurrently(tmp_path):
+    import threading
+    from types import SimpleNamespace
+
+    barrier = threading.Barrier(3)
+    completed = []
+
+    class ParallelProvider:
+        def __init__(self, name):
+            self.name = name
+
+        def search(self, query, limit=5, metrics=None):
+            barrier.wait(timeout=2)
+            completed.append((self.name, query))
+            return []
+
+    ch = _ch(("black hole",), "A black hole bends space.", subject="black hole",
+             visual_entities=["black hole"], visual_type="literal")
+    V._search_scene_with_shortcircuit(
+        ch, [ParallelProvider("a"), ParallelProvider("b"),
+             ParallelProvider("c")],
+        SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
+        1, None, str(tmp_path))
+    assert len(completed) >= 3
+
+
+def test_selected_asset_downloads_use_bounded_pool(tmp_path, monkeypatch):
+    import threading
+
+    barrier = threading.Barrier(2)
+    path = str(tmp_path / "parallel.jpg")
+    with open(path, "wb") as fh:
+        fh.write(b"x" * 20000)
+
+    def download(asset, *_args, **_kwargs):
+        barrier.wait(timeout=2)
+        asset.local_path = path
+        return asset
+
+    monkeypatch.setattr(V, "download_asset", download)
+    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    provider = _FakeProv("pixabay", [
+        _asset(aid="bh1", title="water glass close up"),
+        _asset(aid="bh2", title="water glass bottle"),
+    ])
+    ch = _ch(("water glass",), "The water glass is on the table.",
+             subject="water glass", visual_entities=["water glass"])
+    scenes, _ = V._search_scene_with_shortcircuit(
+        ch, [provider], SimpleNamespace(cache_dir=str(tmp_path)), 2, None,
+        str(tmp_path))
+    assert len(scenes[0]["assets"]) == 2
+
+
+def test_exact_scene_query_reuses_provider_results_within_video(tmp_path, monkeypatch):
+    _mock_download(monkeypatch, tmp_path)
+    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    provider = _FakeProv("pixabay", [_asset(aid="one", title="water glass bottle")])
+    shared = {}
+    first = _ch(("water glass",), "The water glass is clear.",
+                subject="water glass", visual_entities=["water glass"])
+    second = _ch(("water glass",), "The water glass is empty.", cid=2,
+                 subject="water glass", visual_entities=["water glass"])
+    cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
+    V._search_scene_with_shortcircuit(first, [provider], cfg, 1, None,
+                                      str(tmp_path), shared_search_cache=shared)
+    calls_after_first = len(provider.calls)
+    V._search_scene_with_shortcircuit(second, [provider], cfg, 1, None,
+                                      str(tmp_path), shared_search_cache=shared)
+    assert len(provider.calls) == calls_after_first
+
+
+def test_ffprobe_dimensions_cache_invalidates_when_file_changes(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    image = tmp_path / "dimensions.jpg"
+    image.write_bytes(b"first")
+    calls = []
+
+    def fake_run(_args):
+        calls.append(1)
+        return SimpleNamespace(returncode=0, stdout="1200,1800\n")
+
+    monkeypatch.setattr(V.ff, "run", fake_run)
+    assert V._probe_dims(str(image)) == (1200, 1800)
+    assert V._probe_dims(str(image)) == (1200, 1800)
+    assert len(calls) == 1
+    image.write_bytes(b"changed-content")
+    assert V._probe_dims(str(image)) == (1200, 1800)
+    assert len(calls) == 2
+
+
 def test_gate_unico_de_metadados():
     """Uma regra só: `media_rules.asset_gate_reason` (era três cópias)."""
     from curio.stages.media_rules import asset_gate_reason

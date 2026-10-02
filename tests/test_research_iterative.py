@@ -127,3 +127,42 @@ def test_malformed_gap_plan_keeps_existing_evidence(monkeypatch):
     monkeypatch.setattr(R, "_plan_gaps", lambda *a: {"facts": {}, "gaps": "wrong type"})
     R._complete_research(result, "Lua", "pt-BR", None, None, 5)
     assert result.facts and result.complementary_queries == []
+
+
+def test_research_query_batch_runs_concurrently_and_keeps_input_order(monkeypatch):
+    import threading
+    import time
+
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def search(query, *args, **kwargs):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.04)
+        with lock:
+            active -= 1
+        return [{"title": query}]
+
+    monkeypatch.setattr(R, "wikipedia_search", search)
+    before = time.monotonic()
+    out = R._search_query_batch(["a", "b", "c"], "pt-BR", 5)
+    elapsed = time.monotonic() - before
+    assert [hits[0]["title"] for hits in out] == ["a", "b", "c"]
+    assert peak > 1
+    assert elapsed < 0.11
+
+
+def test_rich_research_skips_llm_gap_planner(monkeypatch):
+    quotes = [f"Evidence sentence number {i} explains the lunar finding in detail."
+              for i in range(12)]
+    rich = source("Moon research", " ".join(quotes))
+    result = R.ResearchResult(TargetEntity(name="Moon", is_entity=False), [rich, source(
+        "Lunar study", "Independent study confirms lunar evidence and measurement.")])
+    monkeypatch.setattr(R, "_plan_gaps", lambda *a: (_ for _ in ()).throw(
+        AssertionError("gap planner called despite rich source evidence")))
+    R._complete_research(result, "Moon", "en-US", None, None, 5)
+    assert result.facts and result.complementary_queries == []

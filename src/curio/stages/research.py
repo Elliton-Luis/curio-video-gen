@@ -11,6 +11,9 @@ Sem nenhuma fonte: falha explícita (ResearchError) — nunca roteiro
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextvars
+import os
 import re
 import urllib.error
 import urllib.parse
@@ -25,6 +28,11 @@ USER_AGENT = user_agent()  # noqa: N816 — nome histórico, usado por testes
 WIKI_TIMEOUT = 20
 EXTRACT_CHARS = 1200  # por fonte: suficiente p/ fatos, cabe no prompt
 PROMPT_BUDGET_CHARS = 2500  # teto total do pack injetado no LLM
+try:
+    MAX_CONCURRENT_RESEARCH = max(
+        1, min(6, int(os.environ.get("CURIO_MAX_CONCURRENT_RESEARCH", "3"))))
+except ValueError:
+    MAX_CONCURRENT_RESEARCH = 3
 
 # As listas de stopword são de `textnorm`: a pesquisa e o extrator de
 # termos da entidade já usavam versões diferentes das mesmas.
@@ -155,6 +163,28 @@ def wikipedia_search(query: str, language: str = "pt-BR",
         if title:
             out.append({"title": title})
     return out
+
+
+def _search_query_batch(queries: list[str], language: str,
+                        timeout: int) -> list[list[dict] | ResearchError]:
+    """Busca query batch limitada; devolve resultados na ordem de entrada."""
+    if not queries:
+        return []
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(MAX_CONCURRENT_RESEARCH, len(queries)),
+            thread_name_prefix="curio-research") as executor:
+        futures = []
+        for query in queries:
+            context = contextvars.copy_context()
+            futures.append(executor.submit(context.run, wikipedia_search,
+                                           query, language, timeout))
+        results: list[list[dict] | ResearchError] = []
+        for future in futures:
+            try:
+                results.append(future.result())
+            except ResearchError as exc:
+                results.append(exc)
+    return results
 
 
 def wikipedia_extract(title: str, language: str = "pt-BR",
@@ -404,30 +434,40 @@ def research_topic(idea: str, language: str = "pt-BR", max_sources: int = 3,
             tried_queries.append(f"{src.origin}: {source_query}")
             _consider(src, f"{src.origin}: {source_query}")
 
-    for query in queries:
-        if len(sources) >= max_sources:
+    stop_search = False
+    query_batch_size = min(MAX_CONCURRENT_RESEARCH, max(1, max_sources))
+    for start in range(0, len(queries), query_batch_size):
+        if len(sources) >= max_sources or stop_search:
             break
-        if metrics is not None:
-            metrics.research_query()
-        tried_queries.append(query)
-        run_event("search", f"Pesquisa: {query}", operation="research_query", query=query)
-        try:
-            hits = wikipedia_search(query, language, timeout=timeout)
-        except ResearchError:
-            if sources:
-                break
-            raise
-        for hit in hits:
+        batch = queries[start:start + query_batch_size]
+        for query in batch:
+            if metrics is not None:
+                metrics.research_query()
+            tried_queries.append(query)
+            run_event("search", f"Pesquisa: {query}",
+                      operation="research_query", query=query)
+        results = _search_query_batch(batch, language, timeout)
+        # Network overlaps; extraction and acceptance keep original query
+        # order, so source choice remains deterministic for same responses.
+        for query, hits in zip(batch, results):
             if len(sources) >= max_sources:
                 break
-            if _is_junk_hit(hit["title"]):
-                continue
-            try:
-                src = wikipedia_extract(hit["title"], language,
-                                        timeout=timeout)
-            except ResearchError:
-                continue
-            _consider(src, query)
+            if isinstance(hits, ResearchError):
+                if not sources:
+                    raise hits
+                stop_search = True
+                break
+            for hit in hits:
+                if len(sources) >= max_sources:
+                    break
+                if _is_junk_hit(hit["title"]):
+                    continue
+                try:
+                    src = wikipedia_extract(hit["title"], language,
+                                            timeout=timeout)
+                except ResearchError:
+                    continue
+                _consider(src, query)
 
     if len(sources) < max_sources:
         if metrics is not None:
@@ -591,10 +631,30 @@ def _plan_gaps(idea, sources, language, cfg, metrics):
         return {}
 
 
+def _should_plan_gaps(sources: list[ResearchSource]) -> bool:
+    """Only spend one LLM call when source evidence is visibly thin.
+
+    This is a conservative local gate, not semantic proof: short/sparse
+    evidence keeps the planner; several independent literal facts with a
+    substantial source pack need no second model call. The planner remains
+    bounded to fill actual missing evidence, never runs as a per-video tax.
+    """
+    facts = _source_facts(sources)
+    chars = sum(len(source.snippet or "") for source in sources)
+    return len(facts) < 5 or chars < 700 or len(sources) < 2
+
+
 def _complete_research(result, idea, language, cfg, metrics, timeout):
     """Bounded follow-up inside the existing research stage, not a second pipeline."""
     from . import entity
-    plan = _plan_gaps(idea, result.sources, language, cfg, metrics)
+    if _should_plan_gaps(result.sources):
+        plan = _plan_gaps(idea, result.sources, language, cfg, metrics)
+    else:
+        plan = {}
+        run_event("result", "Pesquisa suficiente; planejamento LLM de lacunas omitido",
+                  operation="research_gaps", reason="evidência literal suficiente",
+                  facts=len(_source_facts(result.sources)),
+                  sources=len(result.sources))
     if not isinstance(plan, dict):
         plan = {}
     initial_urls = {s.url for s in result.sources}

@@ -25,6 +25,7 @@ gerais. Custo zero: nenhuma das três exige chave.
 from __future__ import annotations
 
 import hashlib
+import concurrent.futures
 import json
 import os
 import re
@@ -667,8 +668,20 @@ def lookup(word: str, idea: str = "", language: str = "pt-BR",
     needs_classics = any(e.language_code in ("la", "grc", "el")
                          for e in chain) or origin_code in ("la", "grc", "el")
     if needs_classics:
-        for ref in (logeion_lookup(display, timeout),
-                    perseus_lookup(display, origin_code, timeout)):
+        # These reference lookups are independent; run them in parallel.
+        # The Wiktionary chain itself remains sequential because each next
+        # headword depends on the previous entry's parsed etymology.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2,
+                                                   thread_name_prefix="curio-ety-ref") as pool:
+            futures = [pool.submit(logeion_lookup, display, timeout),
+                       pool.submit(perseus_lookup, display, origin_code, timeout)]
+            references = []
+            for future in futures:  # stable source order despite parallel I/O
+                try:
+                    references.append(future.result())
+                except Exception:  # noqa: BLE001 — best-effort references
+                    references.append({})
+        for ref in references:
             try:
                 sources.append(ref["source"])
             except Exception:  # noqa: BLE001 — referência nunca é fatal

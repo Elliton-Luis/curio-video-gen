@@ -111,3 +111,28 @@ def test_media_provider_thread_keeps_run_log_context(tmp_path):
     with RunLog(path, "thread"):
         _search_with_timeout(Provider(), "query", 2)
     assert any(row["event"] == "retry" for row in _records(path))
+
+
+def test_media_search_timeout_returns_without_waiting_for_worker():
+    import threading
+    import time
+    from curio.stages.visual import _search_with_timeout
+    from curio.media.providers import MediaError
+
+    release = threading.Event()
+
+    class SlowProvider:
+        name = "slow-fixture"
+
+        def search(self, query, limit, metrics):
+            release.wait(2)
+            return []
+
+    started = time.monotonic()
+    try:
+        _search_with_timeout(SlowProvider(), "query", 0.02)
+        assert False, "timed-out provider returned before release"
+    except MediaError as exc:
+        assert "busca timeout" in str(exc)
+    assert time.monotonic() - started < 0.5
+    release.set()  # let bounded executor worker exit cleanly

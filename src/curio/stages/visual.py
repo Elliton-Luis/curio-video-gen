@@ -588,6 +588,7 @@ def _search_scene_with_shortcircuit(
     visual_state=None,
     genre: str = "",
     asset_uses: dict | None = None,
+    shared_search_cache: dict | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Busca mídia de uma cena: COLETA candidatos, depois FILTRA e PONTUA.
 
@@ -685,6 +686,9 @@ def _search_scene_with_shortcircuit(
         for query in query_list:
             if len(candidates) >= limit:
                 break
+            query_key = query.casefold()
+            shared = (shared_search_cache.setdefault(query_key, {})
+                      if shared_search_cache is not None else {})
             cached = _get_cached_asset(cache_dir, query)
             if cached is not None:
                 if metrics:
@@ -694,42 +698,56 @@ def _search_scene_with_shortcircuit(
                     metrics.media_cache_hits += 1
             active = [prov for prov in providers
                       if not getattr(prov, "_disabled", False)]
-            futures = [(prov, _submit_search(prov, query, metrics))
-                       for prov in active]
+            tasks = []
+            for prov in active:
+                if prov.name in shared:
+                    tasks.append((prov, None,
+                                  [MediaAsset.from_dict(item)
+                                   for item in shared[prov.name]]))
+                else:
+                    tasks.append((prov, _submit_search(prov, query, metrics), None))
             deadline = time.monotonic() + SEARCH_TIMEOUT
             # Wait in provider-priority order, even though requests run at
             # once. Candidate order and tie-breaks remain deterministic.
-            for prov, future in futures:
+            for prov, future, cached_results in tasks:
                 if len(candidates) >= limit:
-                    for _later_provider, later in futures:
-                        later.cancel()
+                    for _later_provider, later, _cached in tasks:
+                        if later is not None:
+                            later.cancel()
                     break
-                try:
-                    remaining = max(0.0, deadline - time.monotonic())
-                    results = future.result(timeout=remaining)
-                except concurrent.futures.TimeoutError:
-                    future.cancel()
+                if cached_results is not None:
+                    results = cached_results
                     if metrics:
-                        metrics.media_record_timeout()
-                    continue
-                except MediaError as exc:
-                    if (any(code in str(exc) for code in ("429", "401", "403"))
-                            or "Too Many Requests" in str(exc)):
-                        prov._disabled = True
+                        metrics.media_record_funnel("shared_search_hits")
+                else:
+                    try:
+                        remaining = max(0.0, deadline - time.monotonic())
+                        results = future.result(timeout=remaining)
+                    except concurrent.futures.TimeoutError:
+                        future.cancel()
                         if metrics:
                             metrics.media_record_timeout()
-                        from ..runlog import event as run_event
-                        logged = run_event(
-                            "fallback", f"{prov.name}: provider desativado; {exc}",
-                            operation="media_search", provider=prov.name,
-                            error=str(exc))
-                        if not logged:
-                            print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
-                                  file=sys.stderr)
-                    continue
-                if metrics:
-                    metrics.media_record_results(prov.name, len(results))
-                    metrics.media_record_funnel("normalized_returned", len(results))
+                        continue
+                    except MediaError as exc:
+                        if (any(code in str(exc) for code in ("429", "401", "403"))
+                                or "Too Many Requests" in str(exc)):
+                            prov._disabled = True
+                            if metrics:
+                                metrics.media_record_timeout()
+                            from ..runlog import event as run_event
+                            logged = run_event(
+                                "fallback", f"{prov.name}: provider desativado; {exc}",
+                                operation="media_search", provider=prov.name,
+                                error=str(exc))
+                            if not logged:
+                                print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
+                                      file=sys.stderr)
+                        continue
+                    if shared_search_cache is not None:
+                        shared[prov.name] = [result.to_dict() for result in results]
+                    if metrics:
+                        metrics.media_record_results(prov.name, len(results))
+                        metrics.media_record_funnel("normalized_returned", len(results))
                 for result_index, cand in enumerate(results):
                     if len(candidates) >= limit:
                         if metrics:
@@ -1047,11 +1065,16 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     from . import visuals as _visuals
     visual_state = _visuals.VisualState()
     asset_uses: dict[str, int] = {}
+    # Different scenes often emit same exact search phrase. Reuse provider
+    # results within this video, including empty searches, before hitting
+    # disk/query cache or network again.
+    shared_search_cache: dict[str, dict[str, list[dict]]] = {}
 
     for ch in chapters:
         scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
             ch, providers, cfg, max_images, metrics, cfg.cache_dir,
             visual_state=visual_state, genre=genre, asset_uses=asset_uses,
+            shared_search_cache=shared_search_cache,
         )
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)

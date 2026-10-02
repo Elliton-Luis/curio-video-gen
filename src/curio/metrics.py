@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from datetime import datetime
 
@@ -25,6 +26,8 @@ class RunMetrics:
     """Coletor explícito de consumo. Criado por execução, passado aos estágios."""
 
     def __init__(self, slug: str, idea: str, narration: str):
+        # Media search/download workers can update one collector concurrently.
+        self._lock = threading.RLock()
         self.slug = slug
         self.idea = idea
         self.narration = narration
@@ -116,27 +119,32 @@ class RunMetrics:
         self.tts_calls.append({"provider": provider, "chars": chars})
 
     def media_search(self, provider: str) -> None:
-        self.media_searches[provider] = self.media_searches.get(provider, 0) + 1
-        self.media_requests_per_provider[provider] = self.media_requests_per_provider.get(provider, 0) + 1
+        with self._lock:
+            self.media_searches[provider] = self.media_searches.get(provider, 0) + 1
+            self.media_requests_per_provider[provider] = (
+                self.media_requests_per_provider.get(provider, 0) + 1)
 
     def media_download(self, bytes_: int, cached: bool) -> None:
-        if cached:
-            self.media_cache_hits += 1
-        else:
-            self.media_downloads += 1
-            self.media_bytes += bytes_
-            self.media_cache_misses += 1
+        with self._lock:
+            if cached:
+                self.media_cache_hits += 1
+            else:
+                self.media_downloads += 1
+                self.media_bytes += bytes_
+                self.media_cache_misses += 1
 
     def media_record_results(self, provider: str, count: int) -> None:
         self.media_results_received[provider] = self.media_results_received.get(provider, 0) + count
 
     def media_download_started(self, provider: str) -> None:
-        self.media_download_attempted[provider] = (
-            self.media_download_attempted.get(provider, 0) + 1)
+        with self._lock:
+            self.media_download_attempted[provider] = (
+                self.media_download_attempted.get(provider, 0) + 1)
 
     def media_download_ok(self, provider: str) -> None:
-        self.media_download_succeeded[provider] = (
-            self.media_download_succeeded.get(provider, 0) + 1)
+        with self._lock:
+            self.media_download_succeeded[provider] = (
+                self.media_download_succeeded.get(provider, 0) + 1)
 
     def media_download_error(self, provider: str, exc: BaseException
                              ) -> None:
@@ -148,15 +156,16 @@ class RunMetrics:
         diferença entre "está Achando bom e baixando mal" e "não acha
         nada", que são correções opostas.
         """
-        self.media_download_failed[provider] = (
-            self.media_download_failed.get(provider, 0) + 1)
-        alvo = self.media_download_http_403
-        for parte in str(exc).split():
-            if "403" in parte:
-                alvo[provider] = alvo.get(provider, 0) + 1
-                return
-        self.media_download_other_error[provider] = (
-            self.media_download_other_error.get(provider, 0) + 1)
+        with self._lock:
+            self.media_download_failed[provider] = (
+                self.media_download_failed.get(provider, 0) + 1)
+            alvo = self.media_download_http_403
+            for parte in str(exc).split():
+                if "403" in parte:
+                    alvo[provider] = alvo.get(provider, 0) + 1
+                    return
+            self.media_download_other_error[provider] = (
+                self.media_download_other_error.get(provider, 0) + 1)
 
     def media_download_report(self) -> dict:
         """O resumo por provedor que responde "está quebrado ou vazio?"."""

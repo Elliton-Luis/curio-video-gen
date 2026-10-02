@@ -83,6 +83,16 @@ STOP_EN = {
     "some", "such", "only", "over", "under", "between", "through",
 }
 
+# Stopword visual histórica: mantém apenas os termos usados por `visual.py`
+# antes da centralização. A pesquisa usa STOP_PT (união), mas nomes de cena
+# e substantivos de busca não devem perder palavras novas por efeito lateral.
+_RESEARCH_ONLY_PT = {
+    "anos", "aquilo", "elas", "eles", "fato", "isto", "mentira", "meu",
+    "minha", "nossa", "nosso", "nós", "realmente", "seu", "sua",
+    "verdade", "você",
+}
+VISUAL_STOP_PT = STOP_PT - _RESEARCH_ONLY_PT
+
 # Stopwords de 3 letras. Ficam à parte porque não entram em STOP_PT: a
 # pesquisa exige 4+ caracteres, e o extrator de termos do estágio de
 # entidade aceita 3. Sem esta lista, "Por que o mar é salgado?" dava

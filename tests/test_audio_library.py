@@ -473,11 +473,11 @@ max_per_category = 4
 
 
 def test_genre_directions_match_requested_styles():
-    from curio.audio.library import (MUSIC_DIRECTIONS, is_calm_music_asset,
-                                     _CALM_MOODS)
-    assert MUSIC_DIRECTIONS["people"][1] == "classical"
-    assert "violin" in MUSIC_DIRECTIONS["people"][0]
-    assert MUSIC_DIRECTIONS["history"][1] == "tense"
+    from curio.audio.library import is_calm_music_asset, _CALM_MOODS
+    from curio.stages.editorial import get
+    assert get("people").music_mood == "classical"
+    assert "violin" in get("people").music_query
+    assert get("history").music_mood == "tense"
     assert "tense" in _CALM_MOODS and "classical" in _CALM_MOODS
     assert is_calm_music_asset({"title": "Violin Sonata", "mood": ["classical"]})
     assert is_calm_music_asset({"title": "Tense Beds", "mood": ["tense"]})

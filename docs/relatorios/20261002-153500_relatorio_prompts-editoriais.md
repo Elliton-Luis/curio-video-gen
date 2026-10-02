@@ -20,8 +20,9 @@ faz transporte, credenciais e retry LLM. Preservar conteúdo e comportamento.
 | `stages/script.py` | Orquestração da geração de título | Importa prompt de título diretamente do módulo editorial. |
 | `tests/test_*.py` | Contrato do conteúdo do prompt | Testes leem módulo dono, não cliente HTTP. |
 
-Prompts de cena e entidade já vivem em seus estágios e não são editoriais
-de roteiro/título. Permanecem junto ao schema e lógica que os consomem.
+Na implementação posterior `3c93b7f`, prompts de cena e entidade também
+moveram para este módulo. Schema e lógica de consumo permanecem nos estágios
+`scenes.py` e `entity.py`.
 
 ## 3. Evidências
 
