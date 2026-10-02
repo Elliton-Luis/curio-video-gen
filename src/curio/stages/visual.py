@@ -397,6 +397,7 @@ PT_STOP = {
     "tinha", "tinham", "esteve", "foram", "sendo", "teria", "teriam",
     "semper", "pois", "qualquer", "tanto", "quanto", "desde", "até",
     "meio", "grande", "pequeno", "novo", "velho", "primeiro", "último",
+    "embora", "essa", "essas", "esses", "dessa", "desse", "nesta", "neste",
 }
 
 PT_EN = {
@@ -432,7 +433,28 @@ PT_EN = {
     "ponte": "bridge", "estrada": "road", "trem": "train", "carro": "car",
     "aviao": "airplane", "fabrica": "factory", "maquina": "machine",
     "ciencia": "science", "laboratorio": "laboratory", "experimento": "experiment",
-    "planeta": "planet", "satelite": "satellite", "telescopio": "telescope",
+    "planeta": "planet", "planetas": "planets", "satelite": "satellite",
+    "telescopio": "telescope", "observatorio": "observatory",
+    "galaxia": "galaxy", "galaxias": "galaxies",
+    "universo": "universe", "cosmos": "cosmos", "espaco": "space",
+    "espacial": "space", "astronomia": "astronomy",
+    "astronomico": "astronomy", "astronomica": "astronomy",
+    "astrofisica": "astrophysics", "astrofisico": "astrophysics",
+    "buraco": "black hole", "buracos": "black hole",
+    "negro": "black hole", "negros": "black hole",
+    "nebulosa": "nebula", "nebulosas": "nebulae",
+    "quasar": "quasar", "quasares": "quasars",
+    "singularidade": "singularity", "horizonte": "event horizon",
+    "gravidade": "gravity", "gravitacional": "gravity",
+    "gravitacao": "gravity", "relatividade": "relativity",
+    "orbita": "orbit", "orbitas": "orbits", "eclipse": "eclipse",
+    "constelacao": "constellation", "luz": "light",
+    "sombra": "shadow", "massa": "mass", "massas": "masses",
+    "denso": "dense", "densa": "dense", "radiacao": "radiation",
+    "temperatura": "temperature", "kelvin": "kelvin",
+    "fisica": "physics", "quantica": "quantum", "quantico": "quantum",
+    "teoria": "theory", "estrelas": "stars",
+    "estelar": "stellar", "estelares": "stellar",
     "livraria": "bookstore", "biblioteca": "library", "escrita": "writing",
     "palavra": "word", "lingua": "language", "numero": "number", "tempo": "time",
     "inverno": "winter", "verao": "summer", "chuva": "rain", "neve": "snow",
@@ -491,6 +513,79 @@ def _strip_acc(text: str) -> str:
     return "".join(c for c in norm if not unicodedata.combining(c))
 
 
+# --- tópico espacial: nunca ilustrar com laboratório -------------------
+# Sinais (já sem acento/minúsculas) de que a cena é sobre espaço/
+# astronomia. "buraco negro" precisa estar aqui como expressão: sem isso,
+# "campo gravitacional" virava query "field" e o vídeo recebia microscópio.
+_SPACE_MARKERS = (
+    "buraco negro", "buracos negros", "black hole", "corpo negro",
+    "horizonte de eventos", "event horizon",
+    "galaxia", "galaxias", "galaxy", "galaxies",
+    "nebulosa", "nebula", "quasar", "supermassivo",
+    "universo", "universe", "cosmos", "espaco-tempo",
+    "gravidade", "gravitacional", "gravitacao", "gravity",
+    "relatividade", "relativity", "singularidade", "singularity",
+    "astronomia", "astronomico", "astronomica", "astronomy",
+    "constelacao", "constellation", "orbita", "orbit",
+    "hawking", "kelvin", "ano-luz",
+)
+
+# Prioridade quando o assunto é espaço: o termo do tema vence a palavra
+# mais frequente ("campo", "tempo") — que é genérica e puxa foto errada.
+_SPACE_PRIORITY = (
+    "black hole", "event horizon", "galaxy", "galaxies", "nebula",
+    "gravity", "universe", "space", "cosmos", "astronomy",
+    "singularity", "quasar", "relativity", "orbit",
+    "star", "stars", "stellar", "sun", "moon", "planet",
+    "telescope", "observatory", "light", "mass", "radiation",
+)
+
+# Genéricos de último recurso para tópico espacial: céu, nunca bancada.
+# É o L4 da cachoeira quando o tema é espaço — "laboratory" aqui seria
+# misinformation (foi o que ilustrou buraco negro com tubo de ensaio).
+SPACE_GENERIC_QUERIES = (
+    "black hole", "galaxy", "nebula", "starry sky", "telescope",
+    "observatory",
+)
+
+# Laboratório não pode representar espaço: bloqueia o falso positivo da
+# NASA ("Mars Science Laboratory" casa com "laboratory") e fotos de
+# bancada quando a cena é sobre o céu.
+_SPACE_FORBIDDEN = (
+    "laboratory", "microscope", "test tube", "petri dish",
+    "Mars Science Laboratory",
+)
+
+
+def is_space_topic(text: str) -> bool:
+    """A cena/consulta é sobre espaço/astronomia? Sem rede, sem LLM."""
+    hay = _strip_acc(str(text or ""))
+    return any(m in hay for m in _SPACE_MARKERS)
+
+
+def _space_boost(narration: str) -> list[str]:
+    """Queries do tema espacial presentes NESTA narração, em ordem."""
+    hay = _strip_acc(str(narration or ""))
+    out: list[str] = []
+    if ("buraco negro" in hay or "buracos negros" in hay
+            or "black hole" in hay or "corpo negro" in hay):
+        out.append("black hole")
+    if "horizonte de eventos" in hay or "event horizon" in hay:
+        out.append("event horizon")
+    for marker, query in (("galaxia", "galaxy"), ("galaxy", "galaxy"),
+                          ("nebulosa", "nebula"), ("nebula", "nebula"),
+                          ("universo", "universe"), ("universe", "universe"),
+                          ("gravidade", "gravity"), ("gravitacional", "gravity"),
+                          ("gravitacao", "gravity"),
+                          ("estrela", "star"), ("estrelas", "stars"),
+                          ("sol", "sun"), ("telescopio", "telescope"),
+                          ("luz", "light"), ("massa", "mass"),
+                          ("radiacao", "radiation")):
+        if marker in hay and query not in out:
+            out.append(query)
+    return out
+
+
 def local_queries(narration: str, k: int = 2) -> list[str]:
     """Consultas visuais offline a partir do texto do trecho (PT→EN).
 
@@ -533,12 +628,31 @@ def local_queries(narration: str, k: int = 2) -> list[str]:
     for _count, term in translated + raw:
         if term not in entities and term not in keywords:
             keywords.append(term)
-    # Constrói exatamente 2 termos: entidade + substantivo visual
+    # Tópico espacial vence frequência: "campo"/"tempo" são frequentes e
+    # genéricos — "buraco negro" é o assunto e precisa vir primeiro, ou a
+    # busca pede "field" e o vídeo recebe microscópio.
+    boost = _space_boost(narration)
+    if boost:
+        ordered = [t for t in boost if t in keywords or t in entities]
+        ordered += [t for t in boost if t not in ordered]
+        rest = [t for t in keywords if t not in ordered]
+        # Termos espaciais traduzidos passam à frente dos genéricos.
+        prio = [t for t in _SPACE_PRIORITY if t in keywords]
+        rest_prio = [t for t in prio if t not in ordered]
+        rest_other = [t for t in keywords if t not in ordered + rest_prio]
+        keywords = ordered + rest_prio + rest_other
+    # Constrói exatamente 2 termos: com tópico espacial, o tema vence a
+    # entidade capitalizada; sem ele, entidade + substantivo visual.
     queries: list[str] = []
-    if entities:
+    if boost and keywords and keywords[0] in boost:
+        queries.append(keywords[0])
+    elif entities:
         queries.append(entities[0])
     if keywords:
-        queries.append(keywords[0])
+        for kw in keywords:
+            if kw not in queries:
+                queries.append(kw)
+                break
     # Fallback se não houver entidades
     if len(queries) < 2:
         if entities and len(entities) > 1:
@@ -660,8 +774,25 @@ GENRE_GENERIC_QUERIES = {
 }
 
 
-def _generic_queries(genre: str = "") -> tuple[str, ...]:
-    """Genéricos do gênero (L4 da cachoeira). Sem gênero: ciência, como antes."""
+def _generic_queries(genre: str = "", ch=None) -> tuple[str, ...]:
+    """Genéricos do gênero (L4 da cachoeira). Sem gênero: ciência, como antes.
+
+    Exceção: tópico espacial nunca recebe bancada — recebe céu. Sem isso,
+    "buraco negro" caía em "laboratory" e o vídeo saía com microscópio.
+    """
+    if ch is not None:
+        try:
+            hay = " ".join([
+                str(getattr(ch, "narration", "") or ""),
+                str(getattr(ch, "subject", "") or ""),
+                " ".join(list(getattr(ch, "visual_queries", []) or [])),
+                " ".join(list(getattr(ch, "visual_entities", []) or [])),
+                " ".join(list(getattr(ch, "context", []) or [])),
+            ])
+            if is_space_topic(hay):
+                return SPACE_GENERIC_QUERIES
+        except Exception:  # noqa: BLE001 — genérico nunca é fatal
+            pass
     return GENRE_GENERIC_QUERIES.get((genre or "").strip().lower(),
                                      GENERIC_FALLBACK_QUERIES)
 
@@ -729,13 +860,15 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
     if ai:
         _add(" ".join(ai[:2]) + " diagram")
     generics = set()
-    for term in _generic_queries(genre):
+    for term in _generic_queries(genre, ch):
         before = len(out)
         _add(term)
         if len(out) > before:
             generics.add(term.lower())
     if not out:
-        _add("science")
+        _add("black hole" if is_space_topic(
+            f"{getattr(ch, 'narration', '')} "
+            f"{' '.join(list(getattr(ch, 'visual_queries', []) or []))}") else "science")
     return out[:8], generics
 
 

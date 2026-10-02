@@ -91,7 +91,43 @@ def scene_forbidden(ch) -> list[str]:
     elif vtype == "typographic":
         # A cena é uma palavra: foto de banco não serve, nem de raspão.
         out.extend(_dedup(["wallpaper", "generic background"]))
+    if _is_space_scene(ch):
+        out.extend(_dedup(list(_SPACE_FORBIDDEN)))
     return out
+
+
+# Sinais de tópico espacial (sem acento/minúsculas): a cena é sobre o
+# céu, e bancada de laboratório seria misinformation — foi o que ilustrou
+# buraco negro com microscópio e com o rover Curiosity ("Mars Science
+# Laboratory" casa com a query "laboratory").
+_SPACE_MARKERS = (
+    "buraco negro", "buracos negros", "black hole", "corpo negro",
+    "horizonte de eventos", "event horizon",
+    "galaxia", "galaxy", "nebulosa", "nebula", "quasar",
+    "universo", "universe", "cosmos", "espaco-tempo",
+    "gravidade", "gravitacional", "gravitacao",
+    "relatividade", "singularidade", "supermassivo",
+    "astronomia", "astronomico", "astronomica",
+    "hawking", "kelvin",
+)
+
+# Bloqueio automático para cena espacial: foto de bancada não representa
+# o céu, e "Mars Science Laboratory" é o rover em Marte, não um laboratório.
+_SPACE_FORBIDDEN = (
+    "laboratory", "microscope", "test tube", "petri dish",
+    "Mars Science Laboratory",
+)
+
+
+def _is_space_scene(ch) -> bool:
+    hay = _fold(" ".join([
+        str(getattr(ch, "narration", "") or ""),
+        str(getattr(ch, "subject", "") or ""),
+        " ".join(list(getattr(ch, "visual_queries", []) or [])),
+        " ".join(list(getattr(ch, "visual_entities", []) or [])),
+        " ".join(list(getattr(ch, "context", []) or [])),
+    ]))
+    return any(m in hay for m in _SPACE_MARKERS)
 
 
 def _dedup(terms) -> list[str]:

@@ -240,6 +240,20 @@ _TYPOGRAPHIC_HINTS = (
 )
 
 
+# Sinais de tópico espacial: a cena é sobre o céu, não sobre história.
+# Sem esta guarda, "Isso não é um mito de ficção científica" virava
+# `historical_art` por causa de "mito" — e o vídeo de buraco negro ia
+# parar em acervo de igreja em vez de telescópio.
+_SPACE_HINTS = (
+    "buraco negro", "buracos negros", "black hole", "corpo negro",
+    "horizonte de eventos", "event horizon",
+    "galaxia", "galáxia", "galaxy", "nebulosa", "nebula", "quasar",
+    "universo", "universe", "cosmos", "espaço-tempo", "espaco-tempo",
+    "gravidade", "gravitacional", "gravitação", "gravitacao",
+    "relatividade", "relativity", "singularidade", "supermassiv",
+    "astronomia", "astronomia", "astrofisica", "hawking", "kelvin",
+)
+
 # Palavras que, juntas, indicam latim. Uma sozinha não prova nada — "et"
 # aparece em português em "e o et" — mas um conjunto delas numa frase curta
 # é a assinatura da língua. A direção de arte pede que a frase em latim
@@ -328,6 +342,8 @@ def classify_visual_type(narration: str) -> str:
         return "mechanism"
     if any(h in text for h in _TYPOGRAPHIC_HINTS):
         return "typographic"
+    if any(h in text for h in _SPACE_HINTS):
+        return "literal"
     if any(h in text for h in _HISTORICAL_HINTS):
         return "historical_art"
     return "literal"
@@ -423,22 +439,35 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
     sentences = subs_stage._sentences(script)
     if not sentences:
         raise ValueError("roteiro vazio — nada para dividir em cenas")
+    try:
+        from .visual import local_queries as _local_queries
+    except Exception:  # noqa: BLE001 — sem queries, sem vocabulário
+        _local_queries = None
     per = max(1, round(len(sentences) / n_scenes))
     chapters = []
     for i in range(0, len(sentences), per):
         narration = " ".join(sentences[i:i + per])
         vtype = classify_visual_type(narration)
+        queries: list[str] = []
+        if _local_queries is not None:
+            try:
+                queries = [q for q in (_local_queries(narration) or []) if q][:5]
+            except Exception:  # noqa: BLE001 — query nunca é fatal
+                queries = []
         chapters.append(Chapter(
             id=len(chapters) + 1,
             narration=narration,
             duration_estimate=estimate_duration(narration),
-            visual_queries=[],
-            visual_intent="local fallback (sem consulta visual)",
-            # Sem LLM não há consulta, mas a ESTRATÉGIA ainda é dedutível do
-            # texto: uma cena que explica "como funciona" não deve receber
-            # foto de laboratório, mesmo sem chave configurada.
+            visual_queries=list(queries),
+            global_visual_queries=list(queries),
+            visual_intent=" ".join(queries) if queries else "local fallback",
+            # Sem LLM não há estratégia da IA, mas o vocabulário offline
+            # ainda é dedutível: sem ele, o scoring compara título em
+            # inglês com narração em português e reprova até a foto certa
+            # (foi o que zerou "black hole" no vídeo de buracos negros).
             visual_type=vtype,
-            subject="",
+            subject=queries[0] if queries else "",
+            visual_entities=list(queries[:4]),
         ))
     return chapters
 
