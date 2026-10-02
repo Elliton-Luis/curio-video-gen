@@ -12,7 +12,6 @@ import sys
 
 from .. import ffmpeg as ff
 from ..config import CurioConfig
-from .visual_beats import BEAT_SECONDS
 
 
 class RenderError(RuntimeError):
@@ -97,7 +96,7 @@ def render_image_segment(img_path: str, duration: float, out_path: str,
     frames = max(1, round(duration * fps))
     base = (f"scale=2160:3840:force_original_aspect_ratio=increase:"
             f"out_range=mpeg,crop=2160:3840")
-    zb = _beat_zoompan(fps, variant)
+    zb = _beat_zoompan(fps, frames, variant)
     vf = (f"{base},{zb}:d={frames}:s={w}x{h}:fps={fps},format=yuv420p")
     backend, encoder, vargs = _video_codec_args(cfg)
     cmd = ["ffmpeg", "-y", "-v", "error",
@@ -110,14 +109,26 @@ def render_image_segment(img_path: str, duration: float, out_path: str,
     return out_path
 
 
-def _beat_zoompan(fps: int, variant: int = 0) -> str:
-    """Ciclo de enquadramento suave, com novo foco a cada ~2,1 s."""
-    beat = max(1, round(BEAT_SECONDS * fps))
-    offset = (variant % 4) * (beat // 4)
-    phase = f"2*PI*(on+{offset})/{beat}"
-    z = f"1.04+0.04*(1-cos({phase}))/2"
-    x = f"(iw-iw/zoom)*(0.5+0.18*sin({phase}))"
-    y = f"(ih-ih/zoom)*(0.5+0.12*cos({phase}/2))"
+def _beat_zoompan(fps: int, frames: int, variant: int = 0) -> str:
+    """Deriva lenta unidirecional por segmento, sem oscilação.
+
+    A oscilação senoidal por beat (~2,1 s) lia como tremor. Agora cada
+    segmento faz UM movimento suave até o fim: zoom-in de 5% ou pan
+    lateral a zoom fixo, alternando por `variant`. Amplitude pequena de
+    propósito: presença sem enjoo.
+    """
+    total = max(1, int(frames))
+    if variant % 2 == 0:
+        z = f"1+0.05*on/{total}"
+        x = "(iw-iw/zoom)/2"
+        y = "(ih-ih/zoom)/2"
+    else:
+        z = "1.06"
+        if (variant // 2) % 2 == 0:
+            x = f"(iw-iw/zoom)*on/{total}"
+        else:
+            x = f"(iw-iw/zoom)*(1-on/{total})"
+        y = "(ih-ih/zoom)/2"
     return (f"zoompan=z='{z}':x='{x}':y='{y}'")
 
 
@@ -197,7 +208,7 @@ def render_collage_segment(images: list[dict], duration: float,
         if source.get("kind") == "video":
             motion = f"scale={w}:{h},fps={fps}"
         else:
-            motion = f"{_beat_zoompan(fps, variant + index)}:d={count}:s={w}x{h}:fps={fps}"
+            motion = f"{_beat_zoompan(fps, count, variant + index)}:d={count}:s={w}x{h}:fps={fps}"
         parts.append(f"[{index}:v]{base_scale},{motion},trim=end_frame={count},"
                      f"setpts=PTS-STARTPTS,format=yuv420p,setsar=1[bg{index}]")
     parts.append("".join(f"[bg{i}]" for i in range(len(sources))) +
@@ -596,7 +607,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                title: str | None = None,
                title_fontfile: str | None = None,
                music_path: str | None = None,
-                music_gain_db: float = -9.0,
+                music_gain_db: float = -7.0,
                music_ducking: bool = True,
                final_fade: float = 0.0) -> dict:
     """silent + legendas queimadas + áudio → MP4 final (um encode só).

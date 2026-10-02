@@ -28,8 +28,8 @@ GENRES = ("people", "history", "etymology", "mythology", "mystery", "science")
 SFX_CATEGORIES = ("paper", "soft_impact")
 
 MUSIC_DIRECTIONS = {
-    "people": ("calm piano ambient", "calm"),
-    "history": ("calm documentary ambient", "calm"),
+    "people": ("violin classical ambient", "classical"),
+    "history": ("tense ambient", "tense"),
     "etymology": ("calm curious ambient", "calm"),
     "mythology": ("calm ancient ambient", "calm"),
     "mystery": ("calm investigative ambient", "calm"),
@@ -37,10 +37,13 @@ MUSIC_DIRECTIONS = {
 }
 
 _CALM_MOODS = {"calm", "contemplative", "soft", "soothing", "peaceful",
-               "gentle", "serene", "minimal"}
+               "gentle", "serene", "minimal", "classical", "tense",
+               "suspense"}
 _CALM_TITLE_HINTS = {"ambient", "ambience", "piano", "calm", "soft", "gentle",
                      "peaceful", "serene", "reflective", "minimal",
-                     "documentary", "contemplative", "quiet", "warm"}
+                     "documentary", "contemplative", "quiet", "warm",
+                     "violin", "strings", "classical", "cello",
+                     "sax", "saxophone", "cinematic", "tense", "suspense"}
 _DISRUPTIVE_TITLE_HINTS = {
     "crash", "crashing", "starship", "sci-fi", "drone", "reel", "voice",
     "twister", "explosion", "weapon", "battle", "noise", "industrial",

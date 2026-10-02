@@ -116,7 +116,7 @@ def test_build_sfx_track_uses_local_audio_asset(tmp_path, monkeypatch):
 
 
 def test_default_music_gain_is_audible_under_ducking():
-    assert CurioConfig().music_gain_db == -9
+    assert CurioConfig().music_gain_db == -7
     assert CurioConfig().visual_insert_gain_db == -15
 
 
@@ -142,9 +142,9 @@ def test_genre_transition_kinds_vary_effect_without_changing_lengths():
     from curio.stages.scenes import Chapter
     chapters = [Chapter(id=1, narration="a", duration_estimate=3),
                 Chapter(id=2, narration="b", duration_estimate=3)]
-    assert _genre_transition_kinds(chapters, "mystery") == ["fadeblack"]
+    assert _genre_transition_kinds(chapters, "mystery") == ["wipeleft"]
     assert _genre_transition_kinds(chapters, "science") == ["slideright"]
-    assert _genre_transition_kinds(chapters, "people") == ["fade"]
+    assert _genre_transition_kinds(chapters, "people") == ["slideright"]
     assert _genre_transition_kinds(chapters, "people", "none") == ["fade"]
 
 

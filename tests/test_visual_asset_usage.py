@@ -173,3 +173,14 @@ def test_metrics_exclude_assets_after_final_audio_cut():
     assert len(metrics.media_available_ids) == 3
     assert len(metrics.visual_asset_ids) == 1
     assert metrics.visual_asset_beat_counts == {"fixture:0": 1, "fixture:1": 0, "fixture:2": 0}
+
+
+def test_camera_motion_is_linear_drift_without_oscillation():
+    from curio.stages.render import _beat_zoompan
+    zoom = _beat_zoompan(30, 189, variant=0)
+    pan = _beat_zoompan(30, 189, variant=1)
+    assert "sin" not in zoom and "cos" not in zoom
+    assert "sin" not in pan and "cos" not in pan
+    assert "on/189" in zoom  # zoom linear até o fim do segmento
+    assert "on/189" in pan  # pan linear até o fim do segmento
+    assert zoom != pan  # variantes alternam zoom e pan

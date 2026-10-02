@@ -236,7 +236,7 @@ def test_cached_noisy_music_is_replaced_by_calm_bed(tmp_path, monkeypatch):
     cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
                       music_auto_fill=False)
     previous = {"music": {
-        "mode": "auto", "genre": "people", "gain_db": -9,
+        "mode": "auto", "genre": "people", "gain_db": -7,
         "ducking": True, "track": {**noisy, "mood": ["curious"]}},
         "sfx": {"assets": []}}
 
@@ -470,3 +470,18 @@ max_per_category = 4
             cfg.music_max_per_genre) == (4, 4, 4)
     assert (cfg.sfx_min_per_category, cfg.sfx_target_per_category,
             cfg.sfx_max_per_category) == (4, 4, 4)
+
+
+def test_genre_directions_match_requested_styles():
+    from curio.audio.library import (MUSIC_DIRECTIONS, is_calm_music_asset,
+                                     _CALM_MOODS)
+    assert MUSIC_DIRECTIONS["people"][1] == "classical"
+    assert "violin" in MUSIC_DIRECTIONS["people"][0]
+    assert MUSIC_DIRECTIONS["history"][1] == "tense"
+    assert "tense" in _CALM_MOODS and "classical" in _CALM_MOODS
+    assert is_calm_music_asset({"title": "Violin Sonata", "mood": ["classical"]})
+    assert is_calm_music_asset({"title": "Tense Beds", "mood": ["tense"]})
+    assert not is_calm_music_asset({"title": "Epic Battle Explosion",
+                                    "mood": ["tense"]})
+    assert not is_calm_music_asset({"title": "Crashing Starship",
+                                    "mood": ["curious"]})

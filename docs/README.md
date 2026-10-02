@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-222132_relatorio_musica-genero-motion-slide.md` — camas por gênero (violino/tenso), ganho −7 dB, deriva sem tremor e slides de galeria; render real validado.
+
 - `relatorios/20261001-214950_relatorio_providers-museus-met-aic.md` — Met Open Access + Art Institute of Chicago (domínio público, sem chave), prioridade em cenas históricas; suíte completa: 692 testes.
 
 - `relatorios/20261001-203053_relatorio_variedade-assets-render.md` — seleção repetia IDs e overlays descartavam fundos; associa assets a beats, corrige cobertura central/cache e valida seis assets reais de César no render.

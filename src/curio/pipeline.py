@@ -526,9 +526,9 @@ def _genre_transitions(chapters: list[Chapter], genre: str,
     return result
 
 
-GENRE_XFADE = {"people": "fade", "history": "fade",
-               "etymology": "fade", "mythology": "fadeblack",
-               "mystery": "fadeblack", "science": "slideright"}
+GENRE_XFADE = {"people": "slideright", "history": "wipeleft",
+               "etymology": "smoothleft", "mythology": "slideright",
+               "mystery": "wipeleft", "science": "slideright"}
 
 
 def _genre_transition_kinds(chapters: list[Chapter], genre: str,
