@@ -28,6 +28,7 @@ from .media.providers import MediaAsset, MediaError, classify_rights
 from . import textnorm
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
+from . import pipeline_audio as pipeline_audio_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
@@ -43,7 +44,6 @@ from .stages import script as script_stage
 from .stages import subs as subs_stage
 from .stages import teleprompter as tele_stage
 from .stages import transcribe as transcribe_stage
-from .stages import tts as tts_stage
 from .stages import sources as sources_stage
 from .stages import visual as visual_stage
 from .stages import visual_timeline as visual_timeline_stage
@@ -1080,67 +1080,21 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            video_title=video_title,
                            title_source=title_source)
 
-    # [4/6] Narração (IA) — timestamps reais via WordBoundary
-    t0 = time.monotonic()
-    emit(4, "Gerando narração")
-    words = None
-    if (not force and os.path.isfile(paths.narration_wav)
-            and os.path.isfile(paths.words_json)):
-        audio_duration = ff.probe_duration(paths.narration_wav)
-        words = _read_json(paths.words_json)
-        if not tts_stage.tts_coverage_ok(words, script_text):
-            # Autocura: cache de uma síntese parcial (stream interrompido).
-            # Re-sintetiza em vez de produzir vídeo curto.
-            print(f"AVISO: narração em cache cobre só "
-                  f"{len(words or [])}/{len(script_text.split())} palavras — "
-                  "sintetizando de novo.", file=sys.stderr)
-            warnings.append("narração parcial em cache — refeita")
-            words = None
-        else:
-            tts_info = {"provider": cfg.tts_provider, "voice": cfg.tts_voice,
-                        "speed": cfg.tts_speed, "reused": True}
-    if words is None:
-        res = tts_stage.synthesize(script_text, paths.narration_wav,
-                                   cfg.tts_provider, cfg.tts_voice,
-                                   cfg.tts_speed, cfg.duration_target,
-                                   words_path=paths.words_json, metrics=metrics,
-                                   language=cfg.language)
-        audio_duration = res.duration
-        words = res.words
-        tts_info = {"provider": res.provider, "voice": res.voice,
-                    "speed": res.speed, "reused": False}
-        run_event("cache" if tts_info.get("reused") else "provider",
-                  f"TTS: {tts_info['provider']} / {tts_info['voice']} "
-                  f"({audio_duration:.1f}s)", operation="tts",
-              provider=tts_info["provider"], voice=tts_info["voice"],
-              duration_seconds=round(audio_duration, 2),
-              cache=tts_info.get("reused", False))
-    stage_times["tts"] = round(time.monotonic() - t0, 2)
-    emit(4, "Gerando narração", "OK")
+    # [4/6] Narração, alinhamento e legendas são um estágio coeso.
+    audio_result = pipeline_audio_stage.run_audio_stages(
+        script_text, chapters, paths, cfg, force, metrics, warnings, emit,
+        _write_json, stage_times, pacing=pacing, caption_style=cap_style)
+    chapters = audio_result.chapters
+    words = audio_result.words
+    audio_duration = audio_result.audio_duration
+    tts_info = audio_result.tts_info
+    timed_source = audio_result.timed_source
+    cue_count = audio_result.cue_count
+    subs_changed = audio_result.subtitles_changed
+    stage_times.update(audio_result.stage_times)
 
-    # Timeline real: capítulos alinhados aos boundaries (sem offset artificial)
-    try:
-        chapters = scenes_stage.apply_timings(chapters, words or [])
-        timed_source = "wordboundary"
-    except (ValueError, IndexError) as exc:
-        print(f"AVISO: {exc} — timeline proporcional.", file=sys.stderr)
-        warnings.append(f"timeline proporcional ({exc})")
-        cursor = (words[0]["start"] if words else 0.15) if words else 0.15
-        total_w = sum(len(c.narration.split()) for c in chapters) or 1
-        for ch in chapters:
-            share = audio_duration * len(ch.narration.split()) / total_w
-            ch.start, ch.end = cursor, cursor + share
-            cursor = ch.end
-        timed_source = "proporcional"
-    # Costura: pausas entre falas pertencem às cenas (nada de buraco visual);
-    # último capítulo cobre até o fim do áudio.
-    chapters[0].start = 0.0
-    for prev, nxt in zip(chapters, chapters[1:]):
-        mid = round((prev.end + nxt.start) / 2, 3)
-        prev.end = nxt.start = mid
-    chapters[-1].end = round(audio_duration, 3)
+    # Pipeline orquestra timeline visual; visual stage só recebe dados prontos.
     from .stages.visual_beats import BEAT_SECONDS
-    _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
     visual_timeline = (_write_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
         insertions=insert_budget, insert_style=cfg.visual_insert_style,
@@ -1151,40 +1105,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         print(f"Inserções: {count_insertions(visual_timeline)} foto(s) "
               f"complementar(es) caindo sobre o fundo "
               f"(estilo {cfg.visual_insert_style}).")
-
-    # [5/6] Legendas (reais quando há boundaries). Sempre regeneradas:
-    # é barato, determinístico (roteiro+áudio em cache) e autocura legendas
-    # antigas geradas antes das blindagens de sanitização.
-    t0 = time.monotonic()
-    emit(5, "Sincronizando legendas")
-    prev_ass = _read(paths.subs_ass) if os.path.isfile(paths.subs_ass) else ""
-    # O TRATAMENTO da legenda vem do perfil tipográfico, não do editorial:
-    # caixa alta e relevo são apresentação, e a fonte de exibição já está
-    # garantida por legibilidade. Um vídeo sem gênero recebe `None` e sai
-    # exatamente como antes.
-    cue_count = subs_stage.write_subtitles(
-        script_text, audio_duration, paths.subs_srt, paths.subs_ass,
-        cfg.width, cfg.height, cfg.sub_font_size,
-        subs_stage.safe_subtitle_margin(cfg.height, cfg.sub_margin_v),
-        words=words if tts_info["provider"] == "edge-tts" else None,
-        cache_dir=cfg.cache_dir,
-        max_words=min(5, pacing.caption_max_words if pacing is not None else 5),
-        highlight="word", upper=False, karaoke=True,
-        **({"outline": cap_style.outline,
-            "shadow": cap_style.shadow}
-           if cap_style is not None else {}))
-    subs_changed = _read(paths.subs_ass) != prev_ass
-    if subs_changed and not force and os.path.isfile(paths.final_mp4):
-        print("AVISO: texto das legendas mudou — refazendo o MP4 final "
-              "para acompanhar.", file=sys.stderr)
-        warnings.append("legendas atualizadas (rebuild do final.mp4)")
-    stage_times["subs"] = round(time.monotonic() - t0, 2)
-    run_event("result", f"Legendas: {cue_count} cue(s); "
-              f"{'WordBoundary' if words and tts_info['provider'] == 'edge-tts' else 'proporcional'}",
-              operation="subtitles", cues=cue_count,
-              timing=("wordboundary" if words and tts_info['provider'] == 'edge-tts'
-                      else "proporcional"))
-    emit(5, "Sincronizando legendas", "OK")
 
     # [6/6] Montagem dinâmica + final
     t0 = time.monotonic()

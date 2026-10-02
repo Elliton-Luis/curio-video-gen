@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-180859_relatorio_estagio-audio-pipeline.md` — TTS, alinhamento e legendas extraídos para `pipeline_audio.py`; 728 testes verdes.
 - `relatorios/20261002-171500_relatorio-performance-pipeline.md` — busca/download limitados e concorrentes, cache ffprobe e planner condicional; 727 testes verdes.
 - `relatorios/20261002-170000_relatorio_separacao-etapas-render.md` — timeline/SFX, segmentos de render e pesquisa separados; `visual.py` reduzido; 727 testes verdes.
 - `relatorios/20261002-163000_relatorio_tui-terminal.md` — terminal, teclado, menu e caminho movidos para `tui_terminal.py`; TUI permanece stdlib only; 721 testes verdes.

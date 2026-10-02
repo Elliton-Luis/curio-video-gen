@@ -38,7 +38,9 @@ Nenhuma etapa de produto mudou. Áudio e vídeo preservam caminho e metadata.
 
 ## 5. Limitações e próxima etapa
 
-`_run_pipeline` ainda grande (~774 linhas de orquestração); fila/TUI de
+Naquele commit, `_run_pipeline` ainda tinha ~774 linhas de orquestração.
+Relatório posterior `20261002-180859_relatorio_estagio-audio-pipeline.md`
+extraiu TTS, alinhamento e legendas. Fila/TUI de
 fluxos ainda vive em `tui.py`; transporte/provider chain ainda vive em
 `nvidia.py`. Esses módulos exigem extração de fronteira com estado e
 testes, não movimento mecânico. Etapa 5 de performance segue em relatório
