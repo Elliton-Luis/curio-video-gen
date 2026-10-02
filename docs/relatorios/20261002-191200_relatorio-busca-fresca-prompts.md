@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 19:12 (UTC)
 - **Tipo:** relatorio
 - **Escopo:** impedir reuso persistente de candidato por query e validar prompts reduzidos pelo usuário
-- **Commit(s):** pendente
+- **Commit(s):** `5c99c15 fix: search fresh media with topic anchors`
 - **Origem:** relato sobre geração em massa e mídia fora do tema
 
 ## 1. O que foi pedido
@@ -27,6 +27,7 @@ mais curtos devem reduzir tokens por chamada sem perder regras essenciais.
 - `python3 -m pytest tests/test_script_hook.py tests/test_shorts60.py tests/test_active_word.py -q` — 16 passed.
 - `python3 -m pytest tests/ -q` — **733 passed**.
 - Medições acima são caracteres, não tokens. Não há contagem real de tokens dos prompts encurtados neste relatório.
+- Redução foi no prompt de roteiro. Prompt de cenas ficou igual; logs mostram respostas LLM inválidas (7/6 e 9/8 cenas) e fallback local. Reduzir prompt de roteiro não corrige esse fallback.
 
 ## 4. Status vs PRD §19
 

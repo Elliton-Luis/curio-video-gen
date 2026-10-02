@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 19:03 (UTC)
 - **Tipo:** analise
 - **Escopo:** investigar métricas 15:42/15:46 e identificar por que cenas locais aceitaram homônimos e imagens alheias
-- **Commit(s):** pendente
+- **Commit(s):** `9aad638`, `07f161c`
 - **Origem:** relato do usuário; continuação de `20261002-185303_relatorio_anchor-topico-visual.md`
 
 ## 1. Veredito
@@ -13,6 +13,12 @@ gerou queries por frase, sem propagar nome/tema geral para cada cena. O
 scoring aceitava uma palavra isolada do assunto local. Assim, `empire`
 aceitou Mughal Empire, `aurelio` aceitou Fábio Aurélio, e `mass` aceitou
 ônibus com “mass station”.
+
+Os dois logs também mostram causa anterior: Groq devolveu cenas que não
+reproduziam narração. Marco retornou 7 cenas, fallback local usou 6;
+França retornou 9, fallback local usou 8. Fallback local perdeu a
+estrutura visual da resposta LLM e gerou queries como `aurelio`, `dog`
+e `sun`.
 
 Revolução Francesa teve ainda erro de substring: detector buscava `sol`
 sem fronteira e achava essa sequência dentro de `absoluto`, gerando

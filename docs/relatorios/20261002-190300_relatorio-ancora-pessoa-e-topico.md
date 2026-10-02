@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 19:03 (UTC)
 - **Tipo:** relatorio
 - **Escopo:** corrigir seleção lexical de assets locais para Marco Aurélio, Revolução Francesa e buracos negros
-- **Commit(s):** pendente
+- **Commit(s):** `9aad638`, `07f161c`
 - **Origem:** `docs/analises/20261002-190300_analise-midia-marco-revolucao.md`
 
 ## 1. O que foi pedido
