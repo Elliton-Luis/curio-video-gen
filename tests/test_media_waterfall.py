@@ -312,22 +312,19 @@ def test_download_rejeita_dims_reais_baixas(tmp_path):
     assert (b.width, b.height) == (1200, 1200)
 
 
-def test_used_in_marcado_no_pick_e_limpo_no_cache(tmp_path):
-    import shutil
-    from curio.stages.visual import _get_cached_asset, _save_to_cache
-    m = RunMetrics("s", "idea", "narr")
-    ch2 = _ch(("antibody gold",), "Gold antibodies bind hCG hormone.")
-    scenes, _ = V._search_scene_with_shortcircuit(
-        ch2, [], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
-        1, m, str(tmp_path))
-    assert scenes[0]["asset"]["used_in"] == "cena 1"
-    # o cache de consulta nunca carrega used_in de outro vídeo
-    src = scenes[0]["asset"]["local_path"]
-    assert os.path.getsize(src) > 10000
-    a = _asset(aid="reuse1")
-    a.local_path = src
-    a.used_in = "cena 9"
-    _save_to_cache(str(tmp_path), "water glass reuse", a)
-    cached = _get_cached_asset(str(tmp_path), "water glass reuse")
-    assert cached is not None and cached.used_in == ""
-    shutil.rmtree(str(tmp_path), ignore_errors=True)
+def test_provider_search_not_reused_between_video_runs(tmp_path, monkeypatch):
+    _mock_download(monkeypatch, tmp_path)
+    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(V, "_waterfall_queries",
+                        lambda *_args: (["water glass"], set()))
+    provider = _FakeProv("pixabay", [_asset(aid="fresh", title="water glass bottle")])
+    ch = _ch(("water glass",), "A water glass.", subject="water glass",
+             visual_entities=["water glass"])
+    cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
+    for _ in range(2):
+        scenes, _ = V._search_scene_with_shortcircuit(
+            ch, [provider], cfg, 1, RunMetrics("s", "idea", "narr"),
+            str(tmp_path))
+        assert scenes[0]["asset"]["used_in"] == "cena 1"
+    assert provider.calls == ["water glass", "water glass"]
+    assert not (tmp_path / "cache" / "media_query").exists()

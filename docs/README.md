@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-191200_relatorio-busca-fresca-prompts.md` — nova busca em cada vídeo, cache só de bytes para rerender; prompts reduzidos preservados; 733 testes verdes.
 - `relatorios/20261002-190300_relatorio-ancora-pessoa-e-topico.md` — âncora local exige título coerente com tema/pessoa; 733 testes verdes.
 - `relatorios/20261002-185303_relatorio_anchor-topico-visual.md` — corrige desvio de assunto local; ancora cenas ao tema geral; 732 testes verdes.
 - `relatorios/20261002-183000_relatorio_refatoracao-curio.md` — refatoração estrutural etapas 1–5; adapters, módulos por etapa e performance limitada; suíte: 728 testes.

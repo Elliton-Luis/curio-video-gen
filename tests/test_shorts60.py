@@ -59,14 +59,11 @@ def test_subtitle_safe_area_and_ass_margin():
     assert ",2,120,120,422,1\n" in ass
 
 
-def test_script_prompts_allow_content_led_45_to_90_seconds():
-    for prompt, phrases in (
-        (prompts.SCRIPT_SYSTEM_PROMPT, ("45–90s", "perto de 60s", "Não invente twist")),
-        (prompts.SCRIPT_SYSTEM_PROMPT_EN,
-         ("45–90 seconds", "near 60", "Never invent a twist")),
-    ):
-        for phrase in phrases:
-            assert phrase in prompt
+def test_script_prompts_accept_content_led_duration_clause():
+    assert "{duration_clause}" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "{duration_clause}" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+    assert "estrutura da narrativa" in prompts.SCRIPT_SYSTEM_PROMPT.lower()
+    assert "narrative structure" in prompts.SCRIPT_SYSTEM_PROMPT_EN.lower()
 
 
 def test_local_fallback_closes_without_generic_question_or_cta():

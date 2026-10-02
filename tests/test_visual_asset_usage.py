@@ -43,8 +43,6 @@ def test_selection_uses_fresh_eligible_candidates_across_scenes(monkeypatch, tmp
         name = "fixture"
         def search(self, *args, **kwargs):
             return assets
-    monkeypatch.setattr(visual, "_get_cached_asset", lambda *args: None)
-    monkeypatch.setattr(visual, "_save_to_cache", lambda *args: None)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *args: True)
     monkeypatch.setattr(visual, "_waterfall_queries", lambda *args: (["rome statue"], set()))
     uses = {}

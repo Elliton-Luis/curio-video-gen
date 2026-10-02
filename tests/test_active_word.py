@@ -14,8 +14,8 @@ def test_exact_highlight_uses_boundaries_not_uniform_duration():
 
 
 def test_generation_prompt_recovers_topic_related_cta_without_weak_preamble():
-    assert "opinião ou experiência" in prompts.SCRIPT_SYSTEM_PROMPT
-    assert "sem preâmbulos" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "opinião/experiência" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "PROIBIDO" in prompts.SCRIPT_SYSTEM_PROMPT
     assert "fontes" in prompts.SCRIPT_SYSTEM_PROMPT.lower()
 
 
@@ -31,4 +31,4 @@ def test_generation_preserves_sources_and_genre_in_actual_request(monkeypatch):
                            research="FONTE REAL", genre_directive="GENERO HISTORIA")
     assert "GENERO HISTORIA" in captured[0]["content"]
     assert "FONTE REAL" in captured[1]["content"]
-    assert "convite breve a comentar" in captured[0]["content"]
+    assert "pergunta natural convidando à opinião/experiência" in captured[0]["content"]

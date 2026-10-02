@@ -140,8 +140,8 @@ def test_historical_art_prioritizes_museums_then_wikimedia(monkeypatch):
         ["pixabay", "wikimedia", "met", "aic", "unsplash"]
 
 
-def test_cached_museum_asset_avoids_new_requests(monkeypatch, tmp_path):
-    cached = P.MediaAsset(
+def test_museum_search_runs_again_but_download_bytes_are_reused(monkeypatch, tmp_path):
+    candidate = P.MediaAsset(
         provider="met", asset_id="1", title="Julius Caesar marble bust Rome",
         author="Roman sculptor", license="Domínio público (Met Museum)",
         license_url="https://www.metmuseum.org/art/collection/search/1",
@@ -149,25 +149,31 @@ def test_cached_museum_asset_avoids_new_requests(monkeypatch, tmp_path):
         download_url="https://images.metmuseum.org/small.jpg",
         width=1600, height=1600)
 
-    def boom(*args, **kwargs):
-        raise AssertionError("cache hit não deve chamar a rede")
-
-    monkeypatch.setattr(visual, "_get_cached_asset", lambda *args: cached)
     monkeypatch.setattr(visual, "_waterfall_queries",
                         lambda ch, genre="": (["julius caesar"], set()))
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
+    class Museum:
+        name = "met"
+        calls = 0
+
+        def search(self, query, limit=5, metrics=None):
+            self.calls += 1
+            return [candidate]
+
+    museum = Museum()
     from curio.media import cache
     monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
-    monkeypatch.setattr("urllib.request.urlopen", boom)
     ch = Chapter(1, "Júlio César chegou ao poder.", 8, subject="Júlio César",
                  subject_aliases=["Julius Caesar"])
     cfg = CurioConfig(cache_dir=str(tmp_path))
-    scenes, _ = visual._search_scene_with_shortcircuit(
-        ch, [], cfg, 1, RunMetrics("t", "cesar", "ai"), str(tmp_path))
-    assert scenes[0]["asset"]["asset_id"] == "1"
-    assert scenes[0]["asset"]["provider"] == "met"
+    for _ in range(2):
+        scenes, _ = visual._search_scene_with_shortcircuit(
+            ch, [museum], cfg, 1, RunMetrics("t", "cesar", "ai"), str(tmp_path))
+        assert scenes[0]["asset"]["asset_id"] == "1"
+        assert scenes[0]["asset"]["provider"] == "met"
+    assert museum.calls == 2  # new run always searches providers
 
 
 def test_museum_failure_falls_through_to_next_provider(monkeypatch, tmp_path):
@@ -188,7 +194,6 @@ def test_museum_failure_falls_through_to_next_provider(monkeypatch, tmp_path):
                 download_url="https://example.test/9.jpg",
                 license="CC BY-SA 4.0", width=1600, height=1600)]
 
-    monkeypatch.setattr(visual, "_get_cached_asset", lambda *args: None)
     monkeypatch.setattr(visual, "_waterfall_queries",
                         lambda ch, genre="": (["julius caesar"], set()))
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
@@ -218,7 +223,6 @@ def test_museum_assets_join_scoring_dedup_and_cache(monkeypatch, tmp_path):
             metrics.media_search(self.name)
             return [met, met]  # duplicado: dedup corta antes do download
 
-    monkeypatch.setattr(visual, "_get_cached_asset", lambda *args: None)
     monkeypatch.setattr(visual, "_waterfall_queries",
                         lambda ch, genre="": (["julius caesar"], set()))
     monkeypatch.setattr(scoring, "threshold", lambda: 34)

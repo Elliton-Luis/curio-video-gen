@@ -13,31 +13,27 @@ from curio.stages import prompts
 
 
 def test_gancho_proibe_definicao():
-    for prompt in (prompts.SCRIPT_SYSTEM_PROMPT, prompts.SCRIPT_SYSTEM_PROMPT_EN):
-        baixo = prompt.lower()
-        assert "defini" in baixo  # a proibição existe nos dois idiomas
-    assert "PROIBIDO abrir com definição" in prompts.SCRIPT_SYSTEM_PROMPT
-    assert "NEVER open with a definition" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+    assert "PROIBIDO" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "definições" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "FORBIDDEN" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+    assert "textbook definitions" in prompts.SCRIPT_SYSTEM_PROMPT_EN
 
 
 def test_estranheza_pede_explicacao_imediata():
-    assert "EXPLICAÇÃO IMEDIATA" in prompts.SCRIPT_SYSTEM_PROMPT
-    assert "como dividiam o poder" in prompts.SCRIPT_SYSTEM_PROMPT
-    assert "IMMEDIATE EXPLANATION" in prompts.SCRIPT_SYSTEM_PROMPT_EN
-    assert "who commanded what" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+    assert "frase seguinte" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "explicação clara" in prompts.SCRIPT_SYSTEM_PROMPT
+    assert "next sentence" in prompts.SCRIPT_SYSTEM_PROMPT_EN
+    assert "plain-language explanation" in prompts.SCRIPT_SYSTEM_PROMPT_EN
 
 
-def test_fato_ancora_nunca_cortado():
+def test_fato_ancora_e_obrigatorio():
     assert "FATO-ÂNCORA" in prompts.SCRIPT_SYSTEM_PROMPT
     assert "LEGACY ANCHOR" in prompts.SCRIPT_SYSTEM_PROMPT_EN
-    for prompt in (prompts.SCRIPT_SYSTEM_PROMPT, prompts.SCRIPT_SYSTEM_PROMPT_EN):
-        assert "nunca" in prompt.lower() or "never" in prompt.lower()
 
 
 def test_final_retoma_o_gancho():
-    assert "retomar a imagem do gancho" in prompts.SCRIPT_SYSTEM_PROMPT.lower()
-    assert "return" in prompts.SCRIPT_SYSTEM_PROMPT_EN.lower()
-    assert "hook" in prompts.SCRIPT_SYSTEM_PROMPT_EN.lower()
+    assert "conectando com a imagem do gancho" in prompts.SCRIPT_SYSTEM_PROMPT.lower()
+    assert "looping back to the opening hook image" in prompts.SCRIPT_SYSTEM_PROMPT_EN.lower()
 
 
 def test_genero_pessoa_explica_instituicao_e_ancora_legado():

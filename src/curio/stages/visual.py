@@ -26,13 +26,10 @@ from __future__ import annotations
 import concurrent.futures
 import contextvars
 import functools
-import hashlib
-import json
 import os
 import re
 import sys
 import time
-from pathlib import Path
 
 from .. import ffmpeg as ff
 from .. import textnorm
@@ -71,9 +68,7 @@ _DOWNLOAD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 PROVIDER_PRIORITY = ("pixabay", "pexels", "nasa",
                      "wikimedia", "openverse", "met", "aic", "unsplash")
 
-# Cache local de mídia por termo de busca
-MEDIA_CACHE_DIR = "cache/media_query"
-
+# Resultados de busca só vivem na memória da execução, nunca entre vídeos.
 # Quantos candidatos se coleta por consulta antes de escolher. O lineup
 # antigo aceitava 1 asset do primeiro provedor; recolher uma dúzia e
 # ordenar é o que permite escolher em vez de tomar o que veio.
@@ -124,54 +119,6 @@ def _download_with_origin(asset: MediaAsset, cache_dir: str, metrics=None):
     cached = os.path.isfile(path) and os.path.isfile(path + ".json")
     result = download_asset(asset, cache_dir, metrics)
     return result, "cache" if cached else "download"
-
-
-def _cache_key(query: str) -> str:
-    """Gera chave de cache determinística para o termo de busca."""
-    return hashlib.sha256(query.lower().strip().encode()).hexdigest()[:16]
-
-
-def _get_cached_asset(cache_dir: str, query: str) -> MediaAsset | None:
-    """Verifica se há ativo válido em cache para o termo de busca."""
-    cache_path = Path(cache_dir) / MEDIA_CACHE_DIR
-    key = _cache_key(query)
-    meta_file = cache_path / f"{key}.json"
-    if not meta_file.is_file():
-        return None
-    try:
-        with open(meta_file, encoding="utf-8") as f:
-            data = json.load(f)
-        # Verifica se o arquivo ainda existe
-        asset_file = Path(data.get("local_path", ""))
-        if asset_file.is_file() and asset_file.stat().st_size > 10000:
-            asset = MediaAsset.from_dict(data)
-            asset.local_path = str(asset_file)
-            asset.used_in = ""  # uso anterior não vale p/ este vídeo
-            return asset
-    except (json.JSONDecodeError, OSError, KeyError):
-        pass
-    return None
-
-
-def _save_to_cache(cache_dir: str, query: str, asset: MediaAsset) -> None:
-    """Salva ativo no cache local indexado por termo de busca."""
-    cache_path = Path(cache_dir) / MEDIA_CACHE_DIR
-    cache_path.mkdir(parents=True, exist_ok=True)
-    key = _cache_key(query)
-    meta_file = cache_path / f"{key}.json"
-    # Copia o arquivo para o cache de consulta se não estiver lá
-    src = Path(asset.local_path)
-    dst = cache_path / f"{key}{src.suffix}"
-    if not dst.is_file():
-        import shutil
-        shutil.copy2(src, dst)
-    record = asset.to_dict()
-    record["local_path"] = str(dst)
-    record["query"] = query
-    record["used_in"] = ""  # uso é por vídeo, nunca do cache
-    record["cached_at"] = time.time()
-    with open(meta_file, "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=1)
 
 
 def _sanitize_query(query: str) -> str:
@@ -630,7 +577,6 @@ def _search_scene_with_shortcircuit(
                                          getattr(cfg, "language", "pt-BR"),
                                          visual_state, genre)
         if synth is not None:
-            _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
             if metrics:
                 metrics.media_record_visual_type(vtype)
                 metrics.media_record_fallback("card")
@@ -642,7 +588,7 @@ def _search_scene_with_shortcircuit(
                 "chapter_id": ch.id,
                 "asset": synth.to_dict(),
                 "assets": [{"asset": synth.to_dict(), "query": "",
-                            "relevance": 0, "order": 0, "from_cache": False,
+                            "relevance": 0, "order": 0,
                             "score": 0.0, "strategy": "card"}],
                 "reused_from": None,
                 "rejected": [],
@@ -654,7 +600,7 @@ def _search_scene_with_shortcircuit(
     rejected: list[dict] = []     # (motivo, título) p/ a folha de contato
     seen_ids: set[str] = set()
 
-    def _consider(cand: MediaAsset, query: str, from_cache: bool) -> None:
+    def _consider(cand: MediaAsset, query: str) -> None:
         identity = f"{cand.provider}:{cand.asset_id}"
         if identity in seen_ids:
             if metrics:
@@ -680,7 +626,6 @@ def _search_scene_with_shortcircuit(
             "query": query,
             "relevance": 0,  # preenchido pelo scoring, não pela ordem de chegada
             "order": 0,
-            "from_cache": from_cache,
             "generic": query.lower() in generics,
         })
 
@@ -694,13 +639,6 @@ def _search_scene_with_shortcircuit(
             query_key = query.casefold()
             shared = (shared_search_cache.setdefault(query_key, {})
                       if shared_search_cache is not None else {})
-            cached = _get_cached_asset(cache_dir, query)
-            if cached is not None:
-                if metrics:
-                    metrics.media_record_funnel("cache_returned")
-                _consider(cached, query, from_cache=True)
-                if metrics:
-                    metrics.media_cache_hits += 1
             active = [prov for prov in providers
                       if not getattr(prov, "_disabled", False)]
             tasks = []
@@ -759,7 +697,7 @@ def _search_scene_with_shortcircuit(
                             metrics.media_record_funnel(
                                 "budget_unexamined", len(results) - result_index)
                         break
-                    _consider(cand, query, from_cache=False)
+                    _consider(cand, query)
 
     def score_specific(entries: list[dict]):
         ranked = scoring.rank_candidates(entries, ch)
@@ -910,7 +848,6 @@ def _search_scene_with_shortcircuit(
                                rights_status="verify")
             if not logged:
                 print(f"AVISO: {msg}", file=sys.stderr)
-        _save_to_cache(cache_dir, entry["query"], asset)
         entry = dict(entry)
         entry["asset"] = asset.to_dict()
         if entry.get("generic") and metrics:
@@ -945,10 +882,9 @@ def _search_scene_with_shortcircuit(
                                          getattr(cfg, "language", "pt-BR"),
                                          visual_state, genre)
         if synth is not None:
-            _save_to_cache(cfg.cache_dir, f"visual:{synth.asset_id}", synth)
             picked.append({"asset": synth.to_dict(),
                            "query": queries[0] if queries else "",
-                           "relevance": 0, "order": 0, "from_cache": False,
+                            "relevance": 0, "order": 0,
                             "score": 0.0, "strategy": "synth"})
             strategy_used = ("diagram"
                              if synth.title.startswith("Diagrama")
@@ -1029,11 +965,6 @@ def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
     except Exception as exc:  # noqa: BLE001 — fallback honesto abaixo
         print(f"AVISO: diagrama sintético falhou ({exc}).", file=sys.stderr)
         return None
-    try:
-        _save_to_cache(cfg.cache_dir,
-                       f"synth-diagram:{terms}", asset)
-    except OSError as exc:
-        print(f"AVISO: cache do diagrama falhou ({exc}).", file=sys.stderr)
     if metrics:
         metrics.media_record_synth()
     asset.used_in = f"cena {ch.id}"
