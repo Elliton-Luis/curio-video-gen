@@ -48,3 +48,16 @@ def test_local_black_hole_rejects_bus_mass():
     assert not scoring.topic_anchor_matches(bus, ch)
     assert scoring.topic_anchor_matches(black_hole, ch)
     assert scoring.base_score(bus, ch)["score"] == 0
+
+
+def test_person_video_keeps_person_portrait_across_local_context_scenes():
+    ch = Chapter(id=4, narration="Marco Aurélio liderou campanhas na Armênia.",
+                 duration_estimate=6, subject="Armenia", visual_queries=["Armenia", "war"],
+                 global_visual_queries=["marcus aurelius"],
+                 visual_intent="local fallback: Armenia war")
+    portrait = {"title": "Bust of Marcus Aurelius, Roman emperor"}
+    namesake = {"title": "Fábio Aurélio football player portrait"}
+    assert scoring.topic_anchor_matches(portrait, ch)
+    assert scoring.base_score(portrait, ch)["score"] >= scoring.threshold()
+    assert not scoring.topic_anchor_matches(namesake, ch)
+    assert scoring.base_score(namesake, ch)["score"] == 0

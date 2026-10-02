@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261002-190300_relatorio-ancora-pessoa-e-topico.md` — âncora local exige título coerente com tema/pessoa; 733 testes verdes.
 - `relatorios/20261002-185303_relatorio_anchor-topico-visual.md` — corrige desvio de assunto local; ancora cenas ao tema geral; 732 testes verdes.
 - `relatorios/20261002-183000_relatorio_refatoracao-curio.md` — refatoração estrutural etapas 1–5; adapters, módulos por etapa e performance limitada; suíte: 728 testes.
 - `relatorios/20261002-182037_relatorio_estagio-midia-pipeline.md` — aquisição, mídia manual e standby movidos de `pipeline.py` para `pipeline_media.py`; 29 testes focados verdes.
@@ -138,6 +139,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Análises (estado, gaps, riscos)
 
+- `analises/20261002-190300_analise-midia-marco-revolucao.md` — métricas e títulos confirmam desvio lexical em dois vídeos locais.
 - `analises/20261002-150849_relatorio_refatoracao-etapas-1-2.md` — implementação das etapas 1–2, gates, `textnorm` e `ResearchResult` explícito.
 - `analises/20261002-131932_analise_refatoracao-codigo-morto.md` — auditoria estrutural, candidatos mortos, duplicações e ordem de refatoração.
 - `analises/20261001-045242_analise_scores-baixos-tomas-aquino.md` — decomposição de candidatos reais, quebra entre consultas locais e scoring, idioma/denominador e instrumentação mínima recomendada.

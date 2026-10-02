@@ -261,6 +261,9 @@ PT_TOPIC_PHRASES = {
     "revolucao da franca": "french revolution",
     "buraco negro": "black hole",
     "buracos negros": "black hole",
+    "marco aurelio": "marcus aurelius",
+    "imperador marco aurelio": "marcus aurelius",
+    "marcos aurelio": "marcus aurelius",
 }
 
 

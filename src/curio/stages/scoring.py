@@ -99,6 +99,13 @@ def base_score(asset: dict, ch) -> dict:
     if not topic_anchor_matches(asset, ch):
         return {"score": 0.0, "matched": [],
                 "missing": list(core)[:6], "support": []}
+    if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+        # Local scene may ask for context (e.g. `Armenia war`) while the
+        # video subject is a person (`Marcus Aurelius`). An image of the
+        # person is valid across scenes; score local terms plus video anchor.
+        for anchor in list(getattr(ch, "global_visual_queries", []) or []):
+            for token in _tokens(anchor):
+                core[token] = max(core.get(token, 0.0), 3.0)
 
     def _hits(terms: dict[str, float]) -> tuple[float, list[str], list[str]]:
         hit, matched, missing = 0.0, [], []
