@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 20:59 (UTC)
 - **Tipo:** relatorio
 - **Escopo:** impedir rio para “corrente” e assets Tesla sem relação com Nikola Tesla
-- **Commit(s):** pendente
+- **Commit(s):** `8ce2861`
 - **Origem:** `docs/analises/20261002-205941_analise-imagens-tesla-corrente.md`
 
 ## 1. O que foi pedido

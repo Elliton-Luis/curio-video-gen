@@ -3,7 +3,7 @@
 - **Data:** 2026-10-02 20:59 (UTC)
 - **Tipo:** analise
 - **Escopo:** métrica `20261002-180209`, coerência das queries Tesla/corrente e imagens selecionadas
-- **Commit(s):** pendente
+- **Commit(s):** `8ce2861`
 - **Origem:** relato do usuário
 
 ## 1. Veredito
