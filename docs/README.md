@@ -7,6 +7,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261001-230902_relatorio_musica-por-afinidade.md` — cama por afinidade com o tema e ganho −3 dB; sem custo de LLM.
+
 - `relatorios/20261001-223646_relatorio_cama-audivel-ducking-suave.md` — cama normalizada (loudnorm), ganho −5 dB e ducking 3:1; +4 dB audível na pausa, voz dominante.
 
 - `relatorios/20261001-222132_relatorio_musica-genero-motion-slide.md` — camas por gênero (violino/tenso), ganho −7 dB, deriva sem tremor e slides de galeria; render real validado.

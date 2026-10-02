@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-from .library import AudioLibrary, AudioLibraryError, is_calm_music_asset
+from .library import AudioLibrary, AudioLibraryError, is_calm_music_asset, content_hints
 from .. import ffmpeg as ff
 
 
@@ -40,7 +40,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     mode = requested_mode if enabled else "none"
     if mode not in ("auto", "none", "manual"):
         mode = "auto"
-    gain = int(getattr(cfg, "music_gain_db", -5))
+    gain = int(getattr(cfg, "music_gain_db", -3))
     ducking = bool(getattr(cfg, "music_ducking", True))
     previous = previous if isinstance(previous, dict) else {}
     library = AudioLibrary(getattr(cfg, "audio_library_dir", "assets/library"))
@@ -96,7 +96,8 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                         for err in report.get("errors", [])[:3])
                 except (AudioLibraryError, OSError) as exc:
                     warnings.append(f"biblioteca musical {genre}: autopreenchimento ignorado ({exc})")
-            music_asset = library.select("music", genre, seed)
+            hints = content_hints(genre, title, script)
+            music_asset = library.select("music", genre, seed, hints=hints)
             if not music_asset:
                 warnings.append(
                     f"biblioteca musical {genre} sem faixa calma compatível; render sem música"

@@ -236,7 +236,7 @@ def test_cached_noisy_music_is_replaced_by_calm_bed(tmp_path, monkeypatch):
     cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
                       music_auto_fill=False)
     previous = {"music": {
-        "mode": "auto", "genre": "people", "gain_db": -5,
+        "mode": "auto", "genre": "people", "gain_db": -3,
         "ducking": True, "track": {**noisy, "mood": ["curious"]}},
         "sfx": {"assets": []}}
 
@@ -485,3 +485,18 @@ def test_genre_directions_match_requested_styles():
                                     "mood": ["tense"]})
     assert not is_calm_music_asset({"title": "Crashing Starship",
                                     "mood": ["curious"]})
+
+
+def test_music_selection_prefers_theme_fit_over_rotation(tmp_path, monkeypatch):
+    from curio.audio.library import content_hints
+    library = AudioLibrary(tmp_path / "lib")
+    guitar = _register(library, tmp_path, monkeypatch, "Ambient guitar",
+                       use_count=0)
+    violin = _register(library, tmp_path, monkeypatch, "Violin Sonata",
+                       use_count=5)
+    hints = content_hints("people", "Santo Antônio de Pádua", "violin")
+    picked = library.select("music", "people", "seed", hints=hints)
+    assert picked["source_asset_id"] == violin["source_asset_id"]
+    assert picked["source_asset_id"] != guitar["source_asset_id"]
+    assert library.select("music", "people", "seed")["source_asset_id"] == \
+        guitar["source_asset_id"]  # sem dica, rodízio decide

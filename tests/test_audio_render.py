@@ -116,7 +116,7 @@ def test_build_sfx_track_uses_local_audio_asset(tmp_path, monkeypatch):
 
 
 def test_default_music_gain_is_audible_under_ducking():
-    assert CurioConfig().music_gain_db == -5
+    assert CurioConfig().music_gain_db == -3
     assert CurioConfig().visual_insert_gain_db == -15
 
 

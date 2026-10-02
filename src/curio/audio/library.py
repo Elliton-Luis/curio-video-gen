@@ -12,6 +12,7 @@ import json
 import os
 import re
 import tempfile
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -201,6 +202,44 @@ class FreesoundAudioSource:
                 os.unlink(tmp)
 
 
+_HINT_STOP = {
+    "para", "como", "mais", "muito", "isso", "esse", "esta", "este", "aquele",
+    "aquela", "entre", "sobre", "quando", "onde", "qual", "quais", "todo",
+    "toda", "todos", "todas", "cada", "muita", "muitas", "muitos", "pouco",
+    "pouca", "mesmo", "mesma", "outro", "outra", "outros", "outras", "depois",
+    "antes", "durante", "sempre", "nunca", "tambem", "porque", "pois",
+    "entao", "assim", "aqui", "agora", "hoje", "ainda", "coisa", "algo",
+    "tudo", "nada", "pode", "podem", "deve", "devem", "fazer", "fez", "fazem",
+    "seria", "tinha", "the", "and", "with", "from", "that", "this", "what",
+    "como", "porque", "voce", "seu", "sua", "foi", "sao", "uma", "para",
+}
+
+
+def content_hints(*texts: str) -> set[str]:
+    """Palavras-tema para afinidade: minúsculas, sem acento, >=4 letras."""
+    words = set()
+    for text in texts:
+        ascii_text = unicodedata.normalize(
+            "NFKD", str(text or "")).encode("ascii", "ignore").decode()
+        for word in re.findall(r"[a-z]{4,}", ascii_text.lower()):
+            if word not in _HINT_STOP:
+                words.add(word)
+    return words
+
+
+def fit_score(asset: dict, hints: set[str]) -> int:
+    """Afinidade da faixa com o tema: palavras do título/mood no assunto.
+
+    Sem dica ou sem sobreposição, tudo empata em 0 e o rodízio decide —
+    o comportamento anterior é o fallback, não uma exceção.
+    """
+    if not hints:
+        return 0
+    hay = content_hints(asset.get("title", ""),
+                        " ".join(str(m) for m in (asset.get("mood") or [])))
+    return len(hay & set(hints))
+
+
 class AudioLibrary:
     def __init__(self, root: str | os.PathLike, source=None):
         self.root = Path(root).expanduser()
@@ -234,12 +273,18 @@ class AudioLibrary:
         return len(self.assets(kind, genre, category))
 
     def select(self, kind: str, genre: str, seed: str,
-               category: str | None = None, mark_used: bool = False) -> dict | None:
+                category: str | None = None, mark_used: bool = False,
+                hints: set[str] | None = None) -> dict | None:
         eligible = self.assets(kind, genre, category)
         if kind == "music":
             eligible = [asset for asset in eligible if is_calm_music_asset(asset)]
         if not eligible:
             return None
+        if kind == "music" and hints:
+            # Afinidade com o tema vence o rodízio: a cama deve combinar com
+            # o vídeo, não apenas revezar. Empate volta ao menos-usado.
+            best = max(fit_score(a, hints) for a in eligible)
+            eligible = [a for a in eligible if fit_score(a, hints) == best]
         least = min(max(0, int(a.get("use_count", 0))) for a in eligible)
         tied = [a for a in eligible if max(0, int(a.get("use_count", 0))) == least]
         tie_key = hashlib.sha256(str(seed).encode("utf-8")).digest()
