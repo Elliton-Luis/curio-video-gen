@@ -163,7 +163,23 @@ def manual_media_scenes(chapters: list[Chapter], manual_dir: str) -> list[dict] 
                  "kind": "image", "local_path": local, "used_in": f"cena {chapter.id}"}
         scenes.append({"chapter_id": chapter.id, "asset": asset,
                        "assets": [{"asset": asset, "query": "manual",
-                                   "relevance": 100, "order": 0}],
+                                    "relevance": 100, "order": 0}],
+                       "visual_decision": {
+                           "topic": (getattr(chapter, "video_context", {}) or {}).get("topic", ""),
+                           "visual_intent": (getattr(chapter, "visual_intent_structured", "")
+                                             or getattr(chapter, "visual_intent", "")),
+                           "entities": list(getattr(chapter, "visual_entities", []) or []),
+                           "primary_entity": getattr(chapter, "primary_entity", "")
+                                            or getattr(chapter, "subject", ""),
+                           "representations": getattr(chapter, "representations", []) or [],
+                           "queries": [], "providers_consulted": [],
+                           "candidates": [{"title": asset["title"],
+                               "provider": "manual", "decision": "selected",
+                               "reason": "asset supplied by user"}],
+                           "selected": {"title": asset["title"], "provider": "manual",
+                                        "reason": "asset supplied by user"},
+                           "fallback": "manual",
+                       },
                        "reused_from": None if donor == chapter.id else donor})
     return scenes
 

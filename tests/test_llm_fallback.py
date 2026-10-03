@@ -57,10 +57,10 @@ def test_nvidia_timeout_keeps_normal_rotation_when_fallback_exists(monkeypatch):
     body, label = _chat()
     assert label.startswith("openrouter:")
     assert body["choices"][0]["message"]["content"] == "from OpenRouter"
-    assert calls == [("nvidia", None), ("openrouter", 15)]
+    assert calls == [("nvidia", 15), ("openrouter", 15)]
 
 
-def test_groq_runs_first_nvidia_second_without_timeout_and_400_skips_it(
+def test_groq_runs_first_nvidia_second_with_timeout_and_400_skips_it(
         monkeypatch):
     _keys(monkeypatch, "groq", "nvidia", "openrouter")
     calls = []
@@ -79,7 +79,7 @@ def test_groq_runs_first_nvidia_second_without_timeout_and_400_skips_it(
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     body, label = _chat()
 
-    assert calls == [("groq", 15), ("nvidia", None), ("openrouter", 15)]
+    assert calls == [("groq", 15), ("nvidia", 15), ("openrouter", 15)]
     assert label.startswith("openrouter:")
     assert body["choices"][0]["message"]["content"] == "OpenRouter response"
 
@@ -150,16 +150,13 @@ def test_run_log_records_provider_timeout_and_successful_fallback(
                for e in events)
 
 
-def test_provider_order_ends_with_unlimited_nvidia_fallback_when_alone(
-        monkeypatch, capsys):
+def test_provider_failures_end_without_unbounded_nvidia_wait(monkeypatch):
     _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq", "mistral")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
     normal_calls = []
-    final_timeouts = []
-
     def fake_retries(_messages, _key, _model, _url, timeout, *_args):
         pid = _args[-2]
-        normal_calls.append(pid)
+        normal_calls.append((pid, timeout))
         if pid == "nvidia":
             raise _error("normal NVIDIA timeout", retryable=True, fast_fail=True)
         if pid == "openrouter":
@@ -171,45 +168,67 @@ def test_provider_order_ends_with_unlimited_nvidia_fallback_when_alone(
                          exhausted=True, http_attempts=6)
         raise _error("HTTP 401 invalid key", retryable=False)
 
-    def fake_once(_messages, _key, _model, _url, timeout, *_args):
-        final_timeouts.append(timeout)
-        raise _error("HTTP 503 unavailable", retryable=True)
-
     monkeypatch.setattr(N, "_post_with_retries", fake_retries)
-    monkeypatch.setattr(N, "_post_once", fake_once)
     with pytest.raises(N.NvidiaError) as caught:
         _chat()
 
-    assert normal_calls == ["groq", "nvidia", "openrouter", "mistral",
-                            "gemini"]
-    assert final_timeouts == [None] * 5
+    assert [pid for pid, _timeout in normal_calls] == [
+        "groq", "nvidia", "openrouter", "mistral", "gemini"]
+    assert all(timeout == 15 for _pid, timeout in normal_calls)
     message = str(caught.value)
     assert "5/6 rodada(s) globais" in message
     assert "Mistral: 1 tentativa(s) HTTP em 1 rodada(s)" in message
-    assert "NVIDIA fallback resiliente: 5/5" in message
-    log = capsys.readouterr().out
-    assert "[NVIDIA] último provider viável — fallback resiliente" in log
+    assert "NVIDIA última tentativa" not in message
+    assert "sem timeout" not in message
 
 
-def test_nvidia_success_on_final_attempt_returns_pipeline_result(monkeypatch):
+def test_nvidia_last_resort_is_single_bounded_attempt(monkeypatch, capsys):
     _keys(monkeypatch, "nvidia")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
     calls = []
 
     def fake_once(_messages, _key, _model, _url, timeout, *_args):
         calls.append(timeout)
-        if len(calls) < 5:
-            raise _error("HTTP 503 busy", retryable=True)
         return _body("NVIDIA recovered")
 
     monkeypatch.setattr(N, "_post_once", fake_once)
     body, label = _chat()
-    assert calls == [None] * 5
+    assert calls == [15]
     assert body["choices"][0]["message"]["content"] == "NVIDIA recovered"
     assert label.startswith("nvidia:")
+    assert "última tentativa limitada a 15s" in capsys.readouterr().err
 
 
-def test_nvidia_503_exhaustion_stays_available_for_final_fallback(monkeypatch):
+def test_groq_bad_json_falls_to_bounded_nvidia_then_returns_error(monkeypatch,
+                                                                  capsys):
+    _keys(monkeypatch, "groq", "nvidia")
+    groq_calls, nvidia_timeouts = [], []
+
+    def fake_retries(_messages, _key, _model, _url, timeout, *_args):
+        provider = _args[-2]
+        groq_calls.append((provider, timeout))
+        error = N.NvidiaError("Groq HTTP 400 json_validate_failed")
+        error.retryable = False
+        error.http_status = 400
+        raise error
+
+    def fake_nvidia_once(_messages, _key, _model, _url, timeout, *_args):
+        nvidia_timeouts.append(timeout)
+        error = N.NvidiaError("NVIDIA response timeout")
+        error.retryable = True
+        error.fast_fail = True
+        raise error
+
+    monkeypatch.setattr(N, "_post_with_retries", fake_retries)
+    monkeypatch.setattr(N, "_post_once", fake_nvidia_once)
+    with pytest.raises(N.NvidiaError, match="timeout/transitório em 15s"):
+        _chat()
+    assert groq_calls == [("groq", 15)]
+    assert nvidia_timeouts == [15]
+    assert "última tentativa limitada a 15s" in capsys.readouterr().err
+
+
+def test_nvidia_retry_exhaustion_does_not_restart_an_unbounded_fallback(monkeypatch):
     _keys(monkeypatch, "nvidia", "openrouter", "gemini", "groq", "mistral")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
     calls = []
@@ -227,19 +246,14 @@ def test_nvidia_503_exhaustion_stays_available_for_final_fallback(monkeypatch):
                          exhausted=True, http_attempts=6)
         raise _error("HTTP 401 invalid key", retryable=False)
 
-    def fake_once(_messages, _key, _model, _url, timeout, *_args):
-        calls.append(("final", "nvidia", timeout))
-        return _body("NVIDIA recovered after 503")
-
     monkeypatch.setattr(N, "_post_with_retries", fake_retries)
-    monkeypatch.setattr(N, "_post_once", fake_once)
-    body, label = _chat()
-    assert label.startswith("nvidia:")
-    assert body["choices"][0]["message"]["content"] == "NVIDIA recovered after 503"
-    assert calls[-1] == ("final", "nvidia", None)
+    with pytest.raises(N.NvidiaError, match="LLM indisponível"):
+        _chat()
+    assert not any(call[0] == "final" for call in calls)
 
 
-def test_five_transient_failures_end_last_resort(monkeypatch, capsys):
+def test_nvidia_last_resort_transient_failure_ends_after_one_bounded_call(
+        monkeypatch, capsys):
     _keys(monkeypatch, "nvidia")
     monkeypatch.setattr(N.time, "sleep", lambda _delay: None)
     calls = []
@@ -251,10 +265,10 @@ def test_five_transient_failures_end_last_resort(monkeypatch, capsys):
     monkeypatch.setattr(N, "_post_once", fake_once)
     with pytest.raises(N.NvidiaError) as caught:
         _chat()
-    assert calls == [None] * 5
-    assert "NVIDIA fallback resiliente: 5/5" in str(caught.value)
-    assert "5 falhas transitórias" in str(caught.value)
-    assert "5 tentativas transitórias falharam" in capsys.readouterr().out
+    assert calls == [15]
+    assert "NVIDIA última tentativa: 1/1" in str(caught.value)
+    assert "timeout/transitório em 15s" in str(caught.value)
+    assert "limitada a 15s" in capsys.readouterr().err
 
 
 def test_definitive_nvidia_error_stops_last_resort_immediately(monkeypatch,
@@ -269,9 +283,9 @@ def test_definitive_nvidia_error_stops_last_resort_immediately(monkeypatch,
     monkeypatch.setattr(N, "_post_once", fake_once)
     with pytest.raises(N.NvidiaError) as caught:
         _chat()
-    assert calls == [None]
+    assert calls == [15]
     assert "erro definitivo" in str(caught.value)
-    assert "erro definitivo no fallback resiliente" in capsys.readouterr().out
+    assert "última tentativa limitada a 15s" in capsys.readouterr().err
 
 
 def test_internal_http_retries_report_exact_count_to_global_survey(monkeypatch):
@@ -381,7 +395,7 @@ def test_connect_timeout_usado_no_handshake_e_total_na_resposta(monkeypatch):
     assert 120 in seen["sock_timeouts"]
 
 
-def test_post_once_passes_explicit_no_timeout_to_total(monkeypatch):
+def test_post_once_converts_missing_timeout_to_finite_default(monkeypatch):
     import http.client
     import json
     from curio.stages import nvidia as N
@@ -431,4 +445,4 @@ def test_post_once_passes_explicit_no_timeout_to_total(monkeypatch):
     result = N._post_once([], "key", "model", "https://nvidia.test", None,
                           10, 0.0, "nvidia")
     assert result["choices"][0]["message"]["content"] == "ok"
-    assert seen["sock_timeout"] is None
+    assert seen["sock_timeout"] == N.LLM_CALL_TIMEOUT_MAX

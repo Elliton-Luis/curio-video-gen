@@ -90,7 +90,7 @@ def _media(chapters, paths):
              "reused_from": None} for c in chapters]
 
 
-def _run(tmp_path, narration="ai", **over):
+def _run(tmp_path, narration="ai", scene_error=None, **over):
     out_dir = str(tmp_path / "output")
     cfg = CurioConfig()
     cfg.out_dir = out_dir
@@ -101,13 +101,16 @@ def _run(tmp_path, narration="ai", **over):
         setattr(cfg, key, val)
 
     chapters = _chapters()
+    scene_builder = (patch("curio.stages.scenes.build_chapters",
+                           side_effect=scene_error) if scene_error else
+                     patch("curio.stages.scenes.build_chapters",
+                           return_value=(chapters, "mock")))
     patches = [
         patch("curio.stages.research.research_topic", return_value=_sources()),
         patch("curio.stages.script.generate_script", return_value=(SCRIPT, "mock")),
         patch("curio.stages.script.generate_title",
               return_value=("Por que Marte é vermelho?", "mock")),
-        patch("curio.stages.scenes.build_chapters",
-              return_value=(chapters, "mock")),
+        scene_builder,
         patch("curio.stages.visual.fetch_media_multi",
               side_effect=lambda chs, c, mx, metrics=None, genre="": (
                   _media(chs, images), [])),
@@ -199,6 +202,21 @@ def test_integracao_completa(tmp_path):
     assert meta["subtitle_cues"] > 0
     srt = open(paths.subs_srt, encoding="utf-8").read()
     assert "687" in srt
+
+
+def test_falha_no_chain_de_cenas_em_ideia_cai_para_divisao_local(tmp_path):
+    from curio.pipeline import video_paths
+    from curio.stages.nvidia import NvidiaError
+    from curio.stages.scenes import _norm
+
+    error = NvidiaError("LLM indisponível após 6/6 rodadas")
+    meta, out_dir = _run(tmp_path, scene_error=error)
+    assert meta["scenes_source"] == "local"
+    assert any("cenas locais (chain LLM indisponível" in warning
+               for warning in meta["warnings"])
+    paths = video_paths(out_dir, "teste-integracao")
+    chapters = json.load(open(paths.chapters_json, encoding="utf-8"))
+    assert _norm(" ".join(ch["narration"] for ch in chapters)) == _norm(SCRIPT)
 
 
 def test_insercoes_desligadas_nao_quebram_o_video(tmp_path):

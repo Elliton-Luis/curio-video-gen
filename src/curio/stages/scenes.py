@@ -245,6 +245,15 @@ class Chapter:
     visual_entities: list[str] = field(default_factory=list)
     context: list[str] = field(default_factory=list)
     forbidden: list[str] = field(default_factory=list)
+    # Shared video context and explicit director output. Optional for old
+    # chapters.json files; queries are generated from representations first.
+    video_context: dict = field(default_factory=dict)
+    visual_intent_structured: str = ""
+    primary_entity: str = ""
+    event: str = ""
+    place: str = ""
+    period: str = ""
+    representations: list[dict] = field(default_factory=list)
     # --- papel tipográfico (retrocompatível: tudo opcional) -------------
     # A cena declara a FUNÇÃO do texto, nunca a fonte: `text_role="quote"`
     # significa "isto é uma citação", e quem decide que em `people` citação
@@ -292,6 +301,14 @@ class Chapter:
             visual_entities=[str(q) for q in d.get("visual_entities", [])],
             context=[str(q) for q in d.get("context", [])],
             forbidden=[str(q) for q in d.get("forbidden", [])],
+            video_context=(dict(d.get("video_context") or {})
+                           if isinstance(d.get("video_context"), dict) else {}),
+            visual_intent_structured=str(d.get("visual_intent_structured", "") or ""),
+            primary_entity=str(d.get("primary_entity", "") or ""),
+            event=str(d.get("event", "") or ""),
+            place=str(d.get("place", "") or ""),
+            period=str(d.get("period", "") or ""),
+            representations=_coerce_representations(d.get("representations", [])),
             text_role=papel,
             text_language=str(d.get("text_language", "") or "").strip().lower(),
             start=float(d.get("start", 0.0)),
@@ -457,6 +474,174 @@ def _coerce_str_list(raw: dict, key: str, limit: int) -> list[str]:
     return out[:limit]
 
 
+def _coerce_representations(raw) -> list[dict]:
+    """Normalize visual representations without splitting their phrases."""
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw[:8]:
+        if isinstance(item, dict):
+            query = str(item.get("query", item.get("visual", item.get("name", ""))) or "").strip()
+            if query:
+                try:
+                    level = int(item.get("level", len(out)) or 0)
+                except (TypeError, ValueError):
+                    level = len(out)
+                out.append({"query": query,
+                            "kind": str(item.get("kind", "related") or "related"),
+                            "level": level})
+        else:
+            query = str(item or "").strip()
+            if query:
+                out.append({"query": query, "kind": "related", "level": len(out)})
+    return out
+
+
+def _apply_video_context(chapters: list[Chapter], context) -> None:
+    if not isinstance(context, dict):
+        return
+    clean = {}
+    for key in ("topic", "primary_entities", "secondary_entities", "places",
+                "events", "period", "aliases"):
+        value = context.get(key, [])
+        if isinstance(value, str):
+            value = value if key in ("topic", "period") else [value]
+        if key in ("topic", "period"):
+            clean[key] = str(value or "").strip()
+        elif isinstance(value, list):
+            clean[key] = [str(x).strip() for x in value if str(x).strip()][:12]
+    for chapter in chapters:
+        chapter.video_context = clean
+
+
+def _repair_scene_count(chapters: list[Chapter], expected: int) -> bool:
+    """Repair count only after exact narration validation; never drop words."""
+    if not chapters or len(chapters) == expected:
+        return False
+    changed = False
+    while len(chapters) > expected:
+        # Merge only adjacent scenes sharing a declared visual anchor.
+        compatible = []
+        for i in range(len(chapters) - 1):
+            left, right = chapters[i], chapters[i + 1]
+            left_anchors = {textnorm.fold_phrase(x) for x in
+                            [left.primary_entity, left.event, left.subject]
+                            if str(x or "").strip()}
+            right_anchors = {textnorm.fold_phrase(x) for x in
+                             [right.primary_entity, right.event, right.subject]
+                             if str(x or "").strip()}
+            left_reps = {textnorm.fold_phrase(x.get("query", ""))
+                         for x in left.representations}
+            right_reps = {textnorm.fold_phrase(x.get("query", ""))
+                          for x in right.representations}
+            event_conflict = (left.event and right.event
+                              and textnorm.fold_phrase(left.event)
+                              != textnorm.fold_phrase(right.event))
+            if not event_conflict and ((left_anchors & right_anchors)
+                                       or (left_reps & right_reps)):
+                compatible.append(i)
+        if not compatible:
+            break
+        i = min(compatible, key=lambda n: len(chapters[n].narration.split())
+                + len(chapters[n + 1].narration.split()))
+        left, right = chapters[i], chapters[i + 1]
+        left.narration = (left.narration.rstrip() + " " + right.narration.lstrip())
+        for name in ("visual_queries", "global_visual_queries", "visual_entities",
+                     "context", "forbidden", "subject_aliases"):
+            setattr(left, name, list(dict.fromkeys(getattr(left, name)
+                                                   + getattr(right, name))))
+        left.representations = list({item["query"]: item for item in
+                                    left.representations + right.representations}.values())[:8]
+        left.visual_intent_structured = " / ".join(dict.fromkeys(
+            x for x in (left.visual_intent_structured,
+                        right.visual_intent_structured) if x))
+        if not left.event:
+            left.event = right.event
+        if not left.primary_entity:
+            left.primary_entity = right.primary_entity
+        chapters.pop(i + 1)
+        changed = True
+    while len(chapters) < expected:
+        from . import subs as subs_stage
+        options = []
+        for index, chapter in enumerate(chapters):
+            sentences = subs_stage._sentences(chapter.narration)
+            if len(sentences) < 2:
+                continue
+            anchors = [chapter.primary_entity, chapter.event, chapter.subject]
+            anchors.extend(rep.get("query", "") for rep in chapter.representations)
+            mid = len(sentences) // 2
+            for split in range(1, len(sentences)):
+                left_text, right_text = " ".join(sentences[:split]), " ".join(sentences[split:])
+                shared_anchor = next((anchor for anchor in anchors
+                                      if len(textnorm.tokens(str(anchor))) >= 2
+                                      and _contains_phrase(left_text, str(anchor))
+                                      and _contains_phrase(right_text, str(anchor))), "")
+                if shared_anchor:
+                    options.append((abs(split - mid), index, split,
+                                    sentences, chapter))
+                    break
+        if not options:
+            break
+        _, index, split, sentences, chapter = min(options)
+        left = Chapter.from_dict(chapter.to_dict())
+        right = Chapter.from_dict(chapter.to_dict())
+        left.narration = " ".join(sentences[:split])
+        right.narration = " ".join(sentences[split:])
+        chapters[index:index + 1] = [left, right]
+        changed = True
+    if not changed:
+        return False
+    for i, chapter in enumerate(chapters, 1):
+        chapter.id = i
+    return changed
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    hay = f" {textnorm.fold_phrase(text)} "
+    needle = textnorm.fold_phrase(phrase)
+    return bool(needle and f" {needle} " in hay)
+
+
+def _repair_scene_narration(chapters: list[Chapter], script: str) -> bool:
+    """Restore exact script spans when scene narration is a close paraphrase.
+
+    The planner supplies scene boundaries and intent. This alignment replaces
+    only narration with source sentences, and rejects weak/ambiguous mappings.
+    """
+    from . import subs as subs_stage
+    sentences = subs_stage._sentences(script)
+    if not chapters or len(sentences) < len(chapters):
+        return False
+    stop = textnorm.STOP_PT | textnorm.STOP_EN
+    chapter_terms = [set(textnorm.tokens(ch.narration)) - stop for ch in chapters]
+    sentence_terms = [set(textnorm.tokens(sentence)) - stop for sentence in sentences]
+    cursor, scores = 0, []
+    for index, chapter in enumerate(chapters):
+        remaining_chapters = len(chapters) - index - 1
+        max_end = len(sentences) - remaining_chapters
+        target_len = max(1, round(len(sentences) / len(chapters)))
+        best = None
+        for end in range(cursor + 1, max_end + 1):
+            source_terms = set().union(*sentence_terms[cursor:end])
+            model_terms = chapter_terms[index]
+            union = source_terms | model_terms
+            overlap = len(source_terms & model_terms) / max(1, len(union))
+            score = overlap - 0.035 * abs((end - cursor) - target_len)
+            if best is None or score > best[0]:
+                best = (score, end, overlap)
+        if best is None or best[2] < 0.22:
+            return False
+        scores.append(best[2])
+        chapter.narration = " ".join(sentences[cursor:best[1]])
+        cursor = best[1]
+    if cursor != len(sentences) or sum(scores) / len(scores) < 0.38:
+        return False
+    return _norm(" ".join(ch.narration for ch in chapters)) == _norm(script)
+
+
 def _payload_snippet(data, limit: int = 300) -> str:
     """Resumo seguro do payload p/ diagnóstico (sem segredos: só saída do modelo)."""
     import json as _json
@@ -478,6 +663,7 @@ def build_chapters(script: str, cfg: CurioConfig,
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target,
                                                alvo or 9.0, max_scenes)
     lo, hi = max(3, n_scenes - 1), n_scenes + 1
+    video_context = {}
     if nvidia_stage.any_llm_available():
         english = str(cfg.language or "").lower().startswith("en")
         system_prompt = (SCENES_SYSTEM_PROMPT_EN if english
@@ -500,6 +686,7 @@ def build_chapters(script: str, cfg: CurioConfig,
         run_event("provider", f"Cenas: {label}", operation="scenes",
                   provider=provider, model=label.split(":", 1)[-1])
         raw_list = _coerce_scene_list(data)
+        video_context = data.get("video_context", {}) if isinstance(data, dict) else {}
         if not raw_list:
             logged = run_event("fallback", f"Cenas {provider}: resposta sem lista; divisão local",
                                operation="scenes", fallback="local",
@@ -513,14 +700,22 @@ def build_chapters(script: str, cfg: CurioConfig,
             narration = str(raw.get("narration", "")).strip()
             if not narration:
                 continue
+            try:
+                scene_id = int(raw.get("index", raw.get("id", i)) or i)
+            except (TypeError, ValueError):
+                scene_id = i
             visual_queries, terms_str = _coerce_visual_terms(raw)
+            representations = _coerce_representations(raw.get("representations", []))
+            if not visual_queries and representations:
+                visual_queries = [item["query"] for item in representations[:5]]
+                terms_str = " ".join(visual_queries)
             vtype = str(raw.get("visual_type", "") or "").strip().lower()
             if vtype not in VISUAL_TYPES:
                 # IA sem o campo (prompt antigo) ou valor fora do conjunto:
                 # deriva do texto em vez de marcar tudo como literal.
                 vtype = classify_visual_type(narration)
             chapters.append(Chapter(
-                id=int(raw.get("index", raw.get("id", i)) or i),
+                id=scene_id,
                 narration=narration,
                 duration_estimate=estimate_duration(narration),
                 visual_queries=visual_queries,
@@ -532,10 +727,27 @@ def build_chapters(script: str, cfg: CurioConfig,
                 context=_coerce_str_list(raw, "context", 3),
                 forbidden=_genre_forbidden(_coerce_str_list(raw, "forbidden", 5),
                                           genre),
+                visual_intent_structured=str(raw.get("visual_intent", "") or "").strip(),
+                primary_entity=str(raw.get("primary_entity", raw.get("subject", "")) or "").strip(),
+                event=str(raw.get("event", "") or "").strip(),
+                place=str(raw.get("place", "") or "").strip(),
+                period=str(raw.get("period", "") or "").strip(),
+                representations=representations,
                 text_role=_coerce_text_role(raw.get("text_role")),
                 text_language=str(raw.get("text_language", "") or "").strip().lower(),
             ))
+        narration_repaired = False
+        if chapters and _norm(" ".join(c.narration for c in chapters)) != _norm(script):
+            narration_repaired = _repair_scene_narration(chapters, script)
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
+            repaired = _repair_scene_count(chapters, n_scenes)
+            _apply_video_context(chapters, video_context)
+            if repaired or narration_repaired:
+                run_event("result", f"Cenas {provider}: estrutura reparada",
+                          operation="scenes", expected=n_scenes,
+                          scenes=len(chapters),
+                          repair=[*(["merge_adjacent"] if repaired else []),
+                                  *(["restore_source_spans"] if narration_repaired else [])])
             return chapters, provider
         logged = run_event("fallback", f"Cenas {provider}: narração não reproduz roteiro; divisão local",
                            operation="scenes", fallback="local",
@@ -551,7 +763,9 @@ def build_chapters(script: str, cfg: CurioConfig,
                            reason="no provider key")
         if not logged:
             print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
-    return _local_chapters(script, n_scenes), "local"
+    chapters = _local_chapters(script, n_scenes)
+    _apply_video_context(chapters, video_context)
+    return chapters, "local"
 
 
 def apply_timings(chapters: list[Chapter],

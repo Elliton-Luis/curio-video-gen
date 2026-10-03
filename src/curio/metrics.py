@@ -105,6 +105,7 @@ class RunMetrics:
         self.visual_asset_beat_counts: dict[str, int] = {}
         self.visual_asset_scene_counts: dict[str, int] = {}
         self.visual_asset_details: dict[str, dict] = {}
+        self.media_scene_decisions: dict[str, dict] = {}
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -222,6 +223,15 @@ class RunMetrics:
         """Como cada cena foi visualizada. Um diagrama NÃO é falha."""
         v = (vtype or "desconhecido").strip()[:20]
         self.media_visual_types[v] = self.media_visual_types.get(v, 0) + 1
+
+    def media_record_scene_decision(self, scene_id: int, decision: dict) -> None:
+        """Persist bounded visual intent and candidate evidence per scene."""
+        if not isinstance(decision, dict):
+            return
+        safe = dict(decision)
+        safe["candidates"] = list(safe.get("candidates", []))[:40]
+        safe["queries"] = list(safe.get("queries", []))[:16]
+        self.media_scene_decisions[str(scene_id)] = safe
 
     def media_record_score(self, score: float) -> None:
         self.media_score_sum += float(score or 0.0)
@@ -407,6 +417,7 @@ class RunMetrics:
                 "visual_asset_beat_counts": dict(self.visual_asset_beat_counts),
                 "visual_asset_scene_counts": dict(self.visual_asset_scene_counts),
                 "visual_asset_details": dict(self.visual_asset_details),
+                "media_scene_decisions": dict(self.media_scene_decisions),
                 "visual_assets_reused": max(
                     0, sum(self.visual_asset_scene_counts.values()) - len(self.visual_asset_ids)),
                 "visual_average_seconds_per_beat": (
@@ -468,7 +479,10 @@ class RunMetrics:
     def save(self, meta: dict, stage_times: dict, metrics_dir: str) -> str:
         os.makedirs(metrics_dir, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        path = os.path.join(metrics_dir, f"{stamp}_{self.slug}.json")
+        # Project references may include a genre prefix ("history/<slug>").
+        # Keep that path out of the metrics filename.
+        safe_slug = self.slug.replace("/", "_").replace("\\", "_")
+        path = os.path.join(metrics_dir, f"{stamp}_{safe_slug}.json")
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(self.to_dict(meta, stage_times, metrics_dir), fh,
                       ensure_ascii=False, indent=1)
@@ -489,7 +503,8 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
                      "(execução anterior à metrificação)")
     for section in ("nvidia", "tts", "media", "whisper"):
         doc["consumption"][section] = None
-    path = os.path.join(metrics_dir, f"{stamp}_{slug}.json")
+    safe_slug = slug.replace("/", "_").replace("\\", "_")
+    path = os.path.join(metrics_dir, f"{stamp}_{safe_slug}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, ensure_ascii=False, indent=1)
     return path

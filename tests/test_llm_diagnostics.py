@@ -17,9 +17,13 @@ def _response(content, finish, completion_tokens):
 
 
 class _FakeResp:
-    def __init__(self, status, payload: bytes):
+    def __init__(self, status, payload: bytes, headers=None):
         self.status = status
         self._payload = payload
+        self._headers = headers or {}
+
+    def getheader(self, name):
+        return self._headers.get(name)
 
     def read(self, _n):
         if self._payload:
@@ -133,6 +137,57 @@ def test_mistral_429_preserves_api_message_and_redacts_key(monkeypatch):
     assert "HTTP 429" in str(caught.value)
     assert "Rate limit exceeded" in str(caught.value)
     assert "secret-key" not in str(caught.value)
+
+
+def test_groq_retry_after_hint_is_parsed_and_rate_limit_retries_are_bounded(
+        monkeypatch):
+    delays, calls = [], []
+    monkeypatch.setattr(N.time, "sleep", delays.append)
+
+    def rate_limited(*_args, **_kwargs):
+        calls.append(1)
+        error = N.NvidiaError(
+            "HTTP 429 Rate limit. Please try again in 539.999999ms.")
+        error.retryable = True
+        error.http_status = 429
+        error.retry_after = N._retry_after_seconds(
+            _FakeResp(429, b""), "Please try again in 539.999999ms")
+        raise error
+
+    monkeypatch.setattr(N, "_post_once", rate_limited)
+    with pytest.raises(N.NvidiaError) as caught:
+        N._post_with_retries([], "key", "model", "https://groq.test/v1",
+                             15, 2000, 0.0, "groq", json_mode=True)
+    assert len(calls) == N.RATE_LIMIT_MAX_ATTEMPTS == 2
+    assert delays == [pytest.approx(.54)]
+    assert caught.value.retry_exhausted is True
+    assert caught.value.http_status == 429
+
+
+def test_retry_after_header_is_honored_ahead_of_body_text():
+    response = _FakeResp(429, b"", {"Retry-After": "3.25"})
+    assert N._retry_after_seconds(response, "try again in 0.1s") == 3.25
+
+
+def test_long_retry_after_rotates_without_sleeping_for_minutes(monkeypatch):
+    delays, calls = [], []
+    monkeypatch.setattr(N.time, "sleep", delays.append)
+
+    def rate_limited(*_args, **_kwargs):
+        calls.append(1)
+        error = N.NvidiaError("HTTP 429; Retry-After: 539")
+        error.retryable = True
+        error.http_status = 429
+        error.retry_after = 539.0
+        raise error
+
+    monkeypatch.setattr(N, "_post_once", rate_limited)
+    with pytest.raises(N.NvidiaError) as caught:
+        N._post_with_retries([], "key", "model", "https://groq.test/v1",
+                             15, 2000, 0.0, "groq", json_mode=True)
+    assert len(calls) == 1
+    assert delays == []
+    assert caught.value.retry_exhausted is True
 
 
 def test_nvidia_http_400_is_reported_as_a_permanent_provider_error(monkeypatch):

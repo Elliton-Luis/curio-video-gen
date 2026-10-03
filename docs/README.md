@@ -7,6 +7,10 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261003-122730_relatorio-falha-chain-llm-cenas.md` — elimina timeout ilimitado, respeita rate limit Groq e recupera cenas locais em ideia automática; suíte 780/780.
+- `relatorios/20261003-121500_relatorio-fallback-cenas-llm.md` — corrige espera NVIDIA sem timeout, limita 429 e preserva geração automática com fallback local; 779 testes passaram.
+- `relatorios/20261003-095825_relatorio-direcao-visual.md` — Fase 2 final: diretor/contexto estruturados, gates independentes, funis reais para cinco temas, falsos positivos antes/depois e suíte 775/775.
+- `relatorios/20261003-002807_relatorio-fase2-direcao-visual-parcial.md` — estado parcial da fase 2: contratos de intenção, ranking semântico, reparo de cenas, CLIP opcional, testes atuais e validações pendentes.
 - `relatorios/20261002-205941_relatorio-queries-eletricas-tesla.md` — queries compostas para corrente elétrica e filtro contra rio/homônimos Tesla; 738 testes verdes.
 - `relatorios/20261002-205829_relatorio-aprendizado-contavel.md` — roteiro exige compreensão sem replay e takeaway retellable; 736 testes verdes.
 - `relatorios/20261002-203402_relatorio-musica-mood-genero.md` — seleção exige mood compatível com adapter; faixa contemplativa/haunting não entra em people; 735 testes verdes.
@@ -143,6 +147,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Análises (estado, gaps, riscos)
 
+- `analises/20261002-184536_analise-direcao-visual.md` — fluxo real de mídia, causas semânticas, evidências métricas, contratos e arquitetura proposta; diagnóstico sem mudança de código.
 - `analises/20261002-205941_analise-imagens-tesla-corrente.md` — fallback local descontextualizou corrente e Tesla; métricas mostram pontes, Gigafactory e rua no lugar de invenções.
 - `analises/20261002-190300_analise-midia-marco-revolucao.md` — métricas e títulos confirmam desvio lexical em dois vídeos locais.
 - `analises/20261002-150849_relatorio_refatoracao-etapas-1-2.md` — implementação das etapas 1–2, gates, `textnorm` e `ResearchResult` explícito.

@@ -2,14 +2,14 @@
 
 Chain OpenAI-compatível (`{base_url}/chat/completions`), nesta ordem —
 cada um pulado sem chave, tentado com retries quando há chave:
-1. NVIDIA;
-2. Groq;
+1. Groq;
+2. NVIDIA;
 3. OpenRouter;
 4. Mistral;
 5. Gemini.
 - Rodízio intercalado para texto livre; JSON segue ordem preferencial.
-  Erros definitivos removem provider; erros transitórios seguem budget e
-  retries HTTP configurados. Diagnósticos resumem tentativas e falhas.
+  Erros definitivos removem provider; HTTP 429 tem retry curto e timeout é
+  sempre finito. Falha de planejamento visual preserva narração localmente.
 - Somente stdlib (urllib). Erros explícitos; chaves nunca aparecem em
   mensagens, logs ou metadados.
 """
@@ -23,6 +23,7 @@ import socket
 import sys
 import time
 import urllib.parse
+from email.utils import parsedate_to_datetime
 
 from .. import __version__
 from .prompts import SCRIPT_SYSTEM_PROMPT, SCRIPT_SYSTEM_PROMPT_EN
@@ -97,6 +98,8 @@ PROVIDER_ORDER = ("groq", "nvidia", "openrouter", "mistral", "gemini")
 # Tentativas totais no rodízio (`CURIO_LLM_ATTEMPTS`). Padrão 6.
 DEFAULT_ATTEMPTS = 6
 RETRY_BASE_DELAY = 2.0  # backoff: 2s, 4s, 8s… (teto 30s)
+RATE_LIMIT_MAX_ATTEMPTS = 2
+RATE_LIMIT_MAX_WAIT = 5.0
 
 # Modelos irmãos da família Nemotron 3 (referência futura — NÃO usados aqui:
 # sem fallback/round-robin nesta etapa).
@@ -308,7 +311,7 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
 
     Conexão e resposta têm orçamentos separados: o handshake usa
     `connect_timeout` (padrão 10 s); o envio+resposta usa `timeout`
-    (orçamento total, None = sem teto no fallback resiliente final).
+    (orçamento total de resposta/processamento; sempre finito).
     """
     import http.client
     spec = PROVIDER_SPECS[pid]
@@ -340,14 +343,7 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         ctimeout = llm_connect_timeout(connect_timeout)
     except Exception:  # noqa: BLE001 — nunca derruba a chamada
         ctimeout = CONNECT_TIMEOUT_DEFAULT
-    total = None
-    if timeout is not None:
-        try:
-            total = int(timeout)
-            if total <= 0:
-                total = None
-        except (TypeError, ValueError):
-            total = None
+    total = call_timeout_max(timeout)
     parts = urllib.parse.urlsplit(base_url.rstrip("/") + "/chat/completions")
     host = parts.hostname or ""
     port = parts.port or (443 if parts.scheme == "https" else 80)
@@ -388,10 +384,7 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
     # Handshake OK: o socket passa a tolerar até o orçamento TOTAL
     # (modelo lento que transmite aos poucos não é cortado no meio).
     try:
-        if total is not None:
-            conn.sock.settimeout(total)
-        else:
-            conn.sock.settimeout(None)
+        conn.sock.settimeout(total)
     except (OSError, AttributeError):
         pass
     try:
@@ -401,9 +394,9 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         # Leitura em chunks com teto total: silêncio além do orçamento
         # vira timeout de resposta/processamento, não de conexão.
         chunks: list[bytes] = []
-        deadline = (start + total) if total is not None else None
+        deadline = start + total
         while True:
-            if deadline is not None and time.monotonic() > deadline:
+            if time.monotonic() > deadline:
                 raise TimeoutError(
                     f"orçamento total de {total}s excedido lendo a resposta")
             try:
@@ -413,7 +406,7 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
             if not piece:
                 break
             chunks.append(piece)
-            if deadline is not None and time.monotonic() > deadline:
+            if time.monotonic() > deadline:
                 raise TimeoutError(
                     f"orçamento total de {total}s excedido lendo a resposta")
         raw = b"".join(chunks)
@@ -422,17 +415,14 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
             conn.close()
         except Exception:  # noqa: BLE001 — limpeza best-effort
             pass
-        prazo = (f"{total}s de resposta/processamento"
-                 if total is not None else "sem orçamento total")
+        prazo = f"{total}s de resposta/processamento"
         err = NvidiaError(
             f"etapa {display}: timeout de resposta/processamento "
             f"({prazo}) com o modelo {model} — conexão OK, o modelo "
             f"não concluiu a tempo. Detalhe: {exc}.")
         err.retryable = True
         err.http_attempts = 1
-        # Resposta lenta: não repetir aqui dentro (evita N×orçamento
-        # no mesmo provedor); o rodízio troca imediatamente de provedor.
-        # O fallback resiliente final controla seus próprios 5 retries.
+        # Resposta lenta: não repetir internamente; chain troca de provider.
         err.fast_fail = total is not None
         raise err from exc
     except (http.client.HTTPException, OSError) as exc:
@@ -465,6 +455,8 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
         # 4xx, exceto 429, são definitivos; 429/5xx seguem retries internos.
         err.retryable = status == 429 or 500 <= status < 600
         err.http_attempts = 1
+        if status == 429:
+            err.retry_after = _retry_after_seconds(resp, detail)
         raise err
     try:
         body = json.loads(raw.decode("utf-8"))
@@ -478,14 +470,39 @@ def _post_once(messages: list[dict], key: str, model: str, base_url: str,
     return body
 
 
+def _retry_after_seconds(response, detail: str) -> float | None:
+    """Read Retry-After header or Groq's textual wait hint."""
+    raw = ""
+    getheader = getattr(response, "getheader", None)
+    if callable(getheader):
+        try:
+            raw = str(getheader("Retry-After") or "").strip()
+        except Exception:  # noqa: BLE001 — diagnostic metadata is optional
+            raw = ""
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            try:
+                return max(0.0, parsedate_to_datetime(raw).timestamp() - time.time())
+            except (TypeError, ValueError, OverflowError):
+                pass
+    match = re.search(r"try again in\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|seconds?)",
+                      str(detail or ""), re.I)
+    if not match:
+        return None
+    delay = float(match.group(1))
+    return delay / 1000.0 if match.group(2).lower() in ("ms", "millisecond", "milliseconds") else delay
+
+
 def _post_with_retries(messages: list[dict], key: str, model: str,
                        base_url: str, timeout: int | None, max_tokens: int,
                        temperature: float, pid: str, json_mode: bool = False) -> dict:
     """Até N requests HTTP dentro de uma rodada de provider.
 
-    N = `max_attempts()` (padrão 6). Este contador é interno à rodada; `_chat`
-    conta rodadas globais separadamente. Erro definitivo, timeout fast-fail ou
-    esgotamento propagam `http_attempts` para o levantamento final.
+    N = `max_attempts()` (padrão 6), exceto HTTP 429: no máximo duas tentativas
+    curtas por provider, respeitando Retry-After até RATE_LIMIT_MAX_WAIT. Este
+    contador é interno à rodada; `_chat` conta rodadas globais separadamente.
     """
     display = PROVIDER_SPECS[pid]["display"]
     attempts, last = max_attempts(), None
@@ -498,24 +515,35 @@ def _post_with_retries(messages: list[dict], key: str, model: str,
             exc.http_attempts = i
             if getattr(exc, "fast_fail", False):
                 raise last  # timeout: troca de provedor já, sem retry interno
-            if not getattr(exc, "retryable", False) or i == attempts:
-                if i == attempts and getattr(exc, "retryable", False):
+            rate_limited = getattr(exc, "http_status", None) == 429
+            attempt_limit = RATE_LIMIT_MAX_ATTEMPTS if rate_limited else attempts
+            retry_after = getattr(exc, "retry_after", None)
+            if rate_limited and retry_after is not None and retry_after > RATE_LIMIT_MAX_WAIT:
+                exc.retry_exhausted = True
+                raise last
+            if not getattr(exc, "retryable", False) or i >= attempt_limit:
+                if i >= attempt_limit and getattr(exc, "retryable", False):
                     last = NvidiaError(
-                        f"{exc} (após {attempts} tentativas)")
+                        f"{exc} (após {attempt_limit} tentativas)")
                     last.retryable = True
                     last.retry_exhausted = True
                     last.http_attempts = i
+                    if rate_limited:
+                        last.http_status = 429
+                        last.retry_after = retry_after
                 raise last
-            delay = RETRY_BASE_DELAY * (2 ** (i - 1))
+            delay = (min(RATE_LIMIT_MAX_WAIT, max(0.0, retry_after))
+                     if rate_limited and retry_after is not None else
+                     min(30.0, RETRY_BASE_DELAY * (2 ** (i - 1))))
             from ..runlog import event as run_event
             logged = run_event(
-                "retry", f"{display}: tentativa {i}/{attempts}; "
-                f"{exc}; nova tentativa em {delay:.0f}s",
+                "retry", f"{display}: tentativa {i}/{attempt_limit}; "
+                f"{exc}; nova tentativa em {delay:.2f}s",
                 provider=display, model=model, attempt=i,
-                attempts=attempts, delay_seconds=delay, error=str(exc))
+                attempts=attempt_limit, delay_seconds=delay, error=str(exc))
             if not logged:
-                print(f"[{display}] tentativa {i}/{attempts} falhou "
-                      f"(transitório): {exc} — nova tentativa em {delay:.0f}s…",
+                print(f"[{display}] tentativa {i}/{attempt_limit} falhou "
+                      f"(transitório): {exc} — nova tentativa em {delay:.2f}s…",
                       flush=True)
             time.sleep(delay)
     raise last  # inalcançável (loop sempre retorna ou levanta)
@@ -633,15 +661,12 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
            response_validator=None) -> tuple[dict, str]:
     """Chat em ordem de preferência: Groq, NVIDIA, OpenRouter, Mistral, Gemini.
 
-    Cada rodada vai ao próximo provider da rotação; erro definitivo (401/403/404)
-    elimina o provedor do rodízio. Retorna (body, rótulo-do-provedor).
-    O budget global conta rodadas; os retries HTTP internos são contabilizados
-    à parte. Esgotado o budget, se só NVIDIA restar, usa fallback final sem
-    timeout em vez de encerrar com ela ainda viável.
+    Cada rodada vai ao próximo provider; erros definitivos e timeouts finitos
+    removem o provider do rodízio. Retorna (body, label). O budget global conta
+    rodadas; retries HTTP internos são contabilizados à parte.
 
-    `prefer` reordena providers, sem interleaving. NVIDIA não tem teto de
-    resposta; handshake continua limitado separadamente a 10 s. Outros
-    providers usam o timeout global e eventual teto próprio.
+    `prefer` reordena providers, sem interleaving. Handshake e resposta têm
+    orçamentos finitos para todos os providers.
     """
     try:
         timeout = max(1, min(int(timeout), call_timeout_max(timeout_max)))
@@ -670,14 +695,13 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
     rounds: dict[str, int] = {}
     attempts: dict[str, int] = {}
     last_err: dict[str, str] = {}
-    nvidia_last_candidate = False
     for pid in _rotation(list(live)):
         if not live:
             break
         if live == ["nvidia"]:
-            return _nvidia_resilient_fallback(
+            return _nvidia_final_attempt(
                 messages, model, base_url, max_tokens, temperature, json_mode,
-                metrics, budget, made, rounds, attempts, last_err, skipped)
+                timeout, metrics, budget, made, rounds, attempts, last_err, skipped)
         if made >= budget:
             break
         if pid not in live:
@@ -687,9 +711,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
         om, ob = resolved[pid]
         dft_model, dft_base = llm_settings(pid)
         use_model, use_base = om or dft_model, ob or dft_base
-        # NVIDIA pode precisar de tempo arbitrário para concluir. Seu socket
-        # espera sem teto; os outros providers continuam com timeout global.
-        teto_pid = None if pid == "nvidia" else timeout
+        teto_pid = timeout
         if pid != "nvidia" and pid in LLM_PROVIDER_TIMEOUT:
             teto_pid = max(timeout, int(LLM_PROVIDER_TIMEOUT[pid]))
         try:
@@ -731,11 +753,8 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
                     print(f"[{PROVIDER_SPECS[pid]['display']}] erro definitivo "
                           f"— fora do rodízio: {exc}", flush=True)
             elif getattr(exc, "retry_exhausted", False):
-                # O retry interno já consumiu o orçamento HTTP desse provider
-                # nesta execução; não reinicia outro bloco 1/6 depois.
+                # Internal HTTP budget spent; do not start another retry block.
                 live.remove(pid)
-                if pid == "nvidia":
-                    nvidia_last_candidate = True
                 if not logged:
                     print(f"[{PROVIDER_SPECS[pid]['display']}] esgotou "
                           f"{getattr(exc, 'http_attempts', 1)} tentativa(s) HTTP "
@@ -745,10 +764,7 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
                     print(f"[{PROVIDER_SPECS[pid]['display']}] tentativa "
                           f"{made}/{budget} falhou (timeout): {exc} — "
                           f"trocando de provedor já…", flush=True)
-                if pid != "nvidia":
-                    # Timeout rápido põe os fallbacks no banco nesta execução;
-                    # a NVIDIA fica elegível para o modo final sem timeout.
-                    live.remove(pid)
+                live.remove(pid)
             elif made < budget and live:
                 delay = min(30.0, RETRY_BASE_DELAY * (2 ** (made - 1)))
                 if not logged:
@@ -757,21 +773,16 @@ def _chat(messages: list[dict], max_tokens: int, temperature: float,
                           f"rodízio em {delay:.0f}s…", flush=True)
                 time.sleep(delay)
             if live == ["nvidia"]:
-                return _nvidia_resilient_fallback(
+                return _nvidia_final_attempt(
                     messages, model, base_url, max_tokens, temperature,
-                    json_mode, metrics, budget, made, rounds, attempts,
-                    last_err, skipped)
-            if not live and nvidia_last_candidate:
-                return _nvidia_resilient_fallback(
-                    messages, model, base_url, max_tokens, temperature,
-                    json_mode, metrics, budget, made, rounds, attempts,
-                    last_err, skipped)
+                    json_mode, timeout, metrics, budget, made, rounds,
+                    attempts, last_err, skipped)
             continue
         return body, f"{pid}:{use_model}"
-    if live == ["nvidia"] or (not live and nvidia_last_candidate):
-        return _nvidia_resilient_fallback(
+    if live == ["nvidia"]:
+        return _nvidia_final_attempt(
             messages, model, base_url, max_tokens, temperature, json_mode,
-            metrics, budget, made, rounds, attempts, last_err, skipped)
+            timeout, metrics, budget, made, rounds, attempts, last_err, skipped)
     raise NvidiaError(_survey(budget, made, attempts, last_err,
                               skipped, live, rounds))
 
@@ -789,8 +800,8 @@ def _survey(budget: int, made: int, attempts: dict, last_err: dict,
                          f"em {rounds.get(pid, 0)} rodada(s), "
                          f"último erro: {last_err.get(pid, '?')}")
     if final_attempts:
-        parts.append(f"NVIDIA fallback resiliente: {final_attempts}/5 tentativa(s) "
-                     f"sem timeout ({final_outcome or 'interrompido'}); "
+        parts.append(f"NVIDIA última tentativa: {final_attempts}/1 "
+                     f"com timeout finito ({final_outcome or 'interrompido'}); "
                      f"último erro: {last_err.get('nvidia', '?')}")
     parts.extend(skipped)
     if remaining:
@@ -802,64 +813,41 @@ def _survey(budget: int, made: int, attempts: dict, last_err: dict,
     return " | ".join(parts)
 
 
-def _nvidia_resilient_fallback(messages: list[dict], model: str,
-                               base_url: str, max_tokens: int,
-                               temperature: float, json_mode: bool,
-                               metrics, budget: int, made: int,
-                               rounds: dict, attempts: dict, last_err: dict,
-                               skipped: list[str]) -> tuple[dict, str]:
-    """Último caminho: aguarda sem timeout e tenta no máximo cinco vezes."""
+def _nvidia_final_attempt(messages: list[dict], model: str,
+                          base_url: str, max_tokens: int,
+                          temperature: float, json_mode: bool,
+                          timeout: int,
+                          metrics, budget: int, made: int,
+                          rounds: dict, attempts: dict, last_err: dict,
+                          skipped: list[str]) -> tuple[dict, str]:
+    """Último caminho: uma tentativa NVIDIA limitada pelo timeout configurado."""
     display = PROVIDER_SPECS["nvidia"]["display"]
     from ..runlog import event as run_event
-    managed = run_event("fallback", "NVIDIA: fallback final sem timeout",
-                        provider="nvidia", model=model, max_attempts=5)
-    if not managed:
-        print(f"[{display}] último provider viável — fallback resiliente", flush=True)
+    limit = max(1, min(int(timeout), call_timeout_max(None)))
+    run_event("fallback", "NVIDIA: última tentativa com timeout finito",
+              provider="nvidia", model=model, timeout_seconds=limit,
+              max_attempts=1)
+    # RunLog-bound TUI suppresses several provider prints. Always show this
+    # long-wait boundary so the operator knows fallback is active and bounded.
+    print(f"[{display}] última tentativa limitada a {limit}s; "
+          "falha de cenas usa divisão local.", file=sys.stderr, flush=True)
     key = CREDENTIALS["nvidia"].from_env().active_key
-    for i in range(1, 6):
-        if not managed:
-            print(f"[{display}] tentativa {i}/5 — aguardando sem timeout...",
-                  flush=True)
-        try:
-            body = _post_once(messages, key, model, base_url, None,
-                              max_tokens, temperature, "nvidia", json_mode)
-        except NvidiaError as exc:
-            last_err["nvidia"] = str(exc)
-            if not getattr(exc, "retryable", False):
-                if not managed:
-                    print(f"[{display}] erro definitivo no fallback resiliente — "
-                          f"encerrando: {exc}", flush=True)
-                raise NvidiaError(_survey(
-                    budget, made, attempts, last_err, skipped, [], rounds,
-                    final_attempts=i, final_outcome="erro definitivo")) from exc
-            if i == 5:
-                if not managed:
-                    print(f"[{display}] 5 tentativas transitórias falharam; encerrando.",
-                          flush=True)
-                raise NvidiaError(_survey(
-                    budget, made, attempts, last_err, skipped, [], rounds,
-                    final_attempts=5, final_outcome="5 falhas transitórias")) from exc
-            delay = min(30.0, RETRY_BASE_DELAY * (2 ** (i - 1)))
-            if managed:
-                run_event("retry", f"NVIDIA fallback: tentativa {i}/5; "
-                          f"{exc}; nova tentativa em {delay:.0f}s",
-                          provider="nvidia", model=model, attempt=i,
-                          attempts=5, delay_seconds=delay, error=str(exc))
-            else:
-                print(f"[{display}] falha transitória ({i}/5): {exc} — "
-                      f"nova tentativa em {delay:.0f}s…", flush=True)
-            time.sleep(delay)
-            continue
-        if metrics is not None:
-            metrics.nvidia(f"nvidia:{model}", (body or {}).get("usage"))
-        if managed:
-            run_event("provider", f"Provider: NVIDIA / {model}",
-                      provider="nvidia", model=model,
-                      usage=(body or {}).get("usage"), fallback_attempt=i)
-        return body, f"nvidia:{model}"
-    raise NvidiaError(_survey(budget, made, attempts, last_err, skipped, [], rounds,
-                              final_attempts=5,
-                              final_outcome="5 falhas transitórias"))
+    try:
+        body = _post_once(messages, key, model, base_url, limit,
+                          max_tokens, temperature, "nvidia", json_mode)
+    except NvidiaError as exc:
+        last_err["nvidia"] = str(exc)
+        raise NvidiaError(_survey(
+            budget, made, attempts, last_err, skipped, [], rounds,
+            final_attempts=1,
+            final_outcome=("erro definitivo" if not getattr(exc, "retryable", False)
+                           else f"timeout/transitório em {limit}s"))) from exc
+    if metrics is not None:
+        metrics.nvidia(f"nvidia:{model}", (body or {}).get("usage"))
+    run_event("provider", f"Provider: NVIDIA / {model}",
+              provider="nvidia", model=model,
+              usage=(body or {}).get("usage"), fallback_attempt=1)
+    return body, f"nvidia:{model}"
 
 
 def _extract_json(text: str) -> dict:

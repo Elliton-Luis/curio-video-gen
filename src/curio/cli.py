@@ -750,7 +750,7 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
           f"(CURIO_MEDIA_SCORE_MIN), lado mínimo "
           f"{media_rules.min_dimension()}px "
           f"(CURIO_MEDIA_MIN_DIMENSION)")
-    _clip = scoring_stage.clip_status()
+    _clip = scoring_stage.clip_status(cfg)
     if _clip is None:
         print("[--] scoring semântico (CLIP) — desligado; usando a camada base")
     else:

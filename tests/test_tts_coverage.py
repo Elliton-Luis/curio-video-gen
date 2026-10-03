@@ -179,6 +179,9 @@ def test_pipeline_recusa_cache_parcial_e_ressintetiza(tmp_path, monkeypatch):
     monkeypatch.setattr(pipe.ff, "probe_duration", lambda p: 8.64)
     monkeypatch.setattr(pipe.subs_stage, "write_subtitles",
                         lambda *a, **k: 10)
+    monkeypatch.setattr(pipe.render_stage, "burn_final",
+                        lambda *a, **k: {"duration": 108.0,
+                                         "backend": "test", "encoder": "test"})
     meta = pipe.run_pipeline("ideia teste", cfg, slug=slug, max_images=1)
     assert called.get("n") == 1  # cache parcial ignorado, sintetizou
     assert meta["audio_duration"] == 108.0
@@ -206,6 +209,9 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
     monkeypatch.setattr(pipe.ff, "probe_duration", lambda p: 30.0)
     monkeypatch.setattr(pipe.subs_stage, "write_subtitles",
                         lambda *a, **k: 10)
+    monkeypatch.setattr(pipe.render_stage, "burn_final",
+                        lambda *a, **k: {"duration": 30.0,
+                                         "backend": "test", "encoder": "test"})
     meta = pipe.run_pipeline("ideia teste", cfg, slug=slug, max_images=1)
     assert meta["tts_reused"] is True
     assert meta["audio_duration"] == 30.0

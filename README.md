@@ -306,32 +306,47 @@ Cada cena declara, na etapa de cenas, o que precisa mostrar e como:
 Fluxo da decisão:
 
 ```text
-cena → o que precisa ser mostrado → visual_type → estratégia
-     → busca → filtros eliminatórios → nota → visual final
+roteiro → contexto global → intenção visual por cena → representações
+        → queries → providers → gate técnico e semântico
+        → relevância temática + relevância da cena → ranking → visual/fallback
 ```
 
 Diagrama e cartão são gerados por código (Pillow, já usado no projeto),
 sem rede e sem licença de terceiros. Nenhum deles inventa conteúdo: as
 palavras vêm do que a cena declarou.
 
-**Filtros eliminatórios** rejeitam: licença bloqueada ou incompatível com
-edição de vídeo, resolução menor que 1080 px no lado curto, arquivo
-acima do teto, e títulos com termo decorativo (`wallpaper`, `4k`,
-`background`, `mockup`, `template`, `logo`…) ou com um termo que a própria
-cena declarou proibido — foi assim que "térmico" parou de puxar usina
-termelétrica e "tinta" parou de puxar uva.
+**Gate técnico** rejeita licença bloqueada, resolução insuficiente,
+arquivo acima do teto e termos decorativos/proibidos. **Gate semântico**
+separa relevância para o tópico do vídeo e para a cena atual. Usa frases
+completas da intenção e representações, além de descrição, tags, categorias,
+data e tipo quando o provider fornece esses metadados. Um token compartilhado
+não aprova imagem.
 
-**Nota de relevância** (0–100) = cobertura do assunto (até 75) + bônus
-pelas entidades pedidas na cena (até 25). Lê o **título** da imagem, nunca
-as tags do provedor: tag é palpite de quem doou o acervo, e é
-justamente ela que traz "wallpaper, 4k" para uma cena de conteúdo. Abaixo
-do mínimo, a cena **não** fica com a imagem "menos ruim" — ela troca de
-estratégia.
+O ranking prioriza relevância da cena, depois tópico, qualidade e diversidade.
+Metadata do provider informa evidência e desempate; não substitui prova da
+representação. Abaixo do mínimo, a cena troca de estratégia visual em vez de
+usar candidato "menos ruim". Decisão, queries, providers, evidências,
+rejeições e fallback ficam em `media.json` e `metrics/*.json`.
 
 Provedores sem chave não quebram o fluxo: `video-gen doctor` lista cada
 um e o motivo de cada exclusão. Para `historical_art`, os museus (Met, AIC)
 e Wikimedia são consultados antes dos bancos genéricos; só entra obra em
 domínio público com imagem e direitos claros.
+
+### CLIP opcional
+
+CLIP apenas reranqueia shortlist já aprovada pelos gates; nunca pesquisa e
+nunca aprova candidato rejeitado. Padrão desligado. Instale a extra opcional
+com `pip install 'curio[clip]'` e configure em `[visual]`:
+
+```toml
+clip_enabled = true
+clip_device = "auto" # auto | xpu | cuda | mps | cpu
+clip_allow_cpu = false
+```
+
+`auto` usa acelerador disponível. CPU exige `clip_device = "cpu"` ou
+`clip_allow_cpu = true`. A instalação normal não instala dependências ML.
 
 ## Revisão humana
 
@@ -365,6 +380,9 @@ arquivo. Chaves de API nunca vão no código nem no repo — use `.env`
 |---|---|
 | `CURIO_GENRE` | gênero editorial: `history`, `etymology`, `mythology`, `mystery`, `science`, `people` (vazio = nenhum) |
 | `CURIO_TYPOGRAPHY_<GÊNERO>` | fonte por gênero sem config.toml: `"primary=Minion Pro;italic=Minion Pro Italic"` |
+| `CURIO_CLIP_ENABLED` | liga reranking CLIP opcional (`1`/`true`; desligado por padrão) |
+| `CURIO_CLIP_DEVICE` | device CLIP: `auto`, `xpu`, `cuda`, `mps` ou `cpu` |
+| `CURIO_CLIP_ALLOW_CPU` | permite CPU com device `auto` (`1`/`true`) |
 | `CURIO_CONTACT` | **defina isto.** contato no `User-Agent`; sem ele a Wikimedia responde `429` a tudo, o que derruba a pesquisa e as imagens do Commons |
 | `CURIO_WIKI_UA` | substitui o `User-Agent` inteiro, se preferir |
 
@@ -377,26 +395,24 @@ não é um erro legível — é `HTTP 429` em toda requisição.
 | Chave (config) | Variável | Padrão | O que faz |
 |---|---|---|---|
 | `[media] providers` | `CURIO_MEDIA_PROVIDERS` | `pixabay,unsplash,pexels,nasa,met,aic,wikimedia` | ordem de tentativa; `none` desliga |
-| — | `CURIO_MEDIA_SCORE_MIN` | `34` | nota mínima (0–100); `0` desliga o corte || — | `CURIO_MEDIA_MIN_DIMENSION` | `1080` | lado mínimo em px |
+| — | `CURIO_MEDIA_SCORE_MIN` | `34` | nota mínima (0–100); `0` desliga o corte |
+| — | `CURIO_MEDIA_MIN_DIMENSION` | `1080` | lado mínimo em px |
 
-### Pontuação semântica (opcional, desligada)
+### CLIP opcional (desligado por padrão)
 
-A camada `base` (lexical) é a padrão e **não** precisa de nada além do
-projeto. A camada CLIP existe como ponto de extensão e é **desligada por
-padrão** — o `curio` não instala nem baixa torch, `open_clip` ou pesos de
-modelo:
+O gate temático e de cena por metadados roda sem dependências ML. CLIP só
+reranqueia shortlist que já passou pelo gate; não pesquisa e não reabilita
+candidato rejeitado. Instale a extra apenas se quiser CLIP:
 
 ```bash
-CURIO_CLIP_ENABLED=1     # liga (exige torch + open_clip instalados à mão)
-CURIO_CLIP_DEVICE=auto  # auto | xpu | cuda | mps | cpu
+pip install 'curio[clip]'
 ```
 
-Com `auto`, o projeto procura aceleradores de verdade no torch
-instalado — `xpu` (Intel, o caso do Arc B580), `cuda`, `mps` — e só
-recua para `cpu` se nenhum existir. `video-gen doctor` informa o estado
-da camada e o device. CLIP entra **depois** dos filtros e da nota base,
-só nos melhores candidatos, porque inferência pesada em todos eles
-transformaria um vídeo rápido em lento.
+Ative em `[visual]` com `clip_enabled = true` ou via `CURIO_CLIP_ENABLED=1`.
+`auto` usa XPU, CUDA ou MPS disponíveis. CPU exige `clip_device = "cpu"` ou
+`clip_allow_cpu = true`. A primeira execução habilitada pode baixar pesos do
+modelo; execução normal não carrega modelo nem baixa pesos. `video-gen doctor`
+mostra disponibilidade e device.
 
 ## Estrutura de saída
 
@@ -487,8 +503,8 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 
 | Etapa | Implementação MVP |
 |---|---|
-| Roteiro | chain LLM (Groq → NVIDIA → OpenRouter → Mistral → Gemini; NVIDIA sem timeout de resposta); tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
-| Cenas | divisão semântica via LLM do chain (JSON) ou local; cada cena declara `visual_type`, assunto, entidades, contexto e termos proibidos |
+| Roteiro | chain LLM (Groq → NVIDIA → OpenRouter → Mistral → Gemini; timeout finito e fallback local de cenas); tom conversado (conta como a um amigo, sem jargão); sem chave: base curada + template |
+| Cenas | divisão semântica via LLM do chain (JSON) ou local; HTTP 429 tem até 2 tentativas curtas por provider; falha do chain usa divisão local que preserva roteiro e tópico |
 | Mídia | consulta vários provedores, filtra com motivo, pontua por relevância sobre o assunto e corta abaixo do mínimo; sem foto boa a cena vira diagrama ou cartão, nunca imagem genérica |
 | Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia por obra; CLI `sources`; `FONTES.md` com fontes, imagens e créditos prontos; URLs exatas da pesquisa |
 | Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |

@@ -620,16 +620,15 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 genre=genre_key, target_seconds=alvo_cena,
                 genre_directive=scene_directive_eff, max_scenes=teto_cena)
         except nvidia_stage.NvidiaError as exc:
-            if not script_mode:
-                raise
-            # Modo roteiro-pronto: sem API, a divisão local basta — ela
-            # agrupa frases literais e sempre preserva a narração.
+            # Scene planning is optional after the script exists in both
+            # automatic and ready-script modes. Preserve exact narration.
             logged = run_event(
-                "fallback", f"Cenas: provider falhou; divisão local ({exc})",
+                "fallback", f"Cenas: chain LLM falhou; divisão local ({exc})",
                 operation="scenes", fallback="local", error=str(exc))
             if not logged:
-                print(f"AVISO: {exc} — usando divisão local.", file=sys.stderr)
-            warnings.append(f"cenas locais (NVIDIA indisponível: {exc})")
+                print(f"AVISO: chain LLM de cenas indisponível ({exc}) — "
+                      "seguindo com divisão local.", file=sys.stderr)
+            warnings.append(f"cenas locais (chain LLM indisponível: {exc})")
             chapters = scenes_stage._local_chapters(script_text, n)
             scenes_source = "local"
         if script_mode:
@@ -637,7 +636,9 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
     scene_event = ("provider" if scenes_source not in ("local", "cache")
                    else "fallback" if scenes_source == "local" else "cache")
-    from .stages.visual_context import anchor_local_topic, fill_missing_context
+    from .stages.visual_context import (anchor_local_topic,
+                                       attach_video_context,
+                                       fill_missing_context)
     local_scenes = (scenes_source == "local" or
                     any(str(ch.visual_intent or "").startswith("local fallback")
                         for ch in chapters))
@@ -654,6 +655,9 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             if not str(chapter.visual_intent or "").startswith("local fallback"):
                 chapter.visual_intent = ("local fallback: cached "
                                           + str(chapter.visual_intent or "")).strip()
+    if attach_video_context(chapters, idea, research_target):
+        force_after_script = True
+        _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
     if local_scenes and anchor_local_topic(chapters, idea, research_target):
         force_after_script = True
         _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
@@ -700,7 +704,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         try:
             saved = _read_json(paths.media_json)
             chapter_ok = ([s["chapter_id"] for s in saved] ==
-                          [c.id for c in chapters])
+                          [c.id for c in chapters]) and all(
+                isinstance(s.get("visual_decision"), dict)
+                for s in saved
+                if (s.get("asset") or {}).get("provider") != "manual")
             files_ok = True
             for s in saved:
                 chapter = next((ch for ch in chapters if ch.id == s["chapter_id"]), None)
@@ -734,18 +741,17 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         except (json.JSONDecodeError, KeyError):
             media_scenes = None
     if media_scenes is None:
-        if max_images > 1:
-            media_scenes, media_warnings = visual_stage.fetch_media_multi(
-                chapters, cfg, max_images, metrics, genre=genre_key)
-        else:
-            media_scenes, media_warnings = pipeline_media_stage.fetch_media(
-                chapters, cfg, metrics)
+        media_scenes, media_warnings = visual_stage.fetch_media_multi(
+            chapters, cfg, max_images, metrics, genre=genre_key)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
         if media_warnings:
             for warning in media_warnings[:8]:
                 run_event("warning", str(warning), operation="media")
     for scene in media_scenes:
+        if metrics and scene.get("visual_decision"):
+            metrics.media_record_scene_decision(
+                int(scene.get("chapter_id", 0)), scene["visual_decision"])
         entries = scene.get("assets") or []
         asset = scene.get("asset") or {}
         synth = asset.get("provider") == "synth"

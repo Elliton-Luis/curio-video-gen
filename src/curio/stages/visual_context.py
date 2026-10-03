@@ -18,6 +18,56 @@ _GENERIC_PERSON = {"homem", "homens", "mulher", "mulheres", "pessoa",
                    "boy", "girl", "menino", "menina"}
 
 
+def attach_video_context(chapters, topic: str, target=None) -> bool:
+    """Attach one shared, evidence-bounded topic context to every scene."""
+    topic = str(topic or "").strip()
+    if target is not None:
+        canonical = str(getattr(target, "name", "") or "").strip()
+        if canonical:
+            topic = canonical
+    if not topic:
+        return False
+    aliases = list(dict.fromkeys(
+        str(x).strip() for x in
+        ([topic] + list(getattr(target, "aliases", []) or [])) if str(x).strip()))
+
+    def _list(value):
+        if isinstance(value, str):
+            return [value] if value.strip() else []
+        return list(value) if isinstance(value, (list, tuple)) else []
+
+    changed = False
+    for ch in chapters or []:
+        old = ch.to_dict()
+        context = dict(getattr(ch, "video_context", {}) or {})
+        current_topic = context.get("topic") or topic
+        if isinstance(current_topic, list):
+            current_topic = current_topic[0] if current_topic else topic
+        context["topic"] = str(current_topic)
+        context["primary_entities"] = list(dict.fromkeys(
+            [*_list(context.get("primary_entities")), *aliases]))[:8]
+        context["secondary_entities"] = _list(context.get("secondary_entities"))
+        context["places"] = _list(context.get("places"))
+        context["events"] = _list(context.get("events"))
+        context["period"] = str(context.get("period") or "")
+        context["aliases"] = list(dict.fromkeys(
+            [*_list(context.get("aliases")), *aliases]))[:8]
+        ch.video_context = context
+        if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+            # Local noun extraction is search support, not trusted screen
+            # content. Show the known topic until scene meaning is resolved.
+            ch.subject = topic
+            ch.primary_entity = topic
+            ch.visual_entities = []
+            if not ch.visual_intent_structured:
+                ch.visual_intent_structured = (
+                    f"Topic-level visual for {topic}; scene representation unresolved")
+        if not getattr(ch, "global_visual_queries", []):
+            ch.global_visual_queries = [topic]
+        changed = changed or old != ch.to_dict()
+    return changed
+
+
 def _identity_tokens(name):
     return set(scoring._tokens(name)) - _HONORIFICS
 
@@ -175,13 +225,27 @@ def anchor_local_topic(chapters, idea: str, target=None) -> bool:
         candidates.extend([getattr(target, "name", ""),
                            *(getattr(target, "aliases", []) or [])])
     candidates.append(idea)
-    query = next((textnorm.translate_phrase(value) for value in candidates
-                  if textnorm.translate_phrase(value)), "")
-    if not query:
+    query = next((str(value).strip() for value in candidates if str(value).strip()), "")
+    translated = next((textnorm.translate_phrase(value) for value in candidates
+                       if textnorm.translate_phrase(value)), "")
+    anchors = [translated or query]
+    if not anchors:
         return False
     changed = False
     for chapter in chapters or []:
-        if list(getattr(chapter, "global_visual_queries", []) or []) != [query]:
-            chapter.global_visual_queries = [query]
+        current = list(getattr(chapter, "global_visual_queries", []) or [])
+        merged = anchors
+        if current != merged:
+            chapter.global_visual_queries = merged
+            changed = True
+        context = dict(getattr(chapter, "video_context", {}) or {})
+        context.setdefault("topic", query)
+        context.setdefault("primary_entities", [query])
+        context.setdefault("secondary_entities", [])
+        context.setdefault("places", [])
+        context.setdefault("events", [])
+        context.setdefault("period", "")
+        if context != chapter.video_context:
+            chapter.video_context = context
             changed = True
     return changed

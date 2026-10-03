@@ -98,25 +98,35 @@ TITLE_SYSTEM_PROMPT_EN = (
 SCENES_SYSTEM_PROMPT = (
     "You split educational video scripts into visual scenes. "
     "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
-    '{{"scenes": [{{"index": 1, "narration": "...", "subject": "...", '
-    '"visual_type": "literal", "visual_search_terms": ["..."], '
+    '{{"video_context": {{"topic": "...", "primary_entities": ["..."], '
+    '"secondary_entities": ["..."], "places": ["..."], "events": ["..."], '
+    '"period": "...", "aliases": ["..."]}}, "scenes": '
+    '[{{"index": 1, "narration": "...", "subject": "...", '
+    '"visual_intent": "what should appear on screen now", '
+    '"primary_entity": "...", "event": "...", "place": "...", '
+    '"period": "...", "representations": '
+    '[{{"query": "...", "kind": "event|entity|related|document|map|artifact", '
+    '"level": 1}}], '
+    '"visual_type": "literal", '
     '"visual_entities": ["..."], "context": ["..."], "forbidden": ["..."], '
     '"text_role": "", "text_language": ""}}]}}. '
     "Rules: "
     "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
     "or summarizing — the joined narrations must reproduce the script exactly; "
     "2) Each scene is a semantic moment (not arbitrary cuts); "
-    "3) narration in Brazilian Portuguese; "
-    "4) visual_search_terms: 3 to 5 English terms, 1 to 4 words each, concrete "
-    "nouns or one visual adjective + one noun, searchable in photo banks. "
-    "ALWAYS include the topic context in EVERY term so an ambiguous word cannot "
-    "drift: write \"thermal paper receipt\", never \"thermal\"; write "
-    "\"ink bottle\", never \"ink\". Order from most specific to most general. "
-    "Acceptable: \"thermal receipt\", \"receipt paper roll\", "
-    "\"thermal printer receipt\", \"faded receipt\". "
-    "FORBIDDEN: bare ambiguous words, verbs, abstract concepts, "
-    "\"how it works\", \"cinematic 4k\", \"beautiful landscape\"; "
-    "5) visual_type - how this scene should be SHOWN, pick exactly one: "
+    "3) First build one shared video_context from the script: canonical topic, "
+    "primary/secondary entities, places, events, period, and verified aliases. "
+    "Each scene inherits this context and adds only its current event/entity. "
+    "visual_intent must answer: what should appear on screen while this sentence is narrated? "
+    "Queries must come only from scene representations, never isolated narration words. "
+    "4) narration in Brazilian Portuguese; "
+    "5) representations: output 2 to 3 concise search phrases as objects, "
+    "ordered by priority: level 1 exact scene/event, level 2 primary entity or "
+    "known depiction, level 3 directly related artifact/map/portrait/document. "
+    "Each phrase includes disambiguating context. Include established names in "
+    "their original language and English when known. Never invent aliases or "
+    "translations; no bare ambiguous words, unrelated keywords, or stock-photo fluff; "
+    "6) visual_type - how this scene should be SHOWN, pick exactly one: "
     "\"literal\" (a real thing you can photograph: object, place, animal, person); "
     "\"mechanism\" (the scene explains HOW something works, a transformation, a "
     "cause and effect, a process - a photo cannot show it, it needs a diagram); "
@@ -125,9 +135,9 @@ SCENES_SYSTEM_PROMPT = (
     "\"conceptual\" (too abstract to photograph: use art or a visual composition); "
     "\"typographic\" (the idea IS a word: etymology, a term, a definition, a date, "
     "a comparison - show the word, not a stock photo); "
-    "6) subject: the single main thing this scene is about, 1 to 4 words, in "
+    "7) subject: the single main thing this scene is about, 1 to 4 words, in "
     "English; "
-    "7) visual_entities: 2 to 4 SHORT NOUN PHRASES (1 to 4 words each) for "
+    "8) visual_entities: 1 to 3 SHORT NOUN PHRASES (1 to 4 words each) for "
     "the things that may legitimately appear on screen, in English. They are "
     "shown to the viewer as a list, so they must read as CONTENT and not as "
     "search queries: write \"USP campus\", never \"map of Rio Grande do Sul\" or "
@@ -136,14 +146,9 @@ SCENES_SYSTEM_PROMPT = (
     "on this list is displayed as part of the video, so \"traditional European "
     "costumes\" in a scene about Rio Grande do Sul is not a stylistic "
     "choice, it is a wrong sentence on screen; "
-    "8) context: 0 to 3 supporting visual settings or nearby objects, in English; "
-    "9) forbidden: 2 to 5 words that would be a WRONG visual for this scene - "
-    "the traps of this specific topic, in English. Use it whenever a word of the "
-    "topic has another common meaning. For thermal receipt paper the traps are "
-    "\"power plant\", \"steam\", \"wallpaper\", \"heat wave\"; for a saint, "
-    "\"modern photography\", \"statue of liberty\"; never leave it empty when the "
-    "topic has an ambiguous word. "
-    "10) text_role - the FUNCTION of the words shown on screen, never a font "
+    "9) context: 0 to 2 supporting settings or objects, in English; "
+    "10) forbidden: 0 to 2 specific incompatible referents, only when ambiguity exists; "
+    "11) text_role - the FUNCTION of the words shown on screen, never a font "
     "name. Use it only when the scene shows somebody else's words or a "
     "written record, and leave it empty otherwise. One of: \"quote\" (a phrase "
     "attributed to someone), \"document\" (a text, inscription or "
@@ -153,33 +158,42 @@ SCENES_SYSTEM_PROMPT = (
     "Set text_language to \"la\" when the quoted words are in Latin. "
     "NEVER write a font name here: the genre decides the typeface for each "
     "role, and a font name in the scene would break that; "
-    "11) Split into {n} scenes (between {lo} and {hi}). "
-    "IMPORTANT: visual_search_terms in English only, concrete, always carrying "
-    "the topic context. No verbs, no abstract concepts."
+    "12) Split into {n} scenes (between {lo} and {hi}). "
+    "Use these representations to form queries; do not generate a second keyword list."
 )
 
 SCENES_SYSTEM_PROMPT_EN = (
     "You split educational video scripts into visual scenes. "
     "Respond ONLY with valid JSON, no markdown, no explanations, in this exact format: "
-    '{{"scenes": [{{"index": 1, "narration": "...", "subject": "...", '
-    '"visual_type": "literal", "visual_search_terms": ["..."], '
+    '{{"video_context": {{"topic": "...", "primary_entities": ["..."], '
+    '"secondary_entities": ["..."], "places": ["..."], "events": ["..."], '
+    '"period": "...", "aliases": ["..."]}}, "scenes": '
+    '[{{"index": 1, "narration": "...", "subject": "...", '
+    '"visual_intent": "what should appear on screen now", '
+    '"primary_entity": "...", "event": "...", "place": "...", '
+    '"period": "...", "representations": '
+    '[{{"query": "...", "kind": "event|entity|related|document|map|artifact", '
+    '"level": 1}}], '
+    '"visual_type": "literal", '
     '"visual_entities": ["..."], "context": ["..."], "forbidden": ["..."], '
     '"text_role": "", "text_language": ""}}]}}. '
     "Rules: "
     "1) Use ONLY literal sentences from the script, in the same order, no rewriting "
     "or summarizing — the joined narrations must reproduce the script exactly; "
     "2) Each scene is a semantic moment (not arbitrary cuts); "
-    "3) narration in American English; "
-    "4) visual_search_terms: 3 to 5 English terms, 1 to 4 words each, concrete "
-    "nouns or one visual adjective + one noun, searchable in photo banks. "
-    "ALWAYS include the topic context in EVERY term so an ambiguous word cannot "
-    "drift: write \"thermal paper receipt\", never \"thermal\"; write "
-    "\"ink bottle\", never \"ink\". Order from most specific to most general. "
-    "Acceptable: \"thermal receipt\", \"receipt paper roll\", "
-    "\"thermal printer receipt\", \"faded receipt\". "
-    "FORBIDDEN: bare ambiguous words, verbs, abstract concepts, "
-    "\"how it works\", \"cinematic 4k\", \"beautiful landscape\"; "
-    "5) visual_type - how this scene should be SHOWN, pick exactly one: "
+    "3) First build one shared video_context from the script: canonical topic, "
+    "primary/secondary entities, places, events, period, and verified aliases. "
+    "Each scene inherits this context and adds only its current event/entity. "
+    "visual_intent must answer: what should appear on screen while this sentence is narrated? "
+    "Queries must come only from scene representations, never isolated narration words. "
+    "4) narration in American English; "
+    "5) representations: output 2 to 3 concise search phrases as objects, "
+    "ordered by priority: level 1 exact scene/event, level 2 primary entity or "
+    "known depiction, level 3 directly related artifact/map/portrait/document. "
+    "Each phrase includes disambiguating context. Include established names in "
+    "their original language and English when known. Never invent aliases or "
+    "translations; no bare ambiguous words, unrelated keywords, or stock-photo fluff; "
+    "6) visual_type - how this scene should be SHOWN, pick exactly one: "
     "\"literal\" (a real thing you can photograph); "
     "\"mechanism\" (the scene explains HOW something works, a transformation, a "
     "cause and effect - a photo cannot show it, it needs a diagram); "
@@ -188,18 +202,16 @@ SCENES_SYSTEM_PROMPT_EN = (
     "\"conceptual\" (too abstract to photograph: use art or a visual composition); "
     "\"typographic\" (the idea IS a word: etymology, a term, a definition, a date - "
     "show the word, not a stock photo); "
-    "6) subject: the single main thing this scene is about, 1 to 4 words; "
-    "7) visual_entities: 2 to 4 SHORT NOUN PHRASES (1 to 4 words each) for "
+    "7) subject: the single main thing this scene is about, 1 to 4 words; "
+    "8) visual_entities: 1 to 3 SHORT NOUN PHRASES (1 to 4 words each) for "
     "the things that may legitimately appear on screen. They are shown to the "
     "viewer as a list, so they must read as CONTENT and not as search "
     "queries: write \"USP campus\", never \"map of Rio Grande do Sul\". Never "
     "state here a fact you are not sure of: an item on this list is displayed "
     "as part of the video; "
-    "8) context: 0 to 3 supporting visual settings or nearby objects; "
-    "9) forbidden: 2 to 5 words that would be a WRONG visual for this scene - "
-    "the traps of this specific topic. Use it whenever a word of the topic has "
-    "another common meaning; never leave it empty when the topic is ambiguous. "
-    "10) text_role - the FUNCTION of the words shown on screen, never a font "
+    "9) context: 0 to 2 supporting visual settings or objects; "
+    "10) forbidden: 0 to 2 specific incompatible referents, only when ambiguity exists; "
+    "11) text_role - the FUNCTION of the words shown on screen, never a font "
     "name. Use it only when the scene shows somebody else's words or a "
     "written record, and leave it empty otherwise. One of: \"quote\" (a phrase "
     "attributed to someone), \"document\" (a text, inscription or "
@@ -209,9 +221,8 @@ SCENES_SYSTEM_PROMPT_EN = (
     "Set text_language to \"la\" when the quoted words are in Latin. "
     "NEVER write a font name here: the genre decides the typeface for each "
     "role, and a font name in the scene would break that; "
-    "11) Split into {n} scenes (between {lo} and {hi}). "
-    "IMPORTANT: visual_search_terms in English only, concrete, always carrying "
-    "the topic context. No verbs, no abstract concepts."
+    "12) Split into {n} scenes (between {lo} and {hi}). "
+    "Use these representations to form queries; do not generate a second keyword list."
 )
 
 ENTITY_SYSTEM_PROMPT = (

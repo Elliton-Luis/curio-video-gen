@@ -16,7 +16,7 @@ import re
 import sys
 import urllib.parse
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from ..ua import user_agent
 
@@ -61,8 +61,20 @@ class MediaAsset:
     local_path: str = ""  # arquivo baixado (após o uso/download)
     used_in: str = ""  # onde entrou no vídeo (ex.: "cena 3")
     rights_status: str = ""  # clear | verify | blocked (ver classify_rights)
+    # Optional visual evidence fields; appended to preserve positional callers.
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    categories: list[str] = field(default_factory=list)
+    date_created: str = ""
+    media_type: str = "image"
 
     def __post_init__(self) -> None:
+        if isinstance(self.tags, str):
+            self.tags = [self.tags]
+        if isinstance(self.categories, str):
+            self.categories = [self.categories]
+        self.tags = [str(x) for x in (self.tags or []) if str(x).strip()]
+        self.categories = [str(x) for x in (self.categories or []) if str(x).strip()]
         if not self.rights_status:
             self.rights_status = classify_rights(self.license, self.provider)
 
@@ -74,7 +86,8 @@ class MediaAsset:
         return cls(**{k: d.get(k, getattr(cls, k, "")) for k in
                       ("provider", "asset_id")},
                    **{k: d.get(k, "") for k in
-                      ("title", "author", "license", "license_url",
+                       ("title", "description", "tags", "categories",
+                        "date_created", "media_type", "author", "license", "license_url",
                        "source_url", "download_url", "download_fallback_url",
                        "local_path", "used_in", "rights_status")},
                    width=int(d.get("width", 0)), height=int(d.get("height", 0)),
@@ -183,7 +196,8 @@ class WikimediaProvider(MediaProvider):
             "generator": "search",
             "gsrsearch": f"{query} filetype:bitmap",
             "gsrnamespace": "6", "gsrlimit": str(limit),
-            "prop": "imageinfo",
+            "prop": "imageinfo|categories",
+            "cllimit": "10",
             "iiprop": "url|size|extmetadata",
             # Thumbnails em vez do original: CDN tolerante + tamanho sob
             # controle (o upload de originais sofre 429 com uso repetido).
@@ -238,6 +252,10 @@ class WikimediaProvider(MediaProvider):
                 provider=self.name,
                 asset_id=str(page.get("pageid", "")),
                 title=str(page.get("title", "")),
+                description=_strip_html((meta.get("ImageDescription") or {}).get("value", "")),
+                categories=[str(x.get("title", "")) for x in
+                            (page.get("categories") or []) if isinstance(x, dict)],
+                date_created=_strip_html((meta.get("DateTimeOriginal") or {}).get("value", "")),
                 author=_strip_html((meta.get("Artist") or {}).get("value", "")),
                 license=lic,
                 license_url=page_url,  # a página do arquivo documenta a licença
@@ -307,6 +325,10 @@ class OpenverseProvider(MediaProvider):
                 provider=self.name,
                 asset_id=str(item.get("id", "")),
                 title=str(item.get("title", "")),
+                description=str(item.get("description") or ""),
+                tags=[str(tag.get("name", "")) if isinstance(tag, dict) else str(tag)
+                      for tag in (item.get("tags") or [])],
+                categories=[str(item.get("category", ""))] if item.get("category") else [],
                 author=str(item.get("creator", "")),
                 license=lic_text,
                 license_url=page_url,
@@ -369,6 +391,10 @@ class PixabayProvider(MediaProvider):
                 provider=self.name,
                 asset_id=str(item.get("id", "")),
                 title=str(item.get("tags", "")),
+                tags=[tag.strip() for tag in str(item.get("tags", "")).split(",")
+                      if tag.strip()],
+                categories=[str(item.get("category", ""))]
+                if item.get("category") else [],
                 author=str(item.get("user", "")),
                 license="Licença Pixabay (uso livre)",
                 license_url=PIXABAY_LICENSE_URL,
@@ -419,6 +445,7 @@ class PexelsProvider(MediaProvider):
                 provider=self.name,
                 asset_id=str(photo.get("id", "")),
                 title=str(photo.get("alt", "")),
+                description=str(photo.get("alt", "") or ""),
                 author=str(photo.get("photographer", "")),
                 license="Licença Pexels (uso livre)",
                 license_url=PEXELS_LICENSE_URL,
@@ -498,6 +525,11 @@ class UnsplashProvider(MediaProvider):
                 asset_id=str(photo.get("id", "")),
                 title=str(photo.get("alt_description")
                           or photo.get("description") or photo.get("slug", "")),
+                description=str(photo.get("description") or
+                                photo.get("alt_description") or ""),
+                tags=[str(tag.get("title", "")) if isinstance(tag, dict) else str(tag)
+                      for tag in (photo.get("tags") or [])
+                      if isinstance(tag, (dict, str))],
                 author=str(user.get("name", "")),
                 license="Licença Unsplash (uso livre)",
                 license_url=UNSPLASH_LICENSE_URL,
@@ -561,6 +593,8 @@ class NASAProvider(MediaProvider):
                 provider=self.name,
                 asset_id=nasa_id,
                 title=title,
+                description=str(info.get("description", "")),
+                tags=keywords,
                 author=str(info.get("secondary_creator")
                            or info.get("photographer") or center),
                 license=lic,
@@ -638,6 +672,9 @@ class MetMuseumProvider(MediaProvider):
                 provider=self.name,
                 asset_id=str(obj.get("objectID", object_id)),
                 title=label or title,
+                description=str(obj.get("medium") or obj.get("culture") or ""),
+                date_created=date,
+                categories=[str(x) for x in (obj.get("classification"), obj.get("objectName")) if x],
                 author=artist,
                 license=MET_LICENSE,
                 license_url=detail,
@@ -693,6 +730,9 @@ class ArtInstituteProvider(MediaProvider):
                 provider=self.name,
                 asset_id=str(item.get("id", "")),
                 title=label or title,
+                description=str(item.get("medium_display") or ""),
+                date_created=date,
+                categories=[str(item.get("artwork_type_title") or "")],
                 author=artist,
                 license=AIC_LICENSE,
                 license_url=detail,

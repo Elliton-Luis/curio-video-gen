@@ -78,8 +78,7 @@ def test_o_rodizio_nao_muda():
     assert primeiros == ["groq", "nvidia", "openrouter", "groq", "nvidia"]
 
 
-def test_teto_nvidia_configurado_nao_limita_resposta(monkeypatch):
-    """Timeout configurado permanece legado; requests NVIDIA esperam sem teto."""
+def test_timeout_configurado_tambem_limita_resposta_nvidia(monkeypatch):
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -97,11 +96,10 @@ def test_teto_nvidia_configurado_nao_limita_resposta(monkeypatch):
     body, label = N._chat([{"role": "user", "content": "oi"}], 100, 0.0,
                           "m", "https://x", timeout=120, timeout_max=90)
     assert label.startswith("nvidia")
-    assert vistos["nvidia"] is None
+    assert vistos["nvidia"] == 90
 
 
-def test_nvidia_ignora_teto_padrao_de_resposta(monkeypatch):
-    """NVIDIA recebe None em vez do teto global padrão."""
+def test_nvidia_obedece_teto_padrao_de_resposta(monkeypatch):
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -118,11 +116,10 @@ def test_nvidia_ignora_teto_padrao_de_resposta(monkeypatch):
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     N._chat([{"role": "user", "content": "oi"}], 100, 0.0, "m", "https://x",
             timeout=120)
-    assert vistos["nvidia"] is None
+    assert vistos["nvidia"] == 120
 
 
-def test_timeout_especifico_nvidia_nao_corta_espera_infinita(monkeypatch):
-    """Um limite NVIDIA legado não substitui espera ilimitada."""
+def test_timeout_especifico_nvidia_nao_supera_timeout_da_chamada(monkeypatch):
     from curio.stages import nvidia as N
     monkeypatch.delenv("NVIDIA_TIMEOUT_MAX", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "k")
@@ -140,7 +137,7 @@ def test_timeout_especifico_nvidia_nao_corta_espera_infinita(monkeypatch):
     monkeypatch.setattr(N, "_post_with_retries", fake_post)
     N._chat([{"role": "user", "content": "oi"}], 100, 0.0, "m", "https://x",
             timeout=120)
-    assert vistos["nvidia"] is None
+    assert vistos["nvidia"] == 120
 
 
 def test_timeout_ainda_cai_no_rodizio():

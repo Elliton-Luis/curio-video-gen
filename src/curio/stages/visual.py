@@ -488,16 +488,48 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
             out.append(query)
 
     ai = [t.strip() for t in (list(ch.visual_queries) or []) if t.strip()]
+    def _representation_level(item):
+        try:
+            return int(item.get("level", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    representations = sorted(
+        [r for r in (getattr(ch, "representations", []) or [])
+         if isinstance(r, dict) and str(r.get("query", "")).strip()],
+        key=lambda r: (_representation_level(r), str(r.get("query", ""))))
+    for representation in representations:
+        _add(str(representation["query"]))
     from .scoring import _tokens
     names = [set(_tokens(name)) for name in [getattr(ch, "subject", ""),
              *(getattr(ch, "subject_aliases", []) or [])] if _tokens(name)]
     same_subject = len(ai) >= 2 and all(
         any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
-    if len(ai) >= 2 and not same_subject:
+    local = str(getattr(ch, "visual_intent", "") or "").startswith("local fallback")
+    context = dict(getattr(ch, "video_context", {}) or {})
+    topic = str(context.get("topic") or "").strip()
+    structured_plan = bool(representations
+                          or getattr(ch, "visual_intent_structured", "")
+                          or topic)
+    if local and topic:
+        # Keep local phrase tied to canonical video context; never search
+        # extracted nouns alone when planner is unavailable.
+        focused = [x for x in local_queries(ch.narration) if x]
+        if focused:
+            focus = focused[0]
+            _add(f"{topic} {focus}")
+        _add(topic)
+        for entity in list(context.get("primary_entities", []) or [])[:3]:
+            _add(str(entity))
+        if str(getattr(ch, "visual_type", "") or "") == "historical_art":
+            for medium in ART_MEDIA_HINTS[:4]:
+                _add(f"{topic} {medium}")
+    if len(ai) >= 2 and not same_subject and not local:
         _add(" ".join(ai[:2]))
     for term in ai:
-        _add(term)
-    if not ai:
+        if not local:
+            _add(term)
+    if not ai and not (local and topic) and not structured_plan:
         for term in local_queries(ch.narration):
             _add(term)
     for term in list(getattr(ch, "global_visual_queries", []) or []):
@@ -507,10 +539,15 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
         # para a frente é o meio, não o assunto. "saint francis" sozinho
         # devolve foto moderna de estátua em praça; "saint francis
         # painting" devolve o fresco.
-        for term in list(ai[:2]) or list(getattr(ch, "visual_entities", []) or [])[:2]:
+        art_terms = ([str(r["query"]) for r in representations[:2]]
+                     or ([] if local else ai[:2])
+                     or list(getattr(ch, "visual_entities", []) or [])[:2]
+                     or [str(getattr(ch, "primary_entity", "")
+                              or getattr(ch, "subject", ""))])
+        for term in art_terms:
             for meio in ART_MEDIA_HINTS:
                 _add(f"{term} {meio}")
-    if ai:
+    if ai and not local:
         _add(" ".join(ai[:2]) + " diagram")
     generics = set()
     for term in _generic_queries(genre, ch):
@@ -563,8 +600,6 @@ def _search_scene_with_shortcircuit(
     queries, generics = _waterfall_queries(ch, genre)
     blocked = media_rules.scene_blocklist(ch)
     vtype = str(getattr(ch, "visual_type", "") or "literal")
-    if metrics:
-        metrics.media_queries_count += len(queries)
 
     # Uma cena tipográfica NÃO tem foto. A ideia dela É uma palavra, e
     # busca lexical por essa palavra traz qualquer coisa que a carregue no
@@ -600,6 +635,8 @@ def _search_scene_with_shortcircuit(
     candidates: list[dict] = []   # candidatos que passaram nos filtros
     rejected: list[dict] = []     # (motivo, título) p/ a folha de contato
     seen_ids: set[str] = set()
+    providers_consulted: set[str] = set()
+    query_providers: dict[str, set[str]] = {}
 
     def _consider(cand: MediaAsset, query: str) -> None:
         identity = f"{cand.provider}:{cand.asset_id}"
@@ -612,8 +649,10 @@ def _search_scene_with_shortcircuit(
             metrics.media_record_funnel("unique_considered")
         why = _validate_asset_for(cand, blocked)
         if why:
+            semantic = scoring.semantic_relevance(cand.to_dict(), ch)
             rejected.append({"title": cand.title, "query": query,
-                             "reason": why, "provider": cand.provider})
+                             "reason": why, "provider": cand.provider,
+                             **semantic})
             if metrics:
                 metrics.media_record_asset_rejected()
                 metrics.media_record_funnel("hard_rejected")
@@ -633,7 +672,8 @@ def _search_scene_with_shortcircuit(
     from . import scoring
     min_score = scoring.threshold()
 
-    def collect(query_list: list[str], limit: int) -> None:
+    def collect(query_list: list[str], limit: int,
+                stop_when_proven: bool = False) -> None:
         for query in query_list:
             if len(candidates) >= limit:
                 break
@@ -642,6 +682,11 @@ def _search_scene_with_shortcircuit(
                       if shared_search_cache is not None else {})
             active = [prov for prov in providers
                       if not getattr(prov, "_disabled", False)]
+            providers_consulted.update(prov.name for prov in active)
+            query_providers.setdefault(query, set()).update(
+                prov.name for prov in active)
+            if metrics and active:
+                metrics.media_queries_count += 1
             tasks = []
             for prov in active:
                 if prov.name in shared:
@@ -699,17 +744,29 @@ def _search_scene_with_shortcircuit(
                                 "budget_unexamined", len(results) - result_index)
                         break
                     _consider(cand, query)
+            if stop_when_proven:
+                checked = scoring.rank_candidates(
+                    [entry for entry in candidates if not entry["generic"]], ch)
+                if any(entry.get("score", 0) >= min_score
+                       and entry.get("score_detail", {}).get("topic_relevance") == 100
+                       and entry.get("score_detail", {}).get("scene_relevance", 0) >= 70
+                       for entry in checked):
+                    break
 
     def score_specific(entries: list[dict]):
         ranked = scoring.rank_candidates(entries, ch)
-        return scoring.below_threshold(ranked, min_score)
+        semantic_rejects = [entry for entry in ranked
+                            if entry.get("score_detail", {}).get("semantic_rejection")]
+        scoreable = [entry for entry in ranked if entry not in semantic_rejects]
+        accepted, low = scoring.below_threshold(scoreable, min_score)
+        return accepted, [*low, *semantic_rejects]
 
     # Colete e pontue específicos antes de buscar fotos genéricas do gênero.
     # Generic queries só rodam quando nenhuma foto específica passa o gate.
     specific_queries = [q for q in queries if q.lower() not in generics]
     generic_queries = [q for q in queries if q.lower() in generics]
     phase_budget = max_images * CANDIDATE_MULTIPLIER
-    collect(specific_queries, phase_budget)
+    collect(specific_queries, phase_budget, stop_when_proven=True)
     specific, low_specific = score_specific(
         [entry for entry in candidates if not entry["generic"]])
     if specific:
@@ -721,15 +778,79 @@ def _search_scene_with_shortcircuit(
             info = scoring.generic_score(entry["asset"], entry["query"])
             if not scoring.topic_anchor_matches(entry["asset"], ch):
                 info["score"] = 0.0
+            semantic = scoring.semantic_relevance(entry["asset"], ch)
+            if semantic["topic_relevance"] is not None:
+                if not semantic["topic_matches"]:
+                    info["score"] = 0.0
+                    semantic["semantic_rejection"] = "generic candidate lacks topic evidence"
+                elif semantic["scene_relevance"] < 25:
+                    info["score"] = 0.0
+                    semantic["semantic_rejection"] = "generic candidate lacks scene evidence"
+                elif not semantic["scene_matches"]:
+                    info["score"] = min(info["score"], 55.0)
+                if info["score"] > 0:
+                    info["score"] = min(100.0,
+                                         info["score"] + semantic.get("metadata_support", 0.0))
+                info.update(semantic)
             entry["score"] = info["score"]
             entry["score_detail"] = {"base": info["score"],
-                                     "matched": info["matched"],
-                                     "missing": info["missing"],
-                                     "layers": ["base-generic"]}
+                                      "matched": info["matched"],
+                                      "missing": info["missing"],
+                                      "topic_relevance": info.get("topic_relevance"),
+                                      "scene_relevance": info.get("scene_relevance"),
+                                      "topic_matches": info.get("topic_matches", []),
+                                      "scene_matches": info.get("scene_matches", []),
+                                      "topic_evidence": info.get("topic_evidence", {}),
+                                      "scene_evidence": info.get("scene_evidence", {}),
+                                      "metadata_support": info.get("metadata_support", 0.0),
+                                      "topic_evidence": info.get("topic_evidence", {}),
+                                      "scene_evidence": info.get("scene_evidence", {}),
+                                      "provider": info.get("provider", ""),
+                                      "creator": info.get("creator", ""),
+                                      "source_url": info.get("source_url", ""),
+                                      "date_created": info.get("date_created", ""),
+                                      "media_type": info.get("media_type", ""),
+                                      "semantic_rejection": info.get("semantic_rejection", ""),
+                                      "layers": ["base-generic"]}
             generic_ranked.append(entry)
         generic_ranked.sort(key=lambda e: (-e["score"], e["query"]))
-        ranked, low_generic = scoring.below_threshold(generic_ranked, min_score)
+        semantic_rejects = [entry for entry in generic_ranked
+                            if entry.get("score_detail", {}).get("semantic_rejection")]
+        scoreable = [entry for entry in generic_ranked
+                     if entry not in semantic_rejects]
+        ranked, low_generic = scoring.below_threshold(scoreable, min_score)
+        low_generic.extend(semantic_rejects)
         low = low_specific + low_generic
+    if scoring.clip_enabled(cfg) and ranked:
+        status = scoring.clip_status(cfg) or ""
+        if "habilitada (" in status:
+            shortlist = ranked[:max(1, min(max_images * 2, 10))]
+            clip_applied = False
+            for entry in shortlist:
+                try:
+                    asset = download_asset(MediaAsset.from_dict(entry["asset"]),
+                                           cfg.cache_dir, metrics)
+                    if not _downloaded_dims_ok(asset):
+                        continue
+                    entry["asset"] = asset.to_dict()
+                    clip_score = scoring.clip_score_image(asset.local_path, ch, cfg)
+                except (MediaError, TypeError, OSError):
+                    clip_score = None
+                if clip_score is None:
+                    continue
+                clip_applied = True
+                entry["clip_score"] = round(clip_score, 4)
+                detail = entry.setdefault("score_detail", {})
+                detail["clip"] = round(clip_score, 4)
+                detail["layers"] = list(dict.fromkeys(detail.get("layers", []) + ["clip"]))
+                entry["score"] = round(entry["score"] * 0.8
+                                        + ((clip_score + 1.0) * 50.0) * 0.2, 2)
+            ranked.sort(key=lambda item: (-item["score"],
+                                          -item.get("score_detail", {}).get("scene_relevance", 0),
+                                          item.get("order", 0)))
+            if metrics and clip_applied:
+                metrics.media_layers_used["clip"] = metrics.media_layers_used.get("clip", 0) + 1
+                metrics.media_layer_device = scoring.clip_device(cfg)
     for entry in low:
         # Descartado por NOTA, não por filtro: é o caso que mais importa
         # registrar, porque a imagem passou em todos os testes e ainda
@@ -737,9 +858,11 @@ def _search_scene_with_shortcircuit(
         rejected.append({
             "title": entry["asset"].get("title", ""),
             "query": entry["query"],
-            "reason": (f"nota {entry['score']:.0f} abaixo do mínimo "
-                       f"{min_score:.0f}"),
+            "reason": (entry.get("score_detail", {}).get("semantic_rejection")
+                       or f"nota {entry['score']:.0f} abaixo do mínimo {min_score:.0f}"),
             "provider": entry["asset"].get("provider", ""),
+            "score": entry["score"],
+            "score_detail": entry.get("score_detail", {}),
         })
         if metrics:
             metrics.media_record_asset_rejected()
@@ -763,8 +886,8 @@ def _search_scene_with_shortcircuit(
         # All candidates already passed relevance. Prefer fresh assets without
         # altering scores or allowing generic imagery ahead of specific imagery.
         ranked = sorted(ranked, key=lambda entry: (
-            bool(entry.get("generic")), asset_uses.get(asset_key(entry["asset"]), 0),
-            -entry.get("score", 0)))
+            -entry.get("score", 0), bool(entry.get("generic")),
+            asset_uses.get(asset_key(entry["asset"]), 0)))
 
     download_window = min(max(1, MAX_CONCURRENT_DOWNLOADS), max(1, max_images))
     download_futures: dict[int, object] = {}
@@ -809,6 +932,7 @@ def _search_scene_with_shortcircuit(
                 if future is not None:
                     future.cancel()
                 fill_download_window()
+                entry["rejection_reason"] = f"download failed: {exc}"
                 msg = f"cena {ch.id}: download falhou ({exc})"
                 warnings.append(msg)
                 from ..runlog import event as run_event
@@ -821,6 +945,7 @@ def _search_scene_with_shortcircuit(
                     metrics.media_record_funnel("download_failed")
                 continue
         if not _downloaded_dims_ok(asset):
+            entry["rejection_reason"] = "resolution/legibility after download"
             msg = (f"cena {ch.id}: '{asset.title[:50]}' rejeitado após "
                    f"download (resolução insuficiente ou ilegível)")
             warnings.append(msg)
@@ -929,12 +1054,102 @@ def _search_scene_with_shortcircuit(
 
     first = picked[0]["asset"] if picked else None
     scene_rejected = rejected[:REJECTED_KEPT]
+    video_context = dict(getattr(ch, "video_context", {}) or {})
+    representation_levels = {}
+    for rep in (getattr(ch, "representations", []) or []):
+        if isinstance(rep, dict):
+            try:
+                representation_levels[str(rep.get("query", ""))] = int(
+                    rep.get("level", 0) or 0)
+            except (TypeError, ValueError):
+                representation_levels[str(rep.get("query", ""))] = 0
+    audit_candidates = []
+    for entry in candidates:
+        detail = entry.get("score_detail", {})
+        was_selected = any(
+            (item.get("asset", {}).get("provider"),
+             item.get("asset", {}).get("asset_id")) ==
+            ((entry.get("asset") or {}).get("provider"),
+             (entry.get("asset") or {}).get("asset_id")) for item in picked)
+        audit_candidates.append({
+            "title": str((entry.get("asset") or {}).get("title", ""))[:160],
+            "provider": (entry.get("asset") or {}).get("provider", ""),
+            "query": entry.get("query", ""),
+            "query_level": representation_levels.get(
+                entry.get("query", ""), 5 if entry.get("generic") else 3),
+            "topic_relevance": detail.get("topic_relevance"),
+            "scene_relevance": detail.get("scene_relevance"),
+            "score": entry.get("score", 0), "bonus": detail.get("bonus", 0),
+            "clip_score": entry.get("clip_score"),
+            "creator": str((entry.get("asset") or {}).get("author", ""))[:120],
+            "source_url": str((entry.get("asset") or {}).get("source_url", ""))[:300],
+            "date_created": (entry.get("asset") or {}).get("date_created", ""),
+            "media_type": (entry.get("asset") or {}).get("media_type", "image"),
+            "metadata_support": detail.get("metadata_support", 0.0),
+            "topic_evidence": detail.get("topic_evidence", {}),
+            "scene_evidence": detail.get("scene_evidence", {}),
+            "provider": (entry.get("asset") or {}).get("provider", ""),
+            "creator": str((entry.get("asset") or {}).get("author", ""))[:120],
+            "source_url": str((entry.get("asset") or {}).get("source_url", ""))[:300],
+            "date_created": (entry.get("asset") or {}).get("date_created", ""),
+            "media_type": (entry.get("asset") or {}).get("media_type", "image"),
+            "decision": ("selected" if was_selected else
+                         "rejected" if (entry.get("rejection_reason")
+                                        or detail.get("semantic_rejection")
+                                        or entry.get("score", 0) < min_score)
+                         else "not_selected"),
+            "reason": ("selected by scene relevance, topic relevance, then quality"
+                       if was_selected else entry.get("rejection_reason")
+                       or detail.get("semantic_rejection")
+                       or ("score below threshold"
+                           if entry.get("score", 0) < min_score
+                           else "passed gate; ranked below image limit")),
+        })
+    decision = {
+        "topic": video_context.get("topic", ""),
+        "visual_intent": (getattr(ch, "visual_intent_structured", "")
+                           or getattr(ch, "visual_intent", "")),
+        "entities": list(dict.fromkeys([str(getattr(ch, "primary_entity", "") or ""),
+            str(getattr(ch, "event", "") or ""),
+            *(getattr(ch, "visual_entities", []) or []),
+            *(getattr(ch, "context", []) or [])]))[:12],
+        "primary_entity": getattr(ch, "primary_entity", "") or getattr(ch, "subject", ""),
+        "representations": getattr(ch, "representations", []) or [],
+        "queries": [{"query": query,
+                     "level": representation_levels.get(
+                         query, 5 if query in generics else 3),
+                     "providers": sorted(query_providers.get(query, set())),
+                     "status": ("consulted" if query_providers.get(query)
+                                else "not_consulted_after_higher_priority_match"
+                                if ranked else "no_provider_results")}
+                    for query in queries],
+        "providers_consulted": sorted(providers_consulted),
+        "candidates": (audit_candidates + [{"title": item.get("title", ""),
+            "provider": item.get("provider", ""), "query": item.get("query", ""),
+            "topic_relevance": item.get("topic_relevance"),
+            "scene_relevance": item.get("scene_relevance"),
+            "creator": str((item.get("asset") or {}).get("author", ""))[:120],
+            "source_url": str((item.get("asset") or {}).get("source_url", ""))[:300],
+            "date_created": (item.get("asset") or {}).get("date_created", ""),
+            "media_type": (item.get("asset") or {}).get("media_type", "image"),
+            "decision": "rejected", "reason": item.get("reason", "")}
+            for item in rejected if not any(a["title"] == item.get("title")
+                                           for a in audit_candidates)])[:40],
+        "selected": (next((item for item in audit_candidates
+                           if item["decision"] == "selected"), None)
+                     or ({"title": (first or {}).get("title", ""),
+                          "provider": (first or {}).get("provider", ""),
+                          "reason": "No candidate passed semantic gates; rendered safe local visual"}
+                         if first and (first or {}).get("provider") == "synth" else None)),
+        "fallback": strategy_used if synthetic or not picked else "",
+    }
     return [{
         "chapter_id": ch.id,
         "asset": first,
         "assets": picked,
         "reused_from": None,
         "rejected": scene_rejected,
+        "visual_decision": decision,
         "visual_type": str(getattr(ch, "visual_type", "") or "literal"),
         "strategy": strategy_used,
     }], warnings
@@ -994,9 +1209,8 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
             if prov.name not in seen_names:
                 seen_names.add(prov.name)
                 providers.append(prov)
-    if not providers:
-        return _fetch_media_fallback(chapters, max_images, warnings=[])
-    
+    # An empty provider list still uses the per-scene synthetic fallback.
+    # Do not copy an unrelated neighbor's asset merely to fill the timeline.
     all_warnings = []
     scenes = []
     # O estado de variedade atravessa as cenas: é ele que impede seis cenas
@@ -1018,7 +1232,7 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)
     
-    _resolve_reuse_multi(scenes)
+    _resolve_reuse_multi(scenes, chapters)
     _annotate_reuse(scenes)
     return scenes, all_warnings
 
@@ -1079,25 +1293,52 @@ def _annotate_reuse(scenes: list[dict]) -> None:
         s.setdefault("reuse", [])
 
 
-def _resolve_reuse_multi(scenes: list[dict]) -> None:
-    """Cena sem asset reusa as imagens relevantes mais próximas (outro trecho).
-
-    Só o gradiente resta se NENHUMA cena tiver mídia. Mantém `asset`
-    (singular) sincronizado com `assets[0]` para os fluxos legados.
-    """
+def _resolve_reuse_multi(scenes: list[dict], chapters=None) -> None:
+    """Reuse only when donor title proves topic and scene relevance."""
     have = [s for s in scenes if s["assets"]]
-    if not have:
+    by_id = {chapter.id: chapter for chapter in (chapters or [])}
+    if not have or not by_id:
         return
     for s in scenes:
         if s["assets"]:
             continue
         cid = s["chapter_id"]
-        nearest = min(have, key=lambda h: (abs(h["chapter_id"] - cid),
-                                           0 if h["chapter_id"] < cid else 1))
+        chapter = by_id.get(cid)
+        if chapter is None:
+            continue
+        eligible = []
+        from . import scoring
+        for donor in have:
+            donor_chapter = by_id.get(donor["chapter_id"])
+            if donor_chapter is None:
+                continue
+            for entry in donor.get("assets", []):
+                asset = entry.get("asset") or {}
+                relevance = scoring.semantic_relevance(asset, chapter)
+                if (relevance.get("topic_relevance", 0) or 0) > 0 and \
+                        (relevance.get("scene_relevance", 0) or 0) >= 25:
+                    eligible.append((donor, entry, relevance))
+        if not eligible:
+            continue
+        donor, donor_entry, relevance = min(eligible, key=lambda item: (
+            -item[2]["scene_relevance"],
+            abs(item[0]["chapter_id"] - cid),
+            0 if item[0]["chapter_id"] < cid else 1))
+        nearest = donor
         s["assets"] = [dict(entry, order=i)
                        for i, entry in enumerate(nearest["assets"])]
         s["asset"] = s["assets"][0]["asset"]
         s["reused_from"] = nearest["chapter_id"]
+        if isinstance(s.get("visual_decision"), dict):
+            reused_asset = donor_entry.get("asset") or {}
+            s["visual_decision"]["fallback"] = "validated_reuse"
+            s["visual_decision"]["selected"] = {
+                "title": reused_asset.get("title", ""),
+                "provider": reused_asset.get("provider", ""),
+                "topic_relevance": relevance.get("topic_relevance"),
+                "scene_relevance": relevance.get("scene_relevance"),
+                "reason": f"validated topic and scene evidence from scene {nearest['chapter_id']}",
+            }
         print(f"AVISO: cena {cid} reusa imagem(ns) da cena "
               f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
 

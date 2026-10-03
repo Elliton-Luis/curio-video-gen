@@ -115,6 +115,9 @@ class CurioConfig:
     visual_insertions: int = 2
     visual_insert_style: str = "drop_in"  # entrada estilo "cai do álbum"
     visual_insert_gain_db: int = -15  # SFX do insert: mais presente
+    visual_clip_enabled: bool = False
+    visual_clip_device: str = "auto"
+    visual_clip_allow_cpu: bool = False
     # Música local por gênero, com transições e SFX habilitados por padrão.
     audio_library_dir: str = "assets/library"
     audio_enabled: bool = True
@@ -251,6 +254,23 @@ class CurioConfig:
         if os.environ.get("CURIO_RESEARCH_TIMEOUT"):
             cfg.research_timeout = max(5, int(os.environ["CURIO_RESEARCH_TIMEOUT"]))
         vis = data.get("visual", {}) if isinstance(data.get("visual"), dict) else {}
+        cfg.visual_clip_enabled = _as_bool(
+            vis.get("clip_enabled", cfg.visual_clip_enabled), False)
+        cfg.visual_clip_device = str(
+            vis.get("clip_device", cfg.visual_clip_device)).strip().lower()
+        if cfg.visual_clip_device not in ("auto", "xpu", "cuda", "mps", "cpu"):
+            cfg.visual_clip_device = "auto"
+        cfg.visual_clip_allow_cpu = _as_bool(
+            vis.get("clip_allow_cpu", cfg.visual_clip_allow_cpu), False)
+        if os.environ.get("CURIO_CLIP_ENABLED", "").strip():
+            cfg.visual_clip_enabled = _as_bool(os.environ["CURIO_CLIP_ENABLED"], False)
+        if os.environ.get("CURIO_CLIP_DEVICE"):
+            value = os.environ["CURIO_CLIP_DEVICE"].strip().lower()
+            if value in ("auto", "xpu", "cuda", "mps", "cpu"):
+                cfg.visual_clip_device = value
+        if os.environ.get("CURIO_CLIP_ALLOW_CPU", "").strip():
+            cfg.visual_clip_allow_cpu = _as_bool(
+                os.environ["CURIO_CLIP_ALLOW_CPU"], False)
         cfg.visual_max_images = int(vis.get("max_images", cfg.visual_max_images))
         cfg.visual_overlap = float(vis.get("overlap", cfg.visual_overlap))
         if os.environ.get("CURIO_VISUAL_MAX_IMAGES"):

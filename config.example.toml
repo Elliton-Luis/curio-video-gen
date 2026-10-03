@@ -46,8 +46,9 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # connect_timeout = 10  # handshake TCP+TLS (env NVIDIA_CONNECT_TIMEOUT):
 #                       # curto de propósito — rede/endpoint falham rápido
 #                       # sem consumir o orçamento de geração.
-# Com os outros providers indisponíveis, a NVIDIA entra em fallback final
-# resiliente: até 5 tentativas sem timeout; 401/403/404 encerram sem retry.
+# Todas as chamadas têm timeout finito. Se a chain falhar em cenas,
+# o Curio preserva a narração e usa o planejador local.
+# HTTP 429 respeita Retry-After (máximo 2 tentativas e espera limitada a 5 s).
 
 # Fallback automático quando a NVIDIA falha (roteiro e cenas).
 # Chave via .env (OPENROUTER_API_KEY); aqui só modelo/base.
@@ -55,7 +56,7 @@ margin_v = 200   # margem inferior (Alignment=2: legendas na base)
 # model = "meta-llama/llama-3.3-70b-instruct:free"
 # base_url = "https://openrouter.ai/api/v1"
 
-# Provedores LLM usam chaves no .env. Ordem: NVIDIA → Groq → OpenRouter → Mistral → Gemini.
+# Provedores LLM usam chaves no .env. Ordem: Groq → NVIDIA → OpenRouter → Mistral → Gemini.
 # [gemini]
 # model = "gemini-2.5-flash"
 # base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -84,12 +85,14 @@ providers = "pixabay,unsplash,pexels,nasa,met,aic,wikimedia"  # csv; "none" = s�
 #   CURIO_MEDIA_MIN_DIMENSION=1080  lado mínimo em px, já que o render
 #                                   recorta e amplia para 1080x1920.
 
-# Pontuação semântica — OPCIONAL e desligada por padrão. A camada base
-# (lexical, sobre o título da imagem) é a padrão e não precisa de nada
-# além deste projeto. CLIP é ponto de extensão: o curio NÃO instala
-# torch/open_clip nem baixa pesos de modelo.
-#   CURIO_CLIP_ENABLED=1     liga (exige torch + open_clip instalados à mão)
-#   CURIO_CLIP_DEVICE=auto   auto | xpu | cuda | mps | cpu
+# Reclassificação visual por CLIP — OPCIONAL e desligada por padrão.
+# O gate semântico por texto continua ativo sem dependências ML.
+# A instalação padrão NÃO instala dependências ML nem baixa pesos de modelo.
+#   [visual].clip_enabled = true ou CURIO_CLIP_ENABLED=1
+#   [visual].clip_device = "auto" ou CURIO_CLIP_DEVICE=auto
+#   [visual].clip_allow_cpu = true para permitir CPU sem device explícito
+# Instale a opção separada com: pip install 'curio[clip]'. Pesos baixam na
+# primeira execução habilitada, não durante instalação nem no caminho normal.
 # Com "auto" o projeto procura aceleradores que existam de fato no torch
 # instalado (xpu = Intel, cuda, mps) e só cai para cpu se nenhum houver.
 # CLIP entra depois dos filtros e da nota base, só nos melhores
@@ -99,6 +102,9 @@ providers = "pixabay,unsplash,pexels,nasa,met,aic,wikimedia"  # csv; "none" = s�
 max_images = 3  # fotos por cena no modo roteiro-pronto (1-5; CURIO_VISUAL_MAX_IMAGES)
 overlap = 0.9   # sobreposição máxima (s) entre fotos (CURIO_VISUAL_OVERLAP)
 sfx = true      # SFX discretos em ~1/3 das inserções (CURIO_VISUAL_SFX=0 desliga)
+clip_enabled = false  # CLIP opt-in; nunca faz busca nem bypass do gate
+clip_device = "auto"  # auto | xpu | cuda | mps | cpu; device explícito ativa CPU
+clip_allow_cpu = false  # alternativa explícita para permitir CPU com device=auto
 
 # Inserções esparsas: fotos COMPLEMENTARES que caem por cima da imagem de
 # fundo. O orçamento é do VÍDEO INTEIRO (não por cena): 1–2 é o ponto ideal,

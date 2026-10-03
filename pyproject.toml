@@ -14,5 +14,8 @@ license = { text = "MIT" }
 video-gen = "curio.cli:main"
 curio-tui = "curio.tui:main"
 
+[project.optional-dependencies]
+clip = ["torch", "open-clip-torch", "Pillow"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
