@@ -136,6 +136,10 @@ def semantic_relevance(asset: dict, ch) -> dict:
     topic_evidence = evidence_for(topic_phrases)
     topic_matches = list(topic_evidence)
     scene_phrases = [getattr(ch, "visual_intent_structured", "")]
+    if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+        # Local query phrases are the only scene plan when the LLM is down.
+        # Match complete phrases only; one-token homonyms remain non-evidence.
+        scene_phrases.extend(getattr(ch, "visual_queries", []) or [])
     # Legacy plans without an explicit visual representation use the event
     # name as scene evidence. Structured plans keep event/topic relation
     # separate from evidence of what the candidate actually depicts.

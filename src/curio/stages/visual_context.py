@@ -164,6 +164,15 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
     changed = False
     for ch in needs:
         previous = ch.to_dict()
+        # The English name comes from the accepted Wikipedia article's
+        # language link. Keep it in scoring context as well as search queries.
+        context = dict(getattr(ch, "video_context", {}) or {})
+        for key in ("primary_entities", "aliases"):
+            current = context.get(key, []) or []
+            if isinstance(current, str):
+                current = [current]
+            context[key] = list(dict.fromkeys([*current, *names]))[:8]
+        ch.video_context = context
         if not ch.subject and not ch.visual_queries:
             subject = names[0]
             aliases = names

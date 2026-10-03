@@ -328,25 +328,14 @@ representação. Abaixo do mínimo, a cena troca de estratégia visual em vez de
 usar candidato "menos ruim". Decisão, queries, providers, evidências,
 rejeições e fallback ficam em `media.json` e `metrics/*.json`.
 
+Quando o planner LLM falha, frases completas das queries locais também podem
+provar relevância da cena. Nomes alternativos confirmados pela pesquisa entram
+no contexto de scoring. Termos com uma palavra não provam identidade.
+
 Provedores sem chave não quebram o fluxo: `video-gen doctor` lista cada
 um e o motivo de cada exclusão. Para `historical_art`, os museus (Met, AIC)
 e Wikimedia são consultados antes dos bancos genéricos; só entra obra em
 domínio público com imagem e direitos claros.
-
-### CLIP opcional
-
-CLIP apenas reranqueia shortlist já aprovada pelos gates; nunca pesquisa e
-nunca aprova candidato rejeitado. Padrão desligado. Instale a extra opcional
-com `pip install 'curio[clip]'` e configure em `[visual]`:
-
-```toml
-clip_enabled = true
-clip_device = "auto" # auto | xpu | cuda | mps | cpu
-clip_allow_cpu = false
-```
-
-`auto` usa acelerador disponível. CPU exige `clip_device = "cpu"` ou
-`clip_allow_cpu = true`. A instalação normal não instala dependências ML.
 
 ## Revisão humana
 
