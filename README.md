@@ -37,6 +37,10 @@ No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
 de adapter inclui seus retries/backoff. `time_per_request` é `null` porque a
 duração de cada tentativa HTTP ainda não é medida.
+O enriquecimento pós-planner de contexto está centralizado em
+`scene_enrichment.py`: recebe proveniência explícita, clona a saída do
+planner, retorna uma batch validada e registra quais complementos foram
+aplicados antes de atualizar `chapters.json`.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

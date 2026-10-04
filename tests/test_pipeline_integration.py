@@ -154,6 +154,9 @@ def test_integracao_completa(tmp_path):
     meta, out_dir = _run(tmp_path)
     root = os.path.join(out_dir, "teste-integracao")
     paths = video_paths(out_dir, "teste-integracao")
+    assert meta["scene_context_enrichment"]["source"] == "mock"
+    assert meta["scene_context_enrichment"]["changed"] is True
+    assert os.path.isfile(paths.media_manifest_json)
     run_log = meta["execution_log"]
     assert os.path.isfile(run_log)
     events = [json.loads(line) for line in open(run_log, encoding="utf-8")]

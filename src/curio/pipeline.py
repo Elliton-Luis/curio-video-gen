@@ -643,9 +643,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
     scene_event = ("provider" if scenes_source not in ("local", "cache")
                    else "fallback" if scenes_source == "local" else "cache")
-    from .stages.visual_context import (anchor_local_topic,
-                                       attach_video_context,
-                                       fill_missing_context)
+    from .stages.scene_enrichment import enrich_scenes
     local_scenes = (scenes_source == "local" or
                     any(str(ch.visual_intent or "").startswith("local fallback")
                         for ch in chapters))
@@ -655,37 +653,30 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                             == "local")
         except (OSError, ValueError, json.JSONDecodeError):
             local_scenes = False
-    if local_scenes:
-        # Cached local chapters predate the explicit `local fallback` marker.
-        # Tag them before anchoring so scoring applies the same hard topic gate.
-        for chapter in chapters:
-            if not str(chapter.visual_intent or "").startswith("local fallback"):
-                chapter.visual_intent = ("local fallback: cached "
-                                          + str(chapter.visual_intent or "")).strip()
-    if attach_video_context(chapters, idea, research_target):
+    scene_etymology = (research_etymology
+                       if perfil and "wiktionary" in perfil.specialized_sources
+                       else None)
+    enrichment = enrich_scenes(
+        chapters, topic=idea, target=research_target, source=scenes_source,
+        local_fallback=local_scenes, genre=genre_key,
+        research_sources=research_sources,
+        research_timeout=cfg.research_timeout,
+        etymology=scene_etymology)
+    chapters = list(enrichment.scenes)
+    if enrichment.changed:
         force_after_script = True
         _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
-    if local_scenes and anchor_local_topic(chapters, idea, research_target):
-        force_after_script = True
-        _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
+    if "local_topic_anchor" in enrichment.applied:
         run_event("result", "Cenas locais ancoradas no tema do vídeo",
                   operation="scenes", source=scenes_source,
                   topic_queries=chapters[0].global_visual_queries if chapters else [])
-    if fill_missing_context(chapters, research_target, genre_key,
-                            research_sources, cfg.research_timeout):
-        force_after_script = True  # mídia em cache precisa refletir o novo contexto
-        _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
+    if "verified_entity_context" in enrichment.applied:
         run_event("result", "Contexto visual recuperado da entidade pesquisada",
                   operation="scenes", source=scenes_source)
-    if (perfil and "wiktionary" in perfil.specialized_sources
-            and research_etymology is not None):
-        from .stages import etymology as etymology_stage
-        if etymology_stage.enrich_chapters(chapters, research_etymology):
-            force_after_script = True
-            _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
-            run_event("result", "Cenas enriquecidas com a cadeia etimológica",
-                      operation="scenes", source=scenes_source,
-                      word=getattr(research_etymology, "word", ""))
+    if "etymology_visual_context" in enrichment.applied:
+        run_event("result", "Cenas enriquecidas com a cadeia etimológica",
+                  operation="scenes", source=scenes_source,
+                  word=getattr(research_etymology, "word", ""))
     run_event(scene_event, f"Cenas: {scenes_source}; {len(chapters)} cena(s)",
               operation="scenes", source=scenes_source,
               scenes=len(chapters))
@@ -1015,6 +1006,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                               stage_times, started)
     metadata.update({
         "genre": genre_key,
+        "scene_context_enrichment": enrichment.to_dict(),
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),
         "genre_profile": editorial_stage.summary(perfil),
         "typography": _typography_report(cfg, genre_key),
