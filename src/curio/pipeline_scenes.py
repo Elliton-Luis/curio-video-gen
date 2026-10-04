@@ -17,7 +17,10 @@ from .stages.scene_local_planning import recover_legacy_chapters
 from .stages.scene_contract import (ScenePlanResult, SemanticScene,
                                     TimelineSpan)
 from .stages.scene_enrichment import SceneEnrichmentResult, enrich_scenes
-from .stages.scene_plan_artifact import plan_from_dict, plan_to_dict
+from .stages.scene_plan_artifact import (ScenePlanManifest, plan_from_dict,
+                                         plan_to_dict, read_manifest,
+                                         scene_plan_inputs_signature,
+                                         write_manifest)
 from .stages.scenes import Chapter
 
 
@@ -71,7 +74,22 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     scene_plan_path = getattr(paths, "scene_plan_json", "")
     has_scene_plan = bool(scene_plan_path and os.path.isfile(scene_plan_path))
     has_legacy_chapters = os.path.isfile(paths.chapters_json)
-    if not force and (has_scene_plan or has_legacy_chapters):
+    input_signature = scene_plan_inputs_signature(
+        script_text, cfg, genre=genre,
+        scene_target_seconds=scene_target_seconds, max_scenes=max_scenes,
+        scene_directive=_scene_directive(scene_directive, etymology),
+        topic=topic, target=target, research_sources=research_sources,
+        research_timeout=research_timeout, etymology=etymology)
+    manifest_path = getattr(paths, "scene_plan_manifest_json", "")
+    saved_manifest = read_manifest(manifest_path) if manifest_path else None
+    scene_plan_is_current = bool(
+        has_scene_plan and saved_manifest
+        and saved_manifest.inputs_sha256 == input_signature)
+    # A canonical plan without matching input identity is derived data, not
+    # editorial authority. A legacy chapter file remains migratable once.
+    can_load_cache = (scene_plan_is_current if has_scene_plan
+                      else has_legacy_chapters)
+    if not force and can_load_cache:
         persist_chapters = False
         persist_plan = False
         source = "cache"
@@ -156,6 +174,8 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
         write_json(scene_plan_path, plan_to_dict(ScenePlanResult(
             semantic_scenes=semantic_scenes,
             timeline_spans=tuple(timeline_spans), source=plan_source)))
+    if manifest_path and (scene_plan_path and os.path.isfile(scene_plan_path)):
+        write_manifest(manifest_path, ScenePlanManifest(input_signature))
     if "local_topic_anchor" in enriched.applied:
         run_event("result", "Cenas locais ancoradas no tema do vídeo",
                   operation="scenes", source=source,

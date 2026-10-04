@@ -122,6 +122,9 @@ O cache canônico do pipeline fica em `script/scene-plan.json` (schema 1), com
 semântica e `TimelineSpan` separados. Projetos existentes migram ao serem lidos
 de `chapters.json`; esse arquivo continua sendo atualizado como projeção para
 CLI, TUI e render enquanto esses consumidores forem dependentes do formato.
+`scene-plan-manifest.json` liga o plano ao hash do roteiro, aos parâmetros do
+planner e ao contexto semântico; plano canônico sem identidade compatível é
+recalculado. O manifesto persiste somente o hash, não os valores de configuração.
 `pipeline_timeline.py` converte Chapters temporizados e seleções em
 `VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de
 beats no mesmo limite.
@@ -583,7 +586,8 @@ mostra disponibilidade e device.
 
 ```text
 output/[<genero>/]<AAAAMMDD-titulo>/
-├── script/script.txt + title.txt + artifacts.json + chapters.json
+├── script/script.txt + title.txt + artifacts.json + scene-plan.json
+│   └── scene-plan-manifest.json + chapters.json (projeção compatível)
 ├── media/media.json (+ cache/media/ global com licenças)
 ├── timeline/timeline.json (+ visual_timeline.json no modo roteiro-pronto)
 ├── audio/narration.wav + words.json + tts-manifest.json (IA) / human.wav

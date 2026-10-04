@@ -313,3 +313,19 @@ contratos. Atualizei a auditoria para separar baseline histórica do estado
 revisado em `eed59d7`, e o README agora alerta que as descrições da baseline
 são históricas. A checagem documental `git diff --check` passou. Nenhum código
 ou comportamento foi alterado nesta atualização.
+
+## E5: scene-plan cache has input identity
+
+O `scene-plan.json` canônico validava somente o schema; assim, representações
+poderiam sobreviver a mudanças de inputs relevantes. `scene-plan-manifest.json`
+agora registra SHA-256 do roteiro, parâmetros do planner, idioma/endpoints de
+modelo, diretiva de gênero, tópico/alvo, fontes de pesquisa e etimologia. Só o
+digest é persistido, nunca configuração em claro ou credenciais. Plano canônico
+sem manifesto compatível é reconstruído; projetos com apenas `chapters.json`
+histórico continuam migráveis e recebem manifesto quando o plano canônico é
+gravado.
+
+Regressões cobrem migração legada, reuso de plano compatível e reconstrução
+após divergência da identidade de inputs. Testes focados de contrato/cache de
+cenas passaram (**15**); `compileall` e `git diff --check` passaram; suíte
+integral passou com **877 testes em 195,02 s**.
