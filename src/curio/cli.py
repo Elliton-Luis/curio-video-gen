@@ -445,6 +445,9 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         return 1
 
     chapters = [Chapter.from_dict(d) for d in _read_json(paths.timeline_json)]
+    semantic_scenes = tuple(chapter.semantic_scene("rerender")
+                            for chapter in chapters)
+    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     media = _read_json(paths.media_json)
     try:
         old_meta = _read_json(paths.metadata_json)
@@ -478,13 +481,16 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
 
     transition_mode = _transition_mode(cfg)
     transitions = pipeline_render_stage.genre_transitions(
-        chapters, project_genre, transition_mode)
+        semantic_scenes, project_genre, transition_mode)
     if visual_timeline:
-        pipeline_render_stage.build_silent_visual(chapters, visual_timeline, args.slug, paths,
+        pipeline_render_stage.build_silent_visual(
+                             semantic_scenes, timeline_spans,
+                             visual_timeline, args.slug, paths,
                              cfg, paths.silent_mp4, transitions=transitions)
     else:
-        durations = [max(0.5, c.end - c.start) for c in chapters]
-        pipeline_render_stage.build_silent(chapters, media, args.slug, durations, paths, cfg,
+        pipeline_render_stage.build_silent(
+                      semantic_scenes, timeline_spans, media,
+                      args.slug, paths, cfg,
                       paths.silent_mp4, transitions=transitions)
 
     total = round(audio_duration + 0.8, 2)
@@ -523,7 +529,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     old_meta["processing_time_seconds"] = round(time.monotonic() - metrics.started_monotonic, 2)
     old_meta["audio"] = audio_plan["metadata"]
     old_meta["visual_transition_signature"] = pipeline_render_stage.transition_signature(
-        chapters, project_genre, transition_mode,
+        semantic_scenes, timeline_spans, project_genre, transition_mode,
         {"insertions": cfg.visual_insertions,
          "insert_style": cfg.visual_insert_style,
          "insert_gain_db": cfg.visual_insert_gain_db,

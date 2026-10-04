@@ -95,3 +95,17 @@ passaram; suíte completa: **849 passaram em 145,75 s**; `compileall` e
 falha antes por importar `pipeline._relevance`, removida anteriormente, e usa
 `scenes._local_chapters`, também removida. Isso é dívida do script, não falha
 da mudança atual.
+
+## A4n: render silencioso recebe semântica e timeline separadas
+
+`pipeline_render` não importa mais `Chapter`. Montagem por mídia e por visual
+consome `SemanticScene[] + TimelineSpan[]`; segmentos recebem ID explícito e
+duram conforme o span. Política de transição consome somente cenas semânticas,
+e sua assinatura combina cenas e spans com validação de IDs. `pipeline.py`
+usa os contratos produzidos na geração e no fluxo humano; finalize/rerender
+convertem o arquivo Chapter histórico uma vez na entrada. A extensão de áudio
+humano maior que a timeline também amplia o span usado no render, inclusive no
+caminho sem visual timeline. Focados: 140 passaram; suíte completa: **850
+passaram em 145,42 s**; `compileall` e `git diff --check` passaram. Sem nova
+geração real nesta fase. O smoke script ainda para antes dos seus checks por
+imports internos já removidos (`pipeline._relevance`, `scenes._local_chapters`).

@@ -92,11 +92,12 @@ def build_teleprompter_cues(semantic_scenes: tuple[SemanticScene, ...],
     Retorna (início, fim, bloco, id_da_cena). A semântica vem da cena e o
     tempo vem do span; batches desalinhados falham no limite.
     """
+    if (any(not isinstance(scene, SemanticScene) for scene in semantic_scenes)
+            or any(not isinstance(span, TimelineSpan) for span in timeline_spans)):
+        raise TypeError("teleprompter requires SemanticScene and TimelineSpan values")
     scene_ids = tuple(scene.id for scene in semantic_scenes)
     span_ids = tuple(span.scene_id for span in timeline_spans)
-    if (any(not isinstance(scene, SemanticScene) for scene in semantic_scenes)
-            or any(not isinstance(span, TimelineSpan) for span in timeline_spans)
-            or not scene_ids or len(scene_ids) != len(set(scene_ids))
+    if (not scene_ids or len(scene_ids) != len(set(scene_ids))
             or scene_ids != span_ids):
         raise ValueError("teleprompter scenes and spans are misaligned")
     cues = []

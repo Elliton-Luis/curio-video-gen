@@ -41,6 +41,10 @@ O planejamento visual e suas métricas recebem `SemanticScene[]` e
 para render e formatos externos enquanto esses consumidores migram.
 O teleprompter também combina texto semântico e spans tipados, validando a
 ordem das cenas antes de distribuir as falas no tempo.
+O render silencioso recebe os mesmos contratos: identidade/texto vêm de
+`SemanticScene`, duração vem de `TimelineSpan`, e a assinatura das transições
+rejeita batches desalinhados. `Chapter` é adaptado ao reabrir projetos salvos;
+não participa mais da escolha de segmentos no pipeline de render.
 No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
 de adapter inclui seus retries/backoff. `download_durations` mede a cadeia

@@ -1270,6 +1270,9 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
 
 
 def _validate_visual_timeline_inputs(semantic_scenes, timeline_spans) -> None:
+    if (any(not isinstance(scene, SemanticScene) for scene in semantic_scenes)
+            or any(not isinstance(span, TimelineSpan) for span in timeline_spans)):
+        raise TypeError("visual timeline requires SemanticScene and TimelineSpan values")
     scene_ids = tuple(scene.id for scene in semantic_scenes)
     span_ids = tuple(span.scene_id for span in timeline_spans)
     if not scene_ids or len(scene_ids) != len(set(scene_ids)):

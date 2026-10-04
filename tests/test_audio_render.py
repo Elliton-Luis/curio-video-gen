@@ -123,30 +123,45 @@ def test_default_music_gain_is_audible_under_ducking():
 def test_genre_transition_plan_distinguishes_genres_and_scene_roles():
     from curio.pipeline import _final_audio_fade
     from curio.pipeline_render import genre_transitions
-    from curio.stages.scenes import Chapter
-    chapters = [
-        Chapter(id=1, narration="context", duration_estimate=3),
-        Chapter(id=2, narration="a quote", duration_estimate=3,
-                text_role="quote", visual_type="typographic"),
-        Chapter(id=3, narration="na verdade, revelou a descoberta", duration_estimate=3),
-    ]
-    people = genre_transitions(chapters, "people")
-    science = genre_transitions(chapters, "science")
+    from curio.stages.scene_contract import SemanticScene
+    scenes = (
+        SemanticScene(id=1, narration="context"),
+        SemanticScene(id=2, narration="a quote",
+                      text_role="quote", visual_type="typographic"),
+        SemanticScene(id=3, narration="na verdade, revelou a descoberta"),
+    )
+    people = genre_transitions(scenes, "people")
+    science = genre_transitions(scenes, "science")
     assert people[0] > science[0]
     assert people[1] > people[0]
-    assert genre_transitions(chapters, "people", "none") == [0.0, 0.0]
+    assert genre_transitions(scenes, "people", "none") == [0.0, 0.0]
     assert _final_audio_fade("people") > _final_audio_fade("science")
 
 
 def test_genre_transition_kinds_vary_effect_without_changing_lengths():
     from curio.pipeline_render import genre_transition_kinds
-    from curio.stages.scenes import Chapter
-    chapters = [Chapter(id=1, narration="a", duration_estimate=3),
-                Chapter(id=2, narration="b", duration_estimate=3)]
-    assert genre_transition_kinds(chapters, "mystery") == ["wipeleft"]
-    assert genre_transition_kinds(chapters, "science") == ["slideright"]
-    assert genre_transition_kinds(chapters, "people") == ["slideright"]
-    assert genre_transition_kinds(chapters, "people", "none") == ["fade"]
+    from curio.stages.scene_contract import SemanticScene
+    scenes = (SemanticScene(id=1, narration="a"),
+              SemanticScene(id=2, narration="b"))
+    assert genre_transition_kinds(scenes, "mystery") == ["wipeleft"]
+    assert genre_transition_kinds(scenes, "science") == ["slideright"]
+    assert genre_transition_kinds(scenes, "people") == ["slideright"]
+    assert genre_transition_kinds(scenes, "people", "none") == ["fade"]
+
+
+def test_transition_signature_requires_aligned_semantic_and_timing_contracts():
+    import pytest
+    from curio.pipeline_render import transition_signature
+    from curio.stages.scene_contract import SemanticScene, TimelineSpan
+    scenes = (SemanticScene(id=1, narration="Roma"),)
+    first = (TimelineSpan(scene_id=1, duration_estimate=3, start=0, end=3),)
+    moved = (TimelineSpan(scene_id=1, duration_estimate=3, start=1, end=4),)
+    assert transition_signature(scenes, first, "history", "auto") != \
+        transition_signature(scenes, moved, "history", "auto")
+    with pytest.raises(ValueError, match="misaligned"):
+        transition_signature(scenes,
+                             (TimelineSpan(2, 3, 0, 3),),
+                             "history", "auto")
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),

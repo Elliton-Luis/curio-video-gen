@@ -288,8 +288,8 @@ def test_rerender_uses_timed_chapters_and_records_asset_usage(tmp_path, monkeypa
         from tests.test_support.visual_timeline import build_visual_timeline
         json.dump(build_visual_timeline(visual_stage, chapters, media, insertions=0), stream)
     captured = {}
-    def build(timed, *args, **kwargs):
-        captured["duration"] = timed[0].end - timed[0].start
+    def build(scenes, spans, *args, **kwargs):
+        captured["duration"] = spans[0].end - spans[0].start
     monkeypatch.setattr(cli.pipeline_render_stage, "build_silent_visual", build)
     monkeypatch.setattr(cli.ff, "probe_duration", lambda *args: 4.0)
     monkeypatch.setattr("curio.stages.render.burn_final", lambda *a, **kw: {

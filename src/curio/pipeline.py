@@ -50,7 +50,7 @@ from .stages import sources as sources_stage
 from .stages import visual as visual_stage
 from .stages import visual_timeline as visual_timeline_stage
 from .stages.scenes import Chapter
-from .stages.scene_contract import SemanticScene
+from .stages.scene_contract import SemanticScene, TimelineSpan
 
 STAGES_AI = ["roteiro", "cenas", "mídia", "narração", "legendas", "montagem"]
 STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
@@ -684,7 +684,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
     transition_mode = _transition_mode(cfg)
     transition_sig = pipeline_render_stage.transition_signature(
-        chapters, genre_key, transition_mode,
+        tuple(semantic_scenes), timeline_spans, genre_key, transition_mode,
         {"insertions": insert_budget,
          "insert_style": cfg.visual_insert_style,
          "insert_gain_db": cfg.visual_insert_gain_db,
@@ -718,15 +718,19 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         silent = paths.silent_mp4
         if force or transition_dirty or not os.path.isfile(silent):
             transitions = pipeline_render_stage.genre_transitions(
-                chapters, genre_key, transition_mode)
+                tuple(semantic_scenes), genre_key, transition_mode)
             kinds = pipeline_render_stage.genre_transition_kinds(
-                chapters, genre_key, transition_mode)
+                tuple(semantic_scenes), genre_key, transition_mode)
             if visual_timeline:
-                pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths,
+                pipeline_render_stage.build_silent_visual(
+                                     tuple(semantic_scenes), timeline_spans,
+                                     visual_timeline, idea, paths,
                                      cfg, silent, transitions=transitions,
                                      kinds=kinds)
             else:
-                pipeline_render_stage.build_silent(chapters, media_scenes, idea, durations, paths,
+                pipeline_render_stage.build_silent(
+                              tuple(semantic_scenes), timeline_spans,
+                              media_scenes, idea, paths,
                               cfg, silent, transitions=transitions, kinds=kinds)
         narration_wav = paths.narration_wav
         sfx_path = (_sfx_track_for(visual_timeline, total, paths)
@@ -796,7 +800,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "genre": genre_key,
             "mode": transition_mode,
             "boundary_durations": pipeline_render_stage.genre_transitions(
-                chapters, genre_key, transition_mode),
+                tuple(semantic_scenes), genre_key, transition_mode),
             "final_fade": _final_audio_fade(genre_key, transition_mode),
         },
         "sources": {
@@ -954,18 +958,21 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     t0 = time.monotonic()
     emit(5, "Montando silencioso")
     if visual_timeline:
-        pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths, cfg,
+        pipeline_render_stage.build_silent_visual(
+                             semantic_scenes, timeline_spans,
+                             visual_timeline, idea, paths, cfg,
                              paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
-                                 chapters, genre_key, transition_mode),
+                                 semantic_scenes, genre_key, transition_mode),
                              kinds=pipeline_render_stage.genre_transition_kinds(
-                                 chapters, genre_key, transition_mode))
+                                 semantic_scenes, genre_key, transition_mode))
     else:
-        durations = [c.end - c.start for c in chapters]
-        pipeline_render_stage.build_silent(chapters, media_scenes, idea, durations, paths, cfg,
+        pipeline_render_stage.build_silent(
+                      semantic_scenes, timeline_spans, media_scenes,
+                      idea, paths, cfg,
                       paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
-                          chapters, genre_key, transition_mode),
+                          semantic_scenes, genre_key, transition_mode),
                       kinds=pipeline_render_stage.genre_transition_kinds(
-                          chapters, genre_key, transition_mode))
+                          semantic_scenes, genre_key, transition_mode))
     stage_times["silent"] = round(time.monotonic() - t0, 2)
     emit(5, "Montando silencioso", "OK")
 
@@ -991,7 +998,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         "audio_request": audio_plan["metadata"],
         "sources": source_summary,
         "visual_transition_signature": pipeline_render_stage.transition_signature(
-            chapters, genre_key, transition_mode,
+            semantic_scenes, timeline_spans, genre_key, transition_mode,
             {"insertions": insert_budget,
              "insert_style": cfg.visual_insert_style,
              "insert_gain_db": cfg.visual_insert_gain_db,
@@ -999,7 +1006,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         "visual_transitions": {
             "genre": genre_key, "mode": transition_mode,
             "boundary_durations": pipeline_render_stage.genre_transitions(
-                chapters, genre_key, transition_mode),
+                semantic_scenes, genre_key, transition_mode),
             "final_fade": _final_audio_fade(genre_key, transition_mode),
         },
         "genre_profile": genre_profile or editorial_stage.summary(None),
@@ -1139,6 +1146,9 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         raise ValueError(f"arquivo sem trilha de áudio: {audio_src}")
 
     chapters = [Chapter.from_dict(row) for row in _read_json(paths.timeline_json)]
+    semantic_scenes = tuple(chapter.semantic_scene("rerender")
+                            for chapter in chapters)
+    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     media_scenes = _read_json(paths.media_json)
     try:
         meta = _read_json(paths.metadata_json)
@@ -1234,27 +1244,39 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     elif diff > 0:
         # Áudio mais longo: estende a ÚLTIMA cena (nunca corta a fala).
         adj = os.path.join(paths.root, "render", "silent_adj.mp4")
+        render_spans = timeline_spans
         if visual_timeline:
             chapters[-1].end = round(chapters[-1].end + diff, 3)
+            timeline_spans = (*timeline_spans[:-1], TimelineSpan(
+                timeline_spans[-1].scene_id,
+                timeline_spans[-1].duration_estimate + diff,
+                timeline_spans[-1].start, chapters[-1].end))
+            render_spans = timeline_spans
             _write_json(paths.timeline_json,
                         [c.to_dict() for c in chapters])
             visual_timeline = visual_timeline_stage.retime_visual_timeline(
                 visual_timeline, tuple(chapter.timeline_span()
                                         for chapter in chapters))
             _write_json(paths.visual_json, visual_timeline)
-            pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths,
+            pipeline_render_stage.build_silent_visual(
+                                 semantic_scenes, timeline_spans,
+                                 visual_timeline, idea, paths,
                                  cfg, adj, transitions=pipeline_render_stage.genre_transitions(
-                                      chapters, project_genre, transition_mode),
+                                      semantic_scenes, project_genre, transition_mode),
                                  kinds=pipeline_render_stage.genre_transition_kinds(
-                                      chapters, project_genre, transition_mode))
+                                      semantic_scenes, project_genre, transition_mode))
         else:
-            durations = [c.end - c.start for c in chapters]
-            durations[-1] += diff
-            pipeline_render_stage.build_silent(chapters, media_scenes, idea, durations, paths,
+            last = timeline_spans[-1]
+            render_spans = (*timeline_spans[:-1], TimelineSpan(
+                last.scene_id, last.duration_estimate + diff,
+                last.start, last.end + diff))
+            pipeline_render_stage.build_silent(
+                           semantic_scenes, render_spans, media_scenes,
+                           idea, paths,
                            cfg, adj, transitions=pipeline_render_stage.genre_transitions(
-                               chapters, project_genre, transition_mode),
+                               semantic_scenes, project_genre, transition_mode),
                            kinds=pipeline_render_stage.genre_transition_kinds(
-                               chapters, project_genre, transition_mode))
+                               semantic_scenes, project_genre, transition_mode))
         silent = adj
         warnings.append(f"última cena estendida +{diff:.1f}s p/ caber o áudio")
     else:
@@ -1314,7 +1336,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         "transcription_model": f"faster-whisper/{cfg.whisper_model}",
         "audio": audio_plan["metadata"],
         "visual_transition_signature": pipeline_render_stage.transition_signature(
-            chapters, project_genre, transition_mode,
+            semantic_scenes, timeline_spans, project_genre, transition_mode,
             {"insertions": cfg.visual_insertions,
              "insert_style": cfg.visual_insert_style,
              "insert_gain_db": cfg.visual_insert_gain_db,
@@ -1322,7 +1344,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         "visual_transitions": {
             "genre": project_genre, "mode": transition_mode,
             "boundary_durations": pipeline_render_stage.genre_transitions(
-                chapters, project_genre, transition_mode),
+                semantic_scenes, project_genre, transition_mode),
             "final_fade": _final_audio_fade(
                 project_genre, transition_mode),
         },
