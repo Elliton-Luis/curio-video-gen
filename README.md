@@ -65,6 +65,9 @@ beats no mesmo limite.
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e
 avisos explícitos; o coordenador consome esses resultados nos estágios seguintes.
+`pipeline_metadata.py` fecha persistência de geração e finalize: mede o estágio
+`finalize`, grava a mesma tabela de tempos no metadata e no arquivo de métricas,
+e mantém `metrics_file` no metadata persistido.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).

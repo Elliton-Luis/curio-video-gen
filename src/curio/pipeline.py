@@ -31,6 +31,7 @@ from . import pipeline_visual as pipeline_visual_stage
 from . import pipeline_media_sources as pipeline_media_sources_stage
 from . import pipeline_audio as pipeline_audio_stage
 from . import pipeline_timeline as pipeline_timeline_stage
+from . import pipeline_metadata as pipeline_metadata_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
@@ -764,6 +765,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
               duration_seconds=round(video_duration, 2))
     emit(6, "Montando vídeo", "OK")
 
+    finalize_started = time.monotonic()
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
                               chapters, scenes_source, media_scenes, warnings,
                               stage_times, metrics, media_result.source, started)
@@ -850,7 +852,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "video": paths.final_mp4,
         },
     })
-    _write_json(paths.metadata_json, metadata)
     sources.save(paths.sources_json)
     # Pasta de informações: o mesmo conteúdo do sources.json em texto claro,
     # com as fontes do texto E as imagens com seus direitos autorais.
@@ -864,16 +865,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             paths.contact_sheet, chapters, media_scenes, paths.root, slug,
             threshold=scoring_stage.threshold(), genre=genre_key,
             typography=_typography_report(cfg, genre_key))
-    stage_times["finalize"] = 0.0
     for warning in warnings[:8]:
         run_event("warning", str(warning), operation="pipeline_warning")
     if len(warnings) > 8:
         run_event("warning", f"Mais {len(warnings) - 8} aviso(s) no metadata",
                   operation="pipeline_warning", count=len(warnings) - 8)
-    metadata["stage_times"] = stage_times
-    metadata["metrics_file"] = metrics.save(metadata, stage_times,
-                                            cfg.metrics_dir)
-    return metadata
+    return pipeline_metadata_stage.persist_run_metadata(
+        metadata, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
+        _write_json, finalize_started, started)
 
 
 def run_script_pipeline(script_text: str, cfg: CurioConfig,
@@ -976,6 +975,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     stage_times["teleprompter"] = round(time.monotonic() - t0, 2)
     emit(6, "Gerando teleprompter", "OK")
 
+    finalize_started = time.monotonic()
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
                               chapters, scenes_source, media_scenes, warnings,
                               stage_times, metrics, media_source, started)
@@ -1022,11 +1022,9 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
             "teleprompter_ass": paths.tele_ass,
         },
     })
-    _write_json(paths.metadata_json, metadata)
-    metadata["stage_times"] = stage_times
-    metadata["metrics_file"] = metrics.save(metadata, stage_times,
-                                            cfg.metrics_dir)
-    return metadata
+    return pipeline_metadata_stage.persist_run_metadata(
+        metadata, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
+        _write_json, finalize_started, started)
 
 
 def _probe_streams(path: str) -> list[dict]:
@@ -1331,7 +1329,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         meta["artifacts"]["sfx"] = sfx_path
     if music_asset:
         meta["artifacts"]["music"] = music_asset["path"]
-    _write_json(paths.metadata_json, meta)
-    meta["metrics_file"] = metrics.save(meta, {"finalize": round(
-        time.monotonic() - started, 2)}, cfg.metrics_dir)
-    return meta
+    stage_times = {"finalize": round(time.monotonic() - started, 2)}
+    return pipeline_metadata_stage.persist_run_metadata(
+        meta, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
+        _write_json, started, started)
