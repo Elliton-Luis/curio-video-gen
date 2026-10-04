@@ -10,6 +10,10 @@ O mapa do fluxo executado, contratos atuais, fontes de verdade e plano de
 migração arquitetural estão em
 [Auditoria da arquitetura e contratos](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md).
 
+A migração incremental começou pelos contratos semânticos compartilhados de
+cena, contexto e representação visual; o relatório acompanha as fases já
+concluídas e as fronteiras ainda em transição.
+
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*
 

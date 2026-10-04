@@ -22,12 +22,14 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 
 from .. import textnorm
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
 from .prompts import SCENES_SYSTEM_PROMPT, SCENES_SYSTEM_PROMPT_EN
+from .scene_contract import VideoContext, VisualRepresentation
 
 TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
@@ -251,13 +253,13 @@ class Chapter:
     forbidden: list[str] = field(default_factory=list)
     # Shared video context and explicit director output. Optional for old
     # chapters.json files; queries are generated from representations first.
-    video_context: dict = field(default_factory=dict)
+    video_context: VideoContext = field(default_factory=VideoContext)
     visual_intent_structured: str = ""
     primary_entity: str = ""
     event: str = ""
     place: str = ""
     period: str = ""
-    representations: list[dict] = field(default_factory=list)
+    representations: list[VisualRepresentation] = field(default_factory=list)
     representation_rejections: list[dict] = field(default_factory=list)
     # --- papel tipográfico (retrocompatível: tudo opcional) -------------
     # A cena declara a FUNÇÃO do texto, nunca a fonte: `text_role="quote"`
@@ -274,8 +276,35 @@ class Chapter:
     start: float = 0.0
     end: float = 0.0
 
+    def __post_init__(self) -> None:
+        self.video_context = VideoContext.from_value(self.video_context)
+        self.representations = [rep for index, value in enumerate(self.representations)
+                                if (rep := VisualRepresentation.from_value(value, index))]
+
     def to_dict(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        result["video_context"] = self.video_context.to_dict()
+        result["representations"] = [rep.to_dict() for rep in self.representations]
+        return result
+
+    def contract_errors(self) -> list[str]:
+        """Return structural violations at a scene-planner boundary."""
+        errors = []
+        if not isinstance(self.narration, str) or not self.narration.strip():
+            errors.append("narration_required")
+        if self.visual_type not in VISUAL_TYPES:
+            errors.append("visual_type_unknown")
+        if not isinstance(self.video_context, VideoContext):
+            errors.append("video_context_not_normalized")
+        if any(not isinstance(rep, VisualRepresentation) for rep in self.representations):
+            errors.append("representation_not_normalized")
+        return errors
+
+    def require_valid(self) -> "Chapter":
+        errors = self.contract_errors()
+        if errors:
+            raise ValueError(f"scene {self.id} violates contract: {', '.join(errors)}")
+        return self
 
     @classmethod
     def from_dict(cls, d: dict) -> "Chapter":
@@ -310,8 +339,7 @@ class Chapter:
             visual_entities=[str(q) for q in d.get("visual_entities", [])],
             context=[str(q) for q in d.get("context", [])],
             forbidden=[str(q) for q in d.get("forbidden", [])],
-            video_context=(dict(d.get("video_context") or {})
-                           if isinstance(d.get("video_context"), dict) else {}),
+            video_context=VideoContext.from_value(d.get("video_context", {})),
             visual_intent_structured=str(d.get("visual_intent_structured", "") or ""),
             primary_entity=str(d.get("primary_entity", "") or ""),
             event=str(d.get("event", "") or ""),
@@ -517,7 +545,7 @@ def _coerce_str_list(raw: dict, key: str, limit: int) -> list[str]:
     return out[:limit]
 
 
-def _coerce_representations(raw) -> list[dict]:
+def _coerce_representations(raw) -> list[VisualRepresentation]:
     """Normalize visual representations without splitting their phrases."""
     if isinstance(raw, str):
         raw = [raw]
@@ -525,7 +553,7 @@ def _coerce_representations(raw) -> list[dict]:
         return []
     out = []
     for item in raw[:8]:
-        if isinstance(item, dict):
+        if isinstance(item, Mapping):
             query = str(item.get("query", item.get("visual", item.get("name", ""))) or "").strip()
             if query:
                 kind = str(item.get("kind", "related") or "related").lower()
@@ -535,14 +563,16 @@ def _coerce_representations(raw) -> list[dict]:
                     level = int(item.get("level", len(out)) or 0)
                 except (TypeError, ValueError):
                     level = len(out)
-                out.append({"query": query,
-                            "kind": str(item.get("kind", "related") or "related"),
-                            "level": level,
-                            "source": str(item.get("source", "planner") or "planner")})
+                out.append(VisualRepresentation(
+                    query=query,
+                    kind=str(item.get("kind", "related") or "related"),
+                    level=max(0, level),
+                    source=str(item.get("source", "planner") or "planner"),
+                    evidence=str(item.get("evidence", "") or "")))
         else:
             query = str(item or "").strip()
             if query and not _representation_rejection_reason(query, "related"):
-                out.append({"query": query, "kind": "related", "level": len(out)})
+                out.append(VisualRepresentation(query=query, level=len(out)))
     return out
 
 
@@ -623,7 +653,7 @@ def _apply_video_context(chapters: list[Chapter], context) -> None:
         elif isinstance(value, list):
             clean[key] = [str(x).strip() for x in value if str(x).strip()][:12]
     for chapter in chapters:
-        chapter.video_context = clean
+        chapter.video_context = VideoContext.from_value(clean)
 
 
 def _repair_scene_count(chapters: list[Chapter], expected: int) -> bool:
@@ -662,8 +692,9 @@ def _repair_scene_count(chapters: list[Chapter], expected: int) -> bool:
                      "context", "forbidden", "subject_aliases"):
             setattr(left, name, list(dict.fromkeys(getattr(left, name)
                                                    + getattr(right, name))))
-        left.representations = list({item["query"]: item for item in
-                                    left.representations + right.representations}.values())[:8]
+        merged = {str(item["query"]): item for item in
+                  left.representations + right.representations}
+        left.representations = _coerce_representations(list(merged.values())[:8])
         left.visual_intent_structured = " / ".join(dict.fromkeys(
             x for x in (left.visual_intent_structured,
                         right.visual_intent_structured) if x))
@@ -852,6 +883,8 @@ def build_chapters(script: str, cfg: CurioConfig,
         if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
             repaired = _repair_scene_count(chapters, n_scenes)
             _apply_video_context(chapters, video_context)
+            for chapter in chapters:
+                chapter.require_valid()
             if repaired or narration_repaired:
                 run_event("result", f"Cenas {provider}: estrutura reparada",
                           operation="scenes", expected=n_scenes,
@@ -875,6 +908,8 @@ def build_chapters(script: str, cfg: CurioConfig,
             print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
     chapters = _local_chapters(script, n_scenes)
     _apply_video_context(chapters, video_context)
+    for chapter in chapters:
+        chapter.require_valid()
     return chapters, "local"
 
 

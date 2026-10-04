@@ -15,6 +15,8 @@ nota é baixa — assim a folha de contato consegue explicar a troca.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from .. import textnorm
 
 # A nota é 0–100 e se divide em duas parcelas que NÃO competem entre si:
@@ -177,7 +179,7 @@ def semantic_relevance(asset: dict, ch) -> dict:
         values = getattr(ch, key, []) or []
         if key == "representations":
             scene_phrases.extend(
-                str(item.get("query", "")) for item in values if isinstance(item, dict))
+                str(item.get("query", "")) for item in values if isinstance(item, Mapping))
         else:
             scene_phrases.extend(values)
     scene_evidence = evidence_for(scene_phrases)

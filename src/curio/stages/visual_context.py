@@ -8,6 +8,7 @@ import urllib.parse
 from .. import textnorm
 from . import editorial
 from . import scoring
+from .scene_contract import VideoContext
 
 _HONORIFICS = {"sao", "santo", "santa", "saint"}
 
@@ -52,7 +53,7 @@ def attach_video_context(chapters, topic: str, target=None) -> bool:
         context["period"] = str(context.get("period") or "")
         context["aliases"] = list(dict.fromkeys(
             [*_list(context.get("aliases")), *aliases]))[:8]
-        ch.video_context = context
+        ch.video_context = VideoContext.from_value(context)
         if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
             # Local noun extraction is search support, not trusted screen
             # content. Show the known topic until scene meaning is resolved.
@@ -180,7 +181,7 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
             if isinstance(current, str):
                 current = [current]
             context[key] = list(dict.fromkeys([*current, *names]))[:8]
-        ch.video_context = context
+        ch.video_context = VideoContext.from_value(context)
         if not ch.subject and not ch.visual_queries:
             subject = names[0]
             aliases = names
@@ -263,6 +264,6 @@ def anchor_local_topic(chapters, idea: str, target=None) -> bool:
         context.setdefault("events", [])
         context.setdefault("period", "")
         if context != chapter.video_context:
-            chapter.video_context = context
+            chapter.video_context = VideoContext.from_value(context)
             changed = True
     return changed

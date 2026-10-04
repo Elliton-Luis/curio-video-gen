@@ -26,6 +26,7 @@ from __future__ import annotations
 import concurrent.futures
 import contextvars
 import functools
+from collections.abc import Mapping
 import os
 import re
 import sys
@@ -546,7 +547,7 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
 
     representations = sorted(
         [r for r in (getattr(ch, "representations", []) or [])
-         if isinstance(r, dict) and str(r.get("query", "")).strip()],
+         if isinstance(r, Mapping) and str(r.get("query", "")).strip()],
         key=lambda r: _representation_level(r))
     from .scoring import _tokens
     names = [set(_tokens(name)) for name in [getattr(ch, "subject", ""),
@@ -1263,7 +1264,7 @@ def _search_scene_with_shortcircuit(
     representation_levels = {}
     representation_kinds = {}
     for rep in (getattr(ch, "representations", []) or []):
-        if isinstance(rep, dict):
+        if isinstance(rep, Mapping):
             rep_query = str(rep.get("query", ""))
             representation_kinds[rep_query] = str(rep.get("kind", "related"))
             try:
