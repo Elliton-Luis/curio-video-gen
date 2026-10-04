@@ -47,6 +47,9 @@ O enriquecimento pós-planner de contexto está centralizado em
 `scene_enrichment.py`: recebe proveniência explícita, clona a saída do
 planner, retorna uma batch validada e registra quais complementos foram
 aplicados antes de atualizar `chapters.json`.
+`pipeline_scenes.py` coordena planner/cache/enrichment e retorna
+`SceneStageResult` com origem, cenas semânticas, Chapters de compatibilidade e
+invalidação de mídia explícita.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e

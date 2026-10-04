@@ -25,6 +25,7 @@ from .audio.library import audio_seed
 from .config import CurioConfig
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
+from . import pipeline_scenes as pipeline_scenes_stage
 from . import pipeline_media as pipeline_media_stage
 from . import pipeline_visual as pipeline_visual_stage
 from . import pipeline_media_sources as pipeline_media_sources_stage
@@ -35,12 +36,11 @@ from .runlog import (RunLog, current_log_path, event as run_event,
 from .slug import slugify_with_timestamp
 from .slug import find_project_root, project_dir, unique_slug
 from .stages import render as render_stage
-from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage
-from .stages import scenes as scenes_stage
 from .stages import editorial as editorial_stage
 from .stages import scoring as scoring_stage
 from .stages import script as script_stage
+from .stages import scenes as scenes_stage
 from .stages import subs as subs_stage
 from .stages import teleprompter as tele_stage
 from .stages import transcribe as transcribe_stage
@@ -128,13 +128,6 @@ def _write_json(path: str, data) -> None:
         os.makedirs(parent, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=1)
-
-
-def _load_chapters(paths: VideoPaths) -> list[Chapter]:
-    chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
-    for chapter in chapters:
-        chapter.require_valid()
-    return chapters
 
 
 def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
@@ -428,7 +421,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # vídeo de quem não pediu nada sai com o mesmo nº de cenas de sempre.
     teto_cena = pacing.max_scenes if pacing is not None else None
     genre_directive = editorial_stage.script_directive(perfil)
-    scene_directive = editorial_stage.scene_directive(perfil)
     if perfil is not None:
         print(f"Gênero: {perfil.label} — pacing {alvo_cena:g}s/cena, "
               f"até {teto_cena} cenas, "
@@ -590,95 +582,24 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
               source=title_source, characters=len(video_title))
 
     # [2/6] Cenas
-    t0 = time.monotonic()
     emit(2, "Interpretando cenas")
-    if not force_after_script and os.path.isfile(paths.chapters_json):
-        chapters = _load_chapters(paths)
-        scenes_source = "cache"
-        if script_mode:
-            visual_stage.validate_preserved(script_text, chapters)
-    else:
-        if script_mode:
-            n = visual_stage.scenes_for_script(script_text, cfg, genre_key)
-        elif cfg.duration_target <= 0:
-            # Automático: o roteiro (não a meta) define as cenas — e o
-            # pacing do gênero entra no cálculo do tamanho de cada cena.
-            n = scenes_stage.scenes_for_length(len(script_text.split()),
-                                               alvo_cena, teto_cena)
-        else:
-            n = scenes_stage.scenes_for_duration(cfg.duration_target,
-                                                 alvo_cena, teto_cena)
-        try:
-            scene_directive_eff = scene_directive
-            if (perfil and "wiktionary" in perfil.specialized_sources
-                    and research_etymology is not None
-                    and len(getattr(research_etymology, "chain", []) or []) >= 2):
-                # A cadeia etimológica entra no prompt das cenas para que as
-                # entidades visuais usem as formas reais (candidatus,
-                # candidus) e o cenário cultural (Roma, toga) — nunca cópia
-                # do verbete, só os termos.
-                from .stages import etymology as etymology_stage
-                chain = research_etymology
-                bloco = (f"\n\nCADEIA ETIMOLÓGICA (use as formas como "
-                         f"entidades visuais e o cenário como contexto): "
-                         f"{chain.chain_text()}")
-                if chain.visual_context:
-                    bloco += " | cenário: " + ", ".join(chain.visual_context)
-                scene_directive_eff = (scene_directive_eff or "") + bloco
-            chapters, scenes_source = scenes_stage.build_chapters(
-                script_text, cfg, n_scenes=n, metrics=metrics,
-                genre=genre_key, target_seconds=alvo_cena,
-                genre_directive=scene_directive_eff, max_scenes=teto_cena)
-        except nvidia_stage.NvidiaError as exc:
-            # Scene planning is optional after the script exists in both
-            # automatic and ready-script modes. Preserve exact narration.
-            logged = run_event(
-                "fallback", f"Cenas: chain LLM falhou; divisão local ({exc})",
-                operation="scenes", fallback="local", error=str(exc))
-            if not logged:
-                print(f"AVISO: chain LLM de cenas indisponível ({exc}) — "
-                      "seguindo com divisão local.", file=sys.stderr)
-            warnings.append(f"cenas locais (chain LLM indisponível: {exc})")
-            chapters = scenes_stage._local_chapters(script_text, n)
-            scenes_source = "local"
-        if script_mode:
-            visual_stage.validate_preserved(script_text, chapters)
-        _write_json(paths.chapters_json, [c.to_dict() for c in chapters])
-    scene_event = ("provider" if scenes_source not in ("local", "cache")
-                   else "fallback" if scenes_source == "local" else "cache")
-    from .stages.scene_enrichment import enrich_scenes
-    planning_mode = ("deterministic" if scenes_source == "local" or any(
-        ch.planning_mode == "deterministic" for ch in chapters) else "llm")
     scene_etymology = (research_etymology
                        if perfil and "wiktionary" in perfil.specialized_sources
                        else None)
-    enrichment = enrich_scenes(
-        chapters, topic=idea, target=research_target, source=scenes_source,
-        planning_mode=planning_mode, genre=genre_key,
-        research_sources=research_sources,
-        research_timeout=cfg.research_timeout,
-        etymology=scene_etymology)
-    chapters = list(enrichment.scenes)
-    semantic_scenes = [chapter.semantic_scene(enrichment.source)
-                       for chapter in chapters]
-    if enrichment.changed:
-        force_after_script = True
-        _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
-    if "local_topic_anchor" in enrichment.applied:
-        run_event("result", "Cenas locais ancoradas no tema do vídeo",
-                  operation="scenes", source=scenes_source,
-                  topic_queries=chapters[0].global_visual_queries if chapters else [])
-    if "verified_entity_context" in enrichment.applied:
-        run_event("result", "Contexto visual recuperado da entidade pesquisada",
-                  operation="scenes", source=scenes_source)
-    if "etymology_visual_context" in enrichment.applied:
-        run_event("result", "Cenas enriquecidas com a cadeia etimológica",
-                  operation="scenes", source=scenes_source,
-                  word=getattr(research_etymology, "word", ""))
-    run_event(scene_event, f"Cenas: {scenes_source}; {len(chapters)} cena(s)",
-              operation="scenes", source=scenes_source,
-              scenes=len(chapters))
-    stage_times["scenes"] = round(time.monotonic() - t0, 2)
+    scene_result = pipeline_scenes_stage.run_scene_stage(
+        script_text, cfg, paths, force=force_after_script,
+        script_mode=script_mode, genre=genre_key,
+        scene_target_seconds=alvo_cena, max_scenes=teto_cena,
+        scene_directive=editorial_stage.scene_directive(perfil), topic=idea,
+        target=research_target, research_sources=research_sources,
+        research_timeout=cfg.research_timeout, etymology=scene_etymology,
+        metrics=metrics, warnings=warnings, write_json=_write_json)
+    chapters = list(scene_result.chapters)
+    semantic_scenes = list(scene_result.semantic_scenes)
+    scenes_source = scene_result.source
+    enrichment = scene_result.enrichment
+    force_after_script = force_after_script or scene_result.invalidate_media
+    stage_times["scenes"] = scene_result.elapsed
     emit(2, "Interpretando cenas", "OK")
 
     # [3/6] Mídia (manual > cache > provedores; zero imagens = standby)

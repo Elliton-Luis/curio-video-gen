@@ -72,7 +72,7 @@ def test_alias_provenance_roundtrip_preserves_verified_evidence():
 
 
 def test_legacy_cache_is_normalized_and_validated_at_load_boundary(tmp_path):
-    from curio.pipeline import _load_chapters
+    from curio.pipeline_scenes import load_chapters
 
     cache = tmp_path / "chapters.json"
     cache.write_text(json.dumps([{
@@ -80,13 +80,13 @@ def test_legacy_cache_is_normalized_and_validated_at_load_boundary(tmp_path):
         "video_context": {"topic": "History"},
         "representations": [{"query": "historical map", "kind": "map"}],
     }]), encoding="utf-8")
-    loaded = _load_chapters(SimpleNamespace(chapters_json=str(cache)))
+    loaded = load_chapters(SimpleNamespace(chapters_json=str(cache)))
     assert loaded[0].require_valid() is loaded[0]
     assert isinstance(loaded[0].representations[0], VisualRepresentation)
 
     cache.write_text(json.dumps([{"id": 1, "narration": "  "}]), encoding="utf-8")
     with pytest.raises(ValueError, match="narration_required"):
-        _load_chapters(SimpleNamespace(chapters_json=str(cache)))
+        load_chapters(SimpleNamespace(chapters_json=str(cache)))
 
 
 def test_semantic_scene_excludes_timeline_and_preserves_meaning_provenance():
