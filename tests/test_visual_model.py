@@ -315,9 +315,9 @@ def test_relatorio_visual_conta_estrategia_e_nao_chama_de_falha():
 
 
 def test_relatorio_distingue_assets_unicos_reusados_e_sinteticos():
-    from types import SimpleNamespace
     from curio.metrics import RunMetrics
-    chapters = [SimpleNamespace(id=i, start=0.0, end=5.0) for i in (1, 2, 3)]
+    from curio.stages.scene_contract import TimelineSpan
+    spans = [TimelineSpan(i, 5.0, 0.0, 5.0) for i in (1, 2, 3)]
     reused = {"asset": {"provider": "wiki", "asset_id": "map"}}
     fresh = {"asset": {"provider": "wiki", "asset_id": "event"}}
     synthetic = {"asset": {"provider": "synth", "asset_id": "card"}}
@@ -327,7 +327,7 @@ def test_relatorio_distingue_assets_unicos_reusados_e_sinteticos():
         {"chapter_id": 3, "assets": [synthetic]},
     ]
     metrics = RunMetrics("s", "i", "n")
-    metrics.visual_plan(chapters, media, 2.1)
+    metrics.visual_plan(spans, media, 2.1)
     metrics.media_duplicate_queries = 4
     report = metrics.media_visual_report(3)
     assert report["unique_assets"] == 2

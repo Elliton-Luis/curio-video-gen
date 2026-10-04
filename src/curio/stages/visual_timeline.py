@@ -10,6 +10,7 @@ import random
 
 from .. import textnorm
 from ..config import ENTRY_STYLES
+from .scene_contract import SemanticScene
 from .visual_beats import asset_key, bind_assets, plan as plan_visual_beats
 
 LEGACY_STYLES = ("fade_scale",)
@@ -49,15 +50,16 @@ def insertion_scenes(n_scenes: int, budget: int) -> set[int]:
     return {inner[p] for p in positions}
 
 
-def _topic_terms(ch) -> set[str]:
+def _topic_terms(scene: SemanticScene) -> set[str]:
+    if not isinstance(scene, SemanticScene):
+        raise TypeError("visual insertion ordering requires SemanticScene")
     terms: set[str] = set()
     # Timeline may refine ordering only from the already approved visual
     # search plan. It must not invent relevance from narration or rebuild
     # aliases/context during render.
     semantic_terms = [
-        *(getattr(rep, "query", "") for rep in
-          (getattr(ch, "representations", []) or [])),
-        *(getattr(ch, "visual_queries", []) or []),
+        *(rep.query for rep in scene.representations),
+        *scene.visual_queries,
     ]
     for query in semantic_terms:
         if not str(query or "").strip():
@@ -75,11 +77,11 @@ def _topic_score(asset: dict, terms: set[str]) -> int:
     return sum(1 for term in terms if term in title) if title else 0
 
 
-def order_for_insertion(entries: list, ch) -> tuple[list, list]:
+def order_for_insertion(entries: list, scene: SemanticScene) -> tuple[list, list]:
     """Split (background, insertion); insertion must improve specificity."""
     if len(entries) < 2:
         return list(entries), []
-    terms = _topic_terms(ch)
+    terms = _topic_terms(scene)
     if not terms:
         return [entries[0]], []
     scored = sorted(((_topic_score(e.get("asset") or {}, terms), i, e)
@@ -207,10 +209,14 @@ def mark_insertion(images: list[dict], scene_start: float, style: str,
                         if sfx else None)
 
 
-def retime_visual_timeline(visual_timeline: list[dict], chapters) -> list[dict]:
+def retime_visual_timeline(visual_timeline: list[dict], timeline_spans) -> list[dict]:
     """Recalculate visual timestamps after audio timing changes."""
-    times = {chapter.id: (float(chapter.start), float(chapter.end))
-             for chapter in chapters}
+    scene_ids = tuple(scene["chapter_id"] for scene in visual_timeline)
+    span_ids = tuple(span.scene_id for span in timeline_spans)
+    if len(scene_ids) != len(set(scene_ids)) or scene_ids != span_ids:
+        raise ValueError("visual timeline spans do not match scene order")
+    times = {span.scene_id: (float(span.start), float(span.end))
+             for span in timeline_spans}
     out = []
     for scene in visual_timeline:
         start, end = times.get(scene["chapter_id"], (scene["start"], scene["end"]))
@@ -263,9 +269,12 @@ def visual_summary(visual_timeline: list[dict]) -> str:
 
 def rebuild_visual_timeline(chapters, media_scenes: list[dict], cfg,
                             seed: str = "") -> list[dict]:
-    """Replan after media swap, preserving author's asset order."""
+    """Adapt a legacy Chapter batch before replanning after a media swap."""
     from .visual import build_visual_timeline
+    semantic_scenes = tuple(chapter.semantic_scene("timeline_compat")
+                            for chapter in chapters)
+    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     return build_visual_timeline(
-        chapters, media_scenes,
+        semantic_scenes, timeline_spans, media_scenes,
         overlap_cap=float(cfg.visual_overlap), seed=seed,
         sfx=bool(cfg.visual_sfx), honor_order=True)

@@ -17,18 +17,16 @@ def test_visual_beats_cover_duration_without_adding_assets():
 
 def test_metrics_count_beat_pacing_and_asset_reuse():
     metrics = RunMetrics("slug", "idea", "script")
-    chapters = [
-        type("Chapter", (), {"id": index, "start": index * 4.2,
-                              "end": (index + 1) * 4.2})
-        for index in range(2)
-    ]
+    from curio.stages.scene_contract import TimelineSpan
+    spans = [TimelineSpan(index + 1, 4.2, index * 4.2, (index + 1) * 4.2)
+             for index in range(2)]
     media_scenes = [
-        {"chapter_id": index,
+        {"chapter_id": index + 1,
          "assets": [{"asset": {"asset_id": "same-asset"}}]}
         for index in range(2)
     ]
 
-    metrics.visual_plan(chapters, media_scenes, visual_beats.BEAT_SECONDS)
+    metrics.visual_plan(spans, media_scenes, visual_beats.BEAT_SECONDS)
 
     assert metrics.visual_scene_count == 2
     assert metrics.visual_beat_count == 4

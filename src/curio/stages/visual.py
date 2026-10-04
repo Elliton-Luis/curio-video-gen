@@ -54,6 +54,7 @@ from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
 from .media_contracts import Candidate, CandidateRejection
 from .candidate_evaluation import evaluate_generic, evaluate_specific
+from .scene_contract import SemanticScene, TimelineSpan
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 import os as _os
@@ -1170,7 +1171,9 @@ def _resolve_reuse_multi(scenes: list[dict], chapters=None) -> None:
               f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
 
 
-def build_visual_timeline(chapters, media_scenes: list[dict],
+def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
+                          timeline_spans: tuple[TimelineSpan, ...],
+                          media_scenes: list[dict],
                           overlap_cap: float = 0.9, seed: str = "",
                           sfx: bool = True,
                           insertions: int | None = None,
@@ -1181,8 +1184,8 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
 
     Cada trecho carrega texto/narração original, início/fim, imagens em
     ordem (com consulta que a encontrou), duração, transição e geometria
-    de sobreposição. Capítulos precisam ter `start/end` já definidos
-    (WordBoundary reais ou estimativa WPM) antes desta chamada.
+    de sobreposição. Cenas semânticas e spans alinhados são entradas
+    separadas; os spans precisam ter tempos definidos antes desta chamada.
 
     `insertions` é o orçamento de fotos COMPLEMENTARES do VÍDEO inteiro
     (padrão 2, `None` mantém o álbum por cena sem limite). As cenas
@@ -1195,19 +1198,20 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
     replanejamento re-executasse `order_for_insertion`, ele devolveria a
     foto que o autor acabou de tirar para o fim.
     """
+    _validate_visual_timeline_inputs(semantic_scenes, timeline_spans)
     by_chapter = {s["chapter_id"]: s for s in media_scenes}
     styles = _shuffled_styles(seed)
     sparse = insertions is not None and not honor_order
-    insert_at = (insertion_scenes(len(chapters), insertions or 0)
+    insert_at = (insertion_scenes(len(semantic_scenes), insertions or 0)
                  if sparse else set())
     scene_no_insert: set[int] = set()  # cena que ficou sem deepenho
     overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
     timeline = []
     from .visual_beats import plan as plan_visual_beats, bind_assets, asset_key
     background_uses: dict[str, int] = {}
-    for idx, ch in enumerate(chapters):
-        scene = by_chapter.get(ch.id, {})
-        start, end = round(float(ch.start), 3), round(float(ch.end), 3)
+    for idx, (scene_plan, span) in enumerate(zip(semantic_scenes, timeline_spans)):
+        scene = by_chapter.get(scene_plan.id, {})
+        start, end = round(float(span.start), 3), round(float(span.end), 3)
         dur = max(0.5, end - start)
         entries = list(scene.get("assets") or [])
         background_entries = list(entries)
@@ -1220,10 +1224,10 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             # A inserção tem de ser a imagem MAIS PRECISA sobre o assunto da
             # cena — é o que a diferencia do fundo. Sem candidata que bata o
             # fundo, a cena fica só com o fundo.
-            background, insertion = order_for_insertion(entries, ch)
+            background, insertion = order_for_insertion(entries, scene_plan)
             entries = background if idx not in insert_at else background + insertion
             if idx in insert_at and not insertion:
-                scene_no_insert.add(ch.id)
+                scene_no_insert.add(scene_plan.id)
         images, consumed = _spec_images(entries, dur,
                                        overlap_cap, styles, style_pos)
         if sparse:
@@ -1250,8 +1254,8 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
                     if key and key not in visible:
                         visible.append(key)
         timeline.append({
-            "chapter_id": ch.id,
-            "narration": ch.narration,  # original, intocado
+            "chapter_id": scene_plan.id,
+            "narration": scene_plan.narration,  # original, intocado
             "start": start,
             "end": end,
             "images": images,
@@ -1260,6 +1264,15 @@ def build_visual_timeline(chapters, media_scenes: list[dict],
             "fallback": not images and not backgrounds,
             "reused_from": scene.get("reused_from"),
             **({"no_insertion": "nenhuma imagem mais precisa que o fundo"
-               } if ch.id in scene_no_insert else {}),
+               } if scene_plan.id in scene_no_insert else {}),
         })
     return timeline
+
+
+def _validate_visual_timeline_inputs(semantic_scenes, timeline_spans) -> None:
+    scene_ids = tuple(scene.id for scene in semantic_scenes)
+    span_ids = tuple(span.scene_id for span in timeline_spans)
+    if not scene_ids or len(scene_ids) != len(set(scene_ids)):
+        raise ValueError("visual timeline requires unique semantic scenes")
+    if scene_ids != span_ids:
+        raise ValueError("visual timeline spans do not match scene order")

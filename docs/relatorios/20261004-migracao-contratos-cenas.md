@@ -57,8 +57,27 @@ completa: 847 passaram em 146,75 s.
 
 ## Próxima fronteira
 
-O pipeline ainda cria `Chapter` dentro de enrichment e os consumidores de
-timeline, áudio, subtitles, render e ferramentas ainda leem `chapters.json`.
-A migração continua por consumidor, preservando o formato externo até esses
-limites usarem contratos tipados próprios. Cache de aquisição de mídia permanece
-independente do cache semântico e não escolhe mídia por si só.
+O pipeline ainda projeta `Chapter` para consumers de subtitles, render e
+ferramentas que leem `chapters.json`. A migração continua por consumidor,
+preservando o formato externo até esses limites usarem contratos tipados
+próprios. Cache de aquisição de mídia permanece independente do cache
+semântico e não escolhe mídia por si só.
+
+## A4l: timeline visual e métricas recebem spans tipados
+
+`build_visual_timeline` e `pipeline_timeline` agora recebem
+`SemanticScene[] + TimelineSpan[]`; o tempo visual não é lido do objeto
+Chapter. Ordenação de inserções exige `SemanticScene` e usa somente as
+representações já declaradas. `retime_visual_timeline` também rejeita IDs
+ausentes, duplicados ou fora de ordem, em vez de manter timestamps antigos
+silenciosamente. Métricas visuais usam spans e o backfill converte linhas
+históricas válidas do metadata, ignorando linhas inválidas como desconhecidas.
+O formato `chapters.json` permanece como projeção para render, CLI/TUI e
+compatibilidade externa. Focados: 120 passaram; suíte completa: 847 passaram
+em 145,29 s; a nova regressão de desalinhamento foi validada isoladamente.
+`compileall` e `git diff --check` passaram. Não houve geração real nesta fase.
+
+A fronteira visual de planejamento/timing já não depende de Chapter. Permanecem
+consumidores downstream de render, subtitles e ferramentas; também permanece
+um adaptador Chapter explícito para operações legadas de replanejamento. A
+próxima fase deve migrar esses consumidores antes de remover a projeção.

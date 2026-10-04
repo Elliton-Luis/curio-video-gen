@@ -36,6 +36,9 @@ contagens visuais como desconhecidas (`null`).
 `metadata.json` usa o mesmo construtor de relatório para geração humana e
 assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
 do enriquecimento semântico quando disponível.
+O planejamento visual e suas métricas recebem `SemanticScene[]` e
+`TimelineSpan[]` separados; Chapter permanece como projeção de compatibilidade
+para render e formatos externos enquanto esses consumidores migram.
 No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
 de adapter inclui seus retries/backoff. `download_durations` mede a cadeia

@@ -15,7 +15,6 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 
 from .media.selection_metrics import MediaSelectionStats
 
@@ -299,11 +298,14 @@ class RunMetrics:
         key = (reason or "motivo desconhecido")[:60]
         self.research_rejected[key] = self.research_rejected.get(key, 0) + 1
 
-    def visual_plan(self, chapters, media_scenes, beat_seconds: float,
+    def visual_plan(self, timeline_spans, media_scenes, beat_seconds: float,
                     visual_timeline=None, rendered_duration: float | None = None,
                     cached_selection: bool | None = None,
                     known_selection: bool = True) -> None:
         """Snapshot selected/available assets and renderer-bound beat identities."""
+        from .stages.scene_contract import TimelineSpan
+        if any(not isinstance(span, TimelineSpan) for span in timeline_spans):
+            raise TypeError("visual metrics require TimelineSpan values")
         from .stages.visual_beats import asset_key, plan
         by_scene = {s.get("chapter_id"): s for s in (media_scenes or [])}
         by_timeline = {s["chapter_id"]: s for s in (visual_timeline or [])}
@@ -323,16 +325,16 @@ class RunMetrics:
         self.media_unique_assets = 0
         self.media_reuse_count = 0
         self.media_assets_reused = 0
-        for chapter in chapters:
-            timeline = by_timeline.get(chapter.id)
-            start = float(timeline["start"]) if timeline else float(chapter.start)
-            end = float(timeline["end"]) if timeline else float(chapter.end)
+        for span in timeline_spans:
+            timeline = by_timeline.get(span.scene_id)
+            start = float(timeline["start"]) if timeline else float(span.start)
+            end = float(timeline["end"]) if timeline else float(span.end)
             if rendered_duration is not None:
                 end = min(end, rendered_duration)
             duration = max(0.0, end - start)
             self.visual_scene_count += int(duration > 0)
             self.visual_beat_seconds += duration
-            scene = by_scene.get(chapter.id, {})
+            scene = by_scene.get(span.scene_id, {})
             assets = scene.get("assets") or []
             if not assets and scene.get("asset"):
                 assets = [{"asset": scene["asset"]}]
@@ -608,11 +610,6 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
         if isinstance(decision, dict):
             collector.media_record_scene_decision(
                 int(scene.get("chapter_id", 0)), decision)
-    chapters = [SimpleNamespace(
-        id=int(ch.get("id", 0)),
-        start=float(ch.get("start", 0) or 0),
-        end=float(ch.get("end", ch.get("duration_estimate", 0)) or 0))
-        for ch in (meta.get("chapters") or [])]
     visual_timeline = []
     timeline_path = (meta.get("artifacts") or {}).get("visual_timeline")
     if timeline_path:
@@ -621,7 +618,19 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
                 visual_timeline = json.load(fh)
         except (OSError, ValueError, json.JSONDecodeError):
             visual_timeline = []
-    collector.visual_plan(chapters, media, 2.1, visual_timeline,
+    from .stages.scene_contract import TimelineSpan
+    spans = []
+    for chapter in (meta.get("chapters") or []):
+        try:
+            spans.append(TimelineSpan(
+                int(chapter.get("id", 0)),
+                float(chapter.get("duration_estimate", 0) or 0),
+                float(chapter.get("start", 0) or 0),
+                float(chapter.get("end", chapter.get("duration_estimate", 0)) or 0)))
+        except (AttributeError, TypeError, ValueError):
+            # Historical rows without valid identity/timing remain unknown.
+            continue
+    collector.visual_plan(spans, media, 2.1, visual_timeline,
                           rendered_duration=meta.get("duration_actual"),
                           cached_selection=False,
                           known_selection="media" in meta and meta.get("media") is not None)

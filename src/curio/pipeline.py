@@ -50,6 +50,7 @@ from .stages import sources as sources_stage
 from .stages import visual as visual_stage
 from .stages import visual_timeline as visual_timeline_stage
 from .stages.scenes import Chapter
+from .stages.scene_contract import SemanticScene
 
 STAGES_AI = ["roteiro", "cenas", "mídia", "narração", "legendas", "montagem"]
 STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
@@ -627,7 +628,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     if narration == "human":
         return _human_prep(idea, slug, cfg, paths, script_text, script_source,
-                           chapters, scenes_source, media_scenes, warnings,
+                           tuple(semantic_scenes), scenes_source, media_scenes, warnings,
                            stage_times, started, emit, metrics,
                            script_mode=script_mode, max_images=max_images,
                            overlap_cap=overlap_cap,
@@ -662,7 +663,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     stage_times.update(audio_result.stage_times)
 
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
-        chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
+        tuple(semantic_scenes), timeline_spans, media_scenes,
+        paths, slug, overlap_cap, cfg.visual_sfx,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, _write_json)
     visual_timeline = timeline_result.entries
@@ -888,7 +890,8 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
 
 
 def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
-                script_text: str, script_source: str, chapters: list[Chapter],
+                script_text: str, script_source: str,
+                semantic_scenes: tuple[SemanticScene, ...],
                 scenes_source: str, media_scenes: list[dict],
                 warnings: list[str], stage_times: dict, started: float,
                 emit, metrics, script_mode: bool = False,
@@ -905,15 +908,22 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     t0 = time.monotonic()
     emit(4, "Estimando timeline")
     cursor = 0.0
-    for ch in chapters:
-        ch.duration_estimate = scenes_stage.estimate_duration(
-            ch.narration, cfg.teleprompter_wpm)
-        ch.start, ch.end = cursor, cursor + ch.duration_estimate
-        cursor = ch.end
+    from .stages.scene_contract import TimelineSpan
+    timeline_spans = []
+    for scene in semantic_scenes:
+        duration = scenes_stage.estimate_duration(
+            scene.narration, cfg.teleprompter_wpm)
+        timeline_spans.append(TimelineSpan(
+            scene.id, duration, cursor, cursor + duration))
+        cursor += duration
+    timeline_spans = tuple(timeline_spans)
+    chapters = [Chapter.from_semantic_scene(scene, timing=span)
+                for scene, span in zip(semantic_scenes, timeline_spans)]
     estimated_total = round(cursor, 2)
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
-        chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
+        semantic_scenes, timeline_spans, media_scenes,
+        paths, slug, overlap_cap, cfg.visual_sfx,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, _write_json)
     visual_timeline = timeline_result.entries
@@ -1228,7 +1238,8 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
             _write_json(paths.timeline_json,
                         [c.to_dict() for c in chapters])
             visual_timeline = visual_timeline_stage.retime_visual_timeline(
-                visual_timeline, chapters)
+                visual_timeline, tuple(chapter.timeline_span()
+                                        for chapter in chapters))
             _write_json(paths.visual_json, visual_timeline)
             pipeline_render_stage.build_silent_visual(chapters, visual_timeline, idea, paths,
                                  cfg, adj, transitions=pipeline_render_stage.genre_transitions(
@@ -1252,7 +1263,8 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     emit("Merge final")
     total = round(human_dur + 0.5, 2)
     from .stages.visual_beats import BEAT_SECONDS
-    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS, visual_timeline,
+    metrics.visual_plan(tuple(chapter.timeline_span() for chapter in chapters),
+                        media_scenes, BEAT_SECONDS, visual_timeline,
                         rendered_duration=total)
     human_wav = paths.human_wav
     sfx_path = None

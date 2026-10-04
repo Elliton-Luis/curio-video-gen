@@ -511,7 +511,9 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         final_fade=_final_audio_fade(project_genre, transition_mode))
     _mark_audio_used(cfg, audio_plan)
     from .stages.visual_beats import BEAT_SECONDS
-    metrics.visual_plan(chapters, media, BEAT_SECONDS, visual_timeline, rendered_duration=total)
+    metrics.visual_plan(tuple(chapter.timeline_span() for chapter in chapters),
+                        media, BEAT_SECONDS, visual_timeline,
+                        rendered_duration=total)
     old_meta["visual_plan_signature"] = hashlib.sha256(
         json.dumps(visual_timeline or [], sort_keys=True).encode()).hexdigest()
     old_meta["duration_actual"] = info["duration"]
