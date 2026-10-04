@@ -33,6 +33,9 @@ As métricas de seleção usam uma projeção canônica em
 `media/selection_metrics.py`; beats/duração continuam sendo medidas distintas
 da quantidade de assets atribuídos às cenas. Backfills sem `media` preservam
 contagens visuais como desconhecidas (`null`).
+`metadata.json` usa o mesmo construtor de relatório para geração humana e
+assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
+do enriquecimento semântico quando disponível.
 No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
 de adapter inclui seus retries/backoff. `time_per_request` é `null` porque a

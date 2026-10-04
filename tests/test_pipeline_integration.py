@@ -320,6 +320,12 @@ def test_fluxo_humano_guarda_audio_request_para_finalize(tmp_path):
     assert meta["audio_request"]["music"]["mode"] == "manual"
     assert meta["audio_request"]["music"]["track"]["path"] == str(music)
     assert "audio" not in meta  # trilha ainda não foi mixada até finalize
+    assert meta["visual_report"]["cenas"] == len(meta["chapters"])
+    assert "provider_downloads" in meta
+    assert meta["scene_context_enrichment"]["source"] == "mock"
+    assert meta["scene_context_enrichment"]["scene_ids"] == [
+        chapter["id"] for chapter in meta["chapters"]
+    ]
 
 
 def test_finalize_humano_aplica_trilha_salva_no_audio_request(tmp_path, monkeypatch):

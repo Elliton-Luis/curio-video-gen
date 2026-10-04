@@ -315,7 +315,7 @@ def _print_grounding_warning(grounding: dict) -> str:
 def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
                    script_source: str, chapters: list[Chapter],
                    scenes_source: str, media_scenes: list[dict],
-                   warnings: list[str], stage_times: dict,
+                   warnings: list[str], stage_times: dict, metrics: RunMetrics,
                    started: float) -> dict:
     return {
         "title": idea.strip(),
@@ -336,6 +336,8 @@ def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
         "processing_time_seconds": round(time.monotonic() - started, 2),
         "stage_times": stage_times,
         "pipeline_version": "scenes-0.2",
+        "visual_report": metrics.media_visual_report(len(chapters)),
+        "provider_downloads": metrics.media_download_report(),
     }
 
 
@@ -885,6 +887,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            genre_key=genre_key,
                            transition_mode=_transition_mode(cfg),
                            genre_profile=editorial_stage.summary(perfil),
+                           scene_context_enrichment=enrichment.to_dict(),
                            video_title=video_title,
                            title_source=title_source)
 
@@ -1000,7 +1003,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
                               chapters, scenes_source, media_scenes, warnings,
-                              stage_times, started)
+                              stage_times, metrics, started)
     metadata.update({
         "genre": genre_key,
         "scene_context_enrichment": enrichment.to_dict(),
@@ -1064,14 +1067,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "rejected": [{"title": s.title, "reason": m}
                          for s, m, _d in research_rejected],
         },
-        # Como cada cena foi visualizada e por que as outras não foram.
-        # `sem_visual` é a única métrica que é problema: diagrama e cartão
-        # contam como visual, não como falha.
-        "visual_report": metrics.media_visual_report(len(chapters)),
-        # Por provedor: candidatos achados × downloads tentados ×
-        # 403. Responde a pergunta que o log de "download falhou" deixava
-        # em aberto — o provedor está vazio ou está baixando mal?
-        "provider_downloads": metrics.media_download_report(),
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,
@@ -1155,6 +1150,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                 insert_budget: int = 0, genre_key: str = "",
                 transition_mode: str = "auto",
                 genre_profile: dict | None = None,
+                scene_context_enrichment: dict | None = None,
                 video_title: str = "", title_source: str = "") -> dict:
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
@@ -1220,7 +1216,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
 
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
                               chapters, scenes_source, media_scenes, warnings,
-                              stage_times, started)
+                              stage_times, metrics, started)
     metadata.update({
         "genre": genre_key,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),
@@ -1238,6 +1234,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
             "final_fade": _final_audio_fade(genre_key, transition_mode),
         },
         "genre_profile": genre_profile or editorial_stage.summary(None),
+        "scene_context_enrichment": scene_context_enrichment or {},
         "typography": _typography_report(cfg, genre_key),
         "narration": "human-pending",
         "mode": "script" if script_mode else "idea",
