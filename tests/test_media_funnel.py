@@ -31,7 +31,8 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
-    monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
+    monkeypatch.setattr(cache, "_fetch",
+                        lambda url, provider="", metrics=None: b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
     ch = Chapter(1, "Receipt.", 3, subject="receipt")
     metrics = RunMetrics("fixture", "receipt", "ai")
@@ -77,7 +78,8 @@ def test_generic_candidate_passes_on_own_terms_after_specifics(monkeypatch, tmp_
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
-    monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
+    monkeypatch.setattr(cache, "_fetch",
+                        lambda url, provider="", metrics=None: b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
     ch = Chapter(1, "Tomás de Aquino nasceu em 1225.", 5,
                  subject="Tomás de Aquino")

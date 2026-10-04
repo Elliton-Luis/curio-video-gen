@@ -41,7 +41,6 @@ class RunMetrics:
         self.nvidia_completion_tokens = 0
         self.nvidia_models: list[str] = []
         self.tts_calls: list[dict] = []
-        self.media_searches: dict[str, int] = {}
         self.media_downloads = 0
         self.media_bytes = 0
         self.media_cache_hits = 0
@@ -55,6 +54,9 @@ class RunMetrics:
         self.media_deduplication_time = 0.0
         self.media_queries_count = 0
         self.media_requests_per_provider: dict[str, int] = {}
+        self.media_provider_search_calls: dict[str, int] = {}
+        self.media_provider_search_durations: dict[str, list[float]] = {}
+        self.media_retries_by_provider: dict[str, int] = {}
         self.media_time_per_request: dict[str, list[float]] = {}
         self.media_results_received: dict[str, int] = {}
         # Diagnóstico POR PROVEDOR do download. A pergunta que a execução
@@ -130,11 +132,34 @@ class RunMetrics:
     def tts(self, provider: str, chars: int) -> None:
         self.tts_calls.append({"provider": provider, "chars": chars})
 
+    @property
+    def media_searches(self) -> dict[str, int]:
+        """Compatibility alias for actual provider request attempts."""
+        return self.media_requests_per_provider
+
     def media_search(self, provider: str) -> None:
+        """Record one wire request attempt, including retried attempts."""
         with self._lock:
-            self.media_searches[provider] = self.media_searches.get(provider, 0) + 1
             self.media_requests_per_provider[provider] = (
                 self.media_requests_per_provider.get(provider, 0) + 1)
+
+    def media_provider_search(self, provider: str, elapsed_seconds: float) -> None:
+        """Record one adapter invocation; elapsed includes retries/backoff."""
+        with self._lock:
+            self.media_provider_search_calls[provider] = (
+                self.media_provider_search_calls.get(provider, 0) + 1)
+            self.media_provider_search_time[provider] = (
+                self.media_provider_search_time.get(provider, 0.0)
+                + max(0.0, elapsed_seconds))
+            self.media_provider_search_durations.setdefault(provider, []).append(
+                round(max(0.0, elapsed_seconds), 4))
+
+    def media_record_retry(self, provider: str) -> None:
+        with self._lock:
+            self.media_retries += 1
+            key = provider or "unknown"
+            self.media_retries_by_provider[key] = (
+                self.media_retries_by_provider.get(key, 0) + 1)
 
     def media_download(self, bytes_: int, cached: bool) -> None:
         with self._lock:
@@ -494,6 +519,8 @@ class RunMetrics:
                     "available_occurrences": sum(self.media_available_acquisitions.values()),
                     "available_by_acquisition": dict(self.media_available_acquisitions),
                     "searches": dict(self.media_searches),
+                    "logical_queries": self.media_queries_count,
+                    "provider_requests": dict(self.media_requests_per_provider),
                     "downloads": self.media_downloads,
                     "bytes": self.media_bytes,
                     "cache_hits": self.media_cache_hits,
@@ -503,12 +530,17 @@ class RunMetrics:
                     "reused": sum(1 for s in media if s.get("reused_from")),
                     "query_generation_time": round(self.media_query_generation_time, 2),
                     "provider_search_time": {k: round(v, 2) for k, v in self.media_provider_search_time.items()},
+                    "provider_search_calls": dict(self.media_provider_search_calls),
+                    "provider_search_durations": {
+                        k: [round(t, 4) for t in values]
+                        for k, values in self.media_provider_search_durations.items()},
                     "downloads_time": round(self.media_downloads_time, 2),
                     "selection_time": round(self.media_selection_time, 2),
                     "deduplication_time": round(self.media_deduplication_time, 2),
                     "queries_count": self.media_queries_count,
                     "requests_per_provider": dict(self.media_requests_per_provider),
-                    "time_per_request": {k: [round(t, 2) for t in v] for k, v in self.media_time_per_request.items()},
+                    # Legacy field was never measured at the HTTP attempt boundary.
+                    "time_per_request": None,
                     "results_received": dict(self.media_results_received),
                     "funnel": dict(self.media_funnel),
                     "rejection_reasons": dict(self.media_rejections),
@@ -516,6 +548,7 @@ class RunMetrics:
                     "assets_reused": self.media_assets_reused,
                     "timeouts": self.media_timeouts,
                     "retries": self.media_retries,
+                    "retries_by_provider": dict(self.media_retries_by_provider),
                     "synth_diagrams": self.media_synth_diagrams,
                     "rights_verify": self.media_rights_verify,
                     "rights_blocked": self.media_rights_blocked,

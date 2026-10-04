@@ -221,6 +221,8 @@ class WikimediaProvider(MediaProvider):
             except Exception as exc:
                 last = exc
                 if attempt < 4:
+                    if metrics is not None:
+                        metrics.media_record_retry(self.name)
                     from ..runlog import event as run_event
                     run_event("retry", f"Wikimedia: tentativa {attempt + 1}/5; "
                               f"{type(exc).__name__}; nova tentativa",

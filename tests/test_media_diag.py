@@ -154,7 +154,7 @@ def fetch(monkeypatch):
 def test_403_conta_separado(tmp_path, fetch):
     m = _metrics()
 
-    def fake(url, provider=""):
+    def fake(url, provider="", metrics=None):
         raise Exception("HTTP Error 403: Forbidden")
 
     fetch(fake)
@@ -171,7 +171,7 @@ def test_403_conta_separado(tmp_path, fetch):
 def test_outro_erro_nao_vira_403(tmp_path, fetch):
     m = _metrics()
 
-    def fake(url, provider=""):
+    def fake(url, provider="", metrics=None):
         raise TimeoutError("timed out")
 
     fetch(fake)
@@ -185,7 +185,7 @@ def test_outro_erro_nao_vira_403(tmp_path, fetch):
 
 def test_sucesso_conta_no_provider_certo(tmp_path, fetch):
     m = _metrics()
-    fetch(lambda url, provider="": b"x" * 50)
+    fetch(lambda url, provider="", metrics=None: b"x" * 50)
     C.download_asset(_asset("nasa", "a1", "http://x/ok.jpg"), str(tmp_path), m)
     rel = m.media_download_report()["nasa"]
     assert rel["downloads_attempted"] == 1
@@ -197,7 +197,7 @@ def test_fallback_que_funciona_nao_conta_falha_duas_vezes(tmp_path, fetch):
     """Uma tentativa ruim e uma boa: uma falha, um sucesso."""
     m = _metrics()
 
-    def fake(url, provider=""):
+    def fake(url, provider="", metrics=None):
         if "primaria" in url:
             raise Exception("HTTP Error 403: Forbidden")
         return b"x" * 50
@@ -216,7 +216,7 @@ def test_fallback_que_funciona_nao_conta_falha_duas_vezes(tmp_path, fetch):
 def test_cache_nao_conta_download(tmp_path, fetch):
     """Cache é cache: não é tentativa de download."""
     m = _metrics()
-    fetch(lambda url, provider="": b"x" * 50)
+    fetch(lambda url, provider="", metrics=None: b"x" * 50)
     a = _asset("nasa", "k1", "http://x/k.jpg")
     C.download_asset(a, str(tmp_path), m)
     b = _asset("nasa", "k1", "http://x/k.jpg")
@@ -235,7 +235,7 @@ def test_relatorio_separa_achar_de_baixar(tmp_path, fetch):
     m.media_record_results("pixabay", 70)
     m.media_record_results("nasa", 4)
 
-    def fake(url, provider=""):
+    def fake(url, provider="", metrics=None):
         raise Exception("HTTP Error 403: Forbidden")
 
     fetch(fake)

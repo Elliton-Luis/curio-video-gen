@@ -88,8 +88,17 @@ REJECTED_KEPT = 8
 def _submit_search(provider_obj, query: str, metrics=None):
     """Submit one provider search, preserving run-log context in worker."""
     context = contextvars.copy_context()
-    return _SEARCH_EXECUTOR.submit(context.run, provider_obj.search,
-                                   query, 5, metrics)
+
+    def timed_search():
+        started = time.monotonic()
+        try:
+            return provider_obj.search(query, 5, metrics)
+        finally:
+            if metrics:
+                metrics.media_provider_search(
+                    provider_obj.name, time.monotonic() - started)
+
+    return _SEARCH_EXECUTOR.submit(context.run, timed_search)
 
 
 def _search_with_timeout(provider_obj, query: str, timeout: float,
@@ -462,8 +471,11 @@ def _search_scene_with_shortcircuit(
     results_before = sum(metrics.media_results_received.values()) if metrics else 0
     downloads_before = metrics.media_downloads if metrics else 0
     cache_before = metrics.media_cache_hits if metrics else 0
+    planning_started = time.monotonic()
     visual_plan = build_visual_plan(ch, local_queries)
     search_plan = build_search_plan(visual_plan, genre)
+    if metrics:
+        metrics.media_query_generation_time += time.monotonic() - planning_started
     queries = [item.query for item in search_plan.queries]
     generics = set(search_plan.generic_queries)
     search_query_by_text = {item.query: item for item in search_plan.queries}
@@ -516,6 +528,7 @@ def _search_scene_with_shortcircuit(
 
     def _consider(cand: MediaAsset, query: str) -> None:
         nonlocal duplicate_candidates
+        dedupe_started = time.monotonic()
         source = (cand.source_url or "").split("?", 1)[0].rstrip("/").casefold()
         identity = (f"url:{source}" if source else
                     f"{cand.provider}:{cand.asset_id}")
@@ -527,8 +540,11 @@ def _search_scene_with_shortcircuit(
             query_audit[query]["duplicates"] += 1
             if metrics:
                 metrics.media_record_funnel("duplicates")
+                metrics.media_deduplication_time += time.monotonic() - dedupe_started
             return
         seen_ids.add(identity)
+        if metrics:
+            metrics.media_deduplication_time += time.monotonic() - dedupe_started
         if metrics:
             metrics.media_record_funnel("unique_considered")
         why = _validate_asset_for(cand, blocked)
@@ -654,9 +670,12 @@ def _search_scene_with_shortcircuit(
                 fresh = [entry for entry in candidates
                          if not asset_uses or not asset_uses.get(
                              _selection_asset_key(entry["asset"]), 0)]
+                score_started = time.monotonic()
                 checked = [item.to_selection_entry() for item in evaluate_specific(
                     [entry for entry in fresh if not entry["generic"]],
                     ch, min_score).accepted]
+                if metrics:
+                    metrics.media_selection_time += time.monotonic() - score_started
                 if any(entry.get("score", 0) >= min_score
                        and entry.get("score_detail", {}).get("topic_relevance") == 100
                        and entry.get("score_detail", {}).get("scene_relevance", 0) >= 70
@@ -674,8 +693,11 @@ def _search_scene_with_shortcircuit(
     # oversized provider response from multiplying downloads without bound.
     phase_budget = max(1, max_images * CANDIDATE_MULTIPLIER)
     collect(specific_queries, phase_budget, stop_when_proven=True)
+    score_started = time.monotonic()
     specific_result = evaluate_specific(
         [entry for entry in candidates if not entry["generic"]], ch, min_score)
+    if metrics:
+        metrics.media_selection_time += time.monotonic() - score_started
     specific = [item.to_selection_entry() for item in specific_result.accepted]
     low_specific = [item.to_selection_entry() for item in specific_result.rejected]
     evaluated_entries = [*specific, *low_specific]
@@ -687,8 +709,11 @@ def _search_scene_with_shortcircuit(
         ranked, low = specific, low_specific
     else:
         collect(generic_queries, phase_budget)
+        score_started = time.monotonic()
         generic_result = evaluate_generic(
             [entry for entry in candidates if entry["generic"]], ch, min_score)
+        if metrics:
+            metrics.media_selection_time += time.monotonic() - score_started
         ranked = [item.to_selection_entry() for item in generic_result.accepted]
         low_generic = [item.to_selection_entry() for item in generic_result.rejected]
         evaluated_entries.extend([*ranked, *low_generic])

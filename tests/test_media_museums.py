@@ -163,7 +163,8 @@ def test_museum_search_runs_again_but_download_bytes_are_reused(monkeypatch, tmp
 
     museum = Museum()
     from curio.media import cache
-    monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
+    monkeypatch.setattr(cache, "_fetch",
+                        lambda url, provider="", metrics=None: b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
     ch = Chapter(1, "Júlio César chegou ao poder.", 8, subject="Júlio César",
                  subject_aliases=["Julius Caesar"])
@@ -198,7 +199,8 @@ def test_museum_failure_falls_through_to_next_provider(monkeypatch, tmp_path):
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
-    monkeypatch.setattr(cache, "_fetch", lambda url, provider="": b"fixture")
+    monkeypatch.setattr(cache, "_fetch",
+                        lambda url, provider="", metrics=None: b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
     ch = Chapter(1, "Júlio César chegou ao poder.", 8, subject="Júlio César",
                  subject_aliases=["Julius Caesar"])
@@ -228,7 +230,8 @@ def test_museum_assets_join_scoring_dedup_and_cache(monkeypatch, tmp_path):
     from curio.media import cache
     downloads = []
     monkeypatch.setattr(cache, "_fetch",
-                        lambda url, provider="": downloads.append(url) or b"fixture")
+                        lambda url, provider="", metrics=None:
+                        downloads.append(url) or b"fixture")
     monkeypatch.setattr(cache.time, "sleep", lambda delay: None)
     ch = Chapter(1, "Júlio César chegou ao poder.", 8, subject="Júlio César",
                  subject_aliases=["Julius Caesar"])

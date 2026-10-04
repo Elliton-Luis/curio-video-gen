@@ -33,6 +33,10 @@ As métricas de seleção usam uma projeção canônica em
 `media/selection_metrics.py`; beats/duração continuam sendo medidas distintas
 da quantidade de assets atribuídos às cenas. Backfills sem `media` preservam
 contagens visuais como desconhecidas (`null`).
+No consumo de mídia, `logical_queries`, `provider_requests` e
+`provider_search_calls` têm unidades próprias; retries são separados e o tempo
+de adapter inclui seus retries/backoff. `time_per_request` é `null` porque a
+duração de cada tentativa HTTP ainda não é medida.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*
