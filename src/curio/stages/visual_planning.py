@@ -22,31 +22,26 @@ _SCIENCE_CONTEXT_CUES = ("experiment", "experimento", "science", "ciência",
                          "research", "pesquisa")
 
 
-def build_visual_plan(scene, local_query_generator) -> VisualPlan:
+def build_visual_plan(scene) -> VisualPlan:
     """Close scene-level visual inputs into a typed plan before acquisition.
 
-    Legacy narration-based extraction is performed here and materialized as
-    bounded query seeds. The returned plan itself never contains narration.
+    Meaning and representations arrive on the semantic scene; this projection
+    adds only typed visual policy and provider selection context.
     """
     context = VideoContext.from_value(getattr(scene, "video_context", {}))
     reps = tuple(rep for value in (getattr(scene, "representations", []) or [])
                  if (rep := VisualRepresentation.from_value(value)))
     visual_queries = _strings(getattr(scene, "visual_queries", []))
     local = str(getattr(scene, "visual_intent", "") or "").startswith("local fallback")
-    structured = bool(reps or getattr(scene, "visual_intent_structured", "")
-                      or context.topic)
-    local_seeds = ()
-    if not visual_queries and not (local and context.topic) and not structured:
-        local_seeds = tuple(_strings(local_query_generator(
-            str(getattr(scene, "narration", "") or ""))))
-    narration = str(getattr(scene, "narration", "") or "")
     subject = str(getattr(scene, "subject", "") or "")
     subject_aliases = _strings(getattr(scene, "subject_aliases", []))
     visual_entities = _strings(getattr(scene, "visual_entities", []))
     scene_context = _strings(getattr(scene, "context", []))
-    lexical_context = " ".join((narration, context.topic,
+    lexical_context = " ".join((context.topic,
                                 *(alias.value for alias in context.aliases),
-                                *visual_queries, *local_seeds, subject,
+                                str(getattr(scene, "visual_intent", "") or ""),
+                                str(getattr(scene, "visual_intent_structured", "") or ""),
+                                *(rep.query for rep in reps), *visual_queries, subject,
                                 *subject_aliases, *visual_entities, *scene_context))
     folded = lexical_context.casefold()
     visual_type = str(getattr(scene, "visual_type", "") or "literal")
@@ -72,7 +67,6 @@ def build_visual_plan(scene, local_query_generator) -> VisualPlan:
         place=str(getattr(scene, "place", "") or ""),
         period=str(getattr(scene, "period", "") or ""),
         local_fallback=local,
-        local_query_seeds=local_seeds,
         space_topic=textnorm.is_space_topic(lexical_context),
         mechanistic=any(cue in folded for cue in _MECHANISM_CUES),
         scientific_context=(visual_type == "mechanism"

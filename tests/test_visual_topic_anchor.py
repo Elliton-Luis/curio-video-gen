@@ -1,16 +1,17 @@
 """Regressions: local scene nouns must stay anchored to video topic."""
 
-from curio.stages import scoring, visual
+from curio.stages import scoring
 from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter, _local_chapters
+from curio.stages.scene_local_planning import local_visual_representations
 from curio.stages.visual_context import anchor_local_topic
 
 
 def test_absoluto_never_generates_sun_query():
     text = ("A França, antes de 1789, era governada por um rei absoluto "
             "que dominava a nação há séculos.")
-    assert "sun" not in visual.local_queries(text)
-    assert visual.local_queries(text)[0] == "france"
+    assert "sun" not in local_visual_representations(text)
+    assert local_visual_representations(text)[0] == "france"
 
 
 def test_local_revolution_scenes_share_translated_video_anchor():
@@ -66,10 +67,10 @@ def test_person_video_keeps_person_portrait_across_local_context_scenes():
 def test_tesla_current_queries_distinguish_electricity_from_river():
     narration = ("Tesla desenvolveu o motor de indução de corrente alternada; "
                  "Edison defendia corrente contínua.")
-    queries = visual.local_queries(narration)
+    queries = local_visual_representations(narration)
     assert "induction motor" in queries
     assert "alternating current" in queries
-    assert "direct current" in visual.local_queries(
+    assert "direct current" in local_visual_representations(
         "Edison defendia corrente contínua.")
     assert "river" not in queries
 

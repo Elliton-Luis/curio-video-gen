@@ -45,6 +45,9 @@ aplicados antes de atualizar `chapters.json`.
 scoring dos tempos em `Chapter`, ainda usado por timeline e render. A saída do
 planner/cache será migrada para esse contrato em etapas; a compatibilidade
 atual converte os capítulos no limite de mídia.
+O VisualPlanner não lê narração: representações locais são criadas no estágio
+de planejamento local de cenas, materializadas no contrato e então consumidas
+por VisualPlan/SearchPlan.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

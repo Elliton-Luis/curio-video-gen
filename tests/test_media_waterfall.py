@@ -7,6 +7,7 @@ from curio.media.providers import MediaAsset, MediaError
 from curio.metrics import RunMetrics
 from curio.media.providers import min_dimension as media_rules_min_dimension
 from curio.stages import visual as V
+from curio.stages.scenes import Chapter
 from curio.stages.visual_planning import build_visual_plan
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -15,13 +16,11 @@ def _ch(queries=(), narration="Texto da cena.", cid=1, glob=(), **extra):
     """Cena de teste. `entities`/`subject` existem porque o scoring compara
     o título da foto com o vocabulário da cena: uma cena cuja narração não
     tem nada a ver com a foto deve (e deve) reprovar o candidato."""
-    base = dict(id=cid, narration=narration,
-                visual_queries=list(queries),
-                global_visual_queries=list(glob),
-                visual_type="literal", subject="", visual_entities=[],
-                context=[], forbidden=[])
+    base = dict(visual_queries=list(queries),
+                global_visual_queries=list(glob), visual_type="literal",
+                subject="", visual_entities=[], context=[], forbidden=[])
     base.update(extra)
-    return SimpleNamespace(**base)
+    return Chapter(id=cid, narration=narration, duration_estimate=5, **base)
 
 
 def _asset(provider="pixabay", aid="1", title="water glass laboratory",
@@ -171,9 +170,9 @@ def test_gate_unico_de_metadados():
 def test_visual_plan_marks_mechanism_evidence_once():
     assert build_visual_plan(
         _ch(("antibody", "protein"), "Antibodies bind to hCG."),
-        V.local_queries).mechanistic
+    ).mechanistic
     assert not build_visual_plan(
-        _ch(("rome", "soldier"), "Roma caiu."), V.local_queries).mechanistic
+        _ch(("rome", "soldier"), "Roma caiu.")).mechanistic
 
 
 class _FakeProv:

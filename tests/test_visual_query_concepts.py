@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter, _local_chapters, classify_visual_type
 from curio.stages import visual
-from curio.stages.visual import local_queries
+from curio.stages.scene_local_planning import local_visual_representations
 from curio.stages.visual_context import attach_video_context
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -75,8 +75,8 @@ def test_isolated_noise_is_rejected_and_alias_backed_indirect_visual_survives():
     assert [r["query"] for r in chapter.representations] == ["Liberty statue"]
     assert {r["reason"] for r in chapter.representation_rejections} == {
         "isolated_abstract_or_material", "isolated_ordinal", "isolated_inflected_verb"}
-    assert not any(local_queries(chapter.narration)[i] in {"gold", "primeira"}
-                   for i in range(len(local_queries(chapter.narration))))
+    assert not any(term in {"gold", "primeira"}
+                   for term in local_visual_representations(chapter.narration))
     queries, _ = plan_queries(chapter)
     assert "Liberty statue" in queries
     assert not any(q in {"gold", "primeira", "formavam"} for q in queries)

@@ -221,19 +221,38 @@ class SemanticScene:
 
     @classmethod
     def from_chapter(cls, chapter, source: str = "unknown") -> "SemanticScene":
+        context = deepcopy(chapter.video_context)
+        visual_queries = tuple(chapter.visual_queries)
+        representations = tuple(chapter.representations)
+        if representations and not visual_queries:
+            visual_queries = tuple(rep.query for rep in representations)
+        elif visual_queries and not representations:
+            representations = tuple(VisualRepresentation(
+                query=query, source="legacy_scene_query")
+                for query in visual_queries)
+        elif (not visual_queries and not representations
+              and not context.topic
+              and not chapter.visual_intent_structured):
+            # Legacy scenes enter the deterministic local planner at this
+            # boundary; acquisition planning receives only materialized reps.
+            from .scene_local_planning import local_visual_representations
+            visual_queries = tuple(local_visual_representations(chapter.narration))
+            representations = tuple(VisualRepresentation(
+                query=query, source="local_concrete_phrase")
+                for query in visual_queries)
         return cls(
             id=int(chapter.id), narration=str(chapter.narration), source=source,
             visual_type=str(chapter.visual_type), subject=str(chapter.subject),
             subject_aliases=tuple(chapter.subject_aliases),
             visual_entities=tuple(chapter.visual_entities),
             context=tuple(chapter.context), forbidden=tuple(chapter.forbidden),
-            video_context=deepcopy(chapter.video_context),
+            video_context=context,
             visual_intent=str(chapter.visual_intent),
             visual_intent_structured=str(chapter.visual_intent_structured),
             primary_entity=str(chapter.primary_entity), event=str(chapter.event),
             place=str(chapter.place), period=str(chapter.period),
-            representations=tuple(chapter.representations),
-            visual_queries=tuple(chapter.visual_queries),
+            representations=representations,
+            visual_queries=visual_queries,
             global_visual_queries=tuple(chapter.global_visual_queries),
             representation_rejections=tuple(chapter.representation_rejections),
         )

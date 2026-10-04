@@ -17,6 +17,8 @@ from curio.metrics import RunMetrics
 from curio.stages import media_rules, scoring
 from curio.stages import scenes as S
 from curio.stages import visual as V
+from curio.stages.scene_local_planning import local_visual_representations
+from curio.stages.scenes import Chapter
 
 
 N1 = ("Um buraco negro é um objeto astronômico denso e massivo cujo intenso "
@@ -27,17 +29,16 @@ N4 = ("Essa radiação tem o mesmo espectro que um corpo negro de temperatura "
 
 
 def _ch(narration, **extra):
-    base = dict(id=1, narration=narration, visual_queries=[],
-                global_visual_queries=[], visual_type="literal", subject="",
-                subject_aliases=[], visual_entities=[], context=[],
-                forbidden=[])
+    base = dict(visual_queries=[], global_visual_queries=[],
+                visual_type="literal", subject="", subject_aliases=[],
+                visual_entities=[], context=[], forbidden=[])
     base.update(extra)
-    return SimpleNamespace(**base)
+    return Chapter(id=1, narration=narration, duration_estimate=5, **base)
 
 
 def test_queries_locais_trazem_buraco_negro():
-    assert V.local_queries(N1)[0] == "black hole"
-    assert V.local_queries(N4)[0] == "black hole"
+    assert local_visual_representations(N1)[0] == "black hole"
+    assert local_visual_representations(N4)[0] == "black hole"
 
 
 def test_cascata_espacial_sem_laboratorio():

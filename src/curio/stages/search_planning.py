@@ -54,12 +54,15 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
 
     ai = list(plan.visual_queries)
     representations = sorted(plan.representations, key=lambda item: item.level)
+    legacy_unanchored_queries = (
+        bool(representations) and not topic and not aliases
+        and all(rep.source == "legacy_scene_query" for rep in representations))
     names = [set(_tokens(name)) for name in [plan.subject, *plan.subject_aliases]
              if _tokens(name)]
     same_subject = len(ai) >= 2 and all(
         any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
 
-    if not plan.local_fallback:
+    if not plan.local_fallback and not legacy_unanchored_queries:
         for rep in representations:
             focus, kind = rep.query.strip(), rep.kind
             add(contextual(focus), source="scene_representation",
@@ -71,7 +74,6 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                     kind=kind, alias=anchor_alias, variant=medium,
                     level=max(2, rep.level + 2))
 
-    structured = bool(representations or plan.visual_intent_structured or topic)
     if plan.local_fallback and topic:
         topic_names = [topic, *aliases, *plan.primary_entities]
         anchor_sets = [set(_tokens(name)) for name in topic_names if _tokens(name)]
@@ -123,10 +125,6 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                 alias=alias, level=2)
         add(plan.subject, source="scene_subject", representation=plan.subject,
             level=2)
-    if not ai and not (plan.local_fallback and topic) and not structured:
-        for term in plan.local_query_seeds:
-            add(term, source="local_query_seed", representation=term, level=3)
-
     for term in plan.global_visual_queries:
         add(term, source="global_context", representation=term, alias=anchor_alias,
             level=4)

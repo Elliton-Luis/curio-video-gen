@@ -11,8 +11,8 @@ from .scene_contract import Alias, VisualRepresentation
 class VisualPlan:
     """Scene-bound visual intent consumed by search and provider policy.
 
-    It deliberately contains no narration. Any lexical fallback derived from
-    narration is materialized as `local_query_seeds` by the planner.
+    It contains neither narration nor unapproved lexical fallbacks; all
+    representations arrive on the scene contract.
     """
 
     scene_id: int
@@ -34,7 +34,6 @@ class VisualPlan:
     place: str
     period: str
     local_fallback: bool
-    local_query_seeds: tuple[str, ...]
     space_topic: bool
     mechanistic: bool
     scientific_context: bool
@@ -63,7 +62,6 @@ class VisualPlan:
             "place": self.place,
             "period": self.period,
             "local_fallback": self.local_fallback,
-            "local_query_seeds": list(self.local_query_seeds),
             "space_topic": self.space_topic,
             "mechanistic": self.mechanistic,
             "scientific_context": self.scientific_context,

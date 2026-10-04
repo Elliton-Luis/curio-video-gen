@@ -18,11 +18,12 @@ def patch_search_plan(monkeypatch, visual, queries, generic=()):
 
 
 def plan_queries(scene, genre=""):
-    from curio.stages.visual import local_queries
     from curio.stages.visual_planning import build_visual_plan
     from curio.stages.search_planning import build_search_plan
 
-    plan = build_visual_plan(scene, local_queries)
+    semantic_scene = (scene.semantic_scene()
+                      if hasattr(scene, "semantic_scene") else scene)
+    plan = build_visual_plan(semantic_scene)
     search_plan = build_search_plan(plan, genre)
     return ([item.query for item in search_plan.queries],
             set(search_plan.generic_queries))

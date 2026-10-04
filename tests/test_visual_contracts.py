@@ -1,5 +1,6 @@
 from curio.stages.scenes import Chapter
-from curio.stages.visual import local_queries
+from curio.stages.scene_contract import SemanticScene
+from curio.stages.scene_local_planning import local_visual_representations
 from curio.stages.visual_planning import build_visual_plan
 from curio.stages.search_planning import build_search_plan
 
@@ -23,7 +24,7 @@ def test_visual_plan_closes_scene_inputs_without_copying_narration():
         },
     })
 
-    plan = build_visual_plan(scene, local_queries)
+    plan = build_visual_plan(scene.semantic_scene())
     assert plan.scene_id == scene.id
     assert plan.topic == "Ottoman Empire"
     assert plan.representations[0].query == "Ottoman Janissaries"
@@ -32,11 +33,27 @@ def test_visual_plan_closes_scene_inputs_without_copying_narration():
     assert "narration" not in plan.to_dict()
 
 
-def test_visual_plan_materializes_legacy_local_query_fallback_once():
+def test_semantic_scene_materializes_local_representations_before_visual_plan():
     scene = Chapter(1, "The black hole bends light.", 3)
-    plan = build_visual_plan(scene, local_queries)
-    assert plan.local_query_seeds == tuple(local_queries(scene.narration))
+    semantic = scene.semantic_scene()
+    plan = build_visual_plan(semantic)
+    assert plan.representations
+    assert plan.representations[0].query == local_visual_representations(scene.narration)[0]
+    assert not hasattr(plan, "local_query_seeds")
     assert plan.space_topic
+
+
+def test_visual_planner_does_not_reinterpret_narration():
+    scene = SemanticScene(
+        id=9, narration="The battle used a microscope in a laboratory.",
+        visual_type="literal")
+
+    plan = build_visual_plan(scene)
+
+    assert not plan.historical_scene
+    assert not plan.scientific_context
+    assert not plan.mechanistic
+    assert not hasattr(plan, "narration")
 
 
 def test_search_plan_queries_have_representation_context_and_provenance():
@@ -53,7 +70,7 @@ def test_search_plan_queries_have_representation_context_and_provenance():
         "video_context": {"topic": "Ottoman Empire",
                           "aliases": ["Ottoman Empire"]},
     })
-    plan = build_search_plan(build_visual_plan(scene, local_queries), "history")
+    plan = build_search_plan(build_visual_plan(scene.semantic_scene()), "history")
     assert plan.queries
     assert all(item.source and item.level >= 1 for item in plan.queries)
     assert all("formavam" not in item.query.casefold() for item in plan.queries)

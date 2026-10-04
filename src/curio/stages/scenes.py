@@ -375,21 +375,13 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
     sentences = subs_stage._sentences(script)
     if not sentences:
         raise ValueError("roteiro vazio — nada para dividir em cenas")
-    try:
-        from .visual import local_queries as _local_queries
-    except Exception:  # noqa: BLE001 — sem queries, sem vocabulário
-        _local_queries = None
+    from .scene_local_planning import local_visual_representations
     per = max(1, round(len(sentences) / n_scenes))
     chapters = []
     for i in range(0, len(sentences), per):
         narration = " ".join(sentences[i:i + per])
         vtype = classify_visual_type(narration)
-        queries: list[str] = []
-        if _local_queries is not None:
-            try:
-                queries = [q for q in (_local_queries(narration) or []) if q][:5]
-            except Exception:  # noqa: BLE001 — query nunca é fatal
-                queries = []
+        queries = local_visual_representations(narration)
         reps = []
         for term in queries:
             if re.match(r"^(battle|siege|revolution|war|conquest)\b", term, re.I):
