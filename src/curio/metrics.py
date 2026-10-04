@@ -502,15 +502,20 @@ class RunMetrics:
                 "transcription_model": meta.get("transcription_model"),
                 "visual_scenes": self.visual_scene_count,
                 "visual_beats": self.visual_beat_count,
-                "visual_assets_unique": len(self.visual_asset_ids),
+                # Timeline identity includes synthetic and real assets. The
+                # scene-level `visual_report.unique_assets` counts real media.
+                "visual_timeline_assets_unique": len(self.visual_asset_ids),
+                "visual_assets_unique": len(self.visual_asset_ids),  # legacy alias
                 "visual_asset_beat_counts": dict(self.visual_asset_beat_counts),
                 "visual_asset_scene_counts": dict(self.visual_asset_scene_counts),
                 "visual_asset_details": dict(self.visual_asset_details),
                 "media_scene_decisions": dict(self.media_scene_decisions),
                 "visual_report": (meta.get("visual_report") or
                                   self.media_visual_report(len(chapters))),
-                "visual_assets_reused": max(
+                "visual_timeline_assets_reused_across_scenes": max(
                     0, sum(self.visual_asset_scene_counts.values()) - len(self.visual_asset_ids)),
+                "visual_assets_reused": max(
+                    0, sum(self.visual_asset_scene_counts.values()) - len(self.visual_asset_ids)),  # legacy alias
                 "visual_average_seconds_per_beat": (
                     round(self.visual_beat_seconds / self.visual_beat_count, 2)
                     if self.visual_beat_count else None),

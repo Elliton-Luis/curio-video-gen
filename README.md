@@ -33,6 +33,12 @@ As métricas de seleção usam uma projeção canônica em
 `media/selection_metrics.py`; beats/duração continuam sendo medidas distintas
 da quantidade de assets atribuídos às cenas. Backfills sem `media` preservam
 contagens visuais como desconhecidas (`null`).
+`visual_report.unique_assets` conta IDs reais selecionados; o relatório de
+pipeline nomeia separadamente `visual_timeline_assets_unique` (reais e
+sintéticos usados na timeline) e
+`visual_timeline_assets_reused_across_scenes`. Os antigos
+`visual_assets_unique`/`visual_assets_reused` permanecem aliases de schema para
+projetos/consumidores existentes.
 `metadata.json` usa o mesmo construtor de relatório para geração humana e
 assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
 do enriquecimento semântico quando disponível.

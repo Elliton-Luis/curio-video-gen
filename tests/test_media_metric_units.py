@@ -1,5 +1,6 @@
 from curio.metrics import RunMetrics
 from curio.stages.visual import _submit_search
+from curio.stages.scene_contract import TimelineSpan
 
 
 def test_search_counters_are_distinct_logical_calls_requests_and_retries():
@@ -33,3 +34,28 @@ def test_provider_search_timing_measures_one_adapter_call():
     assert len(record["provider_search_durations"]["fixture"]) == 1
     assert record["provider_search_durations"]["fixture"][0] >= 0
     assert record["time_per_request"] is None
+
+
+def test_timeline_asset_metrics_are_named_separately_from_real_selection():
+    metrics = RunMetrics("test", "Rome", "ai")
+    real = {"provider": "wikimedia", "asset_id": "rome"}
+    synthetic = {"provider": "synth", "asset_id": "card"}
+    scenes = [
+        {"chapter_id": 1, "asset": real, "assets": [{"asset": real}],
+         "visual_decision": {"selection": {"status": "real"}}},
+        {"chapter_id": 2, "asset": real, "assets": [{"asset": real}],
+         "visual_decision": {"selection": {"status": "reused"}}},
+        {"chapter_id": 3, "asset": synthetic, "assets": [{"asset": synthetic}],
+         "visual_decision": {"selection": {"status": "synthetic"}}},
+    ]
+    metrics.visual_plan(tuple(TimelineSpan(i, 2, (i - 1) * 2, i * 2)
+                              for i in range(1, 4)), scenes, 2)
+    pipeline = metrics.to_dict({}, {}, "metrics")["pipeline"]
+
+    assert pipeline["visual_timeline_assets_unique"] == 2  # real + synthetic
+    assert pipeline["visual_timeline_assets_reused_across_scenes"] == 1
+    assert pipeline["visual_assets_unique"] == pipeline["visual_timeline_assets_unique"]
+    assert pipeline["visual_assets_reused"] == pipeline[
+        "visual_timeline_assets_reused_across_scenes"]
+    assert pipeline["visual_report"]["unique_assets"] == 1  # real media only
+    assert pipeline["visual_report"]["reuse_count"] == 1

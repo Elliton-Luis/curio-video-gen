@@ -194,3 +194,17 @@ regressão prova que retorno incompleto falha antes de qualquer side effect.
 Focados de pesquisa/pipeline/TTS/TUI: **50 passaram em 151,64 s**; a suíte
 completa passou com **857 testes em 202,95 s**. `compileall` e
 `git diff --check` passaram.
+
+## F4: nomes de métricas distinguem seleção real e uso em timeline
+
+As execuções reais mostraram que `visual_report.unique_assets` mede IDs reais
+escolhidos, enquanto `pipeline.visual_assets_unique` inclui também cartões
+sintéticos presentes na timeline. Os dois valores eram válidos em unidades
+diferentes, mas os nomes pareciam contraditórios. Adicionei
+`visual_timeline_assets_unique` e
+`visual_timeline_assets_reused_across_scenes`, que declaram a unidade; os
+campos antigos continuam como aliases para compatibilidade de schema. Uma
+regressão compara cenas real/reused/synthetic e prova a distinção. Focados:
+`test_media_metric_units.py`, `test_visual_asset_usage.py` e
+`test_review_flow.py` — 32 passaram. `compileall` e `git diff --check`
+passaram; a suíte integral passou com **858 testes em 197,12 s**.

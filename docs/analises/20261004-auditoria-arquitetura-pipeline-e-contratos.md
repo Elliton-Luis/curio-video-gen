@@ -289,6 +289,12 @@ com providers indisponíveis e busca marcada incompleta. A aquisição continua
 aberta e a fase de qualidade precisa impedir que evidência de local amplo
 substitua evidência de evento/período em contexto histórico.
 
+Na fase F4, os nomes `visual_timeline_assets_unique` e
+`visual_timeline_assets_reused_across_scenes` separam uso de timeline (inclui
+sintéticos) das contagens editoriais de assets reais em `visual_report`.
+`visual_assets_unique` e `visual_assets_reused` continuam como aliases de
+compatibilidade, com mesma definição dos novos campos de timeline.
+
 A4a–A4u não encerram toda a arquitetura descrita no plano. Permanecem as
 fronteiras pendentes nas fases E/F/G/H/I: lifecycle dos outros artefatos e
 estado de execução, reconciliação de métricas finais, convergência dos caminhos

@@ -186,7 +186,8 @@ assim, consultou providers de novo (40,2 s de mídia). Portanto o cache de bytes
 está comprovado e o rerender respeita a seleção persistida, mas esta repetição
 não comprovou cache de decisão da busca.
 
-A suíte completa após A4u passou com **857 testes em 202,95 s**;
+A suíte completa após F4 passou com **858 testes em 197,12 s** (A4u havia passado
+com 857 testes em 202,95 s);
 `compileall` e `git diff --check` também passaram. Uma rodada direcionada das
 regressões de fallback local, timeout NVIDIA, JSON inválido, timeout de
 provider de mídia, cache/manifests e decisões de seleção passou com **60 testes
