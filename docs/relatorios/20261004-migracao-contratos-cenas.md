@@ -362,3 +362,6 @@ projeção comum `SemanticScene + TimelineSpan → chapters` e dos campos base d
 metadata. O pipeline continua compondo campos específicos por modo e dono de
 progresso/ordem; formato e valores persistidos foram preservados. Testes foram
 migrados para a API do módulo responsável.
+Testes focados de metadata e integração passaram (**11 em 40,49 s**);
+`compileall` e `git diff --check` passaram. A suíte integral será repetida no
+gate final após as migrações seguintes.
