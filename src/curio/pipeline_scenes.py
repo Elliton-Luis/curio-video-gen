@@ -51,8 +51,11 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
         chapters = load_chapters(paths)
         source = "cache"
         recovered_legacy = recover_legacy_chapters(chapters)
+        semantic_inputs = tuple(chapter.semantic_scene(source)
+                                for chapter in chapters)
+        timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
         if script_mode:
-            visual_stage.validate_preserved(script_text, chapters)
+            visual_stage.validate_preserved(script_text, semantic_inputs)
     else:
         recovered_legacy = False
         if script_mode:
@@ -64,11 +67,15 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
             count = scenes_stage.scenes_for_duration(
                 cfg.duration_target, scene_target_seconds, max_scenes)
         try:
-            chapters, source = scenes_stage.build_chapters(
+            plan = scenes_stage.build_semantic_scenes(
                 script_text, cfg, n_scenes=count, metrics=metrics,
                 genre=genre, target_seconds=scene_target_seconds,
                 genre_directive=_scene_directive(scene_directive, etymology),
                 max_scenes=max_scenes)
+            semantic_inputs = plan.semantic_scenes
+            timeline_spans = plan.timeline_spans
+            source = plan.source
+            chapters = list(plan.timeline_chapters())
         except nvidia_stage.NvidiaError as exc:
             logged = run_event(
                 "fallback", f"Cenas: chain LLM falhou; divisão local ({exc})",
@@ -77,19 +84,20 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
                 print(f"AVISO: chain LLM de cenas indisponível ({exc}) — "
                       "seguindo com divisão local.", file=sys.stderr)
             warnings.append(f"cenas locais (chain LLM indisponível: {exc})")
-            chapters = scenes_stage._local_chapters(script_text, count)
-            source = "local"
+            plan = scenes_stage.build_local_semantic_scenes(script_text, count)
+            semantic_inputs = plan.semantic_scenes
+            timeline_spans = plan.timeline_spans
+            source = plan.source
+            chapters = list(plan.timeline_chapters())
         if script_mode:
-            visual_stage.validate_preserved(script_text, chapters)
+            visual_stage.validate_preserved(script_text, semantic_inputs)
         write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
 
     scene_event = ("provider" if source not in ("local", "cache")
                    else "fallback" if source == "local" else "cache")
     planning_mode = ("deterministic" if source == "local" or any(
-        chapter.planning_mode == "deterministic" for chapter in chapters)
+        scene.planning_mode == "deterministic" for scene in semantic_inputs)
         else "llm")
-    semantic_inputs = tuple(chapter.semantic_scene(source) for chapter in chapters)
-    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     enriched = enrich_scenes(
         semantic_inputs, timeline_spans=timeline_spans,
         topic=topic, target=target, source=source,

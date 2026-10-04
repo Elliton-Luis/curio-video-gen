@@ -47,7 +47,9 @@ O enriquecimento pós-planner de contexto está centralizado em
 `scene_enrichment.py`: recebe proveniência explícita, clona a saída do
 planner, retorna uma batch validada e registra quais complementos foram
 aplicados antes de atualizar `chapters.json`.
-`pipeline_scenes.py` coordena planner/cache/enrichment e retorna
+`scenes.build_semantic_scenes` e `build_local_semantic_scenes` retornam
+`ScenePlanResult` com cenas semânticas e tempos separados. `pipeline_scenes.py`
+coordena planner/cache/enrichment e retorna
 `SceneStageResult` com origem, cenas semânticas, Chapters de compatibilidade e
 invalidação de mídia explícita. LLM e fallback local convergem para `SemanticScene`
 antes de enrichment; `TimelineSpan` carrega somente duração e limites temporais,

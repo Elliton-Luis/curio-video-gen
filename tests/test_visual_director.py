@@ -318,9 +318,10 @@ def test_planner_near_match_repairs_source_spans_then_repairs_excess_count(monke
     monkeypatch.setattr(scenes.nvidia_stage, "any_llm_available", lambda: True)
     monkeypatch.setattr(scenes.nvidia_stage, "complete_json",
                         lambda *_args, **_kwargs: (payload, "test:model"))
-    chapters, source = scenes.build_chapters(
+    plan = scenes.build_semantic_scenes(
         script, CurioConfig(), n_scenes=2)
-    assert source == "test"
+    chapters = plan.semantic_scenes
+    assert plan.source == "test"
     assert len(chapters) == 2
     assert " ".join(ch.narration for ch in chapters) == script
     assert chapters[0].video_context["topic"] == "French Revolution"

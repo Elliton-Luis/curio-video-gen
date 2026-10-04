@@ -36,6 +36,32 @@ TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
 
 
+@dataclass(frozen=True)
+class ScenePlanResult:
+    """Planner output: scene meaning and timeline spans are separate values."""
+
+    semantic_scenes: tuple[SemanticScene, ...]
+    timeline_spans: tuple[TimelineSpan, ...]
+    source: str
+
+    def __post_init__(self) -> None:
+        if len(self.semantic_scenes) != len(self.timeline_spans):
+            raise ValueError("planner scene/timeline counts differ")
+        scene_ids = tuple(scene.id for scene in self.semantic_scenes)
+        span_ids = tuple(span.scene_id for span in self.timeline_spans)
+        if scene_ids != span_ids:
+            raise ValueError("planner timeline spans do not match scene order")
+        errors = [scene.contract_errors() for scene in self.semantic_scenes]
+        if any(errors):
+            raise ValueError("planner emitted invalid semantic scene")
+
+    def timeline_chapters(self) -> tuple["Chapter", ...]:
+        """Create the compatibility projection consumed by render stages."""
+        return tuple(Chapter.from_semantic_scene(scene, timing=span)
+                     for scene, span in zip(self.semantic_scenes,
+                                            self.timeline_spans))
+
+
 LEGACY_MAX_SCENES = 12          # teto de scenes_for_length sem gênero
 LEGACY_MAX_SCENES_DURATION = 7  # teto de scenes_for_duration sem gênero
 
@@ -870,12 +896,38 @@ def _payload_snippet(data, limit: int = 300) -> str:
     return text
 
 
-def build_chapters(script: str, cfg: CurioConfig,
-                   n_scenes: int | None = None, metrics=None,
-                   genre: str = "", target_seconds: float | None = None,
-                   genre_directive: str = "",
-                   max_scenes: int | None = None) -> tuple[list[Chapter], str]:
-    """Retorna (capítulos, fonte). Fonte: 'openrouter:gemini-2.5-flash' | 'local'."""
+def build_semantic_scenes(script: str, cfg: CurioConfig,
+                          n_scenes: int | None = None, metrics=None,
+                          genre: str = "", target_seconds: float | None = None,
+                          genre_directive: str = "",
+                          max_scenes: int | None = None) -> ScenePlanResult:
+    """Plan and validate meaning; return semantics beside time spans."""
+    rows, source = _plan_chapter_rows(
+        script, cfg, n_scenes=n_scenes, metrics=metrics, genre=genre,
+        target_seconds=target_seconds, genre_directive=genre_directive,
+        max_scenes=max_scenes)
+    return ScenePlanResult(
+        semantic_scenes=tuple(row.semantic_scene(source) for row in rows),
+        timeline_spans=tuple(row.timeline_span() for row in rows),
+        source=source)
+
+
+def build_local_semantic_scenes(script: str,
+                                n_scenes: int = TARGET_SCENES) -> ScenePlanResult:
+    """Deterministic planner returns the same semantic/timing contract."""
+    rows = _local_chapters(script, n_scenes)
+    return ScenePlanResult(
+        semantic_scenes=tuple(row.semantic_scene("local") for row in rows),
+        timeline_spans=tuple(row.timeline_span() for row in rows),
+        source="local")
+
+
+def _plan_chapter_rows(script: str, cfg: CurioConfig,
+                       n_scenes: int | None = None, metrics=None,
+                       genre: str = "", target_seconds: float | None = None,
+                       genre_directive: str = "",
+                       max_scenes: int | None = None) -> tuple[list[Chapter], str]:
+    """Temporary parser/repair adapter for historical Chapter utilities."""
     alvo = float(target_seconds) if target_seconds else None
     from ..runlog import event as run_event
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target,

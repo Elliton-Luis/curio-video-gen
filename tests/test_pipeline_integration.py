@@ -14,7 +14,7 @@ from unittest.mock import patch
 from curio.config import CurioConfig
 from curio.pipeline import run_pipeline, video_paths
 from curio.stages.research import ResearchSource
-from curio.stages.scenes import Chapter
+from curio.stages.scenes import Chapter, ScenePlanResult
 from curio.stages.scene_contract import SemanticScene
 
 SCRIPT = (
@@ -102,10 +102,13 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
         setattr(cfg, key, val)
 
     chapters = _chapters()
-    scene_builder = (patch("curio.stages.scenes.build_chapters",
+    plan = ScenePlanResult(
+        semantic_scenes=tuple(ch.semantic_scene("mock") for ch in chapters),
+        timeline_spans=tuple(ch.timeline_span() for ch in chapters), source="mock")
+    scene_builder = (patch("curio.stages.scenes.build_semantic_scenes",
                            side_effect=scene_error) if scene_error else
-                     patch("curio.stages.scenes.build_chapters",
-                           return_value=(chapters, "mock")))
+                     patch("curio.stages.scenes.build_semantic_scenes",
+                           return_value=plan))
 
     def acquire_media(scenes, _cfg, _max_images, metrics=None, genre=""):
         assert all(isinstance(scene, SemanticScene) for scene in scenes)

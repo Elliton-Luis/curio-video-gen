@@ -15,7 +15,7 @@ import pytest
 from curio.stages import nvidia as nv
 from curio.stages.scenes import (
     VISUAL_TYPES, Chapter, _coerce_str_list, _coerce_visual_terms,
-    build_chapters, classify_visual_type,
+    build_semantic_scenes, classify_visual_type,
 )
 from curio.config import CurioConfig
 
@@ -186,8 +186,8 @@ def llm(monkeypatch):
 
 def _build(llm, payload, script="texto"):
     llm(payload)
-    chapters, _src = build_chapters(script, CurioConfig.load(None), n_scenes=1)
-    return chapters[0]
+    plan = build_semantic_scenes(script, CurioConfig.load(None), n_scenes=1)
+    return plan.semantic_scenes[0]
 
 
 def test_payload_novo_e_lido_inteiro(llm):
@@ -203,10 +203,11 @@ def test_payload_novo_e_lido_inteiro(llm):
     }]}, script="O papel térmico funciona assim.")
     assert ch.visual_type == "mechanism"
     assert ch.subject == "thermal receipt paper"
-    assert ch.visual_queries == ["thermal paper receipt", "receipt paper roll"]
-    assert ch.visual_entities == ["receipt", "paper roll"]
-    assert ch.context == ["cash register"]
-    assert ch.forbidden == ["power plant", "wallpaper"]
+    assert not hasattr(ch, "duration_estimate")
+    assert ch.visual_queries == ("thermal paper receipt", "receipt paper roll")
+    assert ch.visual_entities == ("receipt", "paper roll")
+    assert ch.context == ("cash register",)
+    assert ch.forbidden == ("power plant", "wallpaper")
 
 
 def test_payload_antigo_da_ia_ainda_da_cena_util(llm):
@@ -216,8 +217,8 @@ def test_payload_antigo_da_ia_ainda_da_cena_util(llm):
         "visual_search_terms": "water glass"}]},
         script="Como o papel de recibo muda de cor?")
     assert ch.visual_type == "mechanism"
-    assert ch.visual_queries == ["water", "glass"]
-    assert ch.forbidden == []
+    assert ch.visual_queries == ("water", "glass")
+    assert ch.forbidden == ()
 
 
 def test_ia_que_inventa_tipo_desconhecido_cai_para_literal(llm):
@@ -236,8 +237,12 @@ def test_divisao_local_tambem_classifica(monkeypatch):
     script = ("O gato dorme no sofá. "
               "O papel térmico funciona assim: o calor altera o corante. "
               "A palavra salário vem do latim salarium.")
-    chs, src = build_chapters(script, CurioConfig.load(None), n_scenes=3)
-    assert src == "local"
+    plan = build_semantic_scenes(script, CurioConfig.load(None), n_scenes=3)
+    chs = plan.semantic_scenes
+    assert plan.source == "local"
+    assert all(not hasattr(scene, "start") for scene in chs)
+    assert tuple(span.scene_id for span in plan.timeline_spans) == tuple(
+        scene.id for scene in chs)
     tipos = {c.visual_type for c in chs}
     assert "mechanism" in tipos or "typographic" in tipos
     assert all(c.visual_type in VISUAL_TYPES for c in chs)
