@@ -140,6 +140,10 @@ def test_search_continues_after_topic_only_candidate(tmp_path, monkeypatch):
     assert provider.calls == ["Ottoman Empire historical map",
                               "Battle of Mohacs Ottoman Empire"]
     assert result[0]["asset"]["asset_id"] == "battle"
+    audit = result[0]["visual_decision"]
+    assert audit["visual_plan"]["topic"] == "Ottoman Empire"
+    assert audit["visual_plan"]["representations"][0]["kind"] == "event"
+    assert "narration" not in audit["visual_plan"]
 
 
 def test_provider_failures_never_claim_search_exhausted(tmp_path, monkeypatch):

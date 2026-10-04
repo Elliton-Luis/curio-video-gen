@@ -48,6 +48,8 @@ from . import scenes as scenes_stage
 from .visual_timeline import (_assign_sfx, _shuffled_styles, _spec_images,
                               insertion_scenes, mark_insertion,
                               order_for_insertion)
+from .visual_contracts import VisualPlan
+from .visual_planning import build_visual_plan
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 import os as _os
@@ -436,14 +438,19 @@ def _provider_priority_order(cfg: CurioConfig, ch=None,
     adapter = editorial.get(genre or getattr(cfg, "genre", ""))
     adapter_priority = list(adapter.media_provider_priority) if adapter else []
     visual_type = str(getattr(ch, "visual_type", "") or "")
-    narration = str(getattr(ch, "narration", "") or "").lower()
-    historical_scene = visual_type == "historical_art" or any(
+    if isinstance(ch, VisualPlan):
+        historical_scene = ch.historical_scene
+        space_topic = ch.space_topic
+    else:
+        narration = str(getattr(ch, "narration", "") or "").lower()
+        historical_scene = visual_type == "historical_art" or any(
             cue in narration for cue in ("batalha", "battle", "império", "empire",
                                          "século", "century", "revolução", "revolution"))
+        space_topic = is_space_topic(narration)
     if historical_scene:
         adapter_priority = ["met", "aic", "wikimedia", "openverse"]
         order = adapter_priority + [p for p in order if p not in adapter_priority]
-    if is_space_topic(narration) or visual_type == "mechanism":
+    if space_topic or visual_type == "mechanism":
         order = ["nasa", "wikimedia", "openverse", "pixabay", "pexels",
                  "met", "aic", "unsplash"]
     if adapter_priority:
@@ -468,7 +475,14 @@ def _generic_queries(genre: str = "", ch=None) -> tuple[str, ...]:
     Exceção: tópico espacial nunca recebe bancada — recebe céu. Sem isso,
     "buraco negro" caía em "laboratory" e o vídeo saía com microscópio.
     """
-    if ch is not None:
+    if isinstance(ch, VisualPlan):
+        if ch.space_topic:
+            return SPACE_GENERIC_QUERIES
+        if (ch.visual_type != "historical_art"
+                and (ch.scientific_context or ch.mechanistic
+                     or ch.visual_type == "mechanism")):
+            return GENERIC_FALLBACK_QUERIES
+    elif ch is not None:
         try:
             hay = " ".join([
                 str(getattr(ch, "narration", "") or ""),
@@ -503,18 +517,6 @@ ART_MEDIA_HINTS = ("painting", "fresco", "engraving", "woodcut",
                    "illustration", "manuscript", "altarpiece", "mosaic",
                    "drawing", "etching")
 
-# Cenas de mecanismo (ex.: anticorpo, linha de controle): bancos de foto
-# mostram mãos/testes genéricos — L3/L4 + diagrama sintético cobrem.
-_MECHANISM_KEYWORDS = (
-    "antibody", "antibodies", "antigen", "hormone", "hcg", "strip",
-    "lateral flow", "control line", "test line", "nanoparticle",
-    "molecule", "microscope", "test tube", "pregnancy test",
-    "anticorpo", "anticorpos", "hormonio", "hormônio", "tira",
-    "linha de controle", "molecula", "molécula", "microscopio",
-    "microscópio", "laboratorio", "laboratório", "gravidez",
-)
-
-
 def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
     """Cachoeira específico→genérico por cena (máx. 8 consultas).
 
@@ -525,6 +527,8 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
     termo, não contra a narração inteira — foto de igreja entra como
     genérica honesta, nunca como específica.
     """
+    if not isinstance(ch, VisualPlan):
+        ch = build_visual_plan(ch, local_queries)
     seen: set[str] = set()
     out: list[str] = []
 
@@ -554,11 +558,11 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
              *(getattr(ch, "subject_aliases", []) or [])] if _tokens(name)]
     same_subject = len(ai) >= 2 and all(
         any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
-    local = str(getattr(ch, "visual_intent", "") or "").startswith("local fallback")
-    context = dict(getattr(ch, "video_context", {}) or {})
-    topic = str(context.get("topic") or "").strip()
-    context_aliases = [str(x).strip() for x in context.get("aliases", []) or []
-                       if str(x).strip()]
+    local = ch.local_fallback
+    context = {"topic": ch.topic, "aliases": [a.value for a in ch.aliases],
+               "primary_entities": list(ch.primary_entities)}
+    topic = ch.topic.strip()
+    context_aliases = [alias.value for alias in ch.aliases if alias.value.strip()]
     anchor_alias = next((alias for alias in context_aliases
                          if topic and alias.casefold() != topic.casefold()), topic)
     def contextual(query: str) -> str:
@@ -629,7 +633,7 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
         if not local:
             _add(contextual(term))
     if not ai and not (local and topic) and not structured_plan:
-        for term in local_queries(ch.narration):
+        for term in ch.local_query_seeds:
             _add(term)
     for term in list(getattr(ch, "global_visual_queries", []) or []):
         _add(term)
@@ -660,9 +664,7 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
         _add(term)
         if len(out) > before:
             generics.add(term.lower())
-    if not out and is_space_topic(
-            f"{getattr(ch, 'narration', '')} "
-            f"{' '.join(list(getattr(ch, 'visual_queries', []) or []))}"):
+    if not out and ch.space_topic:
         _add("black hole")
     # Keep scene-specific alternatives available after a contextual query
     # returns only an already-used asset.
@@ -671,8 +673,9 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
 
 def _looks_mechanistic(ch, queries: list[str]) -> bool:
     """Cena sobre mecanismo invisível (anticorpo, linha de controle...)?"""
-    haystack = f"{ch.narration} {' '.join(queries)}".lower()
-    return any(k in haystack for k in _MECHANISM_KEYWORDS)
+    plan = (ch if isinstance(ch, VisualPlan)
+            else build_visual_plan(ch, local_queries))
+    return plan.mechanistic
 
 
 def _selection_asset_key(asset: dict) -> str:
@@ -714,9 +717,10 @@ def _search_scene_with_shortcircuit(
     results_before = sum(metrics.media_results_received.values()) if metrics else 0
     downloads_before = metrics.media_downloads if metrics else 0
     cache_before = metrics.media_cache_hits if metrics else 0
-    queries, generics = _waterfall_queries(ch, genre)
+    visual_plan = build_visual_plan(ch, local_queries)
+    queries, generics = _waterfall_queries(visual_plan, genre)
     blocked = media_rules.scene_blocklist(ch)
-    vtype = str(getattr(ch, "visual_type", "") or "literal")
+    vtype = visual_plan.visual_type
 
     # Uma cena tipográfica NÃO tem foto. A ideia dela É uma palavra, e
     # busca lexical por essa palavra traz qualquer coisa que a carregue no
@@ -822,7 +826,7 @@ def _search_scene_with_shortcircuit(
             active = [prov for prov in providers
                       if not getattr(prov, "_disabled", False)]
             scene_order = [p.name for p in
-                           _provider_priority_order(cfg, ch, genre, providers)]
+                           _provider_priority_order(cfg, visual_plan, genre, providers)]
             rank = {name: index for index, name in enumerate(scene_order)}
             active.sort(key=lambda p: rank.get(p.name, len(rank)))
             providers_consulted.update(prov.name for prov in active)
@@ -1319,6 +1323,7 @@ def _search_scene_with_shortcircuit(
         })
     decision = {
         "topic": video_context.get("topic", ""),
+        "visual_plan": visual_plan.to_dict(),
         "visual_intent": (getattr(ch, "visual_intent_structured", "")
                            or getattr(ch, "visual_intent", "")),
         "entities": list(dict.fromkeys([str(getattr(ch, "primary_entity", "") or ""),
@@ -1326,7 +1331,7 @@ def _search_scene_with_shortcircuit(
             *(getattr(ch, "visual_entities", []) or []),
             *(getattr(ch, "context", []) or [])]))[:12],
         "primary_entity": getattr(ch, "primary_entity", "") or getattr(ch, "subject", ""),
-        "representations": getattr(ch, "representations", []) or [],
+        "representations": [rep.to_dict() for rep in visual_plan.representations],
         "representations_discarded": getattr(ch, "representation_rejections", []) or [],
         "aliases": list(video_context.get("aliases", []) or []),
         "queries": [{"query": query,
