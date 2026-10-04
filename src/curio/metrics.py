@@ -17,6 +17,8 @@ import time
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+from .media.selection_metrics import MediaSelectionStats
+
 
 def utcnow_iso() -> str:
     from datetime import timezone
@@ -114,6 +116,7 @@ class RunMetrics:
         self.media_reuse_count = 0
         self.media_duplicate_queries = 0
         self.media_real_asset_occurrences = 0
+        self.media_selection_stats: MediaSelectionStats | None = None
 
     # -- registros (chamados pelos estágios; nunca falham a execução) --
     def nvidia(self, model: str, usage: dict | None) -> None:
@@ -264,7 +267,8 @@ class RunMetrics:
 
     def visual_plan(self, chapters, media_scenes, beat_seconds: float,
                     visual_timeline=None, rendered_duration: float | None = None,
-                    cached_selection: bool | None = None) -> None:
+                    cached_selection: bool | None = None,
+                    known_selection: bool = True) -> None:
         """Snapshot selected/available assets and renderer-bound beat identities."""
         from .stages.visual_beats import asset_key, plan
         by_scene = {s.get("chapter_id"): s for s in (media_scenes or [])}
@@ -285,8 +289,6 @@ class RunMetrics:
         self.media_unique_assets = 0
         self.media_reuse_count = 0
         self.media_assets_reused = 0
-        seen_selected = set()
-        real_asset_occurrences = {}
         for chapter in chapters:
             timeline = by_timeline.get(chapter.id)
             start = float(timeline["start"]) if timeline else float(chapter.start)
@@ -300,18 +302,7 @@ class RunMetrics:
             assets = scene.get("assets") or []
             if not assets and scene.get("asset"):
                 assets = [{"asset": scene["asset"]}]
-            scene_real_keys = set()
             primary = next((item.get("asset") or {} for item in assets), {})
-            primary_key = asset_key(primary) if primary else ""
-            if primary.get("provider") == "synth":
-                self.media_scenes_synthetic += 1
-            elif primary_key:
-                if primary_key in seen_selected:
-                    self.media_scenes_reused_asset += 1
-                    self.media_reuse_count += 1
-                else:
-                    self.media_scenes_new_asset += 1
-                    seen_selected.add(primary_key)
             for item in assets:
                 asset = item.get("asset") or {}
                 key = asset_key(asset)
@@ -325,14 +316,11 @@ class RunMetrics:
                         self.media_available_acquisitions.get(acquisition, 0) + 1)
                     if asset.get("provider") != "synth":
                         self.media_selected_ids.add(key)
-                        scene_real_keys.add(key)
                     self.visual_asset_details[key] = {
                         "title": asset.get("title", ""),
                         "provider": asset.get("provider", ""),
                         "local_path": asset.get("local_path", ""),
                         "acquisition": acquisition}
-            for key in scene_real_keys:
-                real_asset_occurrences[key] = real_asset_occurrences.get(key, 0) + 1
             beats = timeline.get("visual_beats", []) if timeline else plan(duration, start)
             beats = [beat for beat in beats if beat["start"] < end]
             self.visual_beat_count += len(beats)
@@ -356,12 +344,17 @@ class RunMetrics:
                     self.visual_asset_beat_counts[key] = self.visual_asset_beat_counts.get(key, 0) + 1
             for key in scene_keys:
                 self.visual_asset_scene_counts[key] = self.visual_asset_scene_counts.get(key, 0) + 1
-        self.media_unique_assets = len(real_asset_occurrences)
-        self.media_assets_reused = sum(1 for count in real_asset_occurrences.values()
-                                       if count > 1)
-        self.media_reuse_count = sum(max(0, count - 1)
-                                     for count in real_asset_occurrences.values())
-        self.media_real_asset_occurrences = sum(real_asset_occurrences.values())
+        self.media_selection_stats = MediaSelectionStats.from_scenes(
+            media_scenes, known=known_selection)
+        stats = self.media_selection_stats
+        if stats.unique_assets is not None:
+            self.media_unique_assets = stats.unique_assets
+            self.media_assets_reused = stats.reused_assets or 0
+            self.media_reuse_count = stats.reuse_count or 0
+            self.media_scenes_new_asset = stats.scenes_with_new_asset or 0
+            self.media_scenes_reused_asset = stats.scenes_with_reused_asset or 0
+            self.media_scenes_synthetic = stats.synthetic_scenes or 0
+            self.media_real_asset_occurrences = stats.real_asset_occurrences or 0
 
     def whisper(self, model: str) -> None:
         self.whisper_calls += 1
@@ -382,13 +375,17 @@ class RunMetrics:
         total = max(1, int(n_scenes or 0))
         # `sem_visual` é a ÚNICA métrica que é problema: uma cena sem
         # estratégia nenhuma. Diagrama e cartão contam como visualizadas.
-        geradas = self.media_synth_diagrams
+        stats = self.media_selection_stats
+        geradas = (stats.synthetic_scenes if stats and
+                   stats.synthetic_scenes is not None else self.media_synth_diagrams)
+        selection_fields = (stats.visual_report_fields() if stats else {})
         return {
             "cenas": int(n_scenes or 0),
             "por_tipo": dict(sorted(self.media_visual_types.items())),
             "por_estrategia": dict(sorted(self.media_fallbacks.items())),
             "gerado_por_codigo_pct": round(100.0 * geradas / total, 1),
-            "sem_visual": self.media_scenes_no_visual,
+            "sem_visual": (selection_fields.get("sem_visual")
+                           if stats else self.media_scenes_no_visual),
             "candidatos_total": self.media_candidates_total,
             "candidatos_mantidos": self.media_candidates_kept,
             "rejeicoes": dict(sorted(self.media_rejections.items())),
@@ -397,14 +394,22 @@ class RunMetrics:
             "nota_baixa": self.media_low_score,
             "camadas": dict(sorted(self.media_layers_used.items())),
             "device": self.media_layer_device or "",
-            "unique_assets": self.media_unique_assets,
-            "reused_assets": getattr(self, "media_assets_reused", 0),
-            "reuse_count": self.media_reuse_count,
-            "unique_asset_ratio": round(
-                self.media_unique_assets / max(1, self.media_real_asset_occurrences), 3),
-            "scenes_with_new_asset": self.media_scenes_new_asset,
-            "scenes_with_reused_asset": self.media_scenes_reused_asset,
-            "synthetic_scenes": self.media_scenes_synthetic,
+            "unique_assets": selection_fields.get("unique_assets", self.media_unique_assets),
+            "reused_assets": selection_fields.get("reused_assets", self.media_assets_reused),
+            "reuse_count": selection_fields.get("reuse_count", self.media_reuse_count),
+            "unique_asset_ratio": selection_fields.get(
+                "unique_asset_ratio", round(
+                    self.media_unique_assets / max(1, self.media_real_asset_occurrences), 3)),
+            "scenes_with_new_asset": selection_fields.get(
+                "scenes_with_new_asset", self.media_scenes_new_asset),
+            "scenes_with_reused_asset": selection_fields.get(
+                "scenes_with_reused_asset", self.media_scenes_reused_asset),
+            "synthetic_scenes": selection_fields.get(
+                "synthetic_scenes", self.media_scenes_synthetic),
+            "scenes_with_unknown_decision": selection_fields.get(
+                "scenes_with_unknown_decision"),
+            "real_asset_occurrences": selection_fields.get(
+                "real_asset_occurrences", self.media_real_asset_occurrences),
             "queries_abandoned_duplicates": self.media_duplicate_queries,
         }
 
@@ -573,7 +578,8 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
             visual_timeline = []
     collector.visual_plan(chapters, media, 2.1, visual_timeline,
                           rendered_duration=meta.get("duration_actual"),
-                          cached_selection=False)
+                          cached_selection=False,
+                          known_selection="media" in meta and meta.get("media") is not None)
     query_statuses = [query.get("status")
                       for decision in collector.media_scene_decisions.values()
                       for query in decision.get("queries", [])]

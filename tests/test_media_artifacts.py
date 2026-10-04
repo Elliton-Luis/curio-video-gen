@@ -57,3 +57,46 @@ def test_acquired_cache_requires_manifest_but_explicit_manual_selection_survives
     assert selection_cache_is_current(acquired, manifest_path, "abc", [1])
     assert not selection_cache_is_current(acquired, manifest_path, "changed", [1])
     assert selection_cache_is_current(manual, manifest_path, "abc", [1])
+
+
+def test_selection_metrics_use_scene_decision_and_identity_not_render_beats():
+    from curio.media.selection_metrics import MediaSelectionStats
+
+    repeated = {"asset_id": "map", "provider": "wikimedia",
+                "source_url": "https://museum.test/map"}
+    unique = {"asset_id": "portrait", "provider": "met",
+              "source_url": "https://museum.test/portrait"}
+    scenes = [
+        {"asset": repeated,
+         "visual_decision": {"selection": {"status": "real"}}},
+        {"asset": repeated,
+         "visual_decision": {"selection": {"status": "reused"}}},
+        {"asset": {"asset_id": "synth-1", "provider": "synth"},
+         "visual_decision": {"selection": {"status": "synthetic"}}},
+        {"asset": unique,
+         "visual_decision": {"selection": {"status": "real"}}},
+    ]
+
+    stats = MediaSelectionStats.from_scenes(scenes)
+
+    assert stats.unique_assets == 2
+    assert stats.reused_assets == 1
+    assert stats.reuse_count == 1
+    assert stats.unique_asset_ratio == 0.667
+    assert stats.scenes_with_new_asset == 2
+    assert stats.scenes_with_reused_asset == 1
+    assert stats.synthetic_scenes == 1
+    assert stats.scenes_with_unknown_decision == 0
+
+
+def test_missing_backfill_selection_stays_unknown_not_zero(tmp_path):
+    from curio.metrics import backfill_from_metadata
+
+    result = backfill_from_metadata("old", {}, str(tmp_path / "metrics"))
+    import json
+    with open(result, encoding="utf-8") as fh:
+        report = json.load(fh)["pipeline"]["visual_report"]
+
+    assert report["unique_assets"] is None
+    assert report["synthetic_scenes"] is None
+    assert report["sem_visual"] is None

@@ -29,6 +29,10 @@ apenas durante uma geração. A seleção do projeto tem manifesto versionado em
 de imagens, providers disponíveis e threshold. Um `media.json` adquirido sem
 manifesto compatível é pesquisado novamente; escolhas manuais continuam
 preservadas. `rerender` só consome a seleção registrada e não pesquisa mídia.
+As métricas de seleção usam uma projeção canônica em
+`media/selection_metrics.py`; beats/duração continuam sendo medidas distintas
+da quantidade de assets atribuídos às cenas. Backfills sem `media` preservam
+contagens visuais como desconhecidas (`null`).
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*
