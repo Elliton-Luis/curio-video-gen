@@ -5,6 +5,7 @@ from curio.metrics import RunMetrics
 from curio.stages import visual, visual_timeline, render
 from curio.stages.scenes import Chapter
 from curio.stages.visual_beats import asset_key
+from tests.test_support.search_plan import patch_search_plan
 
 
 def entry(index, path=""):
@@ -44,7 +45,7 @@ def test_selection_uses_fresh_eligible_candidates_across_scenes(monkeypatch, tmp
         def search(self, *args, **kwargs):
             return assets
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *args: True)
-    monkeypatch.setattr(visual, "_waterfall_queries", lambda *args: (["rome statue"], set()))
+    patch_search_plan(monkeypatch, visual, ["rome statue"])
     uses = {}
     picked = []
     for index in range(2):

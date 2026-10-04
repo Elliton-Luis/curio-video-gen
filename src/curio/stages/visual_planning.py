@@ -74,8 +74,7 @@ def build_visual_plan(scene, local_query_generator) -> VisualPlan:
         local_fallback=local,
         local_query_seeds=local_seeds,
         space_topic=textnorm.is_space_topic(lexical_context),
-        mechanistic=(visual_type == "mechanism" or
-                     any(cue in folded for cue in _MECHANISM_CUES)),
+        mechanistic=any(cue in folded for cue in _MECHANISM_CUES),
         scientific_context=(visual_type == "mechanism"
                             or any(cue in folded for cue in _MECHANISM_CUES)
                             or any(cue in folded for cue in _SCIENCE_CONTEXT_CUES)),

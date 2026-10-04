@@ -7,6 +7,8 @@ from curio.media.providers import MediaAsset, MediaError
 from curio.metrics import RunMetrics
 from curio.media.providers import min_dimension as media_rules_min_dimension
 from curio.stages import visual as V
+from curio.stages.visual_planning import build_visual_plan
+from tests.test_support.search_plan import patch_search_plan, plan_queries
 
 
 def _ch(queries=(), narration="Texto da cena.", cid=1, glob=(), **extra):
@@ -33,7 +35,7 @@ def test_waterfall_ordem_e_limite():
     # Termos avulsos como o pipeline real entrega (split de "water glass").
     ch = _ch(("water", "glass"),
              glob=("pregnancy test", "water glass"))
-    qs, generics = V._waterfall_queries(ch)
+    qs, generics = plan_queries(ch)
     assert qs[0] == "water glass"  # L1: exato da IA
     assert "microscope" not in qs  # sem pista de ciência, não injeta genérico
     assert "pregnancy test" in qs  # L3: tema
@@ -42,13 +44,13 @@ def test_waterfall_ordem_e_limite():
     assert len(qs) == len(set(q.lower() for q in qs))  # sem dup
     assert len(qs) <= 8
     # sem nada da IA: usa conceito local; sem ciência não injeta laboratório.
-    qs2, _ = V._waterfall_queries(_ch((), "O sal preservava a comida romana."))
+    qs2, _ = plan_queries(_ch((), "O sal preservava a comida romana."))
     assert "laboratory" not in qs2 and "microscope" not in qs2
-    science, science_generic = V._waterfall_queries(_ch(
+    science, science_generic = plan_queries(_ch(
         ("water glass",), "A laboratory experiment uses a microscope."), "science")
     assert "laboratory" in science and "laboratory" in science_generic
     # people: acervo (igreja, biblioteca), não laboratório
-    qs3, gen3 = V._waterfall_queries(_ch(("saint",)), genre="people")
+    qs3, gen3 = plan_queries(_ch(("saint",)), genre="people")
     assert "church interior" in qs3 and "church interior" in gen3
     assert "laboratory" not in qs3
 
@@ -166,11 +168,12 @@ def test_gate_unico_de_metadados():
     assert media_rules_min_dimension() == 1080
 
 
-def test_looks_mechanistic():
-    assert V._looks_mechanistic(
-        _ch(("antibody", "protein"), "Antibodies bind to hCG."), ["antibody"])
-    assert not V._looks_mechanistic(
-        _ch(("rome", "soldier"), "Roma caiu."), ["rome"])
+def test_visual_plan_marks_mechanism_evidence_once():
+    assert build_visual_plan(
+        _ch(("antibody", "protein"), "Antibodies bind to hCG."),
+        V.local_queries).mechanistic
+    assert not build_visual_plan(
+        _ch(("rome", "soldier"), "Roma caiu."), V.local_queries).mechanistic
 
 
 class _FakeProv:
@@ -317,8 +320,7 @@ def test_download_rejeita_dims_reais_baixas(tmp_path):
 def test_provider_search_not_reused_between_video_runs(tmp_path, monkeypatch):
     _mock_download(monkeypatch, tmp_path)
     monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
-    monkeypatch.setattr(V, "_waterfall_queries",
-                        lambda *_args: (["water glass"], set()))
+    patch_search_plan(monkeypatch, V, ["water glass"])
     provider = _FakeProv("pixabay", [_asset(aid="fresh", title="water glass bottle")])
     ch = _ch(("water glass",), "A water glass.", subject="water glass",
              visual_entities=["water glass"])

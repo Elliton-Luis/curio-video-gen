@@ -9,6 +9,7 @@ from curio.media import providers as P
 from curio.metrics import RunMetrics
 from curio.stages import scoring, visual
 from curio.stages.scenes import Chapter
+from tests.test_support.search_plan import patch_search_plan
 
 
 def _met_object(public=True, image=True, object_id=1):
@@ -149,8 +150,7 @@ def test_museum_search_runs_again_but_download_bytes_are_reused(monkeypatch, tmp
         download_url="https://images.metmuseum.org/small.jpg",
         width=1600, height=1600)
 
-    monkeypatch.setattr(visual, "_waterfall_queries",
-                        lambda ch, genre="": (["julius caesar"], set()))
+    patch_search_plan(monkeypatch, visual, ["julius caesar"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     class Museum:
@@ -194,8 +194,7 @@ def test_museum_failure_falls_through_to_next_provider(monkeypatch, tmp_path):
                 download_url="https://example.test/9.jpg",
                 license="CC BY-SA 4.0", width=1600, height=1600)]
 
-    monkeypatch.setattr(visual, "_waterfall_queries",
-                        lambda ch, genre="": (["julius caesar"], set()))
+    patch_search_plan(monkeypatch, visual, ["julius caesar"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
@@ -223,8 +222,7 @@ def test_museum_assets_join_scoring_dedup_and_cache(monkeypatch, tmp_path):
             metrics.media_search(self.name)
             return [met, met]  # duplicado: dedup corta antes do download
 
-    monkeypatch.setattr(visual, "_waterfall_queries",
-                        lambda ch, genre="": (["julius caesar"], set()))
+    patch_search_plan(monkeypatch, visual, ["julius caesar"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache

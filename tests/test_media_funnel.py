@@ -5,6 +5,7 @@ from curio.media.providers import MediaAsset
 from curio.metrics import RunMetrics
 from curio.stages import visual, scoring
 from curio.stages.scenes import Chapter
+from tests.test_support.search_plan import patch_search_plan
 
 
 def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tmp_path):
@@ -26,8 +27,7 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
             return results
 
     monkeypatch.setattr(visual, "CANDIDATE_MULTIPLIER", 2)
-    monkeypatch.setattr(visual, "_waterfall_queries",
-                          lambda ch, genre="": (["receipt"], set()))
+    patch_search_plan(monkeypatch, visual, ["receipt"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache
@@ -72,9 +72,8 @@ def test_generic_candidate_passes_on_own_terms_after_specifics(monkeypatch, tmp_
             return [asset("s1", "unrelated warehouse boxes")]
 
     monkeypatch.setattr(visual, "CANDIDATE_MULTIPLIER", 4)
-    monkeypatch.setattr(visual, "_waterfall_queries",
-                        lambda ch, genre="": (["specific query", "church interior"],
-                                              {"church interior"}))
+    patch_search_plan(monkeypatch, visual,
+                      ["specific query", "church interior"], ["church interior"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
     from curio.media import cache

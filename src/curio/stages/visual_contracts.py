@@ -69,3 +69,41 @@ class VisualPlan:
             "scientific_context": self.scientific_context,
             "historical_scene": self.historical_scene,
         }
+
+
+@dataclass(frozen=True)
+class SearchQuery:
+    query: str
+    source: str
+    representation: str = ""
+    representation_kind: str = ""
+    alias: str = ""
+    variant: str = "entity"
+    level: int = 1
+    generic: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "query": self.query,
+            "source": self.source,
+            "representation": self.representation,
+            "representation_kind": self.representation_kind,
+            "alias": self.alias,
+            "variant": self.variant,
+            "level": self.level,
+            "generic": self.generic,
+        }
+
+
+@dataclass(frozen=True)
+class SearchPlan:
+    scene_id: int
+    queries: tuple[SearchQuery, ...]
+
+    @property
+    def generic_queries(self) -> frozenset[str]:
+        return frozenset(item.query.casefold() for item in self.queries if item.generic)
+
+    def to_dict(self) -> dict:
+        return {"scene_id": self.scene_id,
+                "queries": [query.to_dict() for query in self.queries]}

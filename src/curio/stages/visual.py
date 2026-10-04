@@ -50,6 +50,7 @@ from .visual_timeline import (_assign_sfx, _shuffled_styles, _spec_images,
                               order_for_insertion)
 from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
+from .search_planning import build_search_plan
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 import os as _os
@@ -123,11 +124,6 @@ def _download_with_origin(asset: MediaAsset, cache_dir: str, metrics=None):
     cached = os.path.isfile(path) and os.path.isfile(path + ".json")
     result = download_asset(asset, cache_dir, metrics)
     return result, "cache" if cached else "download"
-
-
-def _sanitize_query(query: str) -> str:
-    """Sanitiza termo de busca: apenas alfanuméricos, espaços, hífens."""
-    return re.sub(r"[^\w\s-]", "", query).strip()
 
 
 # O gate de metadados é `media_rules.asset_gate_reason`: era a terceira
@@ -208,27 +204,6 @@ _strip_acc = textnorm.fold
 # O que é "tema espacial" é uma decisão de `textnorm`, não deste arquivo:
 # a busca, o gate de imagem e o classificador de cena precisam
 # reconhecer o mesmo conjunto.
-is_space_topic = textnorm.is_space_topic
-
-
-# Prioridade quando o assunto é espaço: o termo do tema vence a palavra
-# mais frequente ("campo", "tempo") — que é genérica e puxa foto errada.
-_SPACE_PRIORITY = (
-    "black hole", "event horizon", "galaxy", "galaxies", "nebula",
-    "gravity", "universe", "space", "cosmos", "astronomy",
-    "singularity", "quasar", "relativity", "orbit",
-    "star", "stars", "stellar", "sun", "moon", "planet",
-    "telescope", "observatory", "light", "mass", "radiation",
-)
-
-# Genéricos de último recurso para tópico espacial: céu, nunca bancada.
-# É o L4 da cachoeira quando o tema é espaço — "laboratory" aqui seria
-# misinformation (foi o que ilustrou buraco negro com tubo de ensaio).
-SPACE_GENERIC_QUERIES = (
-    "black hole", "galaxy", "nebula", "starry sky", "telescope",
-    "observatory",
-)
-
 def _space_boost(narration: str) -> list[str]:
     """Queries do tema espacial presentes NESTA narração, em ordem."""
     hay = _strip_acc(str(narration or ""))
@@ -412,16 +387,6 @@ def validate_preserved(original: str, chapters) -> None:
             "recusando para não adulterar a narração")
 
 
-# Palavras úteis de uma consulta: >2 letras, sem stopword. Havia uma cópia
-# idêntica em `pipeline.py`, e as duas podiam divergir em silêncio.
-_query_terms = textnorm.query_terms
-
-
-def _relevance(query: str, asset: MediaAsset) -> int:
-    haystack = f"{asset.title}".lower()
-    return sum(1 for term in _query_terms(query) if term in haystack)
-
-
 def _provider_priority_order(cfg: CurioConfig, ch=None,
                             genre: str = "", providers=None) -> list[MediaProvider]:
     """Provedores na ordem de prioridade para ESTA cena.
@@ -437,16 +402,11 @@ def _provider_priority_order(cfg: CurioConfig, ch=None,
     from . import editorial
     adapter = editorial.get(genre or getattr(cfg, "genre", ""))
     adapter_priority = list(adapter.media_provider_priority) if adapter else []
-    visual_type = str(getattr(ch, "visual_type", "") or "")
-    if isinstance(ch, VisualPlan):
-        historical_scene = ch.historical_scene
-        space_topic = ch.space_topic
-    else:
-        narration = str(getattr(ch, "narration", "") or "").lower()
-        historical_scene = visual_type == "historical_art" or any(
-            cue in narration for cue in ("batalha", "battle", "império", "empire",
-                                         "século", "century", "revolução", "revolution"))
-        space_topic = is_space_topic(narration)
+    plan = (ch if isinstance(ch, VisualPlan)
+            else build_visual_plan(ch, local_queries))
+    visual_type = plan.visual_type
+    historical_scene = plan.historical_scene
+    space_topic = plan.space_topic
     if historical_scene:
         adapter_priority = ["met", "aic", "wikimedia", "openverse"]
         order = adapter_priority + [p for p in order if p not in adapter_priority]
@@ -458,224 +418,6 @@ def _provider_priority_order(cfg: CurioConfig, ch=None,
         order = art_first + [p for p in order if p not in art_first]
     priority_map = {name: i for i, name in enumerate(order)}
     return sorted(all_providers, key=lambda p: priority_map.get(p.name, 999))
-
-
-# Cachoeira de buscas (último recurso): termos genéricos de contexto para
-# nunca entregar cena sem imagem quando há rede. Só disparam se tudo
-# específico falhar. Por gênero: biografia/história caem em acervo
-# (igreja, biblioteca, manuscrito), não em laboratório.
-GENERIC_FALLBACK_QUERIES = (
-    "laboratory", "microscope", "science", "research", "experiment",
-    "test tube",
-)
-
-def _generic_queries(genre: str = "", ch=None) -> tuple[str, ...]:
-    """Genéricos do gênero (L4 da cachoeira). Sem gênero: ciência, como antes.
-
-    Exceção: tópico espacial nunca recebe bancada — recebe céu. Sem isso,
-    "buraco negro" caía em "laboratory" e o vídeo saía com microscópio.
-    """
-    if isinstance(ch, VisualPlan):
-        if ch.space_topic:
-            return SPACE_GENERIC_QUERIES
-        if (ch.visual_type != "historical_art"
-                and (ch.scientific_context or ch.mechanistic
-                     or ch.visual_type == "mechanism")):
-            return GENERIC_FALLBACK_QUERIES
-    elif ch is not None:
-        try:
-            hay = " ".join([
-                str(getattr(ch, "narration", "") or ""),
-                str(getattr(ch, "subject", "") or ""),
-                " ".join(list(getattr(ch, "visual_queries", []) or [])),
-                " ".join(list(getattr(ch, "visual_entities", []) or [])),
-                " ".join(list(getattr(ch, "context", []) or [])),
-            ])
-            if is_space_topic(hay):
-                return SPACE_GENERIC_QUERIES
-            if (str(getattr(ch, "visual_type", "") or "") != "historical_art"
-                    and (str(getattr(ch, "visual_type", "") or "") == "mechanism"
-                    or any(word in hay.casefold() for word in
-                           ("microscope", "microscópio", "laboratory", "laboratório",
-                            "experiment", "experimento", "molecule", "molécula",
-                            "science", "ciência", "research", "pesquisa")))):
-                return GENERIC_FALLBACK_QUERIES
-        except Exception:  # noqa: BLE001 — genérico nunca é fatal
-            pass
-    from . import editorial
-    adapter = editorial.get(genre)
-    if adapter and adapter.generic_media_queries:
-        return adapter.generic_media_queries
-    if not genre:
-        return ()
-    return GENERIC_FALLBACK_QUERIES
-
-# Meios que trazem ARTE para a frente numa busca. A ordem é o que o
-# acervo tem de mais primeiro: pintura e fresco são o grosso do
-# Wikimedia Commons para temas religiosos e antigos.
-ART_MEDIA_HINTS = ("painting", "fresco", "engraving", "woodcut",
-                   "illustration", "manuscript", "altarpiece", "mosaic",
-                   "drawing", "etching")
-
-def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
-    """Cachoeira específico→genérico por cena (máx. 8 consultas).
-
-    L1: termos exatos da IA ("water glass"); L2: termos avulsos;
-    L3: tema do vídeo (global) + variante "diagrama do mecanismo";
-    L4: genéricos de contexto (último recurso, nunca vazio).
-    Devolve (consultas, genéricos): genéricos pontuam contra o próprio
-    termo, não contra a narração inteira — foto de igreja entra como
-    genérica honesta, nunca como específica.
-    """
-    if not isinstance(ch, VisualPlan):
-        ch = build_visual_plan(ch, local_queries)
-    seen: set[str] = set()
-    out: list[str] = []
-
-    def _add(query: str) -> None:
-        query = _sanitize_query(query or "")
-        for anchor in [topic, *context_aliases]:
-            if anchor:
-                query = re.sub(rf"\b({re.escape(anchor)})\s+\1\b", r"\1",
-                               query, flags=re.I)
-        if query and query.lower() not in seen:
-            seen.add(query.lower())
-            out.append(query)
-
-    ai = [t.strip() for t in (list(ch.visual_queries) or []) if t.strip()]
-    def _representation_level(item):
-        try:
-            return int(item.get("level", 0) or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    representations = sorted(
-        [r for r in (getattr(ch, "representations", []) or [])
-         if isinstance(r, Mapping) and str(r.get("query", "")).strip()],
-        key=lambda r: _representation_level(r))
-    from .scoring import _tokens
-    names = [set(_tokens(name)) for name in [getattr(ch, "subject", ""),
-             *(getattr(ch, "subject_aliases", []) or [])] if _tokens(name)]
-    same_subject = len(ai) >= 2 and all(
-        any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
-    local = ch.local_fallback
-    context = {"topic": ch.topic, "aliases": [a.value for a in ch.aliases],
-               "primary_entities": list(ch.primary_entities)}
-    topic = ch.topic.strip()
-    context_aliases = [alias.value for alias in ch.aliases if alias.value.strip()]
-    anchor_alias = next((alias for alias in context_aliases
-                         if topic and alias.casefold() != topic.casefold()), topic)
-    def contextual(query: str) -> str:
-        query_tokens = set(_tokens(query))
-        anchors = [topic, *context_aliases]
-        if any(set(_tokens(anchor)).issubset(query_tokens)
-               for anchor in anchors if _tokens(anchor)):
-            return query
-        return f"{query} {anchor_alias}".strip()
-    if not local:
-        for representation in representations:
-            focus = str(representation["query"]).strip()
-            kind = str(representation.get("kind", "related"))
-            _add(contextual(focus))
-            media = ("painting", "engraving", "illustration") if kind == "event" else (
-                ("portrait", "bust", "painting", "engraving") if kind == "person" else
-                ("monument", "historical photograph", "engraving") if kind == "monument" else
-                ("army", "uniform", "cavalry", "military engraving") if kind == "army" else
-                ("artifact", "museum object", "historical illustration") if kind == "artifact" else
-                ("historical map", "painting", "engraving") if kind in ("place", "empire", "map") else
-                ("painting", "engraving", "illustration") if (
-                    str(getattr(ch, "visual_type", "")) == "historical_art"
-                    and kind in ("entity", "related")) else ())
-            for medium in media:
-                _add(f"{focus} {medium} {anchor_alias}".strip())
-    structured_plan = bool(representations
-                          or getattr(ch, "visual_intent_structured", "")
-                          or topic)
-    if local and topic:
-        # A deterministic compact catalog tree keeps each entity/event tied
-        # to the video topic and adds only media types appropriate to it.
-        period = str(getattr(ch, "period", "") or "")
-        topic_names = [topic, *(context.get("aliases", []) or []),
-                       *(context.get("primary_entities", []) or [])]
-        anchor_token_sets = [set(_tokens(name)) for name in topic_names if _tokens(name)]
-        is_topic_representation = lambda rep: any(
-            tokens.issuperset(_tokens(str(rep.get("query", ""))))
-            for tokens in anchor_token_sets) or str(rep.get("kind", "")) == "empire"
-        specific_representations = [r for r in representations
-            if not is_topic_representation(r)]
-        broad_representations = [r for r in representations
-            if r not in specific_representations]
-        representations_to_search = specific_representations or broad_representations
-        for representation in representations_to_search:
-            focus = str(representation["query"]).strip()
-            kind = str(representation.get("kind", "entity"))
-            _add(f"{focus} {anchor_alias}")
-            if anchor_alias.casefold() != topic.casefold():
-                _add(f"{focus} {topic}")
-            if period:
-                _add(f"{focus} {period} {anchor_alias}")
-            media = ("painting", "engraving", "illustration") if kind == "event" else (
-                ("portrait", "bust", "painting", "engraving") if kind == "person" else
-                ("monument", "historical photograph", "engraving") if kind == "monument" else
-                ("army", "uniform", "cavalry", "military engraving") if kind == "army" else
-                ("artifact", "museum object", "historical illustration") if kind == "artifact" else
-                ("historical map", "painting", "engraving") if kind in ("place", "empire") else
-                ("painting", "engraving", "artifact") if kind == "entity" else ())
-            for medium in media:
-                _add(f"{focus} {medium} {anchor_alias}")
-        for entity in list(context.get("primary_entities", []) or [])[:2]:
-            _add(f"{entity} {topic}")
-        # Broad topic is a late contextual fallback after specific concepts.
-        _add(f"{anchor_alias} historical map")
-    if len(ai) >= 2 and not same_subject and not local:
-        _add(contextual(" ".join(ai[:2])))
-    for term in ai:
-        if not local:
-            _add(contextual(term))
-    if not ai and not (local and topic) and not structured_plan:
-        for term in ch.local_query_seeds:
-            _add(term)
-    for term in list(getattr(ch, "global_visual_queries", []) or []):
-        _add(term)
-    if str(getattr(ch, "visual_type", "") or "") == "historical_art":
-        # Cena histórica precisa de ARTE, e o vocabulário que traz arte
-        # para a frente é o meio, não o assunto. "saint francis" sozinho
-        # devolve foto moderna de estátua em praça; "saint francis
-        # painting" devolve o fresco.
-        art_terms = ([str(r["query"]) for r in representations[:2]]
-                     or ([] if local else ai[:2])
-                     or list(getattr(ch, "visual_entities", []) or [])[:2]
-                     or [str(getattr(ch, "primary_entity", "")
-                              or getattr(ch, "subject", ""))])
-        for term in art_terms:
-            for meio in ART_MEDIA_HINTS:
-                _add(f"{term} {meio}")
-    if ai and not local:
-        for term in ai:
-            if topic and not set(_tokens(topic)).issubset(set(_tokens(term))):
-                _add(f"{term} {anchor_alias}")
-            else:
-                _add(term)
-        if _looks_mechanistic(ch, ai):
-            _add(" ".join(ai[:2]) + " diagram")
-    generics = set()
-    for term in _generic_queries(genre, ch):
-        before = len(out)
-        _add(term)
-        if len(out) > before:
-            generics.add(term.lower())
-    if not out and ch.space_topic:
-        _add("black hole")
-    # Keep scene-specific alternatives available after a contextual query
-    # returns only an already-used asset.
-    return out[:8], generics
-
-
-def _looks_mechanistic(ch, queries: list[str]) -> bool:
-    """Cena sobre mecanismo invisível (anticorpo, linha de controle...)?"""
-    plan = (ch if isinstance(ch, VisualPlan)
-            else build_visual_plan(ch, local_queries))
-    return plan.mechanistic
 
 
 def _selection_asset_key(asset: dict) -> str:
@@ -718,7 +460,10 @@ def _search_scene_with_shortcircuit(
     downloads_before = metrics.media_downloads if metrics else 0
     cache_before = metrics.media_cache_hits if metrics else 0
     visual_plan = build_visual_plan(ch, local_queries)
-    queries, generics = _waterfall_queries(visual_plan, genre)
+    search_plan = build_search_plan(visual_plan, genre)
+    queries = [item.query for item in search_plan.queries]
+    generics = set(search_plan.generic_queries)
+    search_query_by_text = {item.query: item for item in search_plan.queries}
     blocked = media_rules.scene_blocklist(ch)
     vtype = visual_plan.visual_type
 
@@ -1180,7 +925,7 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_funnel("used_real")
 
-    if not picked and _looks_mechanistic(ch, list(ch.visual_queries)):
+    if not picked and visual_plan.mechanistic:
         synth = _synth_diagram_for_scene(ch, queries, cfg, metrics, genre)
         if synth is not None:
             picked.append(synth)
@@ -1324,6 +1069,7 @@ def _search_scene_with_shortcircuit(
     decision = {
         "topic": video_context.get("topic", ""),
         "visual_plan": visual_plan.to_dict(),
+        "search_plan": search_plan.to_dict(),
         "visual_intent": (getattr(ch, "visual_intent_structured", "")
                            or getattr(ch, "visual_intent", "")),
         "entities": list(dict.fromkeys([str(getattr(ch, "primary_entity", "") or ""),
@@ -1335,8 +1081,13 @@ def _search_scene_with_shortcircuit(
         "representations_discarded": getattr(ch, "representation_rejections", []) or [],
         "aliases": list(video_context.get("aliases", []) or []),
         "queries": [{"query": query,
-                     "level": representation_levels.get(
-                         query, 5 if query in generics else 3),
+                     "source": search_query_by_text[query].source,
+                     "representation": search_query_by_text[query].representation,
+                     "representation_kind": search_query_by_text[query].representation_kind,
+                     "alias": search_query_by_text[query].alias,
+                     "query_variant": search_query_by_text[query].variant,
+                     "level": search_query_by_text[query].level,
+                     "generic": search_query_by_text[query].generic,
                      "providers": query_audit[query]["providers"],
                      "provider_errors": dict(query_audit[query]["errors_by_provider"]),
                      "results": query_audit[query]["results"],
@@ -1357,11 +1108,6 @@ def _search_scene_with_shortcircuit(
                      "aliases_used": [alias for alias in
                          list(video_context.get("aliases", []) or [])
                          if str(alias).casefold() in query.casefold()],
-                     "query_variant": next((suffix for suffix in
-                         ("historical map", "painting", "engraving", "illustration",
-                          "portrait", "bust", "artifact", "museum object",
-                          "monument", "historical photograph")
-                         if query.casefold().endswith(suffix)), "contextual_entity"),
                      "status": ("not_consulted_budget_exhausted"
                                 if unexecuted_queries.get(query) == "scene_candidate_budget" else
                                 "not_consulted_after_fresh_match"

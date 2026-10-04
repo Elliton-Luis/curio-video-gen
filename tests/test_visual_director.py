@@ -8,6 +8,7 @@ from curio.config import CurioConfig
 from curio.media.providers import MediaAsset
 from curio.stages import scenes, scoring, visual
 from curio.stages.visual_context import attach_video_context
+from tests.test_support.search_plan import patch_search_plan, plan_queries
 
 
 def _chapter(topic, event, entity, representation):
@@ -85,8 +86,8 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
     for chapter in chapters:
         chapter.visual_queries = [chapter.representations[0]["query"]]
         chapter.narration = chapter.event
-    monkeypatch.setattr(visual, "_waterfall_queries", lambda ch, *_:
-                        (["Ottoman Empire map", ch.representations[0]["query"]], set()))
+    patch_search_plan(monkeypatch, visual, lambda plan: [
+        "Ottoman Empire map", plan.representations[0].query])
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
     for candidate in assets.values():
         candidate.local_path = str(tmp_path / f"{candidate.asset_id}.jpg")
@@ -116,8 +117,7 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
     chapter = _chapter("Ottoman Empire", "Unpictured event", "Ottoman Empire",
                        "Ottoman Empire map")
     chapter.id = 2
-    monkeypatch.setattr(visual, "_waterfall_queries",
-                        lambda *_: (["Ottoman Empire map"], set()))
+    patch_search_plan(monkeypatch, visual, ["Ottoman Empire map"])
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
     synth = MediaAsset(provider="synth", asset_id="local", title="Local visual",
                        local_path="", width=1200, height=900)
@@ -249,7 +249,7 @@ def test_topic_context_and_representation_survive_local_planner_fallback():
         "A Bastilha foi tomada. O evento mudou Paris.", 2)[0]
     chapter.visual_intent = "local fallback"
     assert attach_video_context([chapter], "Guerra dos Cem Anos")
-    queries, _ = visual._waterfall_queries(chapter, "history")
+    queries, _ = plan_queries(chapter, "history")
     assert queries[0] == "Guerra dos Cem Anos"
     assert "Guerra dos Cem Anos Guerra dos Cem Anos" not in queries
     assert "Guerra dos Cem Anos" in queries
@@ -261,7 +261,7 @@ def test_structured_plan_never_adds_narration_keywords_to_queries():
                        "Doppler effect wave diagram")
     chapter.visual_queries = []
     chapter.narration = "Narration describes Doppler frequency changing."
-    queries, _ = visual._waterfall_queries(chapter, "science")
+    queries, _ = plan_queries(chapter, "science")
     assert "Doppler effect wave diagram" in queries
     assert "narration" not in queries
     assert "describes" not in queries

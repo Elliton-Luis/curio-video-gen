@@ -3,8 +3,9 @@ from types import SimpleNamespace
 from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter, _local_chapters, classify_visual_type
 from curio.stages import visual
-from curio.stages.visual import _waterfall_queries, local_queries
+from curio.stages.visual import local_queries
 from curio.stages.visual_context import attach_video_context
+from tests.test_support.search_plan import patch_search_plan, plan_queries
 
 
 def _local_scene(text, topic="Ottoman Empire", aliases=()):
@@ -18,7 +19,7 @@ def test_local_scene_queries_entity_and_event_as_catalog_phrases():
     janissaries = _local_scene(
         "Os janízaros formavam a elite militar do Império Otomano.",
         aliases=("Ottoman Empire",))
-    queries, _ = _waterfall_queries(janissaries)
+    queries, _ = plan_queries(janissaries)
     assert queries[0] == "janízaros Ottoman Empire"
     assert all(q.casefold() not in {"formavam", "gold", "laboratory", "microscope"}
                for q in queries)
@@ -32,7 +33,7 @@ def test_local_scene_queries_entity_and_event_as_catalog_phrases():
 
     battle = _local_scene("A Batalha de Mohács ocorreu em 1526.",
                           aliases=("Ottoman Empire",))
-    battle_queries, _ = _waterfall_queries(battle)
+    battle_queries, _ = plan_queries(battle)
     assert battle_queries[0] == "Battle of Mohács Ottoman Empire"
     assert any("1526" in q for q in battle_queries)
     assert not any(q == "Mohács" for q in battle_queries)
@@ -45,15 +46,15 @@ def test_local_representations_cover_empire_person_monument_and_object():
 
     person = _local_scene("O imperador Justiniano governou Constantinopla.",
                           "Byzantine Empire", ("Justinian I", "Byzantine Empire"))
-    person_queries, _ = _waterfall_queries(person)
+    person_queries, _ = plan_queries(person)
     assert any("portrait" in q for q in person_queries)
 
     monument = _local_scene("A Mesquita Azul foi concluída em Istambul.")
-    monument_queries, _ = _waterfall_queries(monument)
+    monument_queries, _ = plan_queries(monument)
     assert any("monument" in q for q in monument_queries)
 
     artifact = _local_scene("A espada cerimonial foi preservada no museu.")
-    artifact_queries, _ = _waterfall_queries(artifact)
+    artifact_queries, _ = plan_queries(artifact)
     assert any("museum object" in q or "artifact" in q for q in artifact_queries)
 
 
@@ -76,7 +77,7 @@ def test_isolated_noise_is_rejected_and_alias_backed_indirect_visual_survives():
         "isolated_abstract_or_material", "isolated_ordinal", "isolated_inflected_verb"}
     assert not any(local_queries(chapter.narration)[i] in {"gold", "primeira"}
                    for i in range(len(local_queries(chapter.narration))))
-    queries, _ = _waterfall_queries(chapter)
+    queries, _ = plan_queries(chapter)
     assert "Liberty statue" in queries
     assert not any(q in {"gold", "primeira", "formavam"} for q in queries)
 
@@ -84,7 +85,7 @@ def test_isolated_noise_is_rejected_and_alias_backed_indirect_visual_survives():
 def test_science_queries_do_not_leak_into_history_and_science_is_specific():
     history = _local_scene("Os janízaros formavam a elite militar do Império Otomano.",
                            aliases=("Ottoman Empire",))
-    history_queries, _ = _waterfall_queries(history)
+    history_queries, _ = plan_queries(history)
     assert not any("laboratory" in q or "microscope" in q for q in history_queries)
     assert classify_visual_type(
         "O império cresceu, transformando fronteiras durante séculos.") == "historical_art"
@@ -97,7 +98,7 @@ def test_science_queries_do_not_leak_into_history_and_science_is_specific():
         visual_queries=["microscope"], global_visual_queries=[],
         visual_intent="planner", visual_type="mechanism", subject="microscope",
         visual_entities=["microscope"], context=[], forbidden=[], representations=[])
-    science_queries, _ = _waterfall_queries(science)
+    science_queries, _ = plan_queries(science)
     assert "laboratory" in science_queries or "microscope" in science_queries
 
 
@@ -125,8 +126,9 @@ def test_search_continues_after_topic_only_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(visual, "download_asset",
                         lambda asset, *_a, **_kw: _attach(asset, image))
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda _asset: True)
-    monkeypatch.setattr(visual, "_waterfall_queries", lambda *_a: (
-        ["Ottoman Empire historical map", "Battle of Mohacs Ottoman Empire"], set()))
+    patch_search_plan(monkeypatch, visual,
+                      ["Ottoman Empire historical map",
+                       "Battle of Mohacs Ottoman Empire"])
     chapter = Chapter(
         id=4, narration="A Batalha de Mohács foi decisiva.", duration_estimate=6,
         visual_queries=["Battle of Mohacs Ottoman Empire"], subject="Battle of Mohacs",
@@ -162,8 +164,7 @@ def test_provider_failures_never_claim_search_exhausted(tmp_path, monkeypatch):
         visual_entities=["Battle of Mohacs"], global_visual_queries=[],
         representations=[{"query": "Battle of Mohacs", "kind": "event", "level": 1}],
         video_context={"topic": "Ottoman Empire", "aliases": ["Ottoman Empire"]})
-    monkeypatch.setattr(visual, "_waterfall_queries", lambda *_a: (
-        ["Battle of Mohacs Ottoman Empire"], set()))
+    patch_search_plan(monkeypatch, visual, ["Battle of Mohacs Ottoman Empire"])
     result, _ = visual._search_scene_with_shortcircuit(
         chapter, [BrokenProvider()], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))

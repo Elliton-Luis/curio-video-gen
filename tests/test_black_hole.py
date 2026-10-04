@@ -41,12 +41,13 @@ def test_queries_locais_trazem_buraco_negro():
 
 
 def test_cascata_espacial_sem_laboratorio():
-    qs, generics = V._waterfall_queries(_ch(N1))
+    from tests.test_support.search_plan import plan_queries
+    qs, generics = plan_queries(_ch(N1))
     assert "black hole" in qs
     assert "laboratory" not in qs
     assert "microscope" not in qs
     assert generics and "laboratory" not in generics
-    qs4, _ = V._waterfall_queries(_ch(N4))
+    qs4, _ = plan_queries(_ch(N4))
     assert "black hole" in qs4
     assert "laboratory" not in qs4
 

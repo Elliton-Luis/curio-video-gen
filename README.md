@@ -14,8 +14,10 @@ A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
 concluídas e as fronteiras ainda em transição. O carregamento de capítulos
 históricos os normaliza para os tipos atuais e valida a narração antes de
-entregar os dados às etapas seguintes. Antes da aquisição, cada cena também
-recebe um `VisualPlan` sem narração que é preservado na auditoria de mídia.
+entregar os dados às etapas seguintes. Antes da aquisição, cada cena recebe
+um `VisualPlan` sem narração; um `SearchPlanner` puro gera queries com
+proveniência por representação, alias e variação, preservadas na auditoria de
+mídia.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*
