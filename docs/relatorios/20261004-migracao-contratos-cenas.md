@@ -195,6 +195,7 @@ Focados de pesquisa/pipeline/TTS/TUI: **50 passaram em 151,64 s**; a suíte
 completa passou com **857 testes em 202,95 s**. `compileall` e
 `git diff --check` passaram.
 
+
 ## F4: nomes de métricas distinguem seleção real e uso em timeline
 
 As execuções reais mostraram que `visual_report.unique_assets` mede IDs reais
@@ -234,3 +235,21 @@ de saída permanecem iguais. Os mocks do pipeline foram migrados dos tuples
 posicionais para contratos. Focados: **13 passaram em 35,89 s**; a suíte
 integral passou com **863 testes em 191,55 s**. `compileall` e
 `git diff --check` passaram.
+
+## G2b: roteiro, título e grounding têm um resultado de etapa explícito
+
+Extraí a transição de pesquisa → roteiro/título para
+`pipeline_script.run_script_stage`. Essa etapa agora é dona da seleção entre
+texto fornecido, cache e geração; autocura de marcadores no roteiro cacheado;
+persistência dos artefatos; verificação/apresentação do grounding; invalidação
+de cenas quando o roteiro fornecido muda; e carga do título em cache ou geração.
+Ela retorna `ScriptStageResult` com `ScriptArtifact`, `TitleArtifact`, grounding,
+warnings, decisão de refazer cenas e duração. `_run_pipeline` compõe esse
+resultado e continua dono da emissão de progresso e da transição à próxima
+etapa. Os arquivos e valores externos seguem texto/schema atuais.
+
+Uma execução integral encontrou um teste da TUI acoplado ao antigo atributo
+privado `pipeline.script_stage`; migrei o patch do teste para o módulo dono do
+estágio. O teste da TUI, integração, grounding e contratos passou: **28 testes
+em 35,87 s**. A suíte completa final passou: **863 testes em 172,90 s**;
+`python -m compileall -q src/curio` e `git diff --check` passaram.

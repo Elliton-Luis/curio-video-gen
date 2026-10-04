@@ -64,7 +64,7 @@ def test_pipeline_persists_supplied_script_verbatim_and_skips_script_generation(
         pipeline.research_stage, "verify_grounding",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(StopAfterScript()))
     monkeypatch.setattr(
-        pipeline.script_stage, "generate_script",
+        pipeline.pipeline_script_stage.script_stage, "generate_script",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("provided script must skip script generation")))
 

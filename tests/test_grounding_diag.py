@@ -165,9 +165,9 @@ def test_o_aviso_no_terminal_aponta_a_afirmacao(capsys):
     string que volta a dizer "135, 393" resolve o problema que o aviso
     existe para resolver.
     """
-    from curio import pipeline as P
+    from curio.pipeline_script import _print_grounding_warning
     g = R.verify_grounding(ROTEIRO, fontes("Nasceu em 347. Vulgata."))
-    msg = P._print_grounding_warning(g)
+    msg = _print_grounding_warning(g)
     err = capsys.readouterr().err
     assert msg == ("5 afirmações do roteiro sem correspondência nas fontes")
     assert "135 anos" in err and "levou 135 anos" in err
@@ -180,17 +180,17 @@ def test_o_aviso_no_terminal_aponta_a_afirmacao(capsys):
 
 def test_o_aviso_conta_cada_afirmacao_uma_vez(capsys):
     """135 e "135 anos" são um dado só no texto exibido."""
-    from curio import pipeline as P
+    from curio.pipeline_script import _print_grounding_warning
     g = R.verify_grounding(ROTEIRO, fontes("Nasceu em 347. Vulgata."))
-    P._print_grounding_warning(g)
+    _print_grounding_warning(g)
     err = capsys.readouterr().err
     assert err.count("  - ") == len(g["unverified_display"])
 
 
 def test_uma_afirmacao_so_fala_no_singular(capsys):
-    from curio import pipeline as P
+    from curio.pipeline_script import _print_grounding_warning
     g = R.verify_grounding("Ele recebeu 400 presentes em 393.",
                            fontes("Nada disso aparece."))
-    msg = P._print_grounding_warning(g)
+    msg = _print_grounding_warning(g)
     capsys.readouterr()
     assert msg.startswith("2 afirmações")

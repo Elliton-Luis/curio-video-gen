@@ -32,6 +32,7 @@ from . import pipeline_media_sources as pipeline_media_sources_stage
 from . import pipeline_audio as pipeline_audio_stage
 from . import pipeline_timeline as pipeline_timeline_stage
 from . import pipeline_metadata as pipeline_metadata_stage
+from . import pipeline_script as pipeline_script_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
@@ -41,7 +42,6 @@ from .stages import render as render_stage
 from .stages import research as research_stage
 from .stages import editorial as editorial_stage
 from .stages import scoring as scoring_stage
-from .stages import script as script_stage
 from .stages import scenes as scenes_stage
 from .stages import subs as subs_stage
 from .stages import teleprompter as tele_stage
@@ -250,44 +250,6 @@ def _apply_audio_request(cfg: CurioConfig, audio: dict | None) -> None:
         cfg.music_transitions = transitions["mode"]
 
 
-def _print_grounding_warning(grounding: dict) -> str:
-    """O aviso de grounding: afirmação, trecho, causa e fontes avaliadas.
-
-    Antes saía "2 dado(s) do roteiro sem correspondência nas fontes: 135,
-    393". 135 e 393 são números, não identificadores: com dezenas de
-    números no texto, o aviso não levava ninguém a lugar nenhum — e era
-    justamente o aviso que ninguém podia descartar, porque ele aponta
-    onde o roteiro pode estar inventando.
-
-    Sai a afirmação, onde ela está no texto, por que ela provavelmente não
-    bate e quais fontes foram conferidas. O gate não muda nada disso: a
-    contagem e a cobertura são as mesmas de antes, porque quem decide o que
-    é verificável é `verify_grounding`, não a frase.
-
-    O corpo sai no stderr e a frase de uma linha volta para `warnings`, que
-    é o que vai para o metadata.json. Existe como função separada do fluxo
-    para poder ser testada e reaproveitada — não há segunda versão dela.
-    """
-    n = len(grounding["unverified"])
-    det = grounding.get("unverified_display") or []
-    msg = (f"{n} {'afirmações' if n > 1 else 'afirmação'} do roteiro sem "
-           f"correspondência nas fontes")
-    print(f"AVISO: {msg}:", file=sys.stderr)
-    for d in det[:8]:
-        print(f"  - {d['fact']}: \"{d['claim']}\"", file=sys.stderr)
-        print(f"      possível causa: {d['cause']}", file=sys.stderr)
-    mais = len(det) - 8
-    if mais > 0:
-        print(f"  ... e {mais} {'outras' if mais > 1 else 'outra'}. "
-              f"Ver o relatório completo.", file=sys.stderr)
-    print(f"  Fontes avaliadas: "
-          f"{', '.join(grounding.get('sources_checked', [])[:6])}",
-          file=sys.stderr)
-    print("  Consulte sources/FONTES.md para as fontes relacionadas.",
-          file=sys.stderr)
-    return msg
-
-
 def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
                    script_source: str,
                    semantic_scenes: tuple[SemanticScene, ...],
@@ -484,104 +446,21 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     research_pack = research_output.prompt
     stage_times["research"] = research_output.elapsed
 
-    # [1/6] Roteiro (modo roteiro-pronto: usa o texto verbatim, nunca gera)
-    t0 = time.monotonic()
+    # [1/6] Roteiro e título: transforma inputs pesquisados em artefatos validados.
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro")
-    force_after_script = force
-    if script_mode:
-        assert provided_script is not None
-        if not provided_script.strip():
-            raise ValueError("roteiro vazio — nada para produzir")
-        script_artifact = script_stage.ScriptArtifact(provided_script, "provided")
-        script_text, script_source = script_artifact.text, script_artifact.source
-        run_event("result", f"Roteiro fornecido: {len(script_text)} caracteres",
-                  operation="script", source=script_source,
-                  characters=len(script_text))
-        cached = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else None
-        if cached != script_text:
-            with open(paths.script_txt, "w", encoding="utf-8") as fh:
-                fh.write(script_text)
-            if cached is not None and not force:
-                print("AVISO: roteiro fornecido mudou — refazendo cenas e mídia.",
-                      file=sys.stderr)
-                force_after_script = True
-    elif not force and os.path.isfile(paths.script_txt):
-        # Autocura: roteiros gerados antes da blindagem podem conter
-        # marcadores de lista ("0) ", "1. "...). Remove só os marcadores
-        # (sem truncar/re-escrever) para que qualquer etapa refeita use
-        # texto limpo; áudio/cenas em cache seguem intactos e alinhados.
-        raw_cached = _read(paths.script_txt)
-        healed = subs_stage.strip_list_markers(raw_cached)
-        if healed != raw_cached:
-            print("AVISO: roteiro em cache continha numeração de lista — "
-                  "marcadores removidos.", file=sys.stderr)
-            warnings.append("roteiro em cache higienizado (marcadores de lista)")
-            with open(paths.script_txt, "w", encoding="utf-8") as fh:
-                fh.write(healed)
-        script_artifact = script_stage.ScriptArtifact(healed, "cache")
-        script_text, script_source = script_artifact.text, script_artifact.source
-        run_event("cache", f"Roteiro reutilizado: {len(script_text)} caracteres",
-                  artifact="script", characters=len(script_text))
-    else:
-        # A entidade JÁ foi resolvida na etapa de pesquisa; o roteiro
-        # recebia só a frase da ideia e perdia o nome canônico, as formas
-        # alternativas e as armadilhas de homônimo. Nenhuma segunda
-        # resolução acontece aqui: é o mesmo objeto.
-        from .stages import entity as entity_stage
-        script_artifact = script_stage.generate_script(
-            idea, cfg, metrics, research=research_pack,
-            genre_directive=genre_directive,
-            entity_context=entity_stage.script_context(
-                research_target, cfg.language))
-        if not isinstance(script_artifact, script_stage.ScriptArtifact):
-            raise TypeError("generate_script must return ScriptArtifact")
-        script_text, script_source = script_artifact.text, script_artifact.source
-        run_event("provider", f"Roteiro: {script_source}; {len(script_text)} caracteres",
-                  operation="script", source=script_source,
-                  characters=len(script_text))
-        with open(paths.script_txt, "w", encoding="utf-8") as fh:
-            fh.write(script_text)
-    stage_times["script"] = round(time.monotonic() - t0, 2)
-    emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro", "OK")
-
-    # Conferência anti-invenção: os números do roteiro são comparados com o
-    # que a pesquisa trouxe. O que não bate fica registrado como não
-    # verificado no relatório de fontes — não some do texto (a decisão é do
-    # autor), mas não se apresenta como confirmado.
-    grounding = research_stage.verify_grounding(script_text, research_sources,
-                                                cfg.language)
-    if grounding["unverified"]:
-        warnings.append(_print_grounding_warning(grounding))
-        run_event("warning", f"Grounding: {len(grounding['unverified'])} "
-                  "afirmação(ões) não verificadas", operation="grounding",
-                  unverified=len(grounding["unverified"]))
-    elif grounding["checked"]:
-        print(f"Fundamentação: {grounding['checked']} dado(s) conferidos, "
-              f"todos nas fontes.")
-
-    # Título-pergunta (IA a partir do roteiro; nunca entra na narração).
-    if not force_after_script and os.path.isfile(paths.title_txt):
-        cached_title = _read(paths.title_txt).strip()
-        if cached_title:
-            title_artifact = script_stage.TitleArtifact(cached_title, "cache")
-        else:
-            title_artifact = script_stage.generate_title(
-                script_text, idea, cfg, metrics)
-            if not isinstance(title_artifact, script_stage.TitleArtifact):
-                raise TypeError("generate_title must return TitleArtifact")
-            with open(paths.title_txt, "w", encoding="utf-8") as fh:
-                fh.write(title_artifact.text)
-    else:
-        title_artifact = script_stage.generate_title(script_text, idea, cfg, metrics)
-        if not isinstance(title_artifact, script_stage.TitleArtifact):
-            raise TypeError("generate_title must return TitleArtifact")
-        with open(paths.title_txt, "w", encoding="utf-8") as fh:
-            fh.write(title_artifact.text)
+    script_result = pipeline_script_stage.run_script_stage(
+        idea, cfg, paths, metrics, research_prompt=research_pack,
+        research_target=research_target, research_sources=research_sources,
+        genre_directive=genre_directive, force=force,
+        provided_script=provided_script)
+    script_artifact, title_artifact = script_result.script, script_result.title
+    script_text, script_source = script_artifact.text, script_artifact.source
     video_title, title_source = title_artifact.text, title_artifact.source
-    print(f"Título: {video_title} ({title_source})")
-    run_event("cache" if title_source == "cache" else "provider",
-              f"Título: {title_source}", operation="title",
-              source=title_source, characters=len(video_title))
+    grounding = script_result.grounding
+    force_after_script = script_result.force_scenes
+    warnings.extend(script_result.warnings)
+    stage_times["script"] = script_result.elapsed
+    emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro", "OK")
 
     # [2/6] Cenas
     emit(2, "Interpretando cenas")
