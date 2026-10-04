@@ -17,7 +17,8 @@ from curio.metrics import RunMetrics
 from curio.stages import media_rules, scoring
 from curio.stages import scenes as S
 from curio.stages import visual as V
-from curio.stages.scene_local_planning import local_visual_representations
+from curio.stages.scene_local_planning import (
+    local_visual_representations, recover_legacy_chapters)
 from curio.stages.scenes import Chapter
 
 
@@ -43,12 +44,16 @@ def test_queries_locais_trazem_buraco_negro():
 
 def test_cascata_espacial_sem_laboratorio():
     from tests.test_support.search_plan import plan_queries
-    qs, generics = plan_queries(_ch(N1))
+    local = _ch(N1)
+    assert recover_legacy_chapters([local])
+    qs, generics = plan_queries(local)
     assert "black hole" in qs
     assert "laboratory" not in qs
     assert "microscope" not in qs
     assert generics and "laboratory" not in generics
-    qs4, _ = plan_queries(_ch(N4))
+    legacy = _ch(N4)
+    assert recover_legacy_chapters([legacy])
+    qs4, _ = plan_queries(legacy)
     assert "black hole" in qs4
     assert "laboratory" not in qs4
 

@@ -112,6 +112,15 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
             representation=topic, alias=anchor_alias, variant="historical map",
             level=5, generic=True)
 
+    if deterministic and not topic:
+        # A recovered/local scene without global context still has explicit
+        # scene anchors. Search those declared concepts; do not replace them
+        # with a generic topic query or re-extract narration here.
+        for rep in representations:
+            add(rep.query, source="local_scene_representation",
+                representation=rep.query, kind=rep.kind,
+                level=max(1, rep.level + 1))
+
     if len(ai) >= 2 and not same_subject and not deterministic:
         add(contextual(" ".join(ai[:2])), source="combined_scene_queries",
             representation=" / ".join(ai[:2]), alias=anchor_alias, level=3)

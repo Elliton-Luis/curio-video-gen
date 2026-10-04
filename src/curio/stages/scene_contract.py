@@ -233,16 +233,6 @@ class SemanticScene:
             representations = tuple(VisualRepresentation(
                 query=query, source="legacy_scene_query")
                 for query in visual_queries)
-        elif (not visual_queries and not representations
-              and not context.topic
-              and not chapter.visual_intent_structured):
-            # Legacy scenes enter the deterministic local planner at this
-            # boundary; acquisition planning receives only materialized reps.
-            from .scene_local_planning import local_visual_representations
-            visual_queries = tuple(local_visual_representations(chapter.narration))
-            representations = tuple(VisualRepresentation(
-                query=query, source="local_concrete_phrase")
-                for query in visual_queries)
         return cls(
             id=int(chapter.id), narration=str(chapter.narration), source=source,
             planning_mode=str(getattr(chapter, "planning_mode", "unknown")),

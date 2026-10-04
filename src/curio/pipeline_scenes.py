@@ -13,6 +13,7 @@ from .runlog import event as run_event
 from .stages import nvidia as nvidia_stage
 from .stages import scenes as scenes_stage
 from .stages import visual as visual_stage
+from .stages.scene_local_planning import recover_legacy_chapters
 from .stages.scene_contract import SemanticScene
 from .stages.scene_enrichment import SceneEnrichmentResult, enrich_scenes
 from .stages.scenes import Chapter
@@ -49,9 +50,11 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     if not force and os.path.isfile(paths.chapters_json):
         chapters = load_chapters(paths)
         source = "cache"
+        recovered_legacy = recover_legacy_chapters(chapters)
         if script_mode:
             visual_stage.validate_preserved(script_text, chapters)
     else:
+        recovered_legacy = False
         if script_mode:
             count = visual_stage.scenes_for_script(script_text, cfg, genre)
         elif cfg.duration_target <= 0:
@@ -93,7 +96,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     chapters = list(enriched.scenes)
     semantic_scenes = tuple(
         chapter.semantic_scene(enriched.source) for chapter in chapters)
-    if enriched.changed:
+    if enriched.changed or recovered_legacy:
         write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
     if "local_topic_anchor" in enriched.applied:
         run_event("result", "Cenas locais ancoradas no tema do vídeo",
@@ -111,7 +114,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     return SceneStageResult(
         chapters=tuple(chapters), semantic_scenes=semantic_scenes,
         source=source, enrichment=enriched,
-        invalidate_media=enriched.changed,
+        invalidate_media=enriched.changed or recovered_legacy,
         elapsed=round(time.monotonic() - started, 2))
 
 

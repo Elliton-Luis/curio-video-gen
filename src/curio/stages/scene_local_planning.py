@@ -6,6 +6,7 @@ import re
 
 from .. import textnorm
 from . import scenes as scenes_stage
+from .scene_contract import VisualRepresentation
 
 # Heurística offline p/ consultas visuais (sem chave NVIDIA as cenas locais
 # não trazem `visual_queries` — sem isto, tudo cairia em fallback). Extrai
@@ -166,4 +167,29 @@ def local_visual_representations(narration: str, k: int = 2) -> list[str]:
             result.append(term)
     return result[:max(1, min(k, 5))]
 
+
+def recover_legacy_chapters(chapters) -> bool:
+    """Materialize deterministic query seeds only for incomplete old cache rows.
+
+    Current LLM plans are never repaired from narration here. Callers invoke
+    this only at the persisted Chapter compatibility boundary.
+    """
+    changed = False
+    for chapter in chapters:
+        if (chapter.planning_mode == "llm" or chapter.representations
+                or chapter.visual_queries
+                or chapter.video_context.topic
+                or chapter.visual_intent_structured):
+            continue
+        queries = local_visual_representations(chapter.narration)
+        if not queries:
+            continue
+        chapter.planning_mode = "deterministic"
+        chapter.visual_queries = list(queries)
+        chapter.representations = [VisualRepresentation(
+            query=query, source="legacy_local_recovery",
+            evidence="recovered while loading a pre-contract scene cache")
+            for query in queries]
+        changed = True
+    return changed
 

@@ -1,6 +1,7 @@
 from curio.stages.scenes import Chapter
 from curio.stages.scene_contract import SemanticScene
-from curio.stages.scene_local_planning import local_visual_representations
+from curio.stages.scene_local_planning import (
+    local_visual_representations, recover_legacy_chapters)
 from curio.stages.visual_planning import build_visual_plan
 from curio.stages.search_planning import build_search_plan
 
@@ -33,14 +34,29 @@ def test_visual_plan_closes_scene_inputs_without_copying_narration():
     assert "narration" not in plan.to_dict()
 
 
-def test_semantic_scene_materializes_local_representations_before_visual_plan():
+def test_legacy_recovery_is_explicit_and_semantic_projection_is_passive():
     scene = Chapter(1, "The black hole bends light.", 3)
+    semantic = scene.semantic_scene()
+    assert not semantic.representations
+    assert not semantic.visual_queries
+
+    assert recover_legacy_chapters([scene])
     semantic = scene.semantic_scene()
     plan = build_visual_plan(semantic)
     assert plan.representations
     assert plan.representations[0].query == local_visual_representations(scene.narration)[0]
+    assert plan.representations[0].source == "legacy_local_recovery"
     assert not hasattr(plan, "local_query_seeds")
     assert plan.space_topic
+
+
+def test_llm_scene_without_representation_is_never_locally_repaired():
+    scene = Chapter(2, "The black hole bends light.", 3,
+                    planning_mode="llm")
+    assert not recover_legacy_chapters([scene])
+    semantic = scene.semantic_scene()
+    assert not semantic.representations
+    assert not semantic.visual_queries
 
 
 def test_visual_planner_does_not_reinterpret_narration():
