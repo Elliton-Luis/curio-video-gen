@@ -44,6 +44,9 @@ O enriquecimento pós-planner de contexto está centralizado em
 `scene_enrichment.py`: recebe proveniência explícita, clona a saída do
 planner, retorna uma batch validada e registra quais complementos foram
 aplicados antes de atualizar `chapters.json`.
+`pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
+validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
+coordenador continua responsável por créditos/fontes e pelos estágios seguintes.
 `SemanticScene` agora separa os campos semânticos usados por aquisição e
 scoring dos tempos em `Chapter`, ainda usado por timeline e render. A saída do
 planner/cache será migrada para esse contrato em etapas; a compatibilidade

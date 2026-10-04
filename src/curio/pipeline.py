@@ -23,12 +23,11 @@ from . import ffmpeg as ff
 from .audio import selection as audio_selection
 from .audio.library import audio_seed
 from .config import CurioConfig
-from .media.providers import classify_rights, get_providers
-from .media.artifacts import (media_selection_signature,
-                              selection_cache_is_current, write_manifest)
+from .media.providers import classify_rights
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
 from . import pipeline_media as pipeline_media_stage
+from . import pipeline_visual as pipeline_visual_stage
 from . import pipeline_audio as pipeline_audio_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
@@ -316,6 +315,7 @@ def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
                    script_source: str, chapters: list[Chapter],
                    scenes_source: str, media_scenes: list[dict],
                    warnings: list[str], stage_times: dict, metrics: RunMetrics,
+                   media_source: str,
                    started: float) -> dict:
     return {
         "title": idea.strip(),
@@ -327,6 +327,7 @@ def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
         "scenes_source": scenes_source,
         "chapters": [c.to_dict() for c in chapters],
         "media": media_scenes,
+        "media_resolution_source": media_source,
         "warnings": warnings,
         "width": cfg.width,
         "height": cfg.height,
@@ -681,80 +682,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     emit(2, "Interpretando cenas", "OK")
 
     # [3/6] Mídia (manual > cache > provedores; zero imagens = standby)
-    t0 = time.monotonic()
-    emit(3, "Buscando mídia")
+    media_t0 = time.monotonic()
     manual_dir = pipeline_media_stage.manual_media_dir(paths)
-    media_scenes = None
-    manual = pipeline_media_stage.manual_media_scenes(semantic_scenes, manual_dir)
-    available_providers = [provider.name for provider in get_providers(cfg)]
-    media_signature = media_selection_signature(
-        semantic_scenes, genre_key, max_images, available_providers,
-        scoring_stage.threshold())
-    if manual is not None:
-        media_scenes = manual
-        msg = (f"mídia manual: {len({e['asset']['local_path'] for s in manual for e in s.get('assets') or []})} "
-               f"foto(s) de {manual_dir}")
-        warnings.append(msg)
-        print(f"Mídia manual: usando fotos de {manual_dir}.", file=sys.stderr)
-        run_event("cache", f"Mídia manual: {len(manual)} cena(s)",
-                  operation="media", source="manual", scenes=len(manual))
-        _write_json(paths.media_json, media_scenes)
-    if media_scenes is None and not force_after_script and os.path.isfile(paths.media_json):
-        try:
-            saved = _read_json(paths.media_json)
-            expected_scene_ids = [chapter.id for chapter in chapters]
-            chapter_ok = ([s["chapter_id"] for s in saved] ==
-                          expected_scene_ids) and selection_cache_is_current(
-                              saved, paths.media_manifest_json, media_signature,
-                              expected_scene_ids) and all(
-                isinstance(s.get("visual_decision"), dict)
-                for s in saved
-                if (s.get("asset") or {}).get("provider") != "manual")
-            files_ok = True
-            for s in saved:
-                scene = next((item for item in semantic_scenes
-                              if item.id == s["chapter_id"]), None)
-                if scene is None:
-                    files_ok = False
-                    break
-                blocked = visual_stage.media_rules.scene_blocklist(scene)
-                if any(visual_stage.media_rules.rejection_reason(
-                        entry.get("asset") or {}, blocked) for entry in s.get("assets", [])
-                       if (entry.get("asset") or {}).get("provider") != "synth"):
-                    files_ok = False  # Old cached homonyms must pass current identity rules.
-                    break
-                first = s.get("asset")
-                if first is not None and not os.path.isfile(
-                        first.get("local_path", "")):
-                    files_ok = False
-                    break
-                if max_images > 1:
-                    if "assets" not in s:
-                        files_ok = False
-                        break
-                    for im in s.get("assets", []):
-                        asset = im.get("asset", {})
-                        if not os.path.isfile(asset.get("local_path", "")):
-                            files_ok = False
-                            break
-            if chapter_ok and files_ok:
-                media_scenes = saved
-                run_event("cache", "Mídia reutilizada do cache",
-                          operation="media", scenes=len(saved))
-        except (json.JSONDecodeError, KeyError):
-            media_scenes = None
-    if media_scenes is None:
-        media_scenes, media_warnings = visual_stage.fetch_media_multi(
-            semantic_scenes, cfg, max_images, metrics, genre=genre_key)
-        warnings.extend(media_warnings)
-        _write_json(paths.media_json, media_scenes)
-        if any(scene.get("asset") or scene.get("assets") for scene in media_scenes):
-            write_manifest(paths.media_manifest_json, media_scenes, media_signature)
-        elif os.path.isfile(paths.media_manifest_json):
-            os.unlink(paths.media_manifest_json)
-        if media_warnings:
-            for warning in media_warnings[:8]:
-                run_event("warning", str(warning), operation="media")
+    emit(3, "Buscando mídia")
+    media_result = pipeline_visual_stage.resolve_media(
+        semantic_scenes, cfg, paths, max_images, genre_key, metrics,
+        force_after_script, _write_json)
+    media_scenes = media_result.scenes
+    warnings.extend(media_result.warnings)
     for scene in media_scenes:
         if metrics and scene.get("visual_decision"):
             metrics.media_record_scene_decision(
@@ -852,7 +787,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                         f"em {asset.get('license_url') or asset.get('source_url') or 'sem link'}")
                 if note not in media_rights_notes:
                     media_rights_notes.append(note)
-    stage_times["media"] = round(time.monotonic() - t0, 2)
+    stage_times["media"] = round(time.monotonic() - media_t0, 2)
     emit(3, "Buscando mídia",
          "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")
 
@@ -867,6 +802,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "idea": idea,
             "status": "standby-no-media",
             "narration": "standby",
+            "media_resolution_source": media_result.source,
             "manual_dir": manual_dir,
             "n_scenes": len(chapters),
             "stage_times": dict(stage_times),
@@ -888,6 +824,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            transition_mode=_transition_mode(cfg),
                            genre_profile=editorial_stage.summary(perfil),
                            scene_context_enrichment=enrichment.to_dict(),
+                           media_source=media_result.source,
                            video_title=video_title,
                            title_source=title_source)
 
@@ -1003,7 +940,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
                               chapters, scenes_source, media_scenes, warnings,
-                              stage_times, metrics, started)
+                              stage_times, metrics, media_result.source, started)
     metadata.update({
         "genre": genre_key,
         "scene_context_enrichment": enrichment.to_dict(),
@@ -1151,6 +1088,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                 transition_mode: str = "auto",
                 genre_profile: dict | None = None,
                 scene_context_enrichment: dict | None = None,
+                media_source: str = "unknown",
                 video_title: str = "", title_source: str = "") -> dict:
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
@@ -1216,7 +1154,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
 
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
                               chapters, scenes_source, media_scenes, warnings,
-                              stage_times, metrics, started)
+                              stage_times, metrics, media_source, started)
     metadata.update({
         "genre": genre_key,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),
