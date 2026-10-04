@@ -548,6 +548,7 @@ def _search_scene_with_shortcircuit(
         candidates.append(candidate.to_evaluation_input())
 
     from . import scoring
+    from .media_selection import make_selection_decision, prepare_selection_pool
     min_score = scoring.threshold()
 
     def collect(query_list: list[str], limit: int,
@@ -742,16 +743,9 @@ def _search_scene_with_shortcircuit(
             metrics.media_record_asset_rejected()
             metrics.media_record_funnel("score_rejected")
     from .visual_beats import asset_key
-    reused_ranked = []
-    if asset_uses is not None:
-        fresh_ranked = []
-        for entry in ranked:
-            key = _selection_asset_key(entry["asset"])
-            if key and asset_uses.get(key, 0):
-                reused_ranked.append(entry)
-            else:
-                fresh_ranked.append(entry)
-        ranked = fresh_ranked
+    selection_pool = prepare_selection_pool(ranked, asset_uses, _selection_asset_key)
+    ranked = list(selection_pool.fresh)
+    reused_ranked = list(selection_pool.reused)
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
@@ -766,13 +760,6 @@ def _search_scene_with_shortcircuit(
             str(getattr(ch, "visual_type", "") or "literal"))
 
     picked: list[dict] = []
-    if asset_uses is not None:
-        # All candidates already passed relevance. Prefer fresh assets without
-        # altering scores or allowing generic imagery ahead of specific imagery.
-        ranked = sorted(ranked, key=lambda entry: (
-            -entry.get("score", 0), bool(entry.get("generic")),
-            asset_uses.get(_selection_asset_key(entry["asset"]), 0)))
-
     download_window = min(max(1, MAX_CONCURRENT_DOWNLOADS), max(1, max_images))
     download_futures: dict[int, object] = {}
     next_download = 0
@@ -1114,6 +1101,8 @@ def _search_scene_with_shortcircuit(
                            "specific" if picked and picked[0].get("query") in representation_levels
                            else "representation_or_media_variant" if picked else "exhausted"),
     }
+    decision["selection"] = make_selection_decision(
+        ch.id, picked, decision["fallback_level"]).to_dict()
     return [{
         "chapter_id": ch.id,
         "asset": first,

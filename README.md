@@ -20,6 +20,9 @@ proveniência por representação, alias e variação, preservadas na auditoria 
 mídia. Resultados dos providers entram como `Candidate` associado à query de
 origem antes de deduplicação e dos gates técnicos; `candidate_evaluation.py`
 produz avaliações tipadas com score, evidência e motivo de rejeição.
+`media_selection.py` separa candidatos novos de reusos adiados sem reescrever
+scores e emite uma `SelectionDecision` para visual real, reutilizado, sintético
+ou ausente, sempre com motivo e nível de fallback.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

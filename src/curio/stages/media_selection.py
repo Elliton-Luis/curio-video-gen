@@ -1,0 +1,99 @@
+"""Fresh-versus-reused ordering and explicit media selection decisions."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SelectionPool:
+    fresh: tuple[dict, ...]
+    reused: tuple[dict, ...]
+
+
+@dataclass(frozen=True)
+class SelectionDecision:
+    scene_id: int
+    status: str
+    asset_id: str = ""
+    provider: str = ""
+    query: str = ""
+    query_source: str = ""
+    representation: str = ""
+    score: float | None = None
+    fallback_level: str = ""
+    reuse_reason: str = ""
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.status not in {"real", "reused", "synthetic", "none"}:
+            raise ValueError(f"unknown selection status: {self.status}")
+        if self.status != "none" and not self.asset_id:
+            raise ValueError("selected visual must include asset identity")
+        if not self.reason.strip():
+            raise ValueError("selection decision must explain its outcome")
+
+    def to_dict(self) -> dict:
+        return {
+            "scene_id": self.scene_id,
+            "status": self.status,
+            "asset_id": self.asset_id,
+            "provider": self.provider,
+            "query": self.query,
+            "query_source": self.query_source,
+            "representation": self.representation,
+            "score": self.score,
+            "fallback_level": self.fallback_level,
+            "reuse_reason": self.reuse_reason,
+            "reason": self.reason,
+        }
+
+
+def prepare_selection_pool(ranked: list[dict], asset_uses: dict | None,
+                           identity_of) -> SelectionPool:
+    """Prefer fresh assets without modifying relevance scores or rank."""
+    fresh, reused = [], []
+    for entry in ranked:
+        key = identity_of(entry["asset"])
+        if asset_uses is not None and key and asset_uses.get(key, 0):
+            reused.append(entry)
+        else:
+            fresh.append(entry)
+    if asset_uses is not None:
+        fresh.sort(key=lambda entry: (
+            -entry.get("score", 0), bool(entry.get("generic")),
+            asset_uses.get(identity_of(entry["asset"]), 0)))
+    return SelectionPool(tuple(fresh), tuple(reused))
+
+
+def make_selection_decision(scene_id: int, picked: list[dict],
+                            fallback_level: str) -> SelectionDecision:
+    """Describe the chosen result after downloads/fallback policy complete."""
+    if not picked:
+        return SelectionDecision(
+            scene_id, "none", fallback_level=fallback_level,
+            reason="no candidate downloaded and no visual fallback was produced")
+    entry = picked[0]
+    asset = entry.get("asset") or {}
+    provider = str(asset.get("provider", ""))
+    status = ("synthetic" if provider == "synth" else
+              "reused" if entry.get("reuse_reason") else "real")
+    if status == "synthetic":
+        reason = "no eligible fresh real asset remained; semantic synthetic fallback selected"
+    elif status == "reused":
+        reason = "all fresh searches and local visual fallbacks were exhausted before reuse"
+    else:
+        reason = "fresh candidate passed gates, ranked for the scene, and downloaded"
+    return SelectionDecision(
+        scene_id=scene_id,
+        status=status,
+        asset_id=str(asset.get("asset_id", "")),
+        provider=provider,
+        query=str(entry.get("query", "")),
+        query_source=str(entry.get("query_source", "")),
+        representation=str(entry.get("representation", "")),
+        score=float(entry["score"]) if entry.get("score") is not None else None,
+        fallback_level=fallback_level,
+        reuse_reason=str(entry.get("reuse_reason", "")),
+        reason=reason,
+    )
