@@ -14,7 +14,8 @@ from .stages import nvidia as nvidia_stage
 from .stages import scenes as scenes_stage
 from .stages import visual as visual_stage
 from .stages.scene_local_planning import recover_legacy_chapters
-from .stages.scene_contract import ScenePlanResult, SemanticScene
+from .stages.scene_contract import (ScenePlanResult, SemanticScene,
+                                    TimelineSpan)
 from .stages.scene_enrichment import SceneEnrichmentResult, enrich_scenes
 from .stages.scene_plan_artifact import plan_from_dict, plan_to_dict
 from .stages.scenes import Chapter
@@ -23,11 +24,23 @@ from .stages.scenes import Chapter
 @dataclass(frozen=True)
 class SceneStageResult:
     semantic_scenes: tuple[SemanticScene, ...]
+    timeline_spans: tuple[TimelineSpan, ...]
     chapters: tuple[Chapter, ...]
     source: str
     enrichment: SceneEnrichmentResult
     invalidate_media: bool
     elapsed: float
+
+    def __post_init__(self) -> None:
+        scene_ids = tuple(scene.id for scene in self.semantic_scenes)
+        if not scene_ids or len(scene_ids) != len(set(scene_ids)):
+            raise ValueError("scene stage must return unique semantic scenes")
+        if tuple(span.scene_id for span in self.timeline_spans) != scene_ids:
+            raise ValueError("scene stage spans do not match semantic scenes")
+        if tuple(chapter.id for chapter in self.chapters) != scene_ids:
+            raise ValueError("scene stage Chapter projection is misaligned")
+        if not self.source:
+            raise ValueError("scene stage source is required")
 
 
 def load_chapters(paths) -> list[Chapter]:
@@ -159,6 +172,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
               operation="scenes", source=source, scenes=len(chapters))
     return SceneStageResult(
         chapters=tuple(chapters), semantic_scenes=semantic_scenes,
+        timeline_spans=tuple(timeline_spans),
         source=source, enrichment=enriched,
         invalidate_media=enriched.changed or recovered_legacy,
         elapsed=round(time.monotonic() - started, 2))

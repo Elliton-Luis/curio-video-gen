@@ -73,6 +73,10 @@ CLI, TUI e render enquanto esses consumidores forem dependentes do formato.
 `pipeline_timeline.py` converte Chapters temporizados e seleções em
 `VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de
 beats no mesmo limite.
+`pipeline_audio.py` consome `SemanticScene[]` e `TimelineSpan[]`; o alinhador
+`stages/timing.py` devolve spans novos a partir de word boundaries ou pacing
+proporcional. `timeline.json` continua sendo uma projeção `Chapter` enquanto
+subtitle, render e rerender migram para o contrato separado.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 mesmo estágio registra a auditoria por cena e distingue seleção real,

@@ -579,6 +579,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         metrics=metrics, warnings=warnings, write_json=_write_json)
     chapters = list(scene_result.chapters)
     semantic_scenes = list(scene_result.semantic_scenes)
+    timeline_spans = scene_result.timeline_spans
     scenes_source = scene_result.source
     enrichment = scene_result.enrichment
     force_after_script = force_after_script or scene_result.invalidate_media
@@ -646,9 +647,12 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     # [4/6] Narração, alinhamento e legendas são um estágio coeso.
     audio_result = pipeline_audio_stage.run_audio_stages(
-        script_text, chapters, paths, cfg, force, metrics, warnings, emit,
+        script_text, tuple(semantic_scenes), timeline_spans,
+        paths, cfg, force, metrics, warnings, emit,
         _write_json, stage_times, pacing=pacing, caption_style=cap_style)
-    chapters = audio_result.chapters
+    timeline_spans = audio_result.timeline_spans
+    chapters = [Chapter.from_semantic_scene(scene, timing=span)
+                for scene, span in zip(semantic_scenes, timeline_spans)]
     words = audio_result.words
     audio_duration = audio_result.audio_duration
     tts_info = audio_result.tts_info

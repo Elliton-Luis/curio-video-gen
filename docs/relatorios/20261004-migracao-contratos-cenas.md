@@ -45,6 +45,16 @@ passaram (39) e a suíte completa passou com 844 testes em 145,67 s.
 `Chapter` somente como adaptador dos caches antigos e projeta capítulos ao
 final. A semântica não sofre mutação in-place durante enriquecimento.
 
+## A4k: timing fora do planner semântico
+
+`stages/timing.py` alinha `SemanticScene[]` a `TimelineSpan[]` sem alterar as
+cenas. `pipeline_audio` retorna spans atualizados para WordBoundary ou fallback
+proporcional e grava a visão legada de `timeline.json`; o pipeline só cria
+`Chapter` depois desse limite. `SceneStageResult` valida que cenas, spans e
+projeção correspondem em ordem. O antigo `scenes.apply_timings` foi removido
+depois da migração de seu único consumidor. Focados: 66 passaram; suíte
+completa: 847 passaram em 146,75 s.
+
 ## Próxima fronteira
 
 O pipeline ainda cria `Chapter` dentro de enrichment e os consumidores de

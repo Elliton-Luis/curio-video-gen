@@ -90,29 +90,6 @@ def test_round_trip_nao_perde_campo():
         assert getattr(rt, campo) == getattr(ch, campo), campo
 
 
-def test_apply_timings_preserva_o_vocabulario_visual():
-    """apply_timings reconstrói o Chapter: nenhum campo pode sumir."""
-    from curio.stages.scenes import apply_timings
-    ch = Chapter(id=1, narration="um dois tres", duration_estimate=1.5,
-                 visual_queries=["thermal paper receipt"],
-                 global_visual_queries=["thermal paper receipt"],
-                 visual_intent="thermal paper receipt",
-                 visual_type="mechanism", subject="thermal receipt paper",
-                 visual_entities=["receipt"], context=["cash register"],
-                 forbidden=["power plant"])
-    words = [{"text": w, "start": i * 0.5, "end": i * 0.5 + 0.5}
-             for i, w in enumerate(["um", "dois", "tres"])]
-    out = apply_timings([ch], words)[0]
-    assert out.visual_type == "mechanism"
-    assert out.subject == "thermal receipt paper"
-    assert out.visual_entities == ["receipt"]
-    assert out.context == ["cash register"]
-    assert out.forbidden == ["power plant"]
-    assert out.visual_queries == ["thermal paper receipt"]
-    # e os tempos realmente mudaram
-    assert (out.start, out.end) == (0.0, 1.5)
-
-
 # --- coerção dos campos vindos da IA ----------------------------------
 
 def test_lista_nova_preserva_as_frases():

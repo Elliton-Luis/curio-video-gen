@@ -1033,29 +1033,3 @@ def _plan_semantic_rows(script: str, cfg: CurioConfig,
     semantic_scenes = _apply_video_context(
         list(local.semantic_scenes), video_context)
     return semantic_scenes, "local"
-
-
-def apply_timings(chapters: list[Chapter],
-                  words: list[dict]) -> list[Chapter]:
-    """Alinha capítulos aos WordBoundary reais por índice de palavra.
-
-    Só os tempos mudam. O vocabulário visual (queries, tipo, entidades,
-    proibições) é copiado inteiro: reconstruído a partir do dict em vez de
-    listado campo a campo — assim qualquer campo novo sobrevive.
-    """
-    script_norm = [_norm(w) for w in " ".join(c.narration for c in chapters).split()]
-    wb_norm = [_norm(str(w.get("text", ""))) for w in words]
-    wb_norm = [w for w in wb_norm if w]
-    if len(script_norm) != len(wb_norm):
-        raise ValueError(
-            f"contagem de palavras diverge (roteiro={len(script_norm)}, "
-            f"áudio={len(wb_norm)})")
-    idx, out = 0, []
-    for ch in chapters:
-        n = len(ch.narration.split())
-        span = words[idx:idx + n]
-        dados = ch.to_dict()
-        dados.update(start=float(span[0]["start"]), end=float(span[-1]["end"]))
-        out.append(Chapter.from_dict(dados))
-        idx += n
-    return out

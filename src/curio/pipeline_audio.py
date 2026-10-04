@@ -11,12 +11,14 @@ from dataclasses import dataclass
 from . import ffmpeg as ff
 from .stages import subs as subs_stage
 from .stages import tts as tts_stage
-from .stages import scenes as scenes_stage
+from .stages.scene_contract import SemanticScene, TimelineSpan
+from .stages.scenes import Chapter
+from .stages.timing import align_word_boundaries, proportional_spans
 
 
 @dataclass
 class AudioStageResult:
-    chapters: list
+    timeline_spans: tuple[TimelineSpan, ...]
     words: list[dict] | None
     audio_duration: float
     tts_info: dict
@@ -26,7 +28,8 @@ class AudioStageResult:
     stage_times: dict[str, float]
 
 
-def run_audio_stages(script_text: str, chapters: list, paths, cfg, force: bool,
+def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...],
+                     timeline_spans: tuple[TimelineSpan, ...], paths, cfg, force: bool,
                      metrics, warnings: list, emit, write_json,
                      stage_times: dict[str, float],
                      pacing=None, caption_style=None) -> AudioStageResult:
@@ -68,23 +71,18 @@ def run_audio_stages(script_text: str, chapters: list, paths, cfg, force: bool,
     emit(4, "Gerando narração", "OK")
 
     try:
-        chapters = scenes_stage.apply_timings(chapters, words or [])
+        aligned_spans = align_word_boundaries(
+            semantic_scenes, timeline_spans, words or [])
         timed_source = "wordboundary"
     except (ValueError, IndexError) as exc:
         print(f"AVISO: {exc} — timeline proporcional.", file=sys.stderr)
         warnings.append(f"timeline proporcional ({exc})")
         cursor = words[0]["start"] if words else 0.15
-        total_words = sum(len(chapter.narration.split()) for chapter in chapters) or 1
-        for chapter in chapters:
-            share = audio_duration * len(chapter.narration.split()) / total_words
-            chapter.start, chapter.end = cursor, cursor + share
-            cursor = chapter.end
+        aligned_spans = proportional_spans(
+            semantic_scenes, timeline_spans, audio_duration, float(cursor))
         timed_source = "proporcional"
-    chapters[0].start = 0.0
-    for previous, next_chapter in zip(chapters, chapters[1:]):
-        midpoint = round((previous.end + next_chapter.start) / 2, 3)
-        previous.end = next_chapter.start = midpoint
-    chapters[-1].end = round(audio_duration, 3)
+    chapters = tuple(Chapter.from_semantic_scene(scene, timing=span)
+                     for scene, span in zip(semantic_scenes, aligned_spans))
     write_json(paths.timeline_json, [chapter.to_dict() for chapter in chapters])
 
     start_time = time.monotonic()
@@ -119,6 +117,6 @@ def run_audio_stages(script_text: str, chapters: list, paths, cfg, force: bool,
               timing=("wordboundary" if words and tts_info["provider"] == "edge-tts"
                       else "proporcional"))
     emit(5, "Sincronizando legendas", "OK")
-    return AudioStageResult(chapters, words, audio_duration, tts_info,
+    return AudioStageResult(aligned_spans, words, audio_duration, tts_info,
                             timed_source, cue_count, subtitles_changed,
                             stage_times)
