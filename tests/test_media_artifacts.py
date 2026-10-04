@@ -1,5 +1,6 @@
 from curio.media.artifacts import (
     MediaSelectionManifest,
+    SELECTION_POLICY_VERSION,
     media_selection_signature,
     selection_cache_is_current,
     write_manifest,
@@ -22,6 +23,17 @@ def test_media_selection_signature_tracks_semantics_but_not_timing():
         [second], "history", 2, ["wikimedia"], 35)
 
 
+def test_media_selection_signature_tracks_planning_provenance():
+    llm = Chapter(id=1, narration="Batalha de Mohács.", duration_estimate=8,
+                  planning_mode="llm",
+                  visual_queries=["Battle of Mohács"])
+    local = Chapter(id=1, narration=llm.narration, duration_estimate=8,
+                    planning_mode="deterministic",
+                    visual_queries=list(llm.visual_queries))
+    assert media_selection_signature([llm], "history", 2, ["wikimedia"], 35) != (
+        media_selection_signature([local], "history", 2, ["wikimedia"], 35))
+
+
 def test_media_selection_signature_tracks_acquisition_policy():
     chapter = Chapter(id=1, narration="Janízaros.", duration_estimate=5)
     signature = media_selection_signature([chapter], "history", 2,
@@ -35,7 +47,8 @@ def test_media_selection_signature_tracks_acquisition_policy():
 
 
 def test_manifest_requires_current_schema_policy_signature_and_scenes():
-    manifest = MediaSelectionManifest(1, 1, "abc", (1, 2), ("a", "b"))
+    manifest = MediaSelectionManifest(1, SELECTION_POLICY_VERSION,
+                                      "abc", (1, 2), ("a", "b"))
     assert manifest.matches("abc", [1, 2])
     assert not manifest.matches("stale", [1, 2])
     assert not manifest.matches("abc", [1])

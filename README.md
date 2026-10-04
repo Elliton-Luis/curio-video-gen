@@ -26,7 +26,7 @@ ou ausente, sempre com motivo e nível de fallback.
 O cache global guarda bytes baixados; respostas de busca são compartilhadas
 apenas durante uma geração. A seleção do projeto tem manifesto versionado em
 `media/media-selection.json`, ligado às entradas semânticas, gênero, quantidade
-de imagens, providers disponíveis e threshold. Um `media.json` adquirido sem
+de imagens, modo de planejamento, providers disponíveis e threshold. Um `media.json` adquirido sem
 manifesto compatível é pesquisado novamente; escolhas manuais continuam
 preservadas. `rerender` só consome a seleção registrada e não pesquisa mídia.
 As métricas de seleção usam uma projeção canônica em

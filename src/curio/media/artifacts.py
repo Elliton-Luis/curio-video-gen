@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 SCHEMA_VERSION = 1
-SELECTION_POLICY_VERSION = 1
+SELECTION_POLICY_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ def media_selection_signature(chapters, genre: str, max_images: int,
     editorial selection rules change.
     """
     semantic_fields = (
-        "narration", "visual_intent", "visual_intent_structured",
+        "narration", "planning_mode", "visual_intent", "visual_intent_structured",
         "visual_type", "subject", "subject_aliases", "visual_entities",
         "context", "forbidden", "video_context", "primary_entity", "event",
         "place", "period", "representations", "visual_queries",
