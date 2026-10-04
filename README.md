@@ -80,10 +80,10 @@ e mantém `metrics_file` no metadata persistido.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).
-`SemanticScene` agora separa os campos semânticos usados por aquisição e
-scoring dos tempos em `Chapter`, ainda usado por timeline e render. A saída do
-planner/cache será migrada para esse contrato em etapas; a compatibilidade
-atual converte os capítulos no limite de mídia.
+`SemanticScene` separa os campos semânticos dos tempos em `Chapter`. Planner
+LLM, reparos estruturais e fallback local produzem esse contrato diretamente;
+`Chapter` é uma projeção explícita para persistência compatível e consumidores
+de timeline/render.
 O VisualPlanner não lê narração: representações locais são criadas no estágio
 de planejamento local de cenas, materializadas no contrato e então consumidas
 por VisualPlan/SearchPlan.

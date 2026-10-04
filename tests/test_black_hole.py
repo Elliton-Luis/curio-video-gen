@@ -85,7 +85,7 @@ def test_mito_em_texto_de_ciencia_nao_vira_arte_historica():
 
 
 def test_cenas_locais_carregam_vocabulario_em_ingles():
-    chs = S._local_chapters(N1, 1)
+    chs = S.build_local_semantic_scenes(N1, 1).semantic_scenes
     assert chs[0].subject == "black hole"
     assert "black hole" in chs[0].visual_queries
 

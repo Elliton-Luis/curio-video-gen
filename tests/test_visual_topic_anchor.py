@@ -2,7 +2,8 @@
 
 from curio.stages import scoring
 from curio.stages.entity import TargetEntity
-from curio.stages.scenes import Chapter, _local_chapters
+from curio.stages.scenes import Chapter, build_local_semantic_scenes
+from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages.scene_local_planning import local_visual_representations
 from curio.stages.visual_context import anchor_local_topic
 
@@ -17,10 +18,19 @@ def test_absoluto_never_generates_sun_query():
 def test_local_revolution_scenes_share_translated_video_anchor():
     script = ("A França era governada por um rei absoluto. "
               "O povo cansado de privilégios decidiu agir.")
-    chapters = _local_chapters(script, 2)
+    plan = build_local_semantic_scenes(script, 2)
+    assert any(scene.visual_queries for scene in plan.semantic_scenes)
+    assert all(not scene.global_visual_queries for scene in plan.semantic_scenes)
     target = TargetEntity("Revolução Francesa", is_entity=True)
-    assert anchor_local_topic(chapters, "A Revolução Francesa", target)
-    assert all(ch.global_visual_queries == ["french revolution"]
+    enriched = enrich_scenes(
+        plan.semantic_scenes, timeline_spans=plan.timeline_spans,
+        topic="A Revolução Francesa", target=target, source="local",
+        planning_mode="deterministic")
+    chapters = enriched.semantic_scenes
+    assert "local_topic_anchor" in enriched.applied
+    assert all(any("revolução francesa" in q.casefold()
+                   or "french revolution" in q.casefold()
+                   for q in ch.global_visual_queries)
                for ch in chapters)
 
 

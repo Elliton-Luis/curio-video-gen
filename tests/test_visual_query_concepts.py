@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 
 from curio.stages.entity import TargetEntity
-from curio.stages.scenes import Chapter, _local_chapters, classify_visual_type
+from curio.stages.scenes import Chapter, build_local_semantic_scenes, classify_visual_type
+from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages import visual
 from curio.stages.scene_local_planning import local_visual_representations
 from curio.stages.visual_context import attach_video_context
@@ -9,10 +10,13 @@ from tests.test_support.search_plan import patch_search_plan, plan_queries
 
 
 def _local_scene(text, topic="Ottoman Empire", aliases=()):
-    chapters = _local_chapters(text, 1)
-    attach_video_context(chapters, topic, TargetEntity(
-        topic, aliases=list(aliases), is_entity=True))
-    return chapters[0]
+    plan = build_local_semantic_scenes(text, 1)
+    enriched = enrich_scenes(
+        plan.semantic_scenes, timeline_spans=plan.timeline_spans,
+        topic=topic, target=TargetEntity(
+            topic, aliases=list(aliases), is_entity=True),
+        source="local", planning_mode="deterministic")
+    return enriched.semantic_scenes[0]
 
 
 def test_local_scene_queries_entity_and_event_as_catalog_phrases():
@@ -23,10 +27,10 @@ def test_local_scene_queries_entity_and_event_as_catalog_phrases():
     assert queries[0] == "janízaros Ottoman Empire"
     assert all(q.casefold() not in {"formavam", "gold", "laboratory", "microscope"}
                for q in queries)
-    assert janissaries.representation_rejections == [
+    assert janissaries.representation_rejections == (
         {"query": "formavam", "kind": "related", "reason": "isolated_inflected_verb"},
         {"query": "elite", "kind": "related", "reason": "isolated_abstract_or_material"},
-    ]
+    )
     assert next(r for r in janissaries.representations
                 if r["query"] == "janízaros")["kind"] == "army"
     assert any("uniform" in q for q in queries)

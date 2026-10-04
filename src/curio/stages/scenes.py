@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from .. import textnorm
 from ..config import CurioConfig
@@ -474,15 +474,17 @@ def _norm(text: str) -> str:
     return re.sub(r"[^\w\s]", "", text)
 
 
-def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]:
-    """Divisão local por frases agrupadas (sem chave OpenRouter)."""
+def _local_semantic_scenes(script: str,
+                           n_scenes: int = TARGET_SCENES
+                           ) -> list[SemanticScene]:
+    """Deterministic, narration-bounded semantic planner."""
     from . import subs as subs_stage
     sentences = subs_stage._sentences(script)
     if not sentences:
         raise ValueError("roteiro vazio — nada para dividir em cenas")
     from .scene_local_planning import local_visual_representations
     per = max(1, round(len(sentences) / n_scenes))
-    chapters = []
+    scenes = []
     for i in range(0, len(sentences), per):
         narration = " ".join(sentences[i:i + per])
         vtype = classify_visual_type(narration)
@@ -515,12 +517,14 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
                 kind = "entity"
             reps.append({"query": term, "kind": kind, "level": 1,
                          "source": "local_concrete_phrase"})
-        chapters.append(Chapter(
-            id=len(chapters) + 1,
+        scenes.append(SemanticScene(
+            id=len(scenes) + 1,
             narration=narration,
-            duration_estimate=estimate_duration(narration),
-            visual_queries=list(queries),
-            global_visual_queries=list(queries),
+            source="local",
+            visual_queries=tuple(queries),
+            # Topic-level queries are added by enrichment once the canonical
+            # video topic is known; local phrases remain scene-specific.
+            global_visual_queries=(),
             visual_intent=("local fallback: " + " ".join(queries)).strip(),
             planning_mode="deterministic",
             # Sem LLM não há estratégia da IA, mas o vocabulário offline
@@ -529,13 +533,16 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
             # (foi o que zerou "black hole" no vídeo de buracos negros).
             visual_type=vtype,
             subject=queries[0] if queries else "",
-            visual_entities=list(queries[:4]),
-            representations=reps,
-            representation_rejections=_local_representation_rejections(narration),
+            visual_entities=tuple(queries[:4]),
+            representations=tuple(reps),
+            representation_rejections=tuple(
+                _local_representation_rejections(narration)),
         ))
-    for chapter in chapters:
-        chapter.require_valid()
-    return chapters
+    for scene in scenes:
+        errors = scene.contract_errors()
+        if errors:
+            raise ValueError(f"local planner emitted invalid scene: {errors}")
+    return scenes
 
 
 def _coerce_scene_list(data) -> list[dict]:
@@ -741,9 +748,10 @@ def _local_representation_rejections(narration: str) -> list[dict]:
     return rejected[:20]
 
 
-def _apply_video_context(chapters: list[Chapter], context) -> None:
+def _apply_video_context(scenes: list[SemanticScene], context
+                         ) -> list[SemanticScene]:
     if not isinstance(context, dict):
-        return
+        return scenes
     clean = {}
     for key in ("topic", "primary_entities", "secondary_entities", "places",
                 "events", "period", "aliases"):
@@ -754,93 +762,96 @@ def _apply_video_context(chapters: list[Chapter], context) -> None:
             clean[key] = str(value or "").strip()
         elif isinstance(value, list):
             clean[key] = [str(x).strip() for x in value if str(x).strip()][:12]
-    for chapter in chapters:
-        chapter.video_context = VideoContext.from_value(clean)
+    return [replace(scene, video_context=VideoContext.from_value(clean))
+            for scene in scenes]
 
 
-def _repair_scene_count(chapters: list[Chapter], expected: int) -> bool:
-    """Repair count only after exact narration validation; never drop words."""
-    if not chapters or len(chapters) == expected:
+def _repair_scene_count(scenes: list[SemanticScene], expected: int) -> bool:
+    """Repair scene count using meaning contracts; never drop narration."""
+    if not scenes or len(scenes) == expected:
         return False
     changed = False
-    while len(chapters) > expected:
-        # Merge only adjacent scenes sharing a declared visual anchor.
+    while len(scenes) > expected:
         compatible = []
-        for i in range(len(chapters) - 1):
-            left, right = chapters[i], chapters[i + 1]
-            left_anchors = {textnorm.fold_phrase(x) for x in
-                            [left.primary_entity, left.event, left.subject]
-                            if str(x or "").strip()}
-            right_anchors = {textnorm.fold_phrase(x) for x in
-                             [right.primary_entity, right.event, right.subject]
-                             if str(x or "").strip()}
-            left_reps = {textnorm.fold_phrase(x.get("query", ""))
-                         for x in left.representations}
-            right_reps = {textnorm.fold_phrase(x.get("query", ""))
-                          for x in right.representations}
-            event_conflict = (left.event and right.event
-                              and textnorm.fold_phrase(left.event)
-                              != textnorm.fold_phrase(right.event))
-            if not event_conflict and ((left_anchors & right_anchors)
-                                       or (left_reps & right_reps)):
-                compatible.append(i)
+        for index in range(len(scenes) - 1):
+            left, right = scenes[index], scenes[index + 1]
+            left_anchors = {textnorm.fold_phrase(value) for value in
+                            (left.primary_entity, left.event, left.subject)
+                            if value.strip()}
+            right_anchors = {textnorm.fold_phrase(value) for value in
+                             (right.primary_entity, right.event, right.subject)
+                             if value.strip()}
+            left_reps = {textnorm.fold_phrase(rep.query)
+                         for rep in left.representations}
+            right_reps = {textnorm.fold_phrase(rep.query)
+                          for rep in right.representations}
+            conflict = (left.event and right.event
+                        and textnorm.fold_phrase(left.event)
+                        != textnorm.fold_phrase(right.event))
+            if not conflict and ((left_anchors & right_anchors)
+                                 or (left_reps & right_reps)):
+                compatible.append(index)
         if not compatible:
             break
-        i = min(compatible, key=lambda n: len(chapters[n].narration.split())
-                + len(chapters[n + 1].narration.split()))
-        left, right = chapters[i], chapters[i + 1]
-        left.narration = (left.narration.rstrip() + " " + right.narration.lstrip())
-        for name in ("visual_queries", "global_visual_queries", "visual_entities",
-                     "context", "forbidden", "subject_aliases"):
-            setattr(left, name, list(dict.fromkeys(getattr(left, name)
-                                                   + getattr(right, name))))
-        merged = {str(item["query"]): item for item in
-                  left.representations + right.representations}
-        left.representations = _coerce_representations(list(merged.values())[:8])
-        left.visual_queries = [rep.query for rep in left.representations]
-        left.visual_intent_structured = " / ".join(dict.fromkeys(
-            x for x in (left.visual_intent_structured,
-                        right.visual_intent_structured) if x))
-        if not left.event:
-            left.event = right.event
-        if not left.primary_entity:
-            left.primary_entity = right.primary_entity
-        chapters.pop(i + 1)
+        index = min(compatible, key=lambda pos:
+                    len(scenes[pos].narration.split())
+                    + len(scenes[pos + 1].narration.split()))
+        left, right = scenes[index], scenes[index + 1]
+        merged = {rep.query.casefold(): rep for rep in
+                  (*left.representations, *right.representations)}
+        scenes[index] = replace(
+            left, narration=left.narration.rstrip() + " " + right.narration.lstrip(),
+            subject_aliases=_combine(left.subject_aliases, right.subject_aliases),
+            visual_entities=_combine(left.visual_entities, right.visual_entities),
+            context=_combine(left.context, right.context),
+            forbidden=_combine(left.forbidden, right.forbidden),
+            visual_intent_structured=" / ".join(dict.fromkeys(
+                value for value in (left.visual_intent_structured,
+                                    right.visual_intent_structured) if value)),
+            event=left.event or right.event,
+            primary_entity=left.primary_entity or right.primary_entity,
+            representations=tuple(list(merged.values())[:8]),
+            global_visual_queries=_combine(
+                left.global_visual_queries, right.global_visual_queries))
+        scenes.pop(index + 1)
         changed = True
-    while len(chapters) < expected:
+    while len(scenes) < expected:
         from . import subs as subs_stage
         options = []
-        for index, chapter in enumerate(chapters):
-            sentences = subs_stage._sentences(chapter.narration)
+        for index, scene in enumerate(scenes):
+            sentences = subs_stage._sentences(scene.narration)
             if len(sentences) < 2:
                 continue
-            anchors = [chapter.primary_entity, chapter.event, chapter.subject]
-            anchors.extend(rep.get("query", "") for rep in chapter.representations)
-            mid = len(sentences) // 2
+            anchors = [scene.primary_entity, scene.event, scene.subject]
+            anchors.extend(rep.query for rep in scene.representations)
+            midpoint = len(sentences) // 2
             for split in range(1, len(sentences)):
-                left_text, right_text = " ".join(sentences[:split]), " ".join(sentences[split:])
-                shared_anchor = next((anchor for anchor in anchors
-                                      if len(textnorm.tokens(str(anchor))) >= 2
-                                      and _contains_phrase(left_text, str(anchor))
-                                      and _contains_phrase(right_text, str(anchor))), "")
-                if shared_anchor:
-                    options.append((abs(split - mid), index, split,
-                                    sentences, chapter))
+                left_text = " ".join(sentences[:split])
+                right_text = " ".join(sentences[split:])
+                shared = next((anchor for anchor in anchors
+                               if len(textnorm.tokens(str(anchor))) >= 2
+                               and _contains_phrase(left_text, str(anchor))
+                               and _contains_phrase(right_text, str(anchor))), "")
+                if shared:
+                    options.append((abs(split - midpoint), index, split,
+                                    sentences, scene))
                     break
         if not options:
             break
-        _, index, split, sentences, chapter = min(options)
-        left = Chapter.from_dict(chapter.to_dict())
-        right = Chapter.from_dict(chapter.to_dict())
-        left.narration = " ".join(sentences[:split])
-        right.narration = " ".join(sentences[split:])
-        chapters[index:index + 1] = [left, right]
+        _, index, split, sentences, scene = min(options)
+        left = replace(scene, narration=" ".join(sentences[:split]))
+        right = replace(scene, narration=" ".join(sentences[split:]))
+        scenes[index:index + 1] = [left, right]
         changed = True
     if not changed:
         return False
-    for i, chapter in enumerate(chapters, 1):
-        chapter.id = i
-    return changed
+    for index, scene in enumerate(scenes, 1):
+        scenes[index - 1] = replace(scene, id=index)
+    return True
+
+
+def _combine(left, right) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((*left, *right)))
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:
@@ -849,7 +860,8 @@ def _contains_phrase(text: str, phrase: str) -> bool:
     return bool(needle and f" {needle} " in hay)
 
 
-def _repair_scene_narration(chapters: list[Chapter], script: str) -> bool:
+def _repair_scene_narration(scenes: list[SemanticScene], script: str
+                            ) -> tuple[list[SemanticScene], bool]:
     """Restore exact script spans when scene narration is a close paraphrase.
 
     The planner supplies scene boundaries and intent. This alignment replaces
@@ -857,33 +869,36 @@ def _repair_scene_narration(chapters: list[Chapter], script: str) -> bool:
     """
     from . import subs as subs_stage
     sentences = subs_stage._sentences(script)
-    if not chapters or len(sentences) < len(chapters):
-        return False
+    if not scenes or len(sentences) < len(scenes):
+        return scenes, False
     stop = textnorm.STOP_PT | textnorm.STOP_EN
-    chapter_terms = [set(textnorm.tokens(ch.narration)) - stop for ch in chapters]
+    scene_terms = [set(textnorm.tokens(scene.narration)) - stop for scene in scenes]
     sentence_terms = [set(textnorm.tokens(sentence)) - stop for sentence in sentences]
-    cursor, scores = 0, []
-    for index, chapter in enumerate(chapters):
-        remaining_chapters = len(chapters) - index - 1
-        max_end = len(sentences) - remaining_chapters
-        target_len = max(1, round(len(sentences) / len(chapters)))
+    cursor, scores, repaired = 0, [], []
+    for index, scene in enumerate(scenes):
+        remaining_scenes = len(scenes) - index - 1
+        max_end = len(sentences) - remaining_scenes
+        target_len = max(1, round(len(sentences) / len(scenes)))
         best = None
         for end in range(cursor + 1, max_end + 1):
             source_terms = set().union(*sentence_terms[cursor:end])
-            model_terms = chapter_terms[index]
+            model_terms = scene_terms[index]
             union = source_terms | model_terms
             overlap = len(source_terms & model_terms) / max(1, len(union))
             score = overlap - 0.035 * abs((end - cursor) - target_len)
             if best is None or score > best[0]:
                 best = (score, end, overlap)
         if best is None or best[2] < 0.22:
-            return False
+            return scenes, False
         scores.append(best[2])
-        chapter.narration = " ".join(sentences[cursor:best[1]])
+        repaired.append(replace(
+            scene, narration=" ".join(sentences[cursor:best[1]])))
         cursor = best[1]
-    if cursor != len(sentences) or sum(scores) / len(scores) < 0.38:
-        return False
-    return _norm(" ".join(ch.narration for ch in chapters)) == _norm(script)
+    if (cursor != len(sentences) or sum(scores) / len(scores) < 0.38
+            or _norm(" ".join(scene.narration for scene in repaired))
+            != _norm(script)):
+        return scenes, False
+    return repaired, True
 
 
 def _payload_snippet(data, limit: int = 300) -> str:
@@ -902,32 +917,37 @@ def build_semantic_scenes(script: str, cfg: CurioConfig,
                           genre_directive: str = "",
                           max_scenes: int | None = None) -> ScenePlanResult:
     """Plan and validate meaning; return semantics beside time spans."""
-    rows, source = _plan_chapter_rows(
+    scenes, source = _plan_semantic_rows(
         script, cfg, n_scenes=n_scenes, metrics=metrics, genre=genre,
         target_seconds=target_seconds, genre_directive=genre_directive,
         max_scenes=max_scenes)
     return ScenePlanResult(
-        semantic_scenes=tuple(row.semantic_scene(source) for row in rows),
-        timeline_spans=tuple(row.timeline_span() for row in rows),
+        semantic_scenes=tuple(scenes),
+        timeline_spans=tuple(TimelineSpan(scene.id,
+                                          estimate_duration(scene.narration))
+                             for scene in scenes),
         source=source)
 
 
 def build_local_semantic_scenes(script: str,
                                 n_scenes: int = TARGET_SCENES) -> ScenePlanResult:
     """Deterministic planner returns the same semantic/timing contract."""
-    rows = _local_chapters(script, n_scenes)
+    scenes = _local_semantic_scenes(script, n_scenes)
     return ScenePlanResult(
-        semantic_scenes=tuple(row.semantic_scene("local") for row in rows),
-        timeline_spans=tuple(row.timeline_span() for row in rows),
+        semantic_scenes=tuple(scenes),
+        timeline_spans=tuple(TimelineSpan(scene.id,
+                                          estimate_duration(scene.narration))
+                             for scene in scenes),
         source="local")
 
 
-def _plan_chapter_rows(script: str, cfg: CurioConfig,
-                       n_scenes: int | None = None, metrics=None,
-                       genre: str = "", target_seconds: float | None = None,
-                       genre_directive: str = "",
-                       max_scenes: int | None = None) -> tuple[list[Chapter], str]:
-    """Temporary parser/repair adapter for historical Chapter utilities."""
+def _plan_semantic_rows(script: str, cfg: CurioConfig,
+                        n_scenes: int | None = None, metrics=None,
+                        genre: str = "", target_seconds: float | None = None,
+                        genre_directive: str = "",
+                        max_scenes: int | None = None
+                        ) -> tuple[list[SemanticScene], str]:
+    """Parse and repair planner output using semantic contracts only."""
     alvo = float(target_seconds) if target_seconds else None
     from ..runlog import event as run_event
     n_scenes = n_scenes or scenes_for_duration(cfg.duration_target,
@@ -965,7 +985,7 @@ def _plan_chapter_rows(script: str, cfg: CurioConfig,
                 print(f"AVISO: cenas {provider} vieram sem lista válida "
                       f"(payload: {_payload_snippet(data)}) — usando divisão local.",
                       file=sys.stderr)
-        chapters = []
+        semantic_scenes = []
         for i, raw in enumerate(raw_list, 1):
             narration = str(raw.get("narration", "")).strip()
             if not narration:
@@ -984,48 +1004,47 @@ def _plan_chapter_rows(script: str, cfg: CurioConfig,
                 # IA sem o campo (prompt antigo) ou valor fora do conjunto:
                 # deriva do texto em vez de marcar tudo como literal.
                 vtype = classify_visual_type(narration)
-            chapters.append(Chapter(
-                id=scene_id,
-                narration=narration,
-                duration_estimate=estimate_duration(narration),
-                visual_queries=visual_queries,
-                global_visual_queries=visual_queries,
-                visual_intent=terms_str,
-                planning_mode="llm",
-                visual_type=vtype,
+            semantic_scenes.append(SemanticScene(
+                id=scene_id, narration=narration, source=provider,
+                planning_mode="llm", visual_type=vtype,
                 subject=str(raw.get("subject", "") or "").strip(),
-                visual_entities=_coerce_str_list(raw, "visual_entities", 4),
-                context=_coerce_str_list(raw, "context", 3),
-                forbidden=_genre_forbidden(_coerce_str_list(raw, "forbidden", 5),
-                                          genre),
+                visual_entities=tuple(_coerce_str_list(raw, "visual_entities", 4)),
+                context=tuple(_coerce_str_list(raw, "context", 3)),
+                forbidden=tuple(_genre_forbidden(
+                    _coerce_str_list(raw, "forbidden", 5), genre)),
+                visual_intent=terms_str,
                 visual_intent_structured=str(raw.get("visual_intent", "") or "").strip(),
                 primary_entity=str(raw.get("primary_entity", raw.get("subject", "")) or "").strip(),
                 event=str(raw.get("event", "") or "").strip(),
                 place=str(raw.get("place", "") or "").strip(),
                 period=str(raw.get("period", "") or "").strip(),
-                representations=representations,
+                representations=tuple(representations),
+                visual_queries=tuple(visual_queries),
+                global_visual_queries=tuple(visual_queries),
                 text_role=_coerce_text_role(raw.get("text_role")),
                 text_language=str(raw.get("text_language", "") or "").strip().lower(),
             ))
         narration_repaired = False
-        if chapters and _norm(" ".join(c.narration for c in chapters)) != _norm(script):
-            narration_repaired = _repair_scene_narration(chapters, script)
-        if chapters and _norm(" ".join(c.narration for c in chapters)) == _norm(script):
-            repaired = _repair_scene_count(chapters, n_scenes)
-            _apply_video_context(chapters, video_context)
-            for chapter in chapters:
-                chapter.require_valid()
+        if semantic_scenes and _norm(" ".join(c.narration for c in semantic_scenes)) != _norm(script):
+            semantic_scenes, narration_repaired = _repair_scene_narration(
+                semantic_scenes, script)
+        if semantic_scenes and _norm(" ".join(c.narration for c in semantic_scenes)) == _norm(script):
+            repaired = _repair_scene_count(semantic_scenes, n_scenes)
+            semantic_scenes = _apply_video_context(semantic_scenes, video_context)
+            errors = [scene.contract_errors() for scene in semantic_scenes]
+            if any(errors):
+                raise ValueError("scene planner produced invalid semantic scene")
             if repaired or narration_repaired:
                 run_event("result", f"Cenas {provider}: estrutura reparada",
                           operation="scenes", expected=n_scenes,
-                          scenes=len(chapters),
+                          scenes=len(semantic_scenes),
                           repair=[*(["merge_adjacent"] if repaired else []),
                                   *(["restore_source_spans"] if narration_repaired else [])])
-            return chapters, provider
+            return semantic_scenes, provider
         logged = run_event("fallback", f"Cenas {provider}: narração não reproduz roteiro; divisão local",
                            operation="scenes", fallback="local",
                            validation="narration mismatch",
-                           returned_scenes=len(chapters))
+                           returned_scenes=len(semantic_scenes))
         if not logged:
             print(f"AVISO: cenas {provider} não reproduzem o roteiro literal "
                   f"(payload: {_payload_snippet(data)}) — usando divisão local.",
@@ -1036,11 +1055,10 @@ def _plan_chapter_rows(script: str, cfg: CurioConfig,
                            reason="no provider key")
         if not logged:
             print("Sem chave OpenRouter: cenas por divisão local.", file=sys.stderr)
-    chapters = _local_chapters(script, n_scenes)
-    _apply_video_context(chapters, video_context)
-    for chapter in chapters:
-        chapter.require_valid()
-    return chapters, "local"
+    local = build_local_semantic_scenes(script, n_scenes)
+    semantic_scenes = _apply_video_context(
+        list(local.semantic_scenes), video_context)
+    return semantic_scenes, "local"
 
 
 def apply_timings(chapters: list[Chapter],

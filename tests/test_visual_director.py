@@ -246,8 +246,8 @@ def test_specific_mapping_ranks_above_mission_poster_fallback():
 
 
 def test_topic_context_and_representation_survive_local_planner_fallback():
-    chapter = scenes._local_chapters(
-        "A Bastilha foi tomada. O evento mudou Paris.", 2)[0]
+    chapter = scenes.build_local_semantic_scenes(
+        "A Bastilha foi tomada. O evento mudou Paris.", 2).timeline_chapters()[0]
     chapter.planning_mode = "deterministic"
     assert attach_video_context([chapter], "Guerra dos Cem Anos")
     queries, _ = plan_queries(chapter, "history")
@@ -269,30 +269,32 @@ def test_structured_plan_never_adds_narration_keywords_to_queries():
 
 
 def test_repair_scene_count_merges_without_losing_narration_or_representations():
-    first = scenes.Chapter(1, "Primeira frase.", 2, subject="same subject",
-                           representations=[{"query": "first event", "level": 1}])
-    second = scenes.Chapter(2, "Segunda frase.", 2, subject="same subject",
-                            representations=[{"query": "second event", "level": 1}])
-    third = scenes.Chapter(3, "Terceira frase.", 2)
-    chapters = [first, second, third]
-    assert scenes._repair_scene_count(chapters, 2)
-    assert len(chapters) == 2
-    assert " ".join(ch.narration for ch in chapters) == \
+    first = scenes.SemanticScene(
+        1, "Primeira frase.", subject="same subject",
+        representations=({"query": "first event", "level": 1},))
+    second = scenes.SemanticScene(
+        2, "Segunda frase.", subject="same subject",
+        representations=({"query": "second event", "level": 1},))
+    third = scenes.SemanticScene(3, "Terceira frase.")
+    planned = [first, second, third]
+    assert scenes._repair_scene_count(planned, 2)
+    assert len(planned) == 2
+    assert " ".join(scene.narration for scene in planned) == \
         "Primeira frase. Segunda frase. Terceira frase."
-    assert {r["query"] for r in chapters[0].representations} == {
+    assert {r.query for r in planned[0].representations} == {
         "first event", "second event"}
-    assert [ch.id for ch in chapters] == [1, 2]
+    assert [scene.id for scene in planned] == [1, 2]
 
 
 def test_scene_count_completion_splits_only_shared_declared_anchor():
-    chapter = scenes.Chapter(
+    scene = scenes.SemanticScene(
         1, "Marcus Aurelius crossed the Danube. Marcus Aurelius led the army.",
-        8, subject="Marcus Aurelius", primary_entity="Marcus Aurelius",
-        representations=[{"query": "Marcus Aurelius", "level": 1}])
-    chapters = [chapter]
-    assert scenes._repair_scene_count(chapters, 2)
-    assert len(chapters) == 2
-    assert all(item.primary_entity == "Marcus Aurelius" for item in chapters)
+        subject="Marcus Aurelius", primary_entity="Marcus Aurelius",
+        representations=({"query": "Marcus Aurelius", "level": 1},))
+    planned = [scene]
+    assert scenes._repair_scene_count(planned, 2)
+    assert len(planned) == 2
+    assert all(item.primary_entity == "Marcus Aurelius" for item in planned)
 
 
 def test_planner_near_match_repairs_source_spans_then_repairs_excess_count(monkeypatch):
