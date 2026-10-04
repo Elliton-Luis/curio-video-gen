@@ -237,6 +237,7 @@ class Chapter:
     visual_queries: list[str] = field(default_factory=list)
     global_visual_queries: list[str] = field(default_factory=list)
     visual_intent: str = ""
+    planning_mode: str = "unknown"
     # --- vocabulário visual (retrocompatível: tudo opcional) ------------
     # `visual_type` decide a ESTRATÉGIA (foto, arte, diagrama, cartão);
     # `visual_entities`/`context` dão o que procurar; `forbidden` é a
@@ -276,6 +277,8 @@ class Chapter:
 
     def __post_init__(self) -> None:
         self.video_context = VideoContext.from_value(self.video_context)
+        if self.planning_mode not in {"unknown", "llm", "deterministic"}:
+            raise ValueError(f"unknown scene planning_mode: {self.planning_mode}")
         self.representations = [rep for index, value in enumerate(self.representations)
                                 if (rep := VisualRepresentation.from_value(value, index))]
 
@@ -328,6 +331,13 @@ class Chapter:
             # conteúdo assume — um papel errado renderiza o texto na fonte
             # errada sem nenhuma pista de por quê.
             papel = ""
+        planning_mode = str(d.get("planning_mode", "") or "")
+        if not planning_mode:
+            # Temporary compatibility for chapters written before the field
+            # existed; all current producers set the explicit provenance.
+            planning_mode = ("deterministic"
+                             if str(d.get("visual_intent", "")).startswith(
+                                 "local fallback") else "unknown")
         return cls(
             id=int(d.get("id", 0)),
             narration=narration,
@@ -335,6 +345,7 @@ class Chapter:
             visual_queries=visual_queries,
             global_visual_queries=global_queries,
             visual_intent=str(d.get("visual_intent", "")),
+            planning_mode=planning_mode,
             visual_type=vtype,
             subject=str(d.get("subject", "") or ""),
             subject_aliases=[str(q) for q in d.get("subject_aliases", [])],
@@ -417,6 +428,7 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
             visual_queries=list(queries),
             global_visual_queries=list(queries),
             visual_intent=("local fallback: " + " ".join(queries)).strip(),
+            planning_mode="deterministic",
             # Sem LLM não há estratégia da IA, mas o vocabulário offline
             # ainda é dedutível: sem ele, o scoring compara título em
             # inglês com narração em português e reprova até a foto certa
@@ -858,6 +870,7 @@ def build_chapters(script: str, cfg: CurioConfig,
                 visual_queries=visual_queries,
                 global_visual_queries=visual_queries,
                 visual_intent=terms_str,
+                planning_mode="llm",
                 visual_type=vtype,
                 subject=str(raw.get("subject", "") or "").strip(),
                 visual_entities=_coerce_str_list(raw, "visual_entities", 4),

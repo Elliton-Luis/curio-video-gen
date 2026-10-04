@@ -644,21 +644,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     scene_event = ("provider" if scenes_source not in ("local", "cache")
                    else "fallback" if scenes_source == "local" else "cache")
     from .stages.scene_enrichment import enrich_scenes
-    local_scenes = (scenes_source == "local" or
-                    any(str(ch.visual_intent or "").startswith("local fallback")
-                        for ch in chapters))
-    if scenes_source == "cache" and not local_scenes:
-        try:
-            local_scenes = (_read_json(paths.metadata_json).get("scenes_source")
-                            == "local")
-        except (OSError, ValueError, json.JSONDecodeError):
-            local_scenes = False
+    planning_mode = ("deterministic" if scenes_source == "local" or any(
+        ch.planning_mode == "deterministic" for ch in chapters) else "llm")
     scene_etymology = (research_etymology
                        if perfil and "wiktionary" in perfil.specialized_sources
                        else None)
     enrichment = enrich_scenes(
         chapters, topic=idea, target=research_target, source=scenes_source,
-        local_fallback=local_scenes, genre=genre_key,
+        planning_mode=planning_mode, genre=genre_key,
         research_sources=research_sources,
         research_timeout=cfg.research_timeout,
         etymology=scene_etymology)

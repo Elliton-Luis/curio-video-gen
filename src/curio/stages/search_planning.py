@@ -53,6 +53,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                                   used_alias, variant, level, generic))
 
     ai = list(plan.visual_queries)
+    deterministic = plan.planning_mode == "deterministic"
     representations = sorted(plan.representations, key=lambda item: item.level)
     legacy_unanchored_queries = (
         bool(representations) and not topic and not aliases
@@ -62,7 +63,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
     same_subject = len(ai) >= 2 and all(
         any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
 
-    if not plan.local_fallback and not legacy_unanchored_queries:
+    if not deterministic and not legacy_unanchored_queries:
         for rep in representations:
             focus, kind = rep.query.strip(), rep.kind
             add(contextual(focus), source="scene_representation",
@@ -74,7 +75,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                     kind=kind, alias=anchor_alias, variant=medium,
                     level=max(2, rep.level + 2))
 
-    if plan.local_fallback and topic:
+    if deterministic and topic:
         topic_names = [topic, *aliases, *plan.primary_entities]
         anchor_sets = [set(_tokens(name)) for name in topic_names if _tokens(name)]
 
@@ -111,15 +112,15 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
             representation=topic, alias=anchor_alias, variant="historical map",
             level=5, generic=True)
 
-    if len(ai) >= 2 and not same_subject and not plan.local_fallback:
+    if len(ai) >= 2 and not same_subject and not deterministic:
         add(contextual(" ".join(ai[:2])), source="combined_scene_queries",
             representation=" / ".join(ai[:2]), alias=anchor_alias, level=3)
-    if not plan.local_fallback:
+    if not deterministic:
         for term in ai:
             add(contextual(term), source="scene_query", representation=term,
                 alias=anchor_alias, level=3)
 
-    if not plan.local_fallback and not ai and not representations and plan.subject:
+    if not deterministic and not ai and not representations and plan.subject:
         for alias in plan.subject_aliases:
             add(alias, source="subject_alias", representation=plan.subject,
                 alias=alias, level=2)
@@ -131,7 +132,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
 
     if plan.visual_type == "historical_art":
         art_terms = ([rep.query for rep in representations[:2]]
-                     or ([] if plan.local_fallback else ai[:2])
+                     or ([] if deterministic else ai[:2])
                      or list(plan.visual_entities[:2])
                      or [plan.subject or ""])
         for term in art_terms:
@@ -139,7 +140,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                 add(f"{term} {medium}", source="historical_visual_variant",
                     representation=term, variant=medium, level=4)
 
-    if ai and not plan.local_fallback:
+    if ai and not deterministic:
         for term in ai:
             if topic and not set(_tokens(topic)).issubset(set(_tokens(term))):
                 add(f"{term} {anchor_alias}", source="scene_query_contextual",

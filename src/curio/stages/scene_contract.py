@@ -181,6 +181,7 @@ class SemanticScene:
     id: int
     narration: str
     source: str = "unknown"
+    planning_mode: str = "unknown"
     visual_type: str = "literal"
     subject: str = ""
     subject_aliases: tuple[str, ...] = ()
@@ -209,6 +210,8 @@ class SemanticScene:
                 str(item).strip() for item in value if str(item).strip()))
         object.__setattr__(self, "video_context",
                            VideoContext.from_value(self.video_context))
+        if self.planning_mode not in {"unknown", "llm", "deterministic"}:
+            raise ValueError(f"unknown scene planning_mode: {self.planning_mode}")
         object.__setattr__(self, "representations", tuple(
             rep for index, value in enumerate(self.representations)
             if (rep := VisualRepresentation.from_value(value, index))))
@@ -242,6 +245,7 @@ class SemanticScene:
                 for query in visual_queries)
         return cls(
             id=int(chapter.id), narration=str(chapter.narration), source=source,
+            planning_mode=str(getattr(chapter, "planning_mode", "unknown")),
             visual_type=str(chapter.visual_type), subject=str(chapter.subject),
             subject_aliases=tuple(chapter.subject_aliases),
             visual_entities=tuple(chapter.visual_entities),
@@ -265,6 +269,8 @@ class SemanticScene:
             errors.append("narration_required")
         if self.visual_type not in VISUAL_TYPES:
             errors.append("visual_type_unknown")
+        if self.planning_mode not in {"unknown", "llm", "deterministic"}:
+            errors.append("planning_mode_unknown")
         if not isinstance(self.video_context, VideoContext):
             errors.append("video_context_not_normalized")
         if any(not isinstance(rep, VisualRepresentation)
@@ -275,6 +281,7 @@ class SemanticScene:
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id, "narration": self.narration, "source": self.source,
+            "planning_mode": self.planning_mode,
             "visual_type": self.visual_type, "subject": self.subject,
             "subject_aliases": list(self.subject_aliases),
             "visual_entities": list(self.visual_entities),

@@ -27,7 +27,8 @@ class SceneEnrichmentResult:
 
 
 def enrich_scenes(scenes, *, topic: str, target=None, source: str,
-                  local_fallback: bool, genre: str, research_sources=(),
+                  planning_mode: str = "unknown", genre: str = "",
+                  research_sources=(),
                   research_timeout: int = 20, etymology=None
                   ) -> SceneEnrichmentResult:
     """Return complete scene context without mutating planner/cache objects.
@@ -38,15 +39,13 @@ def enrich_scenes(scenes, *, topic: str, target=None, source: str,
     """
     enriched = deepcopy(list(scenes or []))
     applied = []
-    if local_fallback:
+    deterministic = planning_mode == "deterministic"
+    if deterministic:
         for scene in enriched:
-            if not str(scene.visual_intent or "").startswith("local fallback"):
-                scene.visual_intent = (
-                    "local fallback: cached "
-                    + str(scene.visual_intent or "")).strip()
+            scene.planning_mode = "deterministic"
     if attach_video_context(enriched, topic, target):
         applied.append("video_context")
-    if local_fallback and anchor_local_topic(enriched, topic, target):
+    if deterministic and anchor_local_topic(enriched, topic, target):
         applied.append("local_topic_anchor")
     if fill_missing_context(enriched, target, genre, research_sources,
                             research_timeout):

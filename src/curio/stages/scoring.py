@@ -43,8 +43,8 @@ _tokens = textnorm.tokens
 def _scene_terms(ch) -> tuple[dict[str, float], dict[str, float]]:
     """Vocabulário da cena em duas camadas: NÚCLEO e APOIO.
 
-    Núcleo = o que define o que a cena É: o `subject` declarado, ou as
-    consultas quando não há subject, ou a narração como último recurso.
+    Núcleo = subject, entidade/evento ou representação materializada. A
+    narração não é reinterpretada durante a avaliação de candidatos.
 
     Apoio = o que pode estar na cena sem ser o assunto: entidades e
     contexto. Entra como BÔNUS, não no denominador. Misturar os dois fazia
@@ -63,16 +63,16 @@ def _scene_terms(ch) -> tuple[dict[str, float], dict[str, float]]:
     _add(core, getattr(ch, "primary_entity", ""), 4.0)
     _add(core, getattr(ch, "event", ""), 4.0)
     if not core:
-        for term in list(getattr(ch, "visual_queries", []) or []):
+        representations = getattr(ch, "representations", []) or []
+        terms = [getattr(rep, "query", "") for rep in representations]
+        if not terms:
+            terms = list(getattr(ch, "visual_queries", []) or [])
+        for term in terms:
             _add(core, term, 2.0)
     for term in list(getattr(ch, "visual_entities", []) or []):
         _add(support, term, 2.0)
     for term in list(getattr(ch, "context", []) or []):
         _add(support, term, 1.0)
-    if not core:
-        # Sem vocabulário declarado: a narração é a única fonte. Narração é
-        # contexto, não assunto, então cada palavra entra com o mesmo peso.
-        _add(core, getattr(ch, "narration", ""), 1.0)
     return core, support
 
 
@@ -107,13 +107,18 @@ def _has_phrase(text: str, phrase: str) -> bool:
     return f" {phrase} " in f" {text} "
 
 
+def _is_deterministic_scene(scene) -> bool:
+    """Use planning provenance, never editorial text sentinels."""
+    return getattr(scene, "planning_mode", "unknown") == "deterministic"
+
+
 def semantic_relevance(asset: dict, ch) -> dict:
     """Independent topic/scene evidence from complete phrases in metadata."""
     context = dict(getattr(ch, "video_context", {}) or {})
     has_structured_scene = bool(
         getattr(ch, "representations", [])
         or getattr(ch, "visual_intent_structured", "")
-        or str(getattr(ch, "visual_intent", "") or "").startswith("local fallback")
+        or _is_deterministic_scene(ch)
         or getattr(ch, "event", ""))
     if not has_structured_scene:
         # Preserve the established exact-subject scoring for legacy scenes;
@@ -159,7 +164,7 @@ def semantic_relevance(asset: dict, ch) -> dict:
     topic_evidence = evidence_for(topic_phrases)
     topic_matches = list(topic_evidence)
     scene_phrases = [getattr(ch, "visual_intent_structured", "")]
-    if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+    if _is_deterministic_scene(ch):
         # Local query phrases are the only scene plan when the LLM is down.
         # Match complete phrases only; one-token homonyms remain non-evidence.
         scene_phrases.extend(getattr(ch, "visual_queries", []) or [])
@@ -291,7 +296,7 @@ def base_score(asset: dict, ch) -> dict:
                     "support": [], **sem,
                     "semantic_rejection": ("no scene evidence" if not sem["scene_matches"]
                                            else "insufficient scene metadata evidence")}
-    if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+    if _is_deterministic_scene(ch):
         # Local scene may ask for context (e.g. `Armenia war`) while the
         # video subject is a person (`Marcus Aurelius`). An image of the
         # person is valid across scenes; score local terms plus video anchor.
@@ -359,11 +364,9 @@ def topic_anchor_matches(asset: dict, ch) -> bool:
     Revolution`; at least one anchor phrase must occur in title tokens.
     AI-authored scenes keep existing scoring behavior.
     """
-    if not str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+    if not _is_deterministic_scene(ch):
         return True
-    anchors = [*list(getattr(ch, "global_visual_queries", []) or []),
-               *textnorm.topic_phrases(
-                   str(getattr(ch, "narration", "") or ""))]
+    anchors = list(getattr(ch, "global_visual_queries", []) or [])
     if not anchors:
         return True
     title_tokens = set(_tokens(_candidate_text(asset)))

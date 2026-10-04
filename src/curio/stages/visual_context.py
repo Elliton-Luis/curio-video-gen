@@ -54,7 +54,7 @@ def attach_video_context(chapters, topic: str, target=None) -> bool:
         context["aliases"] = list(dict.fromkeys(
             [*_list(context.get("aliases")), *aliases]))[:8]
         ch.video_context = VideoContext.from_value(context)
-        if str(getattr(ch, "visual_intent", "") or "").startswith("local fallback"):
+        if getattr(ch, "planning_mode", "unknown") == "deterministic":
             # Local noun extraction is search support, not trusted screen
             # content. Show the known topic until scene meaning is resolved.
             ch.subject = topic

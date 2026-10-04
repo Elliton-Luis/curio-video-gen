@@ -28,7 +28,7 @@ def test_local_revolution_rejects_argentina_and_church_fallback():
     ch = Chapter(id=1, narration="A França antes de 1789.",
                  duration_estimate=5, subject="sun", visual_queries=["sun", "nation"],
                  global_visual_queries=["french revolution"],
-                 visual_intent="local fallback: sun nation")
+                 visual_intent="sun nation", planning_mode="deterministic")
     argentina = {"title": "Argentinian flag, sun, country, nation"}
     church = {"title": "Catholic church interior, nave, altar"}
     french_revolution = {"title": "French Revolution, Paris, 1789"}
@@ -43,7 +43,7 @@ def test_local_black_hole_rejects_bus_mass():
                  duration_estimate=5, subject="mass",
                  visual_queries=["mass", "radiation"],
                  global_visual_queries=["black hole"],
-                 visual_intent="local fallback: mass radiation")
+                 visual_intent="mass radiation", planning_mode="deterministic")
     bus = {"title": "Bus, mass station, public transport"}
     black_hole = {"title": "Black hole mass and event horizon"}
     assert not scoring.topic_anchor_matches(bus, ch)
@@ -55,13 +55,19 @@ def test_person_video_keeps_person_portrait_across_local_context_scenes():
     ch = Chapter(id=4, narration="Marco Aurélio liderou campanhas na Armênia.",
                  duration_estimate=6, subject="Armenia", visual_queries=["Armenia", "war"],
                  global_visual_queries=["marcus aurelius"],
-                 visual_intent="local fallback: Armenia war")
+                 visual_intent="Armenia war", planning_mode="deterministic")
     portrait = {"title": "Bust of Marcus Aurelius, Roman emperor"}
     namesake = {"title": "Fábio Aurélio football player portrait"}
     assert scoring.topic_anchor_matches(portrait, ch)
     assert scoring.base_score(portrait, ch)["score"] >= scoring.threshold()
     assert not scoring.topic_anchor_matches(namesake, ch)
     assert scoring.base_score(namesake, ch)["score"] == 0
+
+
+def test_topic_anchor_does_not_reparse_narration():
+    ch = Chapter(id=5, narration="French Revolution Paris 1789.",
+                 duration_estimate=5, planning_mode="deterministic")
+    assert scoring.topic_anchor_matches({"title": "unrelated artwork"}, ch)
 
 
 def test_tesla_current_queries_distinguish_electricity_from_river():
@@ -81,7 +87,8 @@ def test_tesla_anchor_accepts_invention_but_rejects_river_bridge():
                  duration_estimate=5, subject="current",
                  visual_queries=["alternating current", "induction motor"],
                  global_visual_queries=["nikola tesla"],
-                 visual_intent="local fallback: current induction motor")
+                 visual_intent="current induction motor",
+                 planning_mode="deterministic")
     river = {"title": "Ponte sobre o Rio Corrente"}
     ac_motor = {"title": "Alternating current induction motor, Nikola Tesla"}
     assert not scoring.topic_anchor_matches(river, ch)

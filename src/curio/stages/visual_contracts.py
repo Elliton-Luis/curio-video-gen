@@ -33,7 +33,7 @@ class VisualPlan:
     event: str
     place: str
     period: str
-    local_fallback: bool
+    planning_mode: str
     space_topic: bool
     mechanistic: bool
     scientific_context: bool
@@ -61,7 +61,7 @@ class VisualPlan:
             "event": self.event,
             "place": self.place,
             "period": self.period,
-            "local_fallback": self.local_fallback,
+            "planning_mode": self.planning_mode,
             "space_topic": self.space_topic,
             "mechanistic": self.mechanistic,
             "scientific_context": self.scientific_context,

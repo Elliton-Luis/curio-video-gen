@@ -38,6 +38,17 @@ def test_legacy_scene_json_roundtrips_into_typed_contract_and_back():
     assert Chapter.from_dict(saved).to_dict() == saved
 
 
+def test_legacy_local_fallback_sentinel_is_interpreted_only_at_load_boundary():
+    legacy = Chapter.from_dict({
+        "id": 1, "narration": "Uma cena local.", "duration_estimate": 2,
+        "visual_intent": "local fallback: french revolution",
+    })
+    current = Chapter(2, "A cena usa as palavras local fallback.", 2,
+                      visual_intent="local fallback is only literal text")
+    assert legacy.planning_mode == "deterministic"
+    assert current.planning_mode == "unknown"
+
+
 def test_contract_boundary_reports_invalid_scene_structure():
     chapter = Chapter(1, "   ", 3, visual_type="unrecognized")
     assert chapter.contract_errors() == ["narration_required", "visual_type_unknown"]
@@ -91,6 +102,7 @@ def test_semantic_scene_excludes_timeline_and_preserves_meaning_provenance():
 
     assert isinstance(scene, SemanticScene)
     assert scene.source == "llm"
+    assert scene.planning_mode == "unknown"
     assert scene.event == "Battle of Mohács"
     assert scene.representations[0].kind == "event"
     assert scene.contract_errors() == []

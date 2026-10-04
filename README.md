@@ -48,6 +48,9 @@ atual converte os capítulos no limite de mídia.
 O VisualPlanner não lê narração: representações locais são criadas no estágio
 de planejamento local de cenas, materializadas no contrato e então consumidas
 por VisualPlan/SearchPlan.
+`planning_mode` registra a proveniência LLM/determinística; o prefixo textual
+`local fallback` é interpretado apenas ao carregar capítulos antigos. Scoring
+consome assunto/evento/representações declarados e não extrai termos da narração.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

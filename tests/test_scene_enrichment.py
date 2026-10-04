@@ -10,13 +10,14 @@ def test_scene_enrichment_returns_valid_batch_without_mutating_planner_output():
         duration_estimate=5,
         subject="massa",
         visual_intent="local fallback: massa estrela",
+        planning_mode="deterministic",
     )
     before = original.to_dict()
 
     result = enrich_scenes(
         [original], topic="Buracos negros",
         target=TargetEntity("Buracos negros", is_entity=False),
-        source="local", local_fallback=True, genre="science")
+        source="local", planning_mode="deterministic", genre="science")
 
     assert original.to_dict() == before
     assert result.scenes[0] is not original
@@ -33,7 +34,7 @@ def test_scene_enrichment_is_an_explicit_identity_transform_when_no_context():
     chapter = Chapter(1, "Uma descrição da cena.", 4)
 
     result = enrich_scenes([chapter], topic="", source="llm",
-                           local_fallback=False, genre="")
+                           planning_mode="llm", genre="")
 
     assert result.scenes[0].to_dict() == chapter.to_dict()
     assert result.source == "llm"

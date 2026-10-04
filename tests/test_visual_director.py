@@ -247,7 +247,7 @@ def test_specific_mapping_ranks_above_mission_poster_fallback():
 def test_topic_context_and_representation_survive_local_planner_fallback():
     chapter = scenes._local_chapters(
         "A Bastilha foi tomada. O evento mudou Paris.", 2)[0]
-    chapter.visual_intent = "local fallback"
+    chapter.planning_mode = "deterministic"
     assert attach_video_context([chapter], "Guerra dos Cem Anos")
     queries, _ = plan_queries(chapter, "history")
     assert queries[0] == "Guerra dos Cem Anos"
@@ -455,7 +455,7 @@ def test_end_to_end_funnel_for_known_ambiguous_and_new_topics(
     from curio.metrics import RunMetrics
 
     ch = _chapter(topic, event, entity, representation)
-    ch.visual_intent = "local fallback: topic anchor"
+    ch.planning_mode = "deterministic"
     ch.global_visual_queries = [topic]
     candidates = [
         MediaAsset("wikimedia", "wrong", title=distractor,

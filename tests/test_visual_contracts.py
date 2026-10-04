@@ -56,6 +56,14 @@ def test_visual_planner_does_not_reinterpret_narration():
     assert not hasattr(plan, "narration")
 
 
+def test_visual_planner_uses_explicit_planning_mode_not_intent_sentinel():
+    scene = SemanticScene(
+        id=10, narration="Literal sentence.",
+        visual_intent="local fallback: phrase is data, not provenance",
+        planning_mode="llm")
+    assert build_visual_plan(scene).planning_mode == "llm"
+
+
 def test_search_plan_queries_have_representation_context_and_provenance():
     scene = Chapter.from_dict({
         "id": 8,

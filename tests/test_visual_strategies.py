@@ -240,10 +240,19 @@ def test_assunto_dominina_as_consultas():
     assert ok
 
 
-def test_sem_assunto_usa_a_narracao_como_nucleo():
+def test_narracao_sem_plano_semantico_nao_vira_termos_de_scoring():
     ch = Chapter(id=1, narration="Rome preserved food with salt.",
                  duration_estimate=5.0, visual_type="literal")
     nota = scoring.base_score({"title": "Rome preserved food with salt"}, ch)
+    assert nota["score"] == 0
+
+
+def test_representacao_materializada_forma_nucleo_de_scoring():
+    ch = Chapter(id=1, narration="Rome preserved food with salt.",
+                 duration_estimate=5.0, visual_type="literal",
+                 representations=[{"query": "Roman food preservation",
+                                   "kind": "artifact"}])
+    nota = scoring.base_score({"title": "Roman food preservation with salt"}, ch)
     assert nota["score"] > 0
 
 

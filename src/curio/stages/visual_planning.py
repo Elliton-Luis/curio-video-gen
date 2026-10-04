@@ -32,7 +32,7 @@ def build_visual_plan(scene) -> VisualPlan:
     reps = tuple(rep for value in (getattr(scene, "representations", []) or [])
                  if (rep := VisualRepresentation.from_value(value)))
     visual_queries = _strings(getattr(scene, "visual_queries", []))
-    local = str(getattr(scene, "visual_intent", "") or "").startswith("local fallback")
+    planning_mode = str(getattr(scene, "planning_mode", "unknown") or "unknown")
     subject = str(getattr(scene, "subject", "") or "")
     subject_aliases = _strings(getattr(scene, "subject_aliases", []))
     visual_entities = _strings(getattr(scene, "visual_entities", []))
@@ -66,7 +66,7 @@ def build_visual_plan(scene) -> VisualPlan:
         event=str(getattr(scene, "event", "") or ""),
         place=str(getattr(scene, "place", "") or ""),
         period=str(getattr(scene, "period", "") or ""),
-        local_fallback=local,
+        planning_mode=planning_mode,
         space_topic=textnorm.is_space_topic(lexical_context),
         mechanistic=any(cue in folded for cue in _MECHANISM_CUES),
         scientific_context=(visual_type == "mechanism"
