@@ -18,7 +18,8 @@ entregar os dados às etapas seguintes. Antes da aquisição, cada cena recebe
 um `VisualPlan` sem narração; um `SearchPlanner` puro gera queries com
 proveniência por representação, alias e variação, preservadas na auditoria de
 mídia. Resultados dos providers entram como `Candidate` associado à query de
-origem antes de deduplicação e dos gates técnicos.
+origem antes de deduplicação e dos gates técnicos; `candidate_evaluation.py`
+produz avaliações tipadas com score, evidência e motivo de rejeição.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

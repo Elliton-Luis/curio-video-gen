@@ -52,6 +52,7 @@ from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
 from .media_contracts import Candidate, CandidateRejection
+from .candidate_evaluation import evaluate_generic, evaluate_specific
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 import os as _os
@@ -651,8 +652,9 @@ def _search_scene_with_shortcircuit(
                 fresh = [entry for entry in candidates
                          if not asset_uses or not asset_uses.get(
                              _selection_asset_key(entry["asset"]), 0)]
-                checked = scoring.rank_candidates(
-                    [entry for entry in fresh if not entry["generic"]], ch)
+                checked = [item.to_selection_entry() for item in evaluate_specific(
+                    [entry for entry in fresh if not entry["generic"]],
+                    ch, min_score).accepted]
                 if any(entry.get("score", 0) >= min_score
                        and entry.get("score_detail", {}).get("topic_relevance") == 100
                        and entry.get("score_detail", {}).get("scene_relevance", 0) >= 70
@@ -660,14 +662,6 @@ def _search_scene_with_shortcircuit(
                     for pending in query_list[query_index + 1:]:
                         unexecuted_queries.setdefault(pending, "fresh_match_proven")
                     break
-
-    def score_specific(entries: list[dict]):
-        ranked = scoring.rank_candidates(entries, ch)
-        semantic_rejects = [entry for entry in ranked
-                            if entry.get("score_detail", {}).get("semantic_rejection")]
-        scoreable = [entry for entry in ranked if entry not in semantic_rejects]
-        accepted, low = scoring.below_threshold(scoreable, min_score)
-        return accepted, [*low, *semantic_rejects]
 
     # Colete e pontue específicos antes de buscar fotos genéricas do gênero.
     # Generic queries só rodam quando nenhuma foto específica passa o gate.
@@ -678,8 +672,11 @@ def _search_scene_with_shortcircuit(
     # oversized provider response from multiplying downloads without bound.
     phase_budget = max(1, max_images * CANDIDATE_MULTIPLIER)
     collect(specific_queries, phase_budget, stop_when_proven=True)
-    specific, low_specific = score_specific(
-        [entry for entry in candidates if not entry["generic"]])
+    specific_result = evaluate_specific(
+        [entry for entry in candidates if not entry["generic"]], ch, min_score)
+    specific = [item.to_selection_entry() for item in specific_result.accepted]
+    low_specific = [item.to_selection_entry() for item in specific_result.rejected]
+    evaluated_entries = [*specific, *low_specific]
     fresh_specific = [entry for entry in specific
                       if not asset_uses or not asset_uses.get(
                           _selection_asset_key(entry["asset"]), 0)]
@@ -688,53 +685,11 @@ def _search_scene_with_shortcircuit(
         ranked, low = specific, low_specific
     else:
         collect(generic_queries, phase_budget)
-        generic_ranked = []
-        for entry in [e for e in candidates if e["generic"]]:
-            info = scoring.generic_score(entry["asset"], entry["query"])
-            if not scoring.topic_anchor_matches(entry["asset"], ch):
-                info["score"] = 0.0
-            semantic = scoring.semantic_relevance(entry["asset"], ch)
-            if semantic["topic_relevance"] is not None:
-                if not semantic["topic_matches"]:
-                    info["score"] = 0.0
-                    semantic["semantic_rejection"] = "generic candidate lacks topic evidence"
-                elif semantic["scene_relevance"] < 25:
-                    info["score"] = 0.0
-                    semantic["semantic_rejection"] = "generic candidate lacks scene evidence"
-                elif not semantic["scene_matches"]:
-                    info["score"] = min(info["score"], 55.0)
-                if info["score"] > 0:
-                    info["score"] = min(100.0,
-                                         info["score"] + semantic.get("metadata_support", 0.0))
-                info.update(semantic)
-            entry["score"] = info["score"]
-            entry["score_detail"] = {"base": info["score"],
-                                      "matched": info["matched"],
-                                      "missing": info["missing"],
-                                      "topic_relevance": info.get("topic_relevance"),
-                                      "scene_relevance": info.get("scene_relevance"),
-                                      "topic_matches": info.get("topic_matches", []),
-                                      "scene_matches": info.get("scene_matches", []),
-                                      "topic_evidence": info.get("topic_evidence", {}),
-                                      "scene_evidence": info.get("scene_evidence", {}),
-                                      "metadata_support": info.get("metadata_support", 0.0),
-                                      "topic_evidence": info.get("topic_evidence", {}),
-                                      "scene_evidence": info.get("scene_evidence", {}),
-                                      "provider": info.get("provider", ""),
-                                      "creator": info.get("creator", ""),
-                                      "source_url": info.get("source_url", ""),
-                                      "date_created": info.get("date_created", ""),
-                                      "media_type": info.get("media_type", ""),
-                                      "semantic_rejection": info.get("semantic_rejection", ""),
-                                      "layers": ["base-generic"]}
-            generic_ranked.append(entry)
-        generic_ranked.sort(key=lambda e: (-e["score"], e["query"]))
-        semantic_rejects = [entry for entry in generic_ranked
-                            if entry.get("score_detail", {}).get("semantic_rejection")]
-        scoreable = [entry for entry in generic_ranked
-                     if entry not in semantic_rejects]
-        ranked, low_generic = scoring.below_threshold(scoreable, min_score)
-        low_generic.extend(semantic_rejects)
+        generic_result = evaluate_generic(
+            [entry for entry in candidates if entry["generic"]], ch, min_score)
+        ranked = [item.to_selection_entry() for item in generic_result.accepted]
+        low_generic = [item.to_selection_entry() for item in generic_result.rejected]
+        evaluated_entries.extend([*ranked, *low_generic])
         low = low_specific + low_generic
         # Preserve qualified used results solely for the final fallback after
         # fresh contextual results and synthetic visuals have been tried.
@@ -776,7 +731,8 @@ def _search_scene_with_shortcircuit(
         rejected.append({
             "title": entry["asset"].get("title", ""),
             "query": entry["query"],
-            "reason": (entry.get("score_detail", {}).get("semantic_rejection")
+            "reason": (entry.get("rejection_reason")
+                       or entry.get("score_detail", {}).get("semantic_rejection")
                        or f"nota {entry['score']:.0f} abaixo do mínimo {min_score:.0f}"),
             "provider": entry["asset"].get("provider", ""),
             "score": entry["score"],
@@ -1017,7 +973,7 @@ def _search_scene_with_shortcircuit(
             except (TypeError, ValueError):
                 representation_levels[rep_query] = 0
     audit_candidates = []
-    for entry in candidates:
+    for entry in evaluated_entries:
         detail = entry.get("score_detail", {})
         selected_item = next((item for item in picked
             if (item.get("asset", {}).get("provider"),
