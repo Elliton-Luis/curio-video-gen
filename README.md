@@ -6,6 +6,10 @@ Ferramenta local (Linux, CLI + TUI) que transforma **uma ideia textual** em um
 **vídeo vertical de ~45 s** com roteiro, narração em PT-BR, legendas queimadas
 e MP4 final — tudo com **custo próximo de zero** (TTS local + FFmpeg).
 
+O mapa do fluxo executado, contratos atuais, fontes de verdade e plano de
+migração arquitetural estão em
+[Auditoria da arquitetura e contratos](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md).
+
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*
 
