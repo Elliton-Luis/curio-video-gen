@@ -257,45 +257,6 @@ def _apply_audio_request(cfg: CurioConfig, audio: dict | None) -> None:
         cfg.music_transitions = transitions["mode"]
 
 
-def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
-                   script_source: str,
-                   semantic_scenes: tuple[SemanticScene, ...],
-                   timeline_spans: tuple[TimelineSpan, ...],
-                   scenes_source: str, media_scenes: list[dict],
-                   warnings: list[str], stage_times: dict, metrics: RunMetrics,
-                   media_source: str,
-                   started: float) -> dict:
-    scene_ids = tuple(scene.id for scene in semantic_scenes)
-    span_ids = tuple(span.scene_id for span in timeline_spans)
-    if not scene_ids or len(scene_ids) != len(set(scene_ids)) or scene_ids != span_ids:
-        raise ValueError("metadata scenes and spans are misaligned")
-    chapters = [Chapter.from_semantic_scene(scene, timing=span)
-                for scene, span in zip(semantic_scenes, timeline_spans)]
-    return {
-        "title": idea.strip(),
-        "input": idea,
-        "slug": slug,
-        "duration_target": cfg.duration_target,
-        "script_source": script_source,
-        "script_chars": len(script_text),
-        "scenes_source": scenes_source,
-        "chapters": [c.to_dict() for c in chapters],
-        "media": media_scenes,
-        "media_resolution_source": media_source,
-        "warnings": warnings,
-        "width": cfg.width,
-        "height": cfg.height,
-        "fps": cfg.fps,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "execution_log": current_log_path(),
-        "processing_time_seconds": round(time.monotonic() - started, 2),
-        "stage_times": stage_times,
-        "pipeline_version": "scenes-0.2",
-        "visual_report": metrics.media_visual_report(len(chapters)),
-        "provider_downloads": metrics.media_download_report(),
-    }
-
-
 def _resolve_paths(out_dir: str, slug: str | None, idea: str,
                     genre_key: str, force: bool = False,
                     ) -> tuple[str, VideoPaths]:
@@ -663,10 +624,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     emit(6, "Montando vídeo", "OK")
 
     finalize_started = time.monotonic()
-    metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
-                              tuple(semantic_scenes), timeline_spans,
-                              scenes_source, media_scenes, warnings,
-                              stage_times, metrics, media_result.source, started)
+    metadata = pipeline_metadata_stage.build_base_metadata(
+        idea, slug, cfg, script_text, script_source,
+        tuple(semantic_scenes), timeline_spans, scenes_source, media_scenes,
+        warnings, stage_times, metrics, media_result.source, started)
     metadata.update({
         "genre": genre_key,
         "scene_context_enrichment": enrichment.to_dict(),
@@ -897,10 +858,10 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     emit(6, "Gerando teleprompter", "OK")
 
     finalize_started = time.monotonic()
-    metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
-                              semantic_scenes, timeline_spans,
-                              scenes_source, media_scenes, warnings,
-                              stage_times, metrics, media_source, started)
+    metadata = pipeline_metadata_stage.build_base_metadata(
+        idea, slug, cfg, script_text, script_source, semantic_scenes,
+        timeline_spans, scenes_source, media_scenes, warnings, stage_times,
+        metrics, media_source, started)
     metadata.update({
         "genre": genre_key,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),

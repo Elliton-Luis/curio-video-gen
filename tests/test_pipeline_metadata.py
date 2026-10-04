@@ -1,5 +1,4 @@
 from curio import pipeline_metadata
-from curio import pipeline
 from curio.stages.scene_contract import SemanticScene, TimelineSpan
 
 
@@ -44,7 +43,7 @@ def test_base_metadata_projects_legacy_chapters_from_aligned_contracts():
     scene = SemanticScene(id=1, narration="Cena de teste.",
                           visual_type="literal")
     span = TimelineSpan(scene_id=1, duration_estimate=4, start=2, end=6)
-    metadata = pipeline._base_metadata(
+    metadata = pipeline_metadata.build_base_metadata(
         "teste", "teste", Cfg(), "Cena de teste.", "fixture",
         (scene,), (span,), "fixture", [], [], {}, Metrics(), "cache", 0)
     assert metadata["chapters"][0]["id"] == 1
@@ -57,7 +56,7 @@ def test_base_metadata_rejects_misaligned_scene_and_timing_batches():
     import pytest
 
     with pytest.raises(ValueError, match="metadata scenes and spans are misaligned"):
-        pipeline._base_metadata(
+        pipeline_metadata.build_base_metadata(
             "teste", "teste", object(), "", "fixture",
             (SemanticScene(id=1, narration="Cena."),),
             (TimelineSpan(scene_id=2),), "fixture", [], [], {},

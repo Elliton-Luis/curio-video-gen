@@ -3,6 +3,48 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
+
+from .runlog import current_log_path
+from .stages.scenes import Chapter
+
+
+def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
+                        script_source: str, semantic_scenes, timeline_spans,
+                        scenes_source: str, media_scenes, warnings,
+                        stage_times: dict, metrics, media_source: str,
+                        started: float) -> dict:
+    """Build the shared persisted metadata projection for both run modes."""
+    scene_ids = tuple(scene.id for scene in semantic_scenes)
+    span_ids = tuple(span.scene_id for span in timeline_spans)
+    if (not scene_ids or len(scene_ids) != len(set(scene_ids))
+            or scene_ids != span_ids):
+        raise ValueError("metadata scenes and spans are misaligned")
+    chapters = [Chapter.from_semantic_scene(scene, timing=span)
+                for scene, span in zip(semantic_scenes, timeline_spans)]
+    return {
+        "title": idea.strip(),
+        "input": idea,
+        "slug": slug,
+        "duration_target": cfg.duration_target,
+        "script_source": script_source,
+        "script_chars": len(script_text),
+        "scenes_source": scenes_source,
+        "chapters": [chapter.to_dict() for chapter in chapters],
+        "media": media_scenes,
+        "media_resolution_source": media_source,
+        "warnings": warnings,
+        "width": cfg.width,
+        "height": cfg.height,
+        "fps": cfg.fps,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "execution_log": current_log_path(),
+        "processing_time_seconds": round(time.monotonic() - started, 2),
+        "stage_times": stage_times,
+        "pipeline_version": "scenes-0.2",
+        "visual_report": metrics.media_visual_report(len(chapters)),
+        "provider_downloads": metrics.media_download_report(),
+    }
 
 
 def persist_run_metadata(metadata: dict, metadata_path: str, metrics,

@@ -144,9 +144,11 @@ sintética e cena sem visual; o
 avisos explícitos; o mesmo componente persiste `sources.json` e `FONTES.md` nos
 modos assistido e `human-pending`, para que mídia, pesquisa e créditos tenham a
 mesma trilha editorial nos dois fluxos.
-`pipeline_metadata.py` fecha persistência de geração e finalize: mede o estágio
-`finalize`, grava a mesma tabela de tempos no metadata e no arquivo de métricas,
-e mantém `metrics_file` no metadata persistido.
+`pipeline_metadata.py` monta os campos base comuns de geração humana/assistida
+e fecha persistência de geração e finalize: mede o estágio `finalize`, grava a
+mesma tabela de tempos no metadata e no arquivo de métricas, e mantém
+`metrics_file` no metadata persistido. O coordenador compõe campos específicos
+de cada modo.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).

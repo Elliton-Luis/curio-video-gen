@@ -346,3 +346,13 @@ Integração/funnel/selection focados: **23 passaram em 38,58 s**; regressões
 direcionadas status/provider passaram (**15 em 0,10 s**). `compileall` e
 `git diff --check` passaram; a suíte integral passou com **879 testes em
 184,10 s**, antes do último reforço do contrato.
+
+## G3: base metadata has one owner
+
+`_base_metadata` vivia no coordenador apesar de já existir
+`pipeline_metadata.py`; geração assistida e preparação humana chamavam a mesma
+função. Ela foi movida para `pipeline_metadata.build_base_metadata`, dona da
+projeção comum `SemanticScene + TimelineSpan → chapters` e dos campos base de
+metadata. O pipeline continua compondo campos específicos por modo e dono de
+progresso/ordem; formato e valores persistidos foram preservados. Testes foram
+migrados para a API do módulo responsável.
