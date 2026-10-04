@@ -269,7 +269,7 @@ Fase A3 introduz `SemanticScene` sem campos temporais e `Chapter.semantic_scene(
 
 Fase B2 conclui a separação do planejamento visual local: `local_queries` saiu de `visual.py` para `scene_local_planning.py`; a conversão de Chapter para `SemanticScene` materializa representações locais quando faltam representações/queries e contexto estruturado. `VisualPlanner.build_visual_plan` não aceita callback, não lê narração e deriva flags apenas do contrato semântico. `local_query_seeds` foi removido do contrato e do SearchPlanner. Testes focados passaram (165), compilação e `diff --check` passaram; suíte completa: **817 testes em 145,92 s**. A heurística determinística existente foi realocada, não reescrita; sua simplificação fica para uma fase de qualidade/proveniência própria.
 
-### Atualização de estado após A4t (2026-10-04)
+### Atualização de estado após A4u, F4, V1 e G2a (2026-10-04)
 
 A linha de base acima foi escrita antes da migração downstream. Desde então,
 A4a–A4t foram executadas em commits separados: o pipeline em memória, mídia,
