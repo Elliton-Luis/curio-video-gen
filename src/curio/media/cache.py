@@ -66,31 +66,37 @@ def download_asset(asset: MediaAsset, cache_dir: str,
         if metrics is not None:
             metrics.media_download(0, True)
         return asset  # cache: zero downloads repetidos
+    network_started = time.monotonic()
     try:
-        if metrics is not None:
-            metrics.media_download_started(asset.provider)
-        data = _fetch(asset.download_url, asset.provider, metrics)
-    except Exception as first_exc:
-        if metrics is not None:
-            metrics.media_download_error(asset.provider, first_exc)
-        if not asset.download_fallback_url:
-            raise MediaError(
-                f"{asset.provider}: download falhou ({asset.asset_id}): {first_exc}"
-            ) from first_exc
         try:
             if metrics is not None:
                 metrics.media_download_started(asset.provider)
-            from ..runlog import event as run_event
-            run_event("fallback", f"Download {asset.provider}: URL alternativa",
-                      operation="media_download", provider=asset.provider,
-                      fallback="download_fallback_url")
-            data = _fetch(asset.download_fallback_url, asset.provider, metrics)
-        except Exception as exc:
+            data = _fetch(asset.download_url, asset.provider, metrics)
+        except Exception as first_exc:
             if metrics is not None:
-                metrics.media_download_error(asset.provider, exc)
-            raise MediaError(
-                f"{asset.provider}: download falhou ({asset.asset_id}): {exc}"
-            ) from exc
+                metrics.media_download_error(asset.provider, first_exc)
+            if not asset.download_fallback_url:
+                raise MediaError(
+                    f"{asset.provider}: download falhou ({asset.asset_id}): {first_exc}"
+                ) from first_exc
+            try:
+                if metrics is not None:
+                    metrics.media_download_started(asset.provider)
+                from ..runlog import event as run_event
+                run_event("fallback", f"Download {asset.provider}: URL alternativa",
+                          operation="media_download", provider=asset.provider,
+                          fallback="download_fallback_url")
+                data = _fetch(asset.download_fallback_url, asset.provider, metrics)
+            except Exception as exc:
+                if metrics is not None:
+                    metrics.media_download_error(asset.provider, exc)
+                raise MediaError(
+                    f"{asset.provider}: download falhou ({asset.asset_id}): {exc}"
+                ) from exc
+    finally:
+        if metrics is not None:
+            metrics.media_record_download_duration(
+                asset.provider, time.monotonic() - network_started)
     # O sucesso é contado AQUI, depois da cadeia inteira, e não no `else`
     # do primeiro try: quando a URL primária falha e a de reserva funciona,
     # os bytes chegam pelo `except`, e um `else` ali nunca rodaria. O

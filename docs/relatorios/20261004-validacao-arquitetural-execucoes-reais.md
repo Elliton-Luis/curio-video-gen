@@ -67,7 +67,26 @@ considerou as três pertinentes, sendo a última imagem observacional direta. A
 execução no fluxo `--narration ai` com TTS local também produziu 3 assets
 únicos/3 cenas, sem reuso ou sintético; mídia levou 4,96 s e a execução 29,5 s.
 O alinhador local não gerou word boundaries, então o pipeline usou timeline
-proporcional.
+proporcional. O JSON daquela execução registra `downloads_time: 0` apesar de 6
+downloads físicos: o timer ainda não era conectado ao cache. Esse zero não é
+uma medida. F3 passou a registrar agora a duração de cada cadeia de download;
+uma nova execução confirma a mudança:
+
+| Medida | Resultado |
+|---|---:|
+| Cenas / assets reais únicos | 3 / 3 |
+| Reusos / sintéticos | 0 / 0 |
+| Queries lógicas / chamadas por provider | 3 / NASA 2, Wikimedia 2 |
+| Downloads / cache-hits de bytes | 6 / 0 |
+| Bytes baixados | 3.487.109 (3,49 MB) |
+| `downloads_time` acumulado | 1,34 s |
+| Etapa completa de mídia | 8,4 s |
+
+Projeto `output/science/20261004-download-timing`; métricas em
+`metrics/20261004-143325_20261004-download-timing.json`. As seis durações por
+asset somam 1,3369 s, arredondadas para 1,34 s. Sem retries ou timeouts nesta
+amostra. Isso confirma que `downloads_time` deixou de ser zero artificial;
+não estima o custo histórico, dominado por busca e retries.
 
 O `rerender` do projeto científico concluiu sem busca, narração ou roteiro
 novos e preservou as mesmas três identidades visuais únicas. Render final:
@@ -89,5 +108,7 @@ induzida, um tema de etimologia/pessoa, validação específica de cache em
 rerender de seleção manual e a revisão visual de uma amostra histórica maior.
 Também falta repetir o benchmark histórico após os providers voltarem a
 responder, para separar tempo de rede de custo de planejamento/scoring. A suíte
-completa da revisão atual passou com 825 testes em 148,36 s; `compileall` e
+completa da validação inicial passou com 825 testes em 148,36 s; os testes
+focados de medição passaram (27), e a suíte completa após instrumentação passou
+com 829 testes em 146,52 s; `compileall` e
 `git diff --check` passaram.

@@ -38,8 +38,11 @@ assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniênc
 do enriquecimento semântico quando disponível.
 No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
-de adapter inclui seus retries/backoff. `time_per_request` é `null` porque a
-duração de cada tentativa HTTP ainda não é medida.
+de adapter inclui seus retries/backoff. `download_durations` mede a cadeia
+remota de cada asset, retries/fallback incluídos; `downloads_time` soma essas
+cadeias e pode exceder tempo de parede quando downloads sobrepõem. A duração
+individual de cada tentativa HTTP de busca continua desconhecida, então
+`time_per_request` é `null`.
 O enriquecimento pós-planner de contexto está centralizado em
 `scene_enrichment.py`: recebe proveniência explícita, clona a saída do
 planner, retorna uma batch validada e registra quais complementos foram

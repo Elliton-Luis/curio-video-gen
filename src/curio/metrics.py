@@ -50,6 +50,7 @@ class RunMetrics:
         self.media_query_generation_time = 0.0
         self.media_provider_search_time: dict[str, float] = {}
         self.media_downloads_time = 0.0
+        self.media_download_durations: dict[str, list[float]] = {}
         self.media_selection_time = 0.0
         self.media_deduplication_time = 0.0
         self.media_queries_count = 0
@@ -182,6 +183,14 @@ class RunMetrics:
         with self._lock:
             self.media_download_succeeded[provider] = (
                 self.media_download_succeeded.get(provider, 0) + 1)
+
+    def media_record_download_duration(self, provider: str,
+                                       elapsed_seconds: float) -> None:
+        """Record one asset's network/retry chain, excluding courtesy delay."""
+        with self._lock:
+            elapsed = max(0.0, float(elapsed_seconds))
+            self.media_downloads_time += elapsed
+            self.media_download_durations.setdefault(provider, []).append(elapsed)
 
     def media_download_error(self, provider: str, exc: BaseException
                              ) -> None:
@@ -535,6 +544,9 @@ class RunMetrics:
                         k: [round(t, 4) for t in values]
                         for k, values in self.media_provider_search_durations.items()},
                     "downloads_time": round(self.media_downloads_time, 2),
+                    "download_durations": {
+                        k: [round(t, 4) for t in values]
+                        for k, values in self.media_download_durations.items()},
                     "selection_time": round(self.media_selection_time, 2),
                     "deduplication_time": round(self.media_deduplication_time, 2),
                     "queries_count": self.media_queries_count,

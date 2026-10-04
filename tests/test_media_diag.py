@@ -193,6 +193,48 @@ def test_sucesso_conta_no_provider_certo(tmp_path, fetch):
     assert rel["downloads_failed"] == 0
 
 
+def test_tempo_registra_cadeia_remota_e_nao_conta_hit_de_cache(tmp_path, monkeypatch):
+    m = _metrics()
+    now = [10.0]
+    monkeypatch.setattr(C.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(C.time, "sleep", lambda _seconds: None)
+
+    def fake(url, provider="", metrics=None):
+        now[0] += 0.25
+        return b"x" * 50
+
+    monkeypatch.setattr(C, "_fetch", fake)
+    asset = _asset("nasa", "timed", "http://x/timed.jpg")
+    C.download_asset(asset, str(tmp_path), m)
+    C.download_asset(_asset("nasa", "timed", "http://x/timed.jpg"),
+                     str(tmp_path), m)
+
+    media = m.to_dict({}, {}, "metrics")["consumption"]["media"]
+    assert media["downloads_time"] == 0.25
+    assert media["download_durations"] == {"nasa": [0.25]}
+    assert m.media_cache_hits == 1
+
+
+def test_tempo_remoto_inclui_cadeia_que_falhou(tmp_path, monkeypatch):
+    m = _metrics()
+    now = [2.0]
+    monkeypatch.setattr(C.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(C.time, "sleep", lambda _seconds: None)
+
+    def fail(url, provider="", metrics=None):
+        now[0] += 0.75
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(C, "_fetch", fail)
+    with pytest.raises(Exception):
+        C.download_asset(_asset("wikimedia", "timeout", "http://x/timeout.jpg"),
+                         str(tmp_path), m)
+
+    media = m.to_dict({}, {}, "metrics")["consumption"]["media"]
+    assert media["downloads_time"] == 0.75
+    assert media["download_durations"] == {"wikimedia": [0.75]}
+
+
 def test_fallback_que_funciona_nao_conta_falha_duas_vezes(tmp_path, fetch):
     """Uma tentativa ruim e uma boa: uma falha, um sucesso."""
     m = _metrics()
