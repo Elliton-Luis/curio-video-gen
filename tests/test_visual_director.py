@@ -104,7 +104,9 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
 def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_path):
     asset = MediaAsset(provider="fixture", asset_id="only", title="Ottoman Empire map",
                        download_url="https://fixture.test/map.jpg", license="CC0",
-                       width=1200, height=900)
+                       width=2400, height=1800,
+                       local_path=str(tmp_path / "only.jpg"))
+    (tmp_path / "only.jpg").write_bytes(b"image")
 
     class Provider:
         name = "fixture"
@@ -125,6 +127,14 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
         chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
         asset_uses=uses)
     assert result[0]["asset"]["provider"] == "synth"
+
+    monkeypatch.setattr("curio.stages.visuals.visual_for_scene", lambda *args: None)
+    result, _ = visual._search_scene_with_shortcircuit(
+        chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
+        asset_uses=uses)
+    assert result[0]["asset"]["asset_id"] == "only"
+    assert result[0]["assets"][0]["reuse_reason"] == (
+        "fresh_search_and_synthetic_exhausted")
 
 
 @pytest.mark.parametrize("topic,event,entity,representation,old_title", [
