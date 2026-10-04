@@ -30,6 +30,7 @@ from . import pipeline_media as pipeline_media_stage
 from . import pipeline_visual as pipeline_visual_stage
 from . import pipeline_media_sources as pipeline_media_sources_stage
 from . import pipeline_audio as pipeline_audio_stage
+from . import pipeline_timeline as pipeline_timeline_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
@@ -175,27 +176,6 @@ def _typography_report(cfg: CurioConfig, genre_key: str = "") -> dict:
         return {}
     return typo_stage.for_genre(
         genre_key, (cfg.typography or {}).get(genre_key)).report()
-
-
-def _write_visual_timeline(chapters: list[Chapter], media_scenes: list[dict],
-                           paths: VideoPaths, slug: str,
-                           overlap_cap: float, sfx: bool,
-                           insertions: int | None = None,
-                           insert_style: str = "drop_in",
-                           insert_gain_db: int = -15) -> list[dict]:
-    vt = visual_stage.build_visual_timeline(
-        chapters, media_scenes, overlap_cap, seed=slug, sfx=sfx,
-        insertions=insertions, insert_style=insert_style,
-        insert_gain_db=insert_gain_db)
-    _write_json(paths.visual_json, vt)
-    print(f"Timeline visual: {visual_timeline_stage.visual_summary(vt)}")
-    return vt
-
-
-def count_insertions(visual_timeline: list[dict]) -> int:
-    """Fotos complementares do vídeo (as que caem por cima do fundo)."""
-    return sum(1 for t in visual_timeline for im in t.get("images", [])
-               if im.get("order", 0) > 0)
 
 
 def _sfx_track_for(visual_timeline: list[dict], total: float,
@@ -694,18 +674,11 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     subs_changed = audio_result.subtitles_changed
     stage_times.update(audio_result.stage_times)
 
-    # Pipeline orquestra timeline visual; visual stage só recebe dados prontos.
-    from .stages.visual_beats import BEAT_SECONDS
-    visual_timeline = (_write_visual_timeline(
+    timeline_result = pipeline_timeline_stage.build_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
-        insertions=insert_budget, insert_style=cfg.visual_insert_style,
-        insert_gain_db=cfg.visual_insert_gain_db)
-        if max_images > 1 else [])
-    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS, visual_timeline)
-    if visual_timeline:
-        print(f"Inserções: {count_insertions(visual_timeline)} foto(s) "
-              f"complementar(es) caindo sobre o fundo "
-              f"(estilo {cfg.visual_insert_style}).")
+        insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
+        max_images > 1, metrics, _write_json)
+    visual_timeline = timeline_result.entries
 
     # [6/6] Montagem dinâmica + final
     t0 = time.monotonic()
@@ -821,7 +794,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "max_images": max_images,
             "overlap_cap": overlap_cap,
             "sfx": bool(sfx_path),
-            "insertions": count_insertions(visual_timeline),
+            "insertions": timeline_result.insertion_count,
             "insert_budget": insert_budget,
             "insert_style": cfg.visual_insert_style,
             "insert_gain_db": cfg.visual_insert_gain_db,
@@ -953,14 +926,12 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         ch.start, ch.end = cursor, cursor + ch.duration_estimate
         cursor = ch.end
     estimated_total = round(cursor, 2)
-    from .stages.visual_beats import BEAT_SECONDS
     _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
-    visual_timeline = (_write_visual_timeline(
+    timeline_result = pipeline_timeline_stage.build_visual_timeline(
         chapters, media_scenes, paths, slug, overlap_cap, cfg.visual_sfx,
-        insertions=insert_budget, insert_style=cfg.visual_insert_style,
-        insert_gain_db=cfg.visual_insert_gain_db)
-        if max_images > 1 else [])
-    metrics.visual_plan(chapters, media_scenes, BEAT_SECONDS, visual_timeline)
+        insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
+        max_images > 1, metrics, _write_json)
+    visual_timeline = timeline_result.entries
     audio_events = _audio_events(visual_timeline)
     try:
         previous_meta = _read_json(paths.metadata_json)

@@ -55,6 +55,9 @@ recuperação determinística explícita, marcada e persistida na fronteira de
 leitura. A projeção também não sincroniza implicitamente `visual_queries` com
 `representations`; os dois campos declarados chegam intactos enquanto os
 producers são migrados para a fonte única.
+`pipeline_timeline.py` converte Chapters temporizados e seleções em
+`VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de
+beats no mesmo limite.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e
