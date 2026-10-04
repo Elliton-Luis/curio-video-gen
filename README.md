@@ -48,6 +48,8 @@ O teleprompter também combina texto semântico e spans tipados, validando a
 ordem das cenas antes de distribuir as falas no tempo.
 O `rerender` replaneja geometria visual com os mesmos contratos, preservando
 ordem manual sem converter Chapter dentro do replanejamento.
+Finalize usa `TimelineSpan` para extensão após áudio e métricas; Chapter só é
+carregado para adaptar o `timeline.json` salvo e reserializado se tempos mudam.
 O render silencioso recebe os mesmos contratos: identidade/texto vêm de
 `SemanticScene`, duração vem de `TimelineSpan`, e a assinatura das transições
 rejeita batches desalinhados. `Chapter` é adaptado ao reabrir projetos salvos;

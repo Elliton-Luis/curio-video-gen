@@ -158,3 +158,14 @@ indicava incorretamente que o render usava Chapter. Testes cobrem shape legado,
 tempos projetados e erro para IDs desalinhados. Focados: 13 passaram; suíte
 completa: **853 passaram em 147,46 s**; compileall e `git diff --check`
 passaram. Sem geração real nesta fase.
+
+## A4s: finalize mantém timing em TimelineSpan
+
+`finalize` ainda lê `timeline.json` como Chapter para aceitar projetos salvos,
+mas descarta essa projeção após derivar `SemanticScene[] + TimelineSpan[]`.
+Extensão da última cena, `retime_visual_timeline` e métricas usam spans; ao
+persistir tempos alterados, Chapter é reconstruído apenas para o schema salvo.
+O rerender CLI usa seu batch de spans já carregado para métricas. Focados de
+finalize/rerender/metadata: 5 passaram; suíte completa antes deste ajuste:
+**853 passaram em 147,46 s**; após o ajuste, focados, compileall e
+`git diff --check` passaram. Sem geração real nesta fase.

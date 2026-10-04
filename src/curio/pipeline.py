@@ -1153,10 +1153,12 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     if not any(s.get("codec_type") == "audio" for s in _probe_streams(audio_src)):
         raise ValueError(f"arquivo sem trilha de áudio: {audio_src}")
 
-    chapters = [Chapter.from_dict(row) for row in _read_json(paths.timeline_json)]
+    saved_timeline = [Chapter.from_dict(row)
+                      for row in _read_json(paths.timeline_json)]
     semantic_scenes = tuple(chapter.semantic_scene("rerender")
-                            for chapter in chapters)
-    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
+                            for chapter in saved_timeline)
+    timeline_spans = tuple(chapter.timeline_span() for chapter in saved_timeline)
+    del saved_timeline
     media_scenes = _read_json(paths.media_json)
     try:
         meta = _read_json(paths.metadata_json)
@@ -1254,17 +1256,17 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         adj = os.path.join(paths.root, "render", "silent_adj.mp4")
         render_spans = timeline_spans
         if visual_timeline:
-            chapters[-1].end = round(chapters[-1].end + diff, 3)
-            timeline_spans = (*timeline_spans[:-1], TimelineSpan(
-                timeline_spans[-1].scene_id,
-                timeline_spans[-1].duration_estimate + diff,
-                timeline_spans[-1].start, chapters[-1].end))
+            last = timeline_spans[-1]
+            final_span = TimelineSpan(
+                last.scene_id, last.duration_estimate + diff,
+                last.start, round(last.end + diff, 3))
+            timeline_spans = (*timeline_spans[:-1], final_span)
             render_spans = timeline_spans
-            _write_json(paths.timeline_json,
-                        [c.to_dict() for c in chapters])
+            _write_json(paths.timeline_json, [
+                Chapter.from_semantic_scene(scene, timing=span).to_dict()
+                for scene, span in zip(semantic_scenes, timeline_spans)])
             visual_timeline = visual_timeline_stage.retime_visual_timeline(
-                visual_timeline, tuple(chapter.timeline_span()
-                                        for chapter in chapters))
+                visual_timeline, timeline_spans)
             _write_json(paths.visual_json, visual_timeline)
             pipeline_render_stage.build_silent_visual(
                                  semantic_scenes, timeline_spans,
@@ -1294,7 +1296,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     emit("Merge final")
     total = round(human_dur + 0.5, 2)
     from .stages.visual_beats import BEAT_SECONDS
-    metrics.visual_plan(tuple(chapter.timeline_span() for chapter in chapters),
+    metrics.visual_plan(timeline_spans,
                         media_scenes, BEAT_SECONDS, visual_timeline,
                         rendered_duration=total)
     human_wav = paths.human_wav
