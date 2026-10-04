@@ -62,8 +62,9 @@ leitura. A projeção também não sincroniza implicitamente `visual_queries` co
 compatível derivada delas. Consultas legadas/declaradas recebem proveniência
 própria e não passam a contar como intenção semântica estruturada no scoring.
 `ScenePlanResult` valida ids únicos e correspondência ordenada entre cenas e
-spans. O SearchPlanner mantém a ordem combinada das consultas e não trata esses
-espelhos como representações editoriais independentes.
+spans; `SemanticScene.from_dict` valida e reconstrói o contrato sem passar por
+`Chapter`. O SearchPlanner mantém a ordem combinada das consultas e não trata
+esses espelhos como representações editoriais independentes.
 `pipeline_timeline.py` converte Chapters temporizados e seleções em
 `VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de
 beats no mesmo limite.

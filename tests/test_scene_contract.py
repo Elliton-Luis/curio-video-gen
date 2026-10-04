@@ -169,3 +169,22 @@ def test_scene_plan_rejects_duplicate_ids_and_missing_provenance():
                         (TimelineSpan(1), TimelineSpan(1)), "llm")
     with pytest.raises(ValueError, match="source is required"):
         ScenePlanResult((scene,), (TimelineSpan(1),), "")
+
+
+def test_semantic_scene_json_roundtrip_does_not_require_chapter_projection():
+    scene = SemanticScene(
+        id=2, narration="Battle of Mohács in 1526.", source="provider",
+        planning_mode="llm", visual_type="historical_art",
+        event="Battle of Mohács", representations=(
+            VisualRepresentation("Battle of Mohács 1526", kind="event",
+                                 source="planner", evidence="scene:event"),),
+        video_context=VideoContext(topic="Ottoman Empire"))
+
+    loaded = SemanticScene.from_dict(scene.to_dict())
+
+    assert loaded.to_dict() == scene.to_dict()
+    with pytest.raises(ValueError, match="must be an integer"):
+        SemanticScene.from_dict({"id": "2", "narration": "A scene."})
+    with pytest.raises(ValueError, match="must be a list"):
+        SemanticScene.from_dict({"id": 2, "narration": "A scene.",
+                                 "representations": "loose keyword"})

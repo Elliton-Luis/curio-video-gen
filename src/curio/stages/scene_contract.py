@@ -290,6 +290,51 @@ class SemanticScene:
             representation_rejections=tuple(chapter.representation_rejections),
         )
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "SemanticScene":
+        """Load the semantic contract without routing through render Chapter."""
+        if not isinstance(value, Mapping):
+            raise ValueError("semantic scene must be an object")
+        scene_id = value.get("id")
+        narration = value.get("narration")
+        if isinstance(scene_id, bool) or not isinstance(scene_id, int):
+            raise ValueError("semantic scene id must be an integer")
+        if not isinstance(narration, str):
+            raise ValueError("semantic scene narration must be text")
+        list_fields = ("subject_aliases", "visual_entities", "context", "forbidden",
+                       "representations", "visual_queries", "global_visual_queries",
+                       "representation_rejections")
+        for field_name in list_fields:
+            field_value = value.get(field_name, [])
+            if not isinstance(field_value, (list, tuple)):
+                raise ValueError(f"semantic scene {field_name} must be a list")
+        return cls(
+            id=scene_id, narration=narration,
+            source=str(value.get("source", "unknown") or "unknown"),
+            planning_mode=str(value.get("planning_mode", "unknown") or "unknown"),
+            visual_type=str(value.get("visual_type", "literal") or "literal"),
+            subject=str(value.get("subject", "") or ""),
+            subject_aliases=tuple(value.get("subject_aliases", ())),
+            visual_entities=tuple(value.get("visual_entities", ())),
+            context=tuple(value.get("context", ())),
+            forbidden=tuple(value.get("forbidden", ())),
+            video_context=VideoContext.from_value(value.get("video_context", {})),
+            visual_intent=str(value.get("visual_intent", "") or ""),
+            visual_intent_structured=str(
+                value.get("visual_intent_structured", "") or ""),
+            primary_entity=str(value.get("primary_entity", "") or ""),
+            event=str(value.get("event", "") or ""),
+            place=str(value.get("place", "") or ""),
+            period=str(value.get("period", "") or ""),
+            text_role=str(value.get("text_role", "") or ""),
+            text_language=str(value.get("text_language", "") or ""),
+            representations=tuple(value.get("representations", ())),
+            visual_queries=tuple(value.get("visual_queries", ())),
+            global_visual_queries=tuple(value.get("global_visual_queries", ())),
+            representation_rejections=tuple(
+                value.get("representation_rejections", ())),
+        )
+
     def contract_errors(self) -> list[str]:
         errors = []
         if self.id <= 0:
