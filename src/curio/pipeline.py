@@ -289,11 +289,19 @@ def _print_grounding_warning(grounding: dict) -> str:
 
 
 def _base_metadata(idea: str, slug: str, cfg: CurioConfig, script_text: str,
-                   script_source: str, chapters: list[Chapter],
+                   script_source: str,
+                   semantic_scenes: tuple[SemanticScene, ...],
+                   timeline_spans: tuple[TimelineSpan, ...],
                    scenes_source: str, media_scenes: list[dict],
                    warnings: list[str], stage_times: dict, metrics: RunMetrics,
                    media_source: str,
                    started: float) -> dict:
+    scene_ids = tuple(scene.id for scene in semantic_scenes)
+    span_ids = tuple(span.scene_id for span in timeline_spans)
+    if not scene_ids or len(scene_ids) != len(set(scene_ids)) or scene_ids != span_ids:
+        raise ValueError("metadata scenes and spans are misaligned")
+    chapters = [Chapter.from_semantic_scene(scene, timing=span)
+                for scene, span in zip(semantic_scenes, timeline_spans)]
     return {
         "title": idea.strip(),
         "input": idea,
@@ -651,8 +659,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         paths, cfg, force, metrics, warnings, emit,
         _write_json, stage_times, pacing=pacing, caption_style=cap_style)
     timeline_spans = audio_result.timeline_spans
-    chapters = [Chapter.from_semantic_scene(scene, timing=span)
-                for scene, span in zip(semantic_scenes, timeline_spans)]
     words = audio_result.words
     audio_duration = audio_result.audio_duration
     tts_info = audio_result.tts_info
@@ -671,7 +677,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # [6/6] Montagem dinâmica + final
     t0 = time.monotonic()
     emit(6, "Montando vídeo")
-    durations = [max(0.5, c.end - c.start) for c in chapters]
+    durations = [max(0.5, span.end - span.start) for span in timeline_spans]
     total = round(audio_duration + 0.8, 2)
     sfx_path = None
     try:
@@ -758,7 +764,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     finalize_started = time.monotonic()
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
-                              chapters, scenes_source, media_scenes, warnings,
+                              tuple(semantic_scenes), timeline_spans,
+                              scenes_source, media_scenes, warnings,
                               stage_times, metrics, media_result.source, started)
     metadata.update({
         "genre": genre_key,
@@ -921,10 +928,10 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
             scene.id, duration, cursor, cursor + duration))
         cursor += duration
     timeline_spans = tuple(timeline_spans)
-    chapters = [Chapter.from_semantic_scene(scene, timing=span)
-                for scene, span in zip(semantic_scenes, timeline_spans)]
     estimated_total = round(cursor, 2)
-    _write_json(paths.timeline_json, [c.to_dict() for c in chapters])
+    _write_json(paths.timeline_json, [Chapter.from_semantic_scene(
+        scene, timing=span).to_dict()
+        for scene, span in zip(semantic_scenes, timeline_spans)])
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
         semantic_scenes, timeline_spans, media_scenes,
         paths, slug, overlap_cap, cfg.visual_sfx,
@@ -990,7 +997,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
 
     finalize_started = time.monotonic()
     metadata = _base_metadata(idea, slug, cfg, script_text, script_source,
-                              chapters, scenes_source, media_scenes, warnings,
+                              semantic_scenes, timeline_spans,
+                              scenes_source, media_scenes, warnings,
                               stage_times, metrics, media_source, started)
     metadata.update({
         "genre": genre_key,

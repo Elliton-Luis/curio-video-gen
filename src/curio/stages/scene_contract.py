@@ -419,14 +419,6 @@ class ScenePlanResult:
         if any(errors):
             raise ValueError("planner emitted invalid semantic scene")
 
-    def timeline_chapters(self) -> tuple["Chapter", ...]:
-        """Create the compatibility projection consumed by render stages."""
-        from .scenes import Chapter
-        return tuple(Chapter.from_semantic_scene(scene, timing=span)
-                     for scene, span in zip(self.semantic_scenes,
-                                            self.timeline_spans))
-
-
 def _string_list(value: object) -> list[str]:
     if isinstance(value, str):
         value = [value]

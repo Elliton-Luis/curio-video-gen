@@ -146,3 +146,15 @@ uma vez na entrada e passa os dois contratos ao replanejamento; a ordem manual
 de imagens permanece intacta. Focados: 29 passaram; suíte completa: **851
 passaram em 145,93 s**; compileall e `git diff --check` passaram. Sem nova
 geração real nesta fase.
+
+## A4r: Chapter é projetado no limite de metadata
+
+`_base_metadata` consome `SemanticScene[] + TimelineSpan[]`, valida ordem e
+projeta Chapter somente para a chave `chapters` já publicada em metadata.
+Geração AI mantém a batch tipada após o áudio e calcula durações pelos spans;
+human-pending só projeta na gravação legada de `timeline.json`. Removi
+`ScenePlanResult.timeline_chapters`, método sem consumidores cuja documentação
+indicava incorretamente que o render usava Chapter. Testes cobrem shape legado,
+tempos projetados e erro para IDs desalinhados. Focados: 13 passaram; suíte
+completa: **853 passaram em 147,46 s**; compileall e `git diff --check`
+passaram. Sem geração real nesta fase.
