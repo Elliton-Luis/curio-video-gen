@@ -14,6 +14,7 @@ from .pipeline_media import manual_media_dir, manual_media_scenes
 from .runlog import event as run_event
 from .stages import scoring as scoring_stage
 from .stages import visual as visual_stage
+from .stages.media_selection import SelectionDecision
 from .stages.scene_contract import SemanticScene
 
 
@@ -27,6 +28,59 @@ class MediaStageResult:
     real_scenes: int
     synthetic_scenes: int
     scenes_without_visual: int
+
+    def __post_init__(self) -> None:
+        if not self.source:
+            raise ValueError("media stage source is required")
+        ids = []
+        real = synthetic = missing = 0
+        for scene in self.scenes:
+            if not isinstance(scene, dict):
+                raise TypeError("media stage scenes must be objects")
+            scene_id = scene.get("chapter_id")
+            if isinstance(scene_id, bool) or not isinstance(scene_id, int) \
+                    or scene_id <= 0:
+                raise ValueError("media scene chapter_id must be positive")
+            ids.append(scene_id)
+            asset = scene.get("asset")
+            entries = scene.get("assets") or []
+            if asset is not None and not isinstance(asset, dict):
+                raise TypeError("selected media asset must be an object or null")
+            if not isinstance(entries, list) or any(
+                    not isinstance(entry, dict) for entry in entries):
+                raise TypeError("media scene assets must be a list of objects")
+            if entries and asset is None:
+                raise ValueError("scene asset list requires a selected asset")
+            if entries and isinstance(entries[0].get("asset"), dict) and asset:
+                first = entries[0]["asset"]
+                for key in ("provider", "asset_id"):
+                    if (first.get(key) and asset.get(key)
+                            and first[key] != asset[key]):
+                        raise ValueError("scene asset differs from first selected entry")
+            visual_decision = scene.get("visual_decision")
+            if visual_decision is not None and not isinstance(visual_decision, dict):
+                raise TypeError("visual_decision must be an object")
+            decision_data = (visual_decision or {}).get("selection")
+            if decision_data is not None:
+                decision = SelectionDecision.from_dict(decision_data)
+                if decision.scene_id != scene_id:
+                    raise ValueError("selection decision belongs to another scene")
+                if asset and decision.asset_id and asset.get("asset_id") \
+                        and decision.asset_id != asset["asset_id"]:
+                    raise ValueError("selection decision asset does not match scene")
+            provider = str((asset or {}).get("provider", "") or "")
+            if provider == "synth":
+                synthetic += 1
+            elif provider:
+                real += 1
+            else:
+                missing += 1
+        if len(ids) != len(set(ids)):
+            raise ValueError("media stage scene ids must be unique")
+        if (real, synthetic, missing) != (
+                self.real_scenes, self.synthetic_scenes,
+                self.scenes_without_visual):
+            raise ValueError("media stage counts do not match its scene results")
 
 
 def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,

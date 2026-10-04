@@ -121,3 +121,32 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
     assert summary["scenes_with_real_asset"] == 1
     assert summary["synthetic_scenes"] == 1
     assert summary["scenes_without_visual"] == 1
+
+
+def test_media_stage_rejects_mismatched_selection_and_asset():
+    import pytest
+    from curio.pipeline_visual import MediaStageResult
+
+    scene = {"chapter_id": 1,
+             "asset": {"provider": "wikimedia", "asset_id": "chosen"},
+             "assets": [{"asset": {"provider": "wikimedia",
+                                     "asset_id": "chosen"}}],
+             "visual_decision": {"selection": {
+                 "scene_id": 2, "status": "real", "asset_id": "chosen",
+                 "provider": "wikimedia", "reason": "selected"}}}
+    with pytest.raises(ValueError, match="another scene"):
+        MediaStageResult([scene], "provider", [], 1, 0, 0)
+
+
+def test_selection_decision_roundtrip_validates_identity():
+    import pytest
+    from curio.stages.media_selection import SelectionDecision
+
+    decision = SelectionDecision(
+        scene_id=3, status="real", asset_id="asset-3", provider="met",
+        reason="fresh candidate passed gates")
+    assert SelectionDecision.from_dict(decision.to_dict()) == decision
+    broken = decision.to_dict()
+    broken["scene_id"] = "3"
+    with pytest.raises(ValueError, match="integer"):
+        SelectionDecision.from_dict(broken)

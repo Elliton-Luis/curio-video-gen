@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from dataclasses import dataclass
 
 
@@ -26,12 +27,17 @@ class SelectionDecision:
     reason: str = ""
 
     def __post_init__(self) -> None:
+        if (isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int)
+                or self.scene_id <= 0):
+            raise ValueError("selection decision scene_id must be positive")
         if self.status not in {"real", "reused", "synthetic", "none"}:
             raise ValueError(f"unknown selection status: {self.status}")
         if self.status != "none" and not self.asset_id:
             raise ValueError("selected visual must include asset identity")
         if not self.reason.strip():
             raise ValueError("selection decision must explain its outcome")
+        if self.score is not None and not isfinite(self.score):
+            raise ValueError("selection score must be finite")
 
     def to_dict(self) -> dict:
         return {
@@ -47,6 +53,34 @@ class SelectionDecision:
             "reuse_reason": self.reuse_reason,
             "reason": self.reason,
         }
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "SelectionDecision":
+        """Validate the persisted decision at a consumer boundary."""
+        if not isinstance(value, dict):
+            raise TypeError("selection decision must be an object")
+        scene_id = value.get("scene_id")
+        if isinstance(scene_id, bool) or not isinstance(scene_id, int):
+            raise ValueError("selection decision scene_id must be an integer")
+        score = value.get("score")
+        if score is not None:
+            try:
+                score = float(score)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("selection score must be numeric or null") from exc
+        return cls(
+            scene_id=scene_id,
+            status=str(value.get("status", "")),
+            asset_id=str(value.get("asset_id", "")),
+            provider=str(value.get("provider", "")),
+            query=str(value.get("query", "")),
+            query_source=str(value.get("query_source", "")),
+            representation=str(value.get("representation", "")),
+            score=score,
+            fallback_level=str(value.get("fallback_level", "")),
+            reuse_reason=str(value.get("reuse_reason", "")),
+            reason=str(value.get("reason", "")),
+        )
 
 
 def prepare_selection_pool(ranked: list[dict], asset_uses: dict | None,

@@ -329,3 +329,18 @@ Regressões cobrem migração legada, reuso de plano compatível e reconstruçã
 após divergência da identidade de inputs. Testes focados de contrato/cache de
 cenas passaram (**15**); `compileall` e `git diff --check` passaram; suíte
 integral passou com **877 testes em 195,02 s**.
+
+## E6: media stage rejects internally inconsistent outcomes
+
+O resultado de aquisição ainda cruza consumidores como rows do formato de
+projeto, mas `MediaStageResult` agora valida a fronteira: IDs de cena únicos,
+listas/assets com shape esperado, asset principal consistente com a primeira
+entrada, `SelectionDecision` associado à cena/asset correto e contagens real /
+sintético / ausente iguais ao conteúdo. `SelectionDecision.from_dict` faz a
+validação do schema persistido, em vez de tratar uma decisão malformada como
+seleção implícita. O JSON externo segue compatível; migrar timeline, render,
+credits e review para um batch tipado permanece uma fase posterior.
+
+Integração/funnel/selection focados: **23 passaram em 38,58 s**. `compileall`
+e `git diff --check` passaram; a suíte integral passou com **879 testes em
+184,10 s**.
