@@ -208,3 +208,16 @@ regressão compara cenas real/reused/synthetic e prova a distinção. Focados:
 `test_media_metric_units.py`, `test_visual_asset_usage.py` e
 `test_review_flow.py` — 32 passaram. `compileall` e `git diff --check`
 passaram; a suíte integral passou com **858 testes em 197,12 s**.
+
+## V1: cards sintéticos separam intenção de busca e hierarquia de texto
+
+A inspeção do card de ciência mostrou que `visual_entities` de busca eram
+desenhadas como uma cadeia explicativa junto à narração, causando colisões.
+Cards comuns agora exibem assunto e um trecho de narração; cadeia de entidades
+fica exclusiva do tipo tipográfico, onde ela tem significado editorial. O
+rodapé usa região própria, limita a duas linhas e indica truncamento com
+reticências. A chave de cache do card foi versionada para invalidar PNGs com o
+layout antigo. Testes instrumentam `textbbox` real do Pillow e exigem ausência
+de colisões tanto para cards científicos como tipográficos. Focados de layout,
+tipografia e receipt: **124 passaram**; compileall e `git diff --check`
+passaram. A suíte integral passou com **860 testes em 177,31 s**.

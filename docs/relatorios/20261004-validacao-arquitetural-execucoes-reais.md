@@ -209,3 +209,50 @@ As execuções reais deixam dois próximos limites concretos: eliminar o falso
 positivo de período/local em história e provar o cache de seleção sem esconder
 mudança de plano. Não houve profile comparável pré/pós sob os mesmos providers;
 os tempos acima são observações pontuais, não promessa de ganho de performance.
+
+## Profile de gargalo observado
+
+Os relatórios de métricas medem chamadas ao adapter por provider, duração
+agregada do adapter (inclui retry/backoff quando existirem), cadeia de download,
+query planning, deduplicação e seleção. Nas duas gerações novas não houve retry
+ou timeout contado. Tempos agregados entre providers sobrepõem-se; não devem
+ser somados como tempo de parede.
+
+| Execução | Mídia de parede | Consultas lógicas | Chamadas de adapter | Provider mais lento | Downloads | Seleção |
+|---|---:|---:|---:|---|---:|---:|
+| Ciência, primeira execução | 52,23 s | 17 | 102 (17 × 6) | Wikimedia: 47,93 s agregados, média 2,82 s, máximo 9,36 s | 1,75 s em 3 assets | 0,23 s |
+| Mohács | 35,99 s | 16 | 96 (16 × 6) | Wikimedia: 34,19 s agregados, média 2,14 s, máximo 2,41 s | 0,85 s em 2 assets | 0,18 s |
+
+Query planning e deduplicação aparecem arredondados como 0,00 s nas duas
+execuções; isso indica custo abaixo da precisão registrada ou timer estreito,
+não ausência demonstrada de trabalho. AIC/Met registraram erros HTTP em busca,
+enquanto Wikimedia concentrou a maior duração agregada. A evidência aponta rede
+de providers (especialmente Wikimedia) como gargalo de mídia, e TTS Edge com
+fallback espeak levou 14,37 s na execução histórica. Nenhuma otimização foi
+aplicada: limitar busca, mudar ordem ou paralelizar antes de corrigir a
+aceitação do Parlamento moderno esconderia o defeito editorial.
+
+## Fallback e inspeção visual adicionais
+
+Uma geração `local-no-llm` foi executada sem variáveis de credenciais LLM e com
+`CURIO_MEDIA_PROVIDERS=none`, em modo humano. Script veio do template e as duas
+cenas foram planejadas pelo fallback determinístico (`scenes_source=local`);
+ambas receberam cards sintéticos, sem cenas vazias, e o pipeline produziu vídeo
+silencioso e teleprompter. Pesquisa levou 42,14 s por repetidas respostas
+Wikipedia HTTP 429; aceitou três fontes, incluindo “Instagram” e “Vermelho”,
+que não são evidência suficiente para o tema do pôr do sol. Esse achado entra
+na dívida de qualidade de research. Mídia sem providers terminou em 0,13 s;
+montagem silenciosa levou 4,49 s e teleprompter 1,93 s. Não foi um vídeo final
+com narração, pois o modo humano exige `finalize` com áudio gravado.
+
+A inspeção das imagens confirmou a foto do EHT como imagem direta de Sagitário
+A, o campo profundo Hubble como astronomia relacionada mas não uma imagem de
+lente, e duas imagens Pixabay como metáforas de túnel luminoso. Na amostra
+histórica, os dois IDs selecionados são fotos modernas do Parlamento Húngaro,
+ambas inadequadas para a Batalha de Mohács. O card anterior de Event Horizon
+Telescope misturava essas entidades e a narração em linhas sobrepostas; fase V1
+remove cadeias de entidades não tipográficas, separa as regiões de texto e
+versiona a chave de cache para não reutilizar PNG antigo. Os testes comparam
+caixas de texto reais do Pillow para cards científicos e tipográficos, e a nova
+amostra visual não tem colisões. Após V1, a suíte integral passou com **860
+testes em 177,31 s**; `compileall` e `git diff --check` passaram.

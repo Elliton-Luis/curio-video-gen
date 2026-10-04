@@ -295,6 +295,16 @@ sintéticos) das contagens editoriais de assets reais em `visual_report`.
 `visual_assets_unique` e `visual_assets_reused` continuam como aliases de
 compatibilidade, com mesma definição dos novos campos de timeline.
 
+A geração adicional sem credenciais LLM convergiu pelo template/planner local
+para o mesmo contrato e produziu cenas tipadas e cards; pesquisa ainda sofreu
+HTTP 429 e aceitou fontes fracas, dívida do estágio de pesquisa. Profile nas
+execuções reais aponta Wikimedia como principal latência de mídia (34–48 s
+agregados), enquanto download e seleção ficaram abaixo de 2 s e 0,3 s. A
+latência agregada não é tempo de parede; sem replay com providers idênticos não
+há comparação de performance. A inspeção também detectou colisão de texto no
+card sintético, corrigida em V1 com teste geométrico do layout e invalidação de
+cache.
+
 A4a–A4u não encerram toda a arquitetura descrita no plano. Permanecem as
 fronteiras pendentes nas fases E/F/G/H/I: lifecycle dos outros artefatos e
 estado de execução, reconciliação de métricas finais, convergência dos caminhos

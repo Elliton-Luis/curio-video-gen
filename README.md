@@ -39,6 +39,10 @@ sintéticos usados na timeline) e
 `visual_timeline_assets_reused_across_scenes`. Os antigos
 `visual_assets_unique`/`visual_assets_reused` permanecem aliases de schema para
 projetos/consumidores existentes.
+Cards sintéticos comuns exibem assunto e trecho de narração sem converter
+entidades de busca em cadeia explicativa; somente cenas tipográficas desenham
+cadeias declaradas. Uma versão própria na chave do cache descarta PNGs com o
+layout anterior.
 `metadata.json` usa o mesmo construtor de relatório para geração humana e
 assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
 do enriquecimento semântico quando disponível.

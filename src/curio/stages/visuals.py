@@ -693,7 +693,7 @@ def render_card(subject: str, terms: list[str], narration: str,
     estilo = ""
     if typo is not None:
         estilo = str(getattr(typo.profile, "key", "") or "")
-    key = _key(subject, terms, language, estilo)
+    key = _key("card-layout-v2", subject, terms, language, estilo)
     out = _out(cache_dir, "card", key)
     if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"Card — {subject or 'cena'}", "card", scene_id)
@@ -723,7 +723,9 @@ def render_card(subject: str, terms: list[str], narration: str,
         y += 118
 
     # Corrente: a decomposição do assunto que a cena declarou.
-    chain = _card_chain(ch) if ch is not None else [
+    # Search representations are not an explanatory chain. Only typographic
+    # scenes have declared word morphology/entities suitable for this layout.
+    chain = (_card_chain(ch) if word_card else []) if ch is not None else [
         str(t).strip() for t in (terms or []) if str(t).strip()][:4]
     if chain:
         # A forma que a cadeia desemboca é o elemento em DESTAQUE da
@@ -750,8 +752,15 @@ def render_card(subject: str, terms: list[str], narration: str,
     # (a legenda queimada continua sendo a do TTS, intocada).
     f_foot = _font(30, typo, "location")
     frase = " ".join(str(narration or "").split())
-    for i, line in enumerate(_wrap(d, frase, f_foot, W - 160)[:3]):
-        d.text((W // 2, H - 620 + i * 42), line, font=f_foot,
+    footer_lines = _wrap(d, frase, f_foot, W - 160)
+    if len(footer_lines) > 2:
+        excerpt = footer_lines[1].rstrip()
+        while excerpt and d.textbbox((0, 0), excerpt + "…", font=f_foot)[2] > W - 160:
+            excerpt = excerpt[:-1].rstrip()
+        footer_lines[1] = excerpt + "…"
+    footer_top = H - 260 if chain else max(y + 180, int(H * 0.53))
+    for i, line in enumerate(footer_lines[:2]):
+        d.text((W // 2, footer_top + i * 42), line, font=f_foot,
                fill=(120, 128, 150), anchor="mm")
 
     img.save(out, "PNG")
