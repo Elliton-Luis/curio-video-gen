@@ -46,7 +46,8 @@ planner, retorna uma batch validada e registra quais complementos foram
 aplicados antes de atualizar `chapters.json`.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
-coordenador continua responsável por créditos/fontes e pelos estágios seguintes.
+`pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e
+avisos explícitos; o coordenador consome esses resultados nos estágios seguintes.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).

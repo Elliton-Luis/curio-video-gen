@@ -23,11 +23,11 @@ from . import ffmpeg as ff
 from .audio import selection as audio_selection
 from .audio.library import audio_seed
 from .config import CurioConfig
-from .media.providers import classify_rights
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
 from . import pipeline_media as pipeline_media_stage
 from . import pipeline_visual as pipeline_visual_stage
+from . import pipeline_media_sources as pipeline_media_sources_stage
 from . import pipeline_audio as pipeline_audio_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
@@ -715,78 +715,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
               synthetic_scenes=len(media_scenes) - real_media_count,
               downloads=metrics.media_downloads,
               cache_hits=metrics.media_cache_hits)
-    # Registra procedência das mídias no registro de fontes do projeto:
-    # links ANTES do uso (página, arquivo, licença) + local APÓS o uso.
-    # `media_rights_notes` alimenta o relatório: licença incerta não passa
-    # em silêncio — ela vira aviso explícito na pasta de informações.
-    media_rights_notes: list[str] = []
-    credits: list[str] = []
-    # Rótulo curto do assunto de cada cena, para o título do registro:
-    # "cena 3 · rolo de papel térmico [pixabay_12345]" diz do que se trata;
-    # "cena 3 [pixabay_12345]" só diz onde.
-    rotulos = {scene.id: pipeline_media_stage.scene_label(scene)
-               for scene in semantic_scenes}
-    for scene in media_scenes:
-        rotulo = rotulos.get(scene["chapter_id"], f"cena {scene['chapter_id']}")
-        for entry in scene.get("assets") or []:
-            asset = entry.get("asset") or {}
-            if not asset.get("local_path"):
-                continue
-            rights = asset.get("rights_status", "") or classify_rights(
-                asset.get("license", ""), asset.get("provider", ""))
-            asset["rights_status"] = rights
-            # O título do registro passa a ser a cena + o id da imagem.
-            # Antes era a tag crua do provedor ("4k wallpaper hd thermal
-            # printer technology"), que não diz do que se trata nem localiza
-            # a imagem. A tag original continua em `asset["title"]`.
-            registro_titulo = sources_stage.media_record_title(
-                scene_label=rotulo,
-                provider=asset.get("provider", ""),
-                asset_id=asset.get("asset_id", ""),
-                fallback=str(asset.get("title", ""))[:80])
-            sources.add_media(
-                title=registro_titulo,
-                origin_url=asset.get("source_url", ""),
-                file_url=asset.get("download_url", ""),
-                provider=asset.get("provider", ""),
-                author=asset.get("author", ""),
-                license=asset.get("license", ""),
-                license_url=asset.get("license_url", ""),
-                local_path=asset.get("local_path", ""),
-                used_in=f"cena {scene['chapter_id']}",
-                rights_status=rights,
-                query=entry.get("query", ""),
-                scene=f"cena {scene['chapter_id']}",
-                asset_id=asset.get("asset_id", ""))
-            # Crédito pronto quando a licença exige atribuição: CC BY/SA
-            # permitem editar mas obrigam a citar, e o classificador de
-            # direitos responde a "posso editar", não a "tenho que citar".
-            if sources_stage.requires_attribution(asset.get("license", "")):
-                credito = sources_stage.credit_line(
-                    author=asset.get("author", ""),
-                    title=asset.get("title", ""),
-                    license_text=asset.get("license", ""),
-                    source_url=asset.get("source_url", ""),
-                    license_url=asset.get("license_url", ""))
-                if credito not in credits:
-                    credits.append(credito)
-                if asset.get("author", "").strip() == "":
-                    nota = (f"cena {scene['chapter_id']}: "
-                            f"'{asset.get('title', '')[:50]}' tem licença que "
-                            f"exige atribuição mas o acervo não informou o autor "
-                            f"({asset.get('license')}) — confira em "
-                            f"{asset.get('license_url') or asset.get('source_url') or 'sem link'}")
-                    if nota not in media_rights_notes:
-                        media_rights_notes.append(nota)
-            if rights == "verify":
-                note = (f"Cena {scene['chapter_id']}: "
-                        f"'{asset.get('title', '')[:60]}' entrou no vídeo com "
-                        f"licença a conferir "
-                        f"({asset.get('provider', '')}: "
-                        f"{asset.get('license') or 'desconhecida'}) — confira "
-                        f"em {asset.get('license_url') or asset.get('source_url') or 'sem link'}")
-                if note not in media_rights_notes:
-                    media_rights_notes.append(note)
+    provenance = pipeline_media_sources_stage.record_selected_media(
+        semantic_scenes, media_scenes, sources)
+    media_rights_notes = list(provenance.rights_notes)
+    credits = list(provenance.credits)
     stage_times["media"] = round(time.monotonic() - media_t0, 2)
     emit(3, "Buscando mídia",
          "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")

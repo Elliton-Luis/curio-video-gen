@@ -101,17 +101,6 @@ def manual_media_scenes(chapters: list[SemanticScene], manual_dir: str) -> list[
     return scenes
 
 
-def scene_label(chapter: SemanticScene) -> str:
-    parts = [str(getattr(chapter, "subject", "") or "").strip()]
-    parts = [part for part in parts if part]
-    entities = [str(item).strip() for item in
-                (getattr(chapter, "visual_entities", []) or []) if str(item).strip()]
-    if not parts and entities:
-        parts = entities[:2]
-    return f"cena {chapter.id}" if not parts else \
-        f"cena {chapter.id} · " + " / ".join(parts)[:70]
-
-
 def count_assets(media_scenes: list[dict]) -> int:
     count = 0
     for scene in media_scenes or []:
