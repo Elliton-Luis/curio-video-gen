@@ -52,7 +52,9 @@ aplicados antes de atualizar `chapters.json`.
 invalidação de mídia explícita. A projeção `Chapter → SemanticScene` não cria
 mais representações pela narração; somente cache legado incompleto passa por
 recuperação determinística explícita, marcada e persistida na fronteira de
-leitura.
+leitura. A projeção também não sincroniza implicitamente `visual_queries` com
+`representations`; os dois campos declarados chegam intactos enquanto os
+producers são migrados para a fonte única.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e

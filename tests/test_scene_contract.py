@@ -112,3 +112,20 @@ def test_semantic_scene_excludes_timeline_and_preserves_meaning_provenance():
     assert "duration_estimate" not in scene.to_dict()
     scene.video_context.topic = "changed downstream"
     assert chapter.video_context.topic != "changed downstream"
+
+
+def test_semantic_projection_does_not_reconcile_query_and_representation_fields():
+    query_only = Chapter(id=1, narration="A cena mostra Marte.",
+                         duration_estimate=4, visual_queries=["Mars surface"])
+    representation_only = Chapter(
+        id=2, narration="A cena mostra Marte.", duration_estimate=4,
+        representations=[{"query": "Mars surface", "kind": "place"}])
+
+    projected_query = query_only.semantic_scene()
+    projected_representation = representation_only.semantic_scene()
+
+    assert projected_query.visual_queries == ("Mars surface",)
+    assert projected_query.representations == ()
+    assert projected_representation.visual_queries == ()
+    assert [rep.query for rep in projected_representation.representations] == [
+        "Mars surface"]

@@ -224,15 +224,10 @@ class SemanticScene:
 
     @classmethod
     def from_chapter(cls, chapter, source: str = "unknown") -> "SemanticScene":
+        """Project declared fields without synchronizing query/repr schemas."""
         context = deepcopy(chapter.video_context)
         visual_queries = tuple(chapter.visual_queries)
         representations = tuple(chapter.representations)
-        if representations and not visual_queries:
-            visual_queries = tuple(rep.query for rep in representations)
-        elif visual_queries and not representations:
-            representations = tuple(VisualRepresentation(
-                query=query, source="legacy_scene_query")
-                for query in visual_queries)
         return cls(
             id=int(chapter.id), narration=str(chapter.narration), source=source,
             planning_mode=str(getattr(chapter, "planning_mode", "unknown")),
