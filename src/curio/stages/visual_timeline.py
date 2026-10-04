@@ -7,7 +7,6 @@ selecionados em planos renderizáveis. Não busca, não baixa e não chama LLM.
 from __future__ import annotations
 
 import random
-import re
 
 from .. import textnorm
 from ..config import ENTRY_STYLES
@@ -52,17 +51,21 @@ def insertion_scenes(n_scenes: int, budget: int) -> set[int]:
 
 def _topic_terms(ch) -> set[str]:
     terms: set[str] = set()
-    for query in list(getattr(ch, "visual_queries", []) or []):
+    # Timeline may refine ordering only from the already approved visual
+    # search plan. It must not invent relevance from narration or rebuild
+    # aliases/context during render.
+    semantic_terms = [
+        *(getattr(rep, "query", "") for rep in
+          (getattr(ch, "representations", []) or [])),
+        *(getattr(ch, "visual_queries", []) or []),
+    ]
+    for query in semantic_terms:
+        if not str(query or "").strip():
+            continue
         terms.update(textnorm.query_terms(query))
         for word in query.replace(",", " ").split():
             base = textnorm.fold(word)
             if len(base) >= 3 and base not in textnorm.VISUAL_STOP_PT:
-                terms.add(base)
-    if not terms:
-        for word in re.findall(r"[a-zà-ÿ]{4,}",
-                               str(getattr(ch, "narration", "") or "").lower()):
-            base = textnorm.fold(word)
-            if base and base not in textnorm.VISUAL_STOP_PT:
                 terms.add(base)
     return terms
 

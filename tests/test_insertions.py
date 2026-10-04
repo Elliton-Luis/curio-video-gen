@@ -271,10 +271,21 @@ def test_uma_imagem_so_nunca_insere():
 
 
 def test_sem_termos_de_assunto_nao_insere():
-    ch = Chapter(id=1, narration="", duration_estimate=8.0,
+    ch = Chapter(id=1, narration="A narração menciona termodinâmica e sal.",
+                 duration_estimate=8.0,
                  visual_queries=[], start=0.0, end=8.0)
     entries = [_entry(0, "a"), _entry(1, "b")]
     assert VT.order_for_insertion(entries, ch)[1] == []
+
+
+def test_ordem_visual_nao_reinterpreta_narracao():
+    first = Chapter(id=1, narration="Roma usa sal e conserva alimentos.",
+                    duration_estimate=8.0, subject="Roman food preservation",
+                    visual_queries=["Roman food preservation"])
+    second = Chapter(id=1, narration="Buracos negros distorcem a luz.",
+                     duration_estimate=8.0, subject="Roman food preservation",
+                     visual_queries=["Roman food preservation"])
+    assert VT._topic_terms(first) == VT._topic_terms(second)
 
 
 def test_tres_candidatos_escolhe_o_melhor_dos_tres():
