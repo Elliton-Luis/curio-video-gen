@@ -25,7 +25,6 @@ from .stages.scenes import Chapter
 class SceneStageResult:
     semantic_scenes: tuple[SemanticScene, ...]
     timeline_spans: tuple[TimelineSpan, ...]
-    chapters: tuple[Chapter, ...]
     source: str
     enrichment: SceneEnrichmentResult
     invalidate_media: bool
@@ -37,8 +36,6 @@ class SceneStageResult:
             raise ValueError("scene stage must return unique semantic scenes")
         if tuple(span.scene_id for span in self.timeline_spans) != scene_ids:
             raise ValueError("scene stage spans do not match semantic scenes")
-        if tuple(chapter.id for chapter in self.chapters) != scene_ids:
-            raise ValueError("scene stage Chapter projection is misaligned")
         if not self.source:
             raise ValueError("scene stage source is required")
 
@@ -145,8 +142,10 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
         planning_mode=planning_mode, genre=genre,
         research_sources=research_sources, research_timeout=research_timeout,
         etymology=etymology)
-    chapters = list(enriched.chapters)
     semantic_scenes = enriched.semantic_scenes
+    timings = {span.scene_id: span for span in timeline_spans}
+    chapters = [Chapter.from_semantic_scene(
+        scene, timing=timings.get(scene.id)) for scene in semantic_scenes]
     persist_chapters = persist_chapters or enriched.changed
     persist_chapters = persist_chapters or _chapter_projection_differs(
         paths.chapters_json, chapters)
@@ -160,7 +159,8 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     if "local_topic_anchor" in enriched.applied:
         run_event("result", "Cenas locais ancoradas no tema do vídeo",
                   operation="scenes", source=source,
-                  topic_queries=chapters[0].global_visual_queries if chapters else [])
+                  topic_queries=(semantic_scenes[0].global_visual_queries
+                                 if semantic_scenes else []))
     if "verified_entity_context" in enriched.applied:
         run_event("result", "Contexto visual recuperado da entidade pesquisada",
                   operation="scenes", source=source)
@@ -171,7 +171,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     run_event(scene_event, f"Cenas: {source}; {len(chapters)} cena(s)",
               operation="scenes", source=source, scenes=len(chapters))
     return SceneStageResult(
-        chapters=tuple(chapters), semantic_scenes=semantic_scenes,
+        semantic_scenes=semantic_scenes,
         timeline_spans=tuple(timeline_spans),
         source=source, enrichment=enriched,
         invalidate_media=enriched.changed or recovered_legacy,

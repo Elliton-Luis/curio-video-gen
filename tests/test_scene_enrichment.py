@@ -19,8 +19,8 @@ def test_scene_enrichment_returns_valid_batch_without_mutating_planner_output():
         source="local", planning_mode="deterministic", genre="science")
 
     assert original.to_dict() == before
-    assert result.chapters[0].semantic_scene("local").to_dict() == \
-        result.semantic_scenes[0].to_dict() | {"source": "local"}
+    assert result.semantic_scenes[0].id == original.id
+    assert not hasattr(result.semantic_scenes[0], "start")
     assert result.semantic_scenes[0].contract_errors() == []
     assert result.semantic_scenes[0].video_context.topic == "Buracos negros"
     assert result.semantic_scenes[0].global_visual_queries
@@ -31,30 +31,27 @@ def test_scene_enrichment_returns_valid_batch_without_mutating_planner_output():
 
 
 def test_scene_enrichment_is_an_explicit_identity_transform_when_no_context():
-    chapter = SemanticScene(1, "Uma descrição da cena.")
+    scene = SemanticScene(1, "Uma descrição da cena.")
 
-    result = enrich_scenes([chapter], topic="", source="llm",
+    result = enrich_scenes([scene], topic="", source="llm",
                            planning_mode="llm", genre="")
 
-    assert result.semantic_scenes[0].to_dict() == chapter.to_dict()
+    assert result.semantic_scenes[0].to_dict() == scene.to_dict()
     assert result.source == "llm"
     assert result.applied == ()
     assert not result.changed
 
 
 def test_semantic_scene_input_uses_same_enrichment_contract():
-    chapter = SemanticScene(
+    scene = SemanticScene(
         1, "A estrela curva o espaço.", subject="estrela",
         planning_mode="deterministic", text_role="quote")
-    semantic = chapter
-
-    result = enrich_scenes([semantic], topic="Buracos negros",
+    result = enrich_scenes([scene], topic="Buracos negros",
                            source="local", planning_mode="deterministic")
 
     assert result.semantic_scenes[0].video_context.topic == "Buracos negros"
     assert result.semantic_scenes[0].text_role == "quote"
-    assert result.chapters[0].duration_estimate == 0.0
-    assert result.chapters[0].text_role == "quote"
+    assert not hasattr(result.semantic_scenes[0], "duration_estimate")
 
 
 def test_scene_enrichment_rejects_misaligned_timeline_contract():

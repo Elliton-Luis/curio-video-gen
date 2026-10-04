@@ -8,13 +8,11 @@ from . import etymology as etymology_stage
 from .visual_context import (anchor_local_topic, attach_video_context,
                              fill_missing_context)
 from .scene_contract import SemanticScene, TimelineSpan
-from .scenes import Chapter
 
 
 @dataclass(frozen=True)
 class SceneEnrichmentResult:
     semantic_scenes: tuple[SemanticScene, ...]
-    chapters: tuple[Chapter, ...]
     source: str
     applied: tuple[str, ...]
 
@@ -40,25 +38,18 @@ def enrich_scenes(scenes, *, topic: str, target=None, source: str,
     either scene planner. Its output is the only enriched batch the pipeline
     persists and passes to media planning.
     """
-    semantic_inputs = []
-    inferred_spans = {}
-    for scene in scenes or []:
-        if isinstance(scene, SemanticScene):
-            semantic_inputs.append(scene)
-        elif isinstance(scene, Chapter):
-            semantic_inputs.append(scene.semantic_scene(source or "unknown"))
-            inferred_spans[scene.id] = scene.timeline_span()
-        else:
-            raise TypeError("scene enrichment requires SemanticScene or Chapter")
+    semantic_inputs = tuple(scenes or ())
+    if any(not isinstance(scene, SemanticScene) for scene in semantic_inputs):
+        raise TypeError("scene enrichment requires SemanticScene values")
     scene_ids = tuple(scene.id for scene in semantic_inputs)
     if len(scene_ids) != len(set(scene_ids)):
         raise ValueError("scene enrichment scene ids must be unique")
     if any(scene.contract_errors() for scene in semantic_inputs):
         raise ValueError("scene enrichment received invalid semantic scene")
+    if any(not isinstance(span, TimelineSpan) for span in timeline_spans):
+        raise TypeError("scene enrichment requires TimelineSpan values")
     if timeline_spans and tuple(span.scene_id for span in timeline_spans) != scene_ids:
         raise ValueError("scene enrichment spans do not match scene order")
-    explicit_spans = {span.scene_id: span for span in timeline_spans}
-    timings = {**inferred_spans, **explicit_spans}
     enriched = tuple(semantic_inputs)
     applied = []
     deterministic = planning_mode == "deterministic"
@@ -90,10 +81,6 @@ def enrich_scenes(scenes, *, topic: str, target=None, source: str,
         if errors:
             raise ValueError(f"enrichment emitted invalid scene: {errors}")
     semantic_scenes = tuple(enriched)
-    chapters = tuple(Chapter.from_semantic_scene(
-        scene, timing=timings.get(scene.id)) for scene in semantic_scenes)
-    for chapter in chapters:
-        chapter.require_valid()
     return SceneEnrichmentResult(
-        semantic_scenes=semantic_scenes, chapters=chapters,
+        semantic_scenes=semantic_scenes,
         source=str(source or "unknown"), applied=tuple(applied))

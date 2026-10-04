@@ -578,7 +578,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         target=research_target, research_sources=research_sources,
         research_timeout=cfg.research_timeout, etymology=scene_etymology,
         metrics=metrics, warnings=warnings, write_json=_write_json)
-    chapters = list(scene_result.chapters)
     semantic_scenes = list(scene_result.semantic_scenes)
     timeline_spans = scene_result.timeline_spans
     scenes_source = scene_result.source
@@ -606,7 +605,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     # Sem nenhuma imagem o vídeo NÃO é produzido: standby até fotos manuais.
     if pipeline_media_stage.count_assets(media_scenes) == 0:
-        pipeline_media_stage.write_manual_readme(manual_dir, slug, len(chapters))
+        pipeline_media_stage.write_manual_readme(manual_dir, slug, len(semantic_scenes))
         sources.save(paths.sources_json)
         sources_stage.write_report(paths.sources_report, sources,
                                    research=research_sources, grounding=grounding)
@@ -617,14 +616,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "narration": "standby",
             "media_resolution_source": media_result.source,
             "manual_dir": manual_dir,
-            "n_scenes": len(chapters),
+            "n_scenes": len(semantic_scenes),
             "stage_times": dict(stage_times),
             "warnings": list(warnings),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "execution_log": current_log_path(),
         })
         emit(3, "Buscando mídia", "STANDBY")
-        raise pipeline_media_stage.MediaStandby(slug, manual_dir, len(chapters))
+        raise pipeline_media_stage.MediaStandby(slug, manual_dir, len(semantic_scenes))
 
     if narration == "human":
         return _human_prep(idea, slug, cfg, paths, script_text, script_source,

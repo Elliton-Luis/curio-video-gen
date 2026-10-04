@@ -37,8 +37,11 @@ contagens visuais como desconhecidas (`null`).
 assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
 do enriquecimento semântico quando disponível.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
-`TimelineSpan[]` separados; Chapter permanece como projeção de compatibilidade
-para render e formatos externos enquanto esses consumidores migram.
+`TimelineSpan[]` separados; `Chapter` permanece como projeção de compatibilidade
+para metadata, revisão e formatos externos.
+O resultado de planejamento/enrichment carrega apenas cenas semânticas e
+spans; `Chapter` é criado nas fronteiras que serializam ou consomem o formato
+histórico.
 O teleprompter também combina texto semântico e spans tipados, validando a
 ordem das cenas antes de distribuir as falas no tempo.
 O render silencioso recebe os mesmos contratos: identidade/texto vêm de

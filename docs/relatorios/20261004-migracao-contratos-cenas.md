@@ -55,13 +55,14 @@ projeção correspondem em ordem. O antigo `scenes.apply_timings` foi removido
 depois da migração de seu único consumidor. Focados: 66 passaram; suíte
 completa: 847 passaram em 146,75 s.
 
-## Próxima fronteira
+## Snapshot após A4k (fronteiras migradas em A4l–A4o abaixo)
 
-O pipeline ainda projeta `Chapter` para consumers de subtitles, render e
-ferramentas que leem `chapters.json`. A migração continua por consumidor,
-preservando o formato externo até esses limites usarem contratos tipados
-próprios. Cache de aquisição de mídia permanece independente do cache
-semântico e não escolhe mídia por si só.
+O pipeline ainda projeta `Chapter` para `chapters.json`, metadata externa,
+revisão/folha de contato e consumidores de CLI que carregam projetos. A mídia,
+timeline visual, teleprompter e render silencioso já usam contratos semânticos
+e temporais separados. A migração continua por consumidor, preservando o
+formato externo até esses limites usarem contratos tipados próprios. Cache de
+aquisição permanece independente do cache semântico e não escolhe mídia.
 
 ## A4l: timeline visual e métricas recebem spans tipados
 
@@ -109,3 +110,18 @@ caminho sem visual timeline. Focados: 140 passaram; suíte completa: **850
 passaram em 145,42 s**; `compileall` e `git diff --check` passaram. Sem nova
 geração real nesta fase. O smoke script ainda para antes dos seus checks por
 imports internos já removidos (`pipeline._relevance`, `scenes._local_chapters`).
+
+## A4o: resultado de cenas não carrega projeção Chapter
+
+`SceneEnrichmentResult` e `SceneStageResult` agora retornam somente
+`SemanticScene[]` e `TimelineSpan[]`; removi a compatibilidade interna que
+aceitava Chapter como entrada do enrichment e a duplicação `chapters[]` no
+resultado do estágio. `pipeline_scenes` cria Chapter apenas ao persistir a
+projeção `chapters.json`. O pipeline principal retém semântica/span em memória;
+constrói Chapter depois do áudio somente para metadata, revisão e formato
+compatível. Standby usa a quantidade de SemanticScene diretamente. Focados:
+40 passaram; suíte completa: **850 passaram em 147,11 s**; compileall e
+`git diff --check` passaram. Sem geração real nesta fase.
+
+A fronteira de planejamento/enrichment já não depende de Chapter. Restam
+adaptações de leitura/escrita do projeto salvo, metadata e revisão visual.

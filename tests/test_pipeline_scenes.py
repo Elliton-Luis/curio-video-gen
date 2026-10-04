@@ -5,7 +5,6 @@ from curio.pipeline_scenes import run_scene_stage
 from curio.stages.scene_contract import (ScenePlanResult, SemanticScene,
                                          TimelineSpan)
 from curio.stages.scene_plan_artifact import plan_to_dict
-from curio.stages.scenes import Chapter
 
 
 def _write_json(path, value):
@@ -26,10 +25,8 @@ def test_legacy_cache_recovery_is_persisted_and_invalidates_media(tmp_path, monk
 
     def keep_enriched_scenes(scenes, **kwargs):
         nonlocal chapter
-        chapter = Chapter.from_semantic_scene(
-            scenes[0], timing=kwargs["timeline_spans"][0])
         return SimpleNamespace(
-            chapters=(chapter,), semantic_scenes=tuple(scenes),
+            semantic_scenes=tuple(scenes),
             changed=False, source="cache", applied=[])
 
     monkeypatch.setattr("curio.pipeline_scenes.enrich_scenes",
@@ -64,9 +61,7 @@ def test_semantic_plan_cache_is_canonical_over_legacy_chapters(tmp_path, monkeyp
         (semantic_scene,), (TimelineSpan(1, 4),), "local"))), encoding="utf-8")
 
     def enrich(scenes, **kwargs):
-        chapter = Chapter.from_semantic_scene(scenes[0],
-                                               timing=kwargs["timeline_spans"][0])
-        return SimpleNamespace(chapters=(chapter,), semantic_scenes=tuple(scenes),
+        return SimpleNamespace(semantic_scenes=tuple(scenes),
                                changed=False, source="cache", applied=[])
 
     monkeypatch.setattr("curio.pipeline_scenes.enrich_scenes", enrich)
