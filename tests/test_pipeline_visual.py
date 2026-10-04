@@ -118,6 +118,6 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
             result.scenes_without_visual) == (1, 1, 1)
     assert decisions == [(1, {"state": "real"})]
     summary = events[-1][1]
-    assert summary["real_assets"] == 1
+    assert summary["scenes_with_real_asset"] == 1
     assert summary["synthetic_scenes"] == 1
     assert summary["scenes_without_visual"] == 1

@@ -96,9 +96,9 @@ def _record_selection(scenes: list[dict], source: str, warnings: list[str],
             rejected=len(scene.get("rejected") or []))
     run_event(
         "result",
-        f"Mídia: {real_scenes}/{len(scenes)} cena(s) com asset real; "
+        f"Mídia: {real_scenes}/{len(scenes)} cena(s) selecionaram asset real; "
         f"{synthetic_scenes} sintético(s), {scenes_without_visual} sem visual",
-        operation="media", real_assets=real_scenes,
+        operation="media", scenes_with_real_asset=real_scenes,
         synthetic_scenes=synthetic_scenes,
         scenes_without_visual=scenes_without_visual,
         downloads=getattr(metrics, "media_downloads", 0),
