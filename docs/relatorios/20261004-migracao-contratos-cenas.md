@@ -40,6 +40,11 @@ de `fill_missing_context` para entidade sem nome sendo confundido com batch;
 esse caminho agora retorna as cenas originais. Após a correção, os focados
 passaram (39) e a suíte completa passou com 844 testes em 145,67 s.
 
+`visual_context` e `etymology` agora rejeitam entrada que não seja
+`SemanticScene` nas transformações novas. `scene_enrichment` ainda aceita
+`Chapter` somente como adaptador dos caches antigos e projeta capítulos ao
+final. A semântica não sofre mutação in-place durante enriquecimento.
+
 ## Próxima fronteira
 
 O pipeline ainda cria `Chapter` dentro de enrichment e os consumidores de
