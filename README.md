@@ -39,6 +39,8 @@ do enriquecimento semântico quando disponível.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
 `TimelineSpan[]` separados; `Chapter` permanece como projeção de compatibilidade
 para metadata e formatos externos.
+Aquisição por provider e mídia manual recebem somente `SemanticScene`; reuse
+consulta a mesma intenção tipada, sem adaptadores de Chapter.
 O metadata recebe semântica e timing tipados e só materializa `chapters` ao
 serializar o schema existente.
 O resultado de planejamento/enrichment carrega apenas cenas semânticas e

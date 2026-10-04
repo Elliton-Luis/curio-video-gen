@@ -14,7 +14,7 @@ from curio.queue import QueueItemStatus, VideoQueue, retry_failed
 from curio.stages.scenes import Chapter
 
 
-def _chapters(n=3):
+def _semantic_scenes(n=3):
     return [Chapter(id=i + 1, narration=f"Narração da cena {i + 1}.",
                     duration_estimate=5.0).semantic_scene()
             for i in range(n)]
@@ -33,7 +33,7 @@ def test_count_assets_suporta_os_dois_formatos():
 
 def test_manual_sem_fotos_retorna_none(tmp_path):
     paths = video_paths(str(tmp_path), "slug-teste")
-    assert manual_media_scenes(_chapters(), manual_media_dir(paths)) is None
+    assert manual_media_scenes(_semantic_scenes(), manual_media_dir(paths)) is None
 
 
 def test_manual_mapeia_fotos_em_ordem_e_reusa(tmp_path):
@@ -50,7 +50,7 @@ def test_manual_mapeia_fotos_em_ordem_e_reusa(tmp_path):
             fh.write(png)
     with open(os.path.join(manual, "notas.txt"), "w") as fh:
         fh.write("ignorado")
-    scenes = manual_media_scenes(_chapters(3), manual)
+    scenes = manual_media_scenes(_semantic_scenes(3), manual)
     assert scenes is not None and len(scenes) == 3
     assert count_assets(scenes) == 3
     # ordem alfabética: cena1=abertura, cena2=meio, cena3=abertura (rodízio)
@@ -60,6 +60,13 @@ def test_manual_mapeia_fotos_em_ordem_e_reusa(tmp_path):
     assert scenes[0]["reused_from"] is None
     assert scenes[2]["reused_from"] == 1
     assert all(s["asset"]["provider"] == "manual" for s in scenes)
+
+
+def test_manual_media_rejects_chapter_instead_of_reading_semantics_from_it(tmp_path):
+    import pytest
+    chapter = Chapter(id=1, narration="Cena.", duration_estimate=5)
+    with pytest.raises(TypeError, match="SemanticScene"):
+        manual_media_scenes([chapter], str(tmp_path / "manual"))
 
 
 def test_standby_carrega_slug_e_pasta():

@@ -169,3 +169,14 @@ O rerender CLI usa seu batch de spans já carregado para métricas. Focados de
 finalize/rerender/metadata: 5 passaram; suíte completa antes deste ajuste:
 **853 passaram em 147,46 s**; após o ajuste, focados, compileall e
 `git diff --check` passaram. Sem geração real nesta fase.
+
+## A4t: aquisição e mídia manual recebem SemanticScene
+
+`fetch_media_multi` e `_resolve_reuse_multi` recebem cenas semânticas tipadas;
+`manual_media_scenes` lê campos canônicos diretamente. Os dois limites recusam
+Chapter, impedindo extração ou reconstrução tardia da intenção. Removi
+`_fetch_media_fallback`, órfão que repetia o comportamento de fallback da
+aquisição ativa. Regressões cobrem a rejeição do formato antigo e preservam
+seleção manual, mídia real e reuso validado. Focados: 49 passaram; suíte
+completa: **855 passaram em 146,30 s**; compileall e `git diff --check`
+passaram. Sem geração real nesta fase.

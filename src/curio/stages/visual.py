@@ -1018,7 +1018,7 @@ def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
             "relevance": 50, "order": 0}
 
 
-def fetch_media_multi(chapters, cfg: CurioConfig,
+def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
                       max_images: int = 3,
                       metrics=None, genre: str = "") -> tuple[list[dict], list[str]]:
     """Acquire candidates for each scene and select using its explicit plans.
@@ -1027,13 +1027,18 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     downloaded bytes live in the reusable global media cache. This function
     records project selection separately from both caches.
     """
+    if any(not isinstance(scene, SemanticScene) for scene in semantic_scenes):
+        raise TypeError("media acquisition requires SemanticScene values")
+    scene_ids = tuple(scene.id for scene in semantic_scenes)
+    if not scene_ids or len(scene_ids) != len(set(scene_ids)):
+        raise ValueError("media acquisition requires unique semantic scenes")
     max_images = max(1, min(5, int(max_images)))
     # A ordem de provedores é por cena: histórica quer acervo de arte
     # primeiro, as demais mantêm a ordem global.
     providers = []
     seen_names: set[str] = set()
-    for ch in chapters:
-        for prov in _provider_priority_order(cfg, ch, genre):
+    for scene in semantic_scenes:
+        for prov in _provider_priority_order(cfg, scene, genre):
             if prov.name not in seen_names:
                 seen_names.add(prov.name)
                 providers.append(prov)
@@ -1051,29 +1056,18 @@ def fetch_media_multi(chapters, cfg: CurioConfig,
     # disk/query cache or network again.
     shared_search_cache: dict[str, dict[str, list[dict]]] = {}
 
-    for ch in chapters:
+    for scene in semantic_scenes:
         scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
-            ch, providers, cfg, max_images, metrics, cfg.cache_dir,
+            scene, providers, cfg, max_images, metrics, cfg.cache_dir,
             visual_state=visual_state, genre=genre, asset_uses=asset_uses,
             shared_search_cache=shared_search_cache,
         )
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)
     
-    _resolve_reuse_multi(scenes, chapters)
+    _resolve_reuse_multi(scenes, semantic_scenes)
     _annotate_reuse(scenes)
     return scenes, all_warnings
-
-
-def _fetch_media_fallback(chapters, max_images: int, warnings: list) -> tuple[list[dict], list[str]]:
-    """Fallback quando não há providers configurados."""
-    scenes = []
-    for ch in chapters:
-        msg = f"cena {ch.id}: sem providers de mídia — fallback"
-        warnings.append(msg)
-        print(f"AVISO: {msg}", file=sys.stderr)
-        scenes.append({"chapter_id": ch.id, "asset": None, "assets": [], "reused_from": None})
-    return scenes, warnings
 
 
 def _annotate_reuse(scenes: list[dict]) -> None:
@@ -1121,28 +1115,29 @@ def _annotate_reuse(scenes: list[dict]) -> None:
         s.setdefault("reuse", [])
 
 
-def _resolve_reuse_multi(scenes: list[dict], chapters=None) -> None:
+def _resolve_reuse_multi(scenes: list[dict],
+                          semantic_scenes: list[SemanticScene]) -> None:
     """Reuse only when donor title proves topic and scene relevance."""
     have = [s for s in scenes if s["assets"]]
-    by_id = {chapter.id: chapter for chapter in (chapters or [])}
+    by_id = {scene.id: scene for scene in semantic_scenes}
     if not have or not by_id:
         return
     for s in scenes:
         if s["assets"]:
             continue
         cid = s["chapter_id"]
-        chapter = by_id.get(cid)
-        if chapter is None:
+        scene = by_id.get(cid)
+        if scene is None:
             continue
         eligible = []
         from . import scoring
         for donor in have:
-            donor_chapter = by_id.get(donor["chapter_id"])
-            if donor_chapter is None:
+            donor_scene = by_id.get(donor["chapter_id"])
+            if donor_scene is None:
                 continue
             for entry in donor.get("assets", []):
                 asset = entry.get("asset") or {}
-                relevance = scoring.semantic_relevance(asset, chapter)
+                relevance = scoring.semantic_relevance(asset, scene)
                 if (relevance.get("topic_relevance", 0) or 0) > 0 and \
                         (relevance.get("scene_relevance", 0) or 0) >= 25:
                     eligible.append((donor, entry, relevance))

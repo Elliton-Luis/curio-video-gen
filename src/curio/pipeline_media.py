@@ -56,8 +56,11 @@ def _probe_image_dims(path: str) -> tuple[int, int]:
     return 0, 0
 
 
-def manual_media_scenes(chapters: list[SemanticScene], manual_dir: str) -> list[dict] | None:
+def manual_media_scenes(semantic_scenes: list[SemanticScene],
+                        manual_dir: str) -> list[dict] | None:
     """Build scene media from sorted user files; None means no files."""
+    if any(not isinstance(scene, SemanticScene) for scene in semantic_scenes):
+        raise TypeError("manual media requires SemanticScene values")
     if not os.path.isdir(manual_dir):
         return None
     files = sorted(name for name in os.listdir(manual_dir)
@@ -66,9 +69,9 @@ def manual_media_scenes(chapters: list[SemanticScene], manual_dir: str) -> list[
     if not files:
         return None
     scenes = []
-    for index, chapter in enumerate(chapters):
+    for index, scene in enumerate(semantic_scenes):
         name = files[index % len(files)]
-        donor = chapters[index % len(files)].id
+        donor = semantic_scenes[index % len(files)].id
         local = os.path.join(manual_dir, name)
         stem = os.path.splitext(name)[0]
         width, height = _probe_image_dims(local)
@@ -77,18 +80,18 @@ def manual_media_scenes(chapters: list[SemanticScene], manual_dir: str) -> list[
                  "author": "", "license": "manual do usuário", "license_url": "",
                  "source_url": "", "download_url": "", "download_fallback_url": "",
                  "width": width, "height": height, "size_bytes": os.path.getsize(local),
-                 "kind": "image", "local_path": local, "used_in": f"cena {chapter.id}"}
-        scenes.append({"chapter_id": chapter.id, "asset": asset,
+                 "kind": "image", "local_path": local, "used_in": f"cena {scene.id}"}
+        scenes.append({"chapter_id": scene.id, "asset": asset,
                        "assets": [{"asset": asset, "query": "manual",
                                     "relevance": 100, "order": 0}],
                        "visual_decision": {
-                           "topic": (getattr(chapter, "video_context", {}) or {}).get("topic", ""),
-                           "visual_intent": (getattr(chapter, "visual_intent_structured", "")
-                                             or getattr(chapter, "visual_intent", "")),
-                           "entities": list(getattr(chapter, "visual_entities", []) or []),
-                           "primary_entity": getattr(chapter, "primary_entity", "")
-                                            or getattr(chapter, "subject", ""),
-                           "representations": getattr(chapter, "representations", []) or [],
+                           "topic": scene.video_context.topic,
+                           "visual_intent": (scene.visual_intent_structured
+                                             or scene.visual_intent),
+                           "entities": list(scene.visual_entities),
+                           "primary_entity": scene.primary_entity or scene.subject,
+                           "representations": [rep.to_dict()
+                                               for rep in scene.representations],
                            "queries": [], "providers_consulted": [],
                            "candidates": [{"title": asset["title"],
                                "provider": "manual", "decision": "selected",
@@ -97,7 +100,7 @@ def manual_media_scenes(chapters: list[SemanticScene], manual_dir: str) -> list[
                                         "reason": "asset supplied by user"},
                            "fallback": "manual",
                        },
-                       "reused_from": None if donor == chapter.id else donor})
+                       "reused_from": None if donor == scene.id else donor})
     return scenes
 
 

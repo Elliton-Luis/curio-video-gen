@@ -23,6 +23,13 @@ def _chapter(topic, event, entity, representation):
                        "places": [], "aliases": [], "period": ""})
 
 
+def test_media_acquisition_rejects_chapter_at_semantic_boundary():
+    chapter = scenes.Chapter(id=1, narration="A cena descreve o evento.",
+                             duration_estimate=5)
+    with pytest.raises(TypeError, match="SemanticScene"):
+        visual.fetch_media_multi([chapter], None)
+
+
 @pytest.mark.parametrize("topic,scene,entity,representation,distractor", [
     ("French Revolution", "Storming of the Bastille", "Bastille",
      "Storming of the Bastille 1789", "French bulldog"),
