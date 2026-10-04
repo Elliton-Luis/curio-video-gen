@@ -75,7 +75,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     has_scene_plan = bool(scene_plan_path and os.path.isfile(scene_plan_path))
     has_legacy_chapters = os.path.isfile(paths.chapters_json)
     input_signature = scene_plan_inputs_signature(
-        script_text, cfg, genre=genre,
+        script_text, cfg, genre=genre, script_mode=script_mode,
         scene_target_seconds=scene_target_seconds, max_scenes=max_scenes,
         scene_directive=_scene_directive(scene_directive, etymology),
         topic=topic, target=target, research_sources=research_sources,

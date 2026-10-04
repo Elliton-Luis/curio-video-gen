@@ -42,6 +42,7 @@ class ScenePlanManifest:
 
 
 def scene_plan_inputs_signature(script_text: str, cfg, *, genre: str,
+                                script_mode: bool,
                                 scene_target_seconds: float,
                                 max_scenes: int | None,
                                 scene_directive: str, topic: str, target,
@@ -58,6 +59,7 @@ def scene_plan_inputs_signature(script_text: str, cfg, *, genre: str,
     etymology_data = _plain(etymology) if etymology is not None else None
     data = {
         "script": script_text,
+        "script_mode": script_mode,
         "duration_target": getattr(cfg, "duration_target", None),
         "language": getattr(cfg, "language", ""),
         "nvidia_model": getattr(cfg, "nvidia_model", ""),

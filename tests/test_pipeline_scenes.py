@@ -61,7 +61,7 @@ def test_semantic_plan_cache_is_canonical_over_legacy_chapters(tmp_path, monkeyp
     semantic_cache = tmp_path / "scene-plan.json"
     cfg = SimpleNamespace(duration_target=0, language="pt-BR")
     signature = scene_plan_inputs_signature(
-        "The black hole bends light.", cfg, genre="science",
+        "The black hole bends light.", cfg, genre="science", script_mode=True,
         scene_target_seconds=9, max_scenes=None, scene_directive="", topic="",
         target=None, research_sources=[], research_timeout=1, etymology=None)
     manifest = tmp_path / "scene-plan-manifest.json"
@@ -92,6 +92,11 @@ def test_semantic_plan_cache_is_canonical_over_legacy_chapters(tmp_path, monkeyp
     assert result.semantic_scenes[0].narration == "The black hole bends light."
     assert json.loads(cache.read_text(encoding="utf-8"))[0]["narration"] == \
         "The black hole bends light."
+
+    assert scene_plan_inputs_signature(
+        "The black hole bends light.", cfg, genre="science", script_mode=False,
+        scene_target_seconds=9, max_scenes=None, scene_directive="", topic="",
+        target=None, research_sources=[], research_timeout=1, etymology=None) != signature
 
 
 def test_scene_plan_cache_is_rebuilt_when_inputs_change(tmp_path, monkeypatch):

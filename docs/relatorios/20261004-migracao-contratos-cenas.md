@@ -330,6 +330,12 @@ após divergência da identidade de inputs. Testes focados de contrato/cache de
 cenas passaram (**15**); `compileall` e `git diff --check` passaram; suíte
 integral passou com **877 testes em 195,02 s**.
 
+Revisão dos argumentos do planner mostrou que `script_mode` altera a regra de
+contagem de cenas e precisava fazer parte da assinatura. Foi adicionado ao
+manifesto e a regressão prova que o mesmo texto em modo roteiro-pronto e em
+modo ideia tem identidades diferentes; teste focado `test_pipeline_scenes.py`:
+**3 passaram**.
+
 ## E6: media stage rejects internally inconsistent outcomes
 
 O resultado de aquisição ainda cruza consumidores como rows do formato de
