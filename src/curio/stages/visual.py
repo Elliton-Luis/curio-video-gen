@@ -51,6 +51,7 @@ from .visual_timeline import (_assign_sfx, _shuffled_styles, _spec_images,
 from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
+from .media_contracts import Candidate, CandidateRejection
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 import os as _os
@@ -513,11 +514,12 @@ def _search_scene_with_shortcircuit(
 
     def _consider(cand: MediaAsset, query: str) -> None:
         nonlocal duplicate_candidates
-        # Provider aliases often expose the same Commons/Met object. Prefer
-        # stable source identity; asset IDs remain provider-scoped fallback.
         source = (cand.source_url or "").split("?", 1)[0].rstrip("/").casefold()
         identity = (f"url:{source}" if source else
                     f"{cand.provider}:{cand.asset_id}")
+        candidate = Candidate(cand, search_query_by_text[query], identity)
+        # Provider aliases often expose the same Commons/Met object. Prefer
+        # stable source identity; asset IDs remain provider-scoped fallback.
         if identity in seen_ids:
             duplicate_candidates += 1
             query_audit[query]["duplicates"] += 1
@@ -531,9 +533,8 @@ def _search_scene_with_shortcircuit(
         if why:
             query_audit[query]["rejected"] += 1
             semantic = scoring.semantic_relevance(cand.to_dict(), ch)
-            rejected.append({"title": cand.title, "query": query,
-                             "reason": why, "provider": cand.provider,
-                             **semantic})
+            rejected.append({**CandidateRejection(
+                candidate, why, "technical_gate").to_dict(), **semantic})
             if metrics:
                 metrics.media_record_asset_rejected()
                 metrics.media_record_funnel("hard_rejected")
@@ -543,13 +544,7 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_funnel("eligible")
         query_audit[query]["eligible"] += 1
-        candidates.append({
-            "asset": cand.to_dict(),
-            "query": query,
-            "relevance": 0,  # preenchido pelo scoring, não pela ordem de chegada
-            "order": 0,
-            "generic": query.lower() in generics,
-        })
+        candidates.append(candidate.to_evaluation_input())
 
     from . import scoring
     min_score = scoring.threshold()

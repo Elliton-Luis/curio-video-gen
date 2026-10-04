@@ -17,7 +17,8 @@ históricos os normaliza para os tipos atuais e valida a narração antes de
 entregar os dados às etapas seguintes. Antes da aquisição, cada cena recebe
 um `VisualPlan` sem narração; um `SearchPlanner` puro gera queries com
 proveniência por representação, alias e variação, preservadas na auditoria de
-mídia.
+mídia. Resultados dos providers entram como `Candidate` associado à query de
+origem antes de deduplicação e dos gates técnicos.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*
