@@ -185,11 +185,11 @@ def recover_legacy_chapters(chapters) -> bool:
         if not queries:
             continue
         chapter.planning_mode = "deterministic"
-        chapter.visual_queries = list(queries)
+        chapter.set_visual_queries(
+            queries, source="legacy_local_recovery", kind="related")
         chapter.representations = [VisualRepresentation(
             query=query, source="legacy_local_recovery",
             evidence="recovered while loading a pre-contract scene cache")
             for query in queries]
         changed = True
     return changed
-

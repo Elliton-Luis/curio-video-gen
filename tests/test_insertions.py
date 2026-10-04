@@ -21,7 +21,7 @@ def _chapters(n: int, dur: float = 8.0) -> list[Chapter]:
     for i in range(n):
         ch = Chapter(id=i + 1, narration=f"cena {i + 1}",
                      duration_estimate=dur, start=i * dur, end=(i + 1) * dur)
-        ch.visual_queries = ["thermal paper receipt"]
+        ch.set_visual_queries(["thermal paper receipt"], source="test_fixture")
         out.append(ch)
     return out
 
@@ -303,7 +303,7 @@ def test_timeline_marca_a_cena_que_ficou_sem_insercao():
                 for i in range(6)]
     scenes = []
     for c in chapters:
-        c.visual_queries = ["thermal paper receipt"]
+        c.set_visual_queries(["thermal paper receipt"], source="test_fixture")
         if c.id == 3:  # esta cena não tem nada mais preciso
             scenes.append({"chapter_id": c.id,
                            "assets": [_entry(0, "thermal paper receipt"),

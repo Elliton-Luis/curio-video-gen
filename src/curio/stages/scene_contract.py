@@ -212,9 +212,20 @@ class SemanticScene:
                            VideoContext.from_value(self.video_context))
         if self.planning_mode not in {"unknown", "llm", "deterministic"}:
             raise ValueError(f"unknown scene planning_mode: {self.planning_mode}")
-        object.__setattr__(self, "representations", tuple(
+        representations = tuple(
             rep for index, value in enumerate(self.representations)
-            if (rep := VisualRepresentation.from_value(value, index))))
+            if (rep := VisualRepresentation.from_value(value, index)))
+        known = {rep.query.casefold() for rep in representations}
+        for query in self.visual_queries:
+            key = query.casefold()
+            if key and key not in known:
+                representations += (VisualRepresentation(
+                    query=query, kind="related", level=len(representations),
+                    source="declared_scene_query"),)
+                known.add(key)
+        object.__setattr__(self, "representations", representations)
+        object.__setattr__(self, "visual_queries",
+                           tuple(rep.query for rep in representations))
         object.__setattr__(self, "representation_rejections", tuple(
             dict(item) for item in self.representation_rejections
             if isinstance(item, Mapping)))
@@ -224,10 +235,12 @@ class SemanticScene:
 
     @classmethod
     def from_chapter(cls, chapter, source: str = "unknown") -> "SemanticScene":
-        """Project declared fields without synchronizing query/repr schemas."""
+        """Project the canonical representations and their query mirror."""
         context = deepcopy(chapter.video_context)
-        visual_queries = tuple(chapter.visual_queries)
-        representations = tuple(chapter.representations)
+        representations = tuple(
+            rep for index, value in enumerate(chapter.representations)
+            if (rep := VisualRepresentation.from_value(value, index)))
+        visual_queries = tuple(rep.query for rep in representations)
         return cls(
             id=int(chapter.id), narration=str(chapter.narration), source=source,
             planning_mode=str(getattr(chapter, "planning_mode", "unknown")),

@@ -18,7 +18,7 @@ def test_media_selection_signature_tracks_semantics_but_not_timing():
                                           ["wikimedia"], 35)
     assert signature == media_selection_signature(
         [second], "history", 2, ["wikimedia"], 35)
-    second.visual_queries = ["Mohács painting"]
+    second.set_visual_queries(["Mohács painting"], source="test_fixture")
     assert signature != media_selection_signature(
         [second], "history", 2, ["wikimedia"], 35)
 

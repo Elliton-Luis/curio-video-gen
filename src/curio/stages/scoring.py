@@ -112,11 +112,24 @@ def _is_deterministic_scene(scene) -> bool:
     return getattr(scene, "planning_mode", "unknown") == "deterministic"
 
 
+def _has_semantic_representation(scene) -> bool:
+    """Whether a representation came from scene planning, not query mirroring.
+
+    Compatibility/query anchors are now stored in the canonical representation
+    collection too, but their presence must not silently turn a legacy scene
+    into a structured plan with stricter scoring semantics.
+    """
+    query_sources = {"declared_scene_query", "entity_context",
+                     "verified_entity_context"}
+    return any(rep.source not in query_sources
+               for rep in getattr(scene, "representations", []) or [])
+
+
 def semantic_relevance(asset: dict, ch) -> dict:
     """Independent topic/scene evidence from complete phrases in metadata."""
     context = dict(getattr(ch, "video_context", {}) or {})
     has_structured_scene = bool(
-        getattr(ch, "representations", [])
+        _has_semantic_representation(ch)
         or getattr(ch, "visual_intent_structured", "")
         or _is_deterministic_scene(ch)
         or getattr(ch, "event", ""))
@@ -171,7 +184,7 @@ def semantic_relevance(asset: dict, ch) -> dict:
     # Legacy plans without an explicit visual representation use the event
     # name as scene evidence. Structured plans keep event/topic relation
     # separate from evidence of what the candidate actually depicts.
-    has_scene_plan = bool(getattr(ch, "representations", [])
+    has_scene_plan = bool(_has_semantic_representation(ch)
                           or getattr(ch, "visual_intent_structured", ""))
     if not has_scene_plan:
         event = getattr(ch, "event", "")

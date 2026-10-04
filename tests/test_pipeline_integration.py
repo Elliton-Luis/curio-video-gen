@@ -49,7 +49,7 @@ def _chapters():
         dur = 6.0
         ch = Chapter(id=i, narration=p, duration_estimate=dur,
                      start=t, end=t + dur)
-        ch.visual_queries = [SCENE_QUERIES[i - 1]]
+        ch.set_visual_queries([SCENE_QUERIES[i - 1]], source="test_fixture")
         ch.subject = f"mars {i}"
         ch.visual_entities = ["crater", "surface"]
         out.append(ch)

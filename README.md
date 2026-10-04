@@ -53,8 +53,11 @@ invalidação de mídia explícita. A projeção `Chapter → SemanticScene` nã
 mais representações pela narração; somente cache legado incompleto passa por
 recuperação determinística explícita, marcada e persistida na fronteira de
 leitura. A projeção também não sincroniza implicitamente `visual_queries` com
-`representations`; os dois campos declarados chegam intactos enquanto os
-producers são migrados para a fonte única.
+`representations`: estas são a fonte canônica e as queries são uma projeção
+compatível derivada delas. Consultas legadas/declaradas recebem proveniência
+própria e não passam a contar como intenção semântica estruturada no scoring.
+O SearchPlanner mantém a ordem combinada das consultas e não trata esses
+espelhos como representações editoriais independentes.
 `pipeline_timeline.py` converte Chapters temporizados e seleções em
 `VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de
 beats no mesmo limite.

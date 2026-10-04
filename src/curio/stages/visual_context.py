@@ -211,7 +211,9 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
             if subject == names[0]:
                 queries = [f"{english_subject or subject} {medium}".strip(), subject,
                            *([english] if english else [])]
-            ch.visual_queries = list(dict.fromkeys(queries))[:5]
+            ch.set_visual_queries(
+                list(dict.fromkeys(queries))[:5], source="entity_context",
+                kind="person" if "portrait" in medium.casefold() else "entity")
             ch.global_visual_queries = list(ch.visual_queries)
             ch.forbidden = list(dict.fromkeys(ch.forbidden + list(target.forbidden)))
         else:
@@ -223,7 +225,10 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
             anchored = f"{english_subject or names[0]} {medium}".strip()
             existing = {q.lower() for q in ch.visual_queries}
             if anchored.lower() not in existing:
-                ch.visual_queries = [anchored, *ch.visual_queries][:5]
+                ch.set_visual_queries(
+                    [anchored, *ch.visual_queries][:5],
+                    source="verified_entity_context",
+                    kind="person" if "portrait" in medium.casefold() else "entity")
                 ch.global_visual_queries = list(ch.visual_queries)
             ch.forbidden = list(dict.fromkeys(ch.forbidden + list(target.forbidden)))
         changed = changed or ch.to_dict() != previous

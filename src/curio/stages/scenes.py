@@ -279,13 +279,52 @@ class Chapter:
         self.video_context = VideoContext.from_value(self.video_context)
         if self.planning_mode not in {"unknown", "llm", "deterministic"}:
             raise ValueError(f"unknown scene planning_mode: {self.planning_mode}")
-        self.representations = [rep for index, value in enumerate(self.representations)
-                                if (rep := VisualRepresentation.from_value(value, index))]
+        representations = [
+            rep for index, value in enumerate(self.representations)
+            if (rep := VisualRepresentation.from_value(value, index))]
+        known = {rep.query.casefold() for rep in representations}
+        queries = self.visual_queries
+        if isinstance(queries, str):
+            queries = [queries]
+        for query in queries or []:
+            query = str(query).strip()
+            if query and query.casefold() not in known:
+                representations.append(VisualRepresentation(
+                    query=query, kind="related", level=len(representations),
+                    source="declared_scene_query"))
+                known.add(query.casefold())
+        self.representations = representations
+        self.visual_queries = [rep.query for rep in representations]
+
+    def set_visual_queries(self, queries, *, source: str,
+                           kind: str = "related", level: int = 0) -> None:
+        """Add declared visual anchors and refresh the legacy query mirror."""
+        if isinstance(queries, str):
+            queries = [queries]
+        existing = {rep.query.casefold(): rep for rep in self.representations}
+        ordered: list[VisualRepresentation] = []
+        seen: set[str] = set()
+        for raw in queries or []:
+            query = str(raw).strip()
+            key = query.casefold()
+            if not query or key in seen:
+                continue
+            seen.add(key)
+            rep = existing.get(key)
+            ordered.append(rep or VisualRepresentation(
+                query=query, kind=kind, level=level, source=source))
+        for rep in self.representations:
+            if rep.query.casefold() not in seen:
+                seen.add(rep.query.casefold())
+                ordered.append(rep)
+        self.representations = ordered
+        self.visual_queries = [rep.query for rep in ordered]
 
     def to_dict(self) -> dict:
         result = asdict(self)
         result["video_context"] = self.video_context.to_dict()
         result["representations"] = [rep.to_dict() for rep in self.representations]
+        result["visual_queries"] = [rep.query for rep in self.representations]
         return result
 
     def contract_errors(self) -> list[str]:
@@ -703,6 +742,7 @@ def _repair_scene_count(chapters: list[Chapter], expected: int) -> bool:
         merged = {str(item["query"]): item for item in
                   left.representations + right.representations}
         left.representations = _coerce_representations(list(merged.values())[:8])
+        left.visual_queries = [rep.query for rep in left.representations]
         left.visual_intent_structured = " / ".join(dict.fromkeys(
             x for x in (left.visual_intent_structured,
                         right.visual_intent_structured) if x))

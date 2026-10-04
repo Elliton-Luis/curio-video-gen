@@ -84,7 +84,8 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
                  "Battle of Mohacs 1526"),
     ]
     for chapter in chapters:
-        chapter.visual_queries = [chapter.representations[0]["query"]]
+        chapter.set_visual_queries(
+            [chapter.representations[0]["query"]], source="test_fixture")
         chapter.narration = chapter.event
     patch_search_plan(monkeypatch, visual, lambda plan: [
         "Ottoman Empire map", plan.representations[0].query])
@@ -259,7 +260,6 @@ def test_topic_context_and_representation_survive_local_planner_fallback():
 def test_structured_plan_never_adds_narration_keywords_to_queries():
     chapter = _chapter("Doppler effect", "frequency shift", "Doppler effect",
                        "Doppler effect wave diagram")
-    chapter.visual_queries = []
     chapter.narration = "Narration describes Doppler frequency changing."
     queries, _ = plan_queries(chapter, "science")
     assert "Doppler effect wave diagram" in queries

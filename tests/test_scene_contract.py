@@ -114,7 +114,7 @@ def test_semantic_scene_excludes_timeline_and_preserves_meaning_provenance():
     assert chapter.video_context.topic != "changed downstream"
 
 
-def test_semantic_projection_does_not_reconcile_query_and_representation_fields():
+def test_representation_is_canonical_and_query_field_is_compatibility_mirror():
     query_only = Chapter(id=1, narration="A cena mostra Marte.",
                          duration_estimate=4, visual_queries=["Mars surface"])
     representation_only = Chapter(
@@ -125,7 +125,7 @@ def test_semantic_projection_does_not_reconcile_query_and_representation_fields(
     projected_representation = representation_only.semantic_scene()
 
     assert projected_query.visual_queries == ("Mars surface",)
-    assert projected_query.representations == ()
-    assert projected_representation.visual_queries == ()
+    assert projected_query.representations[0].source == "declared_scene_query"
+    assert projected_representation.visual_queries == ("Mars surface",)
     assert [rep.query for rep in projected_representation.representations] == [
         "Mars surface"]

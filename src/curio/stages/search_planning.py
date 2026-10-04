@@ -55,6 +55,10 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
     ai = list(plan.visual_queries)
     deterministic = plan.planning_mode == "deterministic"
     representations = sorted(plan.representations, key=lambda item: item.level)
+    query_only_sources = {"declared_scene_query", "entity_context",
+                          "verified_entity_context"}
+    semantic_representations = [
+        rep for rep in representations if rep.source not in query_only_sources]
     legacy_unanchored_queries = (
         bool(representations) and not topic and not aliases
         and all(rep.source == "legacy_scene_query" for rep in representations))
@@ -64,7 +68,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
         any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
 
     if not deterministic and not legacy_unanchored_queries:
-        for rep in representations:
+        for rep in semantic_representations:
             focus, kind = rep.query.strip(), rep.kind
             add(contextual(focus), source="scene_representation",
                 representation=focus, kind=kind, alias=anchor_alias,

@@ -31,7 +31,7 @@ def build_visual_plan(scene) -> VisualPlan:
     context = VideoContext.from_value(getattr(scene, "video_context", {}))
     reps = tuple(rep for value in (getattr(scene, "representations", []) or [])
                  if (rep := VisualRepresentation.from_value(value)))
-    visual_queries = _strings(getattr(scene, "visual_queries", []))
+    visual_queries = tuple(rep.query for rep in reps)
     planning_mode = str(getattr(scene, "planning_mode", "unknown") or "unknown")
     subject = str(getattr(scene, "subject", "") or "")
     subject_aliases = _strings(getattr(scene, "subject_aliases", []))
