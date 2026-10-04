@@ -66,7 +66,9 @@ validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 mesmo estágio registra a auditoria por cena e distingue seleção real,
 sintética e cena sem visual; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e
-avisos explícitos; o coordenador consome esses resultados nos estágios seguintes.
+avisos explícitos; o mesmo componente persiste `sources.json` e `FONTES.md` nos
+modos assistido e `human-pending`, para que mídia, pesquisa e créditos tenham a
+mesma trilha editorial nos dois fluxos.
 `pipeline_metadata.py` fecha persistência de geração e finalize: mede o estágio
 `finalize`, grava a mesma tabela de tempos no metadata e no arquivo de métricas,
 e mantém `metrics_file` no metadata persistido.

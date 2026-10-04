@@ -634,6 +634,11 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            genre_profile=editorial_stage.summary(perfil),
                            scene_context_enrichment=enrichment.to_dict(),
                            media_source=media_result.source,
+                           source_registry=sources,
+                           research_sources=research_sources,
+                           grounding=grounding,
+                           media_rights_notes=media_rights_notes,
+                           credits=credits,
                            video_title=video_title,
                            title_source=title_source)
 
@@ -827,12 +832,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "video": paths.final_mp4,
         },
     })
-    sources.save(paths.sources_json)
-    # Pasta de informações: o mesmo conteúdo do sources.json em texto claro,
-    # com as fontes do texto E as imagens com seus direitos autorais.
-    sources_stage.write_report(paths.sources_report, sources,
-                               research=research_sources, grounding=grounding,
-                               media_notes=media_rights_notes, credits=credits)
+    source_summary = pipeline_media_sources_stage.persist_source_artifacts(
+        sources, paths, research=research_sources, grounding=grounding,
+        media_notes=media_rights_notes, credits=credits)
+    metadata["sources"] = source_summary
     # Folha de contato: o autor revisa o vídeo em ~1 min sem assistir.
     if media_scenes:
         from .stages import review as review_stage
@@ -889,6 +892,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
                 genre_profile: dict | None = None,
                 scene_context_enrichment: dict | None = None,
                 media_source: str = "unknown",
+                source_registry=None, research_sources=(), grounding=None,
+                media_rights_notes=(), credits=(),
                 video_title: str = "", title_source: str = "") -> dict:
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
@@ -917,6 +922,15 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         video_title or idea, script_text, audio_events,
         previous_meta.get("audio_request") or previous_meta.get("audio"))
     warnings.extend(audio_plan["warnings"])
+    all_credits = list(dict.fromkeys([
+        *credits, *(audio_plan["metadata"].get("credits") or [])]))
+    if source_registry is not None:
+        source_summary = pipeline_media_sources_stage.persist_source_artifacts(
+            source_registry, paths, research=research_sources,
+            grounding=grounding, media_notes=media_rights_notes,
+            credits=all_credits)
+    else:
+        source_summary = {}
     stage_times["timeline"] = round(time.monotonic() - t0, 2)
     emit(4, "Estimando timeline", "OK")
 
@@ -958,6 +972,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         "genre": genre_key,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),
         "audio_request": audio_plan["metadata"],
+        "sources": source_summary,
         "visual_transition_signature": pipeline_render_stage.transition_signature(
             chapters, genre_key, transition_mode,
             {"insertions": insert_budget,

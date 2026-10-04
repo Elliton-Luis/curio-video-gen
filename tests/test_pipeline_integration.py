@@ -314,9 +314,9 @@ def test_fluxo_humano_guarda_audio_request_para_finalize(tmp_path):
         "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
         "sine=frequency=330:duration=30", "-c:a", "pcm_s16le", str(music)],
         check=True)
-    meta, _ = _run(tmp_path, narration="human", genre="people",
-                    audio_enabled=True, music_mode="manual",
-                    music_file=str(music), visual_sfx=False)
+    meta, out_dir = _run(tmp_path, narration="human", genre="people",
+                         audio_enabled=True, music_mode="manual",
+                         music_file=str(music), visual_sfx=False)
     assert meta["narration"] == "human-pending"
     assert meta["audio_request"]["music"]["mode"] == "manual"
     assert meta["audio_request"]["music"]["track"]["path"] == str(music)
@@ -325,6 +325,13 @@ def test_fluxo_humano_guarda_audio_request_para_finalize(tmp_path):
     assert "provider_downloads" in meta
     assert meta["scene_context_enrichment"]["source"] == "mock"
     assert meta["media_resolution_source"] == "provider"
+    from curio.pipeline import video_paths
+    paths = video_paths(out_dir, "teste-integracao", "people")
+    assert os.path.isfile(paths.sources_json)
+    assert os.path.isfile(paths.sources_report)
+    assert meta["sources"]["media"] == 3
+    source_registry = json.load(open(paths.sources_json, encoding="utf-8"))
+    assert len(source_registry["media"]) == meta["sources"]["media"]
     assert meta["scene_context_enrichment"]["scene_ids"] == [
         chapter["id"] for chapter in meta["chapters"]
     ]

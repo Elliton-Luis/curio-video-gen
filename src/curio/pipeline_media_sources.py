@@ -15,6 +15,23 @@ class MediaSourceResult:
     rights_notes: tuple[str, ...]
 
 
+def persist_source_artifacts(registry, paths, *, research=(), grounding=None,
+                             media_notes=(), credits=()) -> dict:
+    """Persist the canonical source registry and its human-readable report."""
+    registry.save(paths.sources_json)
+    sources_stage.write_report(
+        paths.sources_report, registry, research=research,
+        grounding=grounding or {}, media_notes=media_notes, credits=credits)
+    return {
+        "claims": len(registry.claims),
+        "media": len(registry.media),
+        "report": paths.sources_report,
+        "blocked_media": sum(1 for item in registry.media
+                             if item.rights_status == "blocked"),
+        "credits": list(credits),
+    }
+
+
 def record_selected_media(scenes: list[SemanticScene], selections: list[dict],
                           registry) -> MediaSourceResult:
     """Write provenance for downloaded assets and return editorial notices."""
