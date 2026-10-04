@@ -289,7 +289,7 @@ com providers indisponíveis e busca marcada incompleta. A aquisição continua
 aberta e a fase de qualidade precisa impedir que evidência de local amplo
 substitua evidência de evento/período em contexto histórico.
 
-A4a–A4t não encerram toda a arquitetura descrita no plano. Permanecem as
+A4a–A4u não encerram toda a arquitetura descrita no plano. Permanecem as
 fronteiras pendentes nas fases E/F/G/H/I: lifecycle dos outros artefatos e
 estado de execução, reconciliação de métricas finais, convergência dos caminhos
 alternativos de aquisição/fallback, profiling comparável e execução real sob

@@ -36,6 +36,9 @@ contagens visuais como desconhecidas (`null`).
 `metadata.json` usa o mesmo construtor de relatório para geração humana e
 assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
 do enriquecimento semântico quando disponível.
+`pipeline_research` valida `ResearchResult` antes de registrar ou persistir
+qualquer saída e consome seus campos declarados diretamente; retorno parcial do
+produtor agora falha no limite do estágio.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
 `TimelineSpan[]` separados; `Chapter` permanece como projeção de compatibilidade
 para metadata e formatos externos.

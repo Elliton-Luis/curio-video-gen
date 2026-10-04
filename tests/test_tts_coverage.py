@@ -148,9 +148,12 @@ def _seed_caches(root, script_words=359, audio_words=54):
 
 
 def _fake_sources():
-    from curio.stages.research import ResearchSource
-    return [ResearchSource(title="Sal", url="https://pt.wikipedia.org/wiki/Sal",
-                           snippet="O sal é cloreto de sódio.")]
+    from curio.stages.entity import TargetEntity
+    from curio.stages.research import ResearchResult, ResearchSource
+    return ResearchResult(
+        TargetEntity(name="Sal", is_entity=False),
+        [ResearchSource(title="Sal", url="https://pt.wikipedia.org/wiki/Sal",
+                        snippet="O sal é cloreto de sódio.")])
 
 
 def test_pipeline_recusa_cache_parcial_e_ressintetiza(tmp_path, monkeypatch):

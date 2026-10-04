@@ -186,18 +186,19 @@ assim, consultou providers de novo (40,2 s de mídia). Portanto o cache de bytes
 está comprovado e o rerender respeita a seleção persistida, mas esta repetição
 não comprovou cache de decisão da busca.
 
-A suíte completa após a última fase de código, A4t, passou com **855 testes em
-146,30 s**; `compileall` e `git diff --check` também passaram. Uma rodada
-direcionada posterior a essas execuções passou com **60 testes em 0,19 s**:
-fallback local, timeout NVIDIA, JSON inválido, timeout de provider de mídia,
-cache/manifests e decisões de seleção. Ainda não foi executada uma geração e2e
-com falha de LLM e falha de provider induzidas simultaneamente; não se deve
-tratar esses testes unitários como substitutos dessa prova.
+A suíte completa após A4u passou com **857 testes em 202,95 s**;
+`compileall` e `git diff --check` também passaram. Uma rodada direcionada das
+regressões de fallback local, timeout NVIDIA, JSON inválido, timeout de
+provider de mídia, cache/manifests e decisões de seleção passou com **60 testes
+em 0,19 s**; os testes focados adicionais de pesquisa/pipeline/TTS/TUI passaram
+com **50 testes em 151,64 s**. Ainda não foi executada uma geração e2e com
+falha de LLM e falha de provider induzidas simultaneamente; não se deve tratar
+esses testes como substitutos dessa prova.
 
 ### Estado da migração
 
-As fases A4a–A4t concluídas transferiram planejamento, timing, render, review,
-teleprompter, replanejamento, metadata, finalize e aquisição para os contratos
+As fases A4a–A4u concluídas transferiram pesquisa, planejamento, timing, render,
+review, teleprompter, replanejamento, metadata, finalize e aquisição para os contratos
 canônicos em commits pequenos. O fluxo de Chapter foi removido desses
 consumidores e segue apenas nas fronteiras de projeto persistido/metadata.
 Ainda não é uma refatoração arquitetural encerrada: pesquisa/script/configuração,

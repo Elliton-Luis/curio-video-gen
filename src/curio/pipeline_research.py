@@ -8,14 +8,16 @@ from dataclasses import dataclass
 
 from .runlog import event as run_event
 from .stages import research as research_stage
+from .stages.entity import TargetEntity
+from .stages.research import ResearchSource
 
 
 @dataclass
 class ResearchStageResult:
-    result: object
-    sources: list
-    target: object
-    rejected: list
+    result: research_stage.ResearchResult
+    sources: list[ResearchSource]
+    target: TargetEntity | None
+    rejected: list[tuple[ResearchSource, str, str]]
     queries: list[str]
     etymology: object
     status: str
@@ -32,18 +34,20 @@ def run_research_stage(idea, cfg, paths, metrics, genre, warnings,
         idea, cfg.language, max_sources=cfg.research_max_sources,
         metrics=metrics, timeout=cfg.research_timeout, cfg=cfg,
         genre=genre, allow_weak=True)
+    if not isinstance(result, research_stage.ResearchResult):
+        raise TypeError("research_topic must return ResearchResult")
     sources = list(result)
-    target = getattr(result, "target", None)
-    rejected = list(getattr(result, "rejected", []))
-    queries = list(getattr(result, "tried_queries", []))
-    etymology = getattr(result, "etymology", None)
-    weak = bool(getattr(result, "weak", False))
+    target = result.target
+    rejected = list(result.rejected)
+    queries = list(result.tried_queries)
+    etymology = result.etymology
+    weak = result.weak
     status = ("weak" if weak or not sources
               else "confirmed" if len(sources) >= 2 else "partial")
-    for warning in getattr(result, "weak_warnings", []):
+    for warning in result.weak_warnings:
         warnings.append(f"pesquisa: {warning}")
         print(f"AVISO pesquisa: {warning}", file=sys.stderr)
-    target_name = getattr(target, "name", "") or "tema"
+    target_name = target.name if target is not None and target.name else "tema"
     run_event("result",
               f"Entidade: {target_name}; consultas: {len(queries)}; "
               f"fontes aceitas: {len(sources)}, rejeitadas: {len(rejected)}",
@@ -74,9 +78,9 @@ def run_research_stage(idea, cfg, paths, metrics, genre, warnings,
         "target_entity": target.to_dict() if target is not None else None,
         "queries": queries,
         "etymology": etymology.to_dict() if etymology is not None else None,
-        "facts": getattr(result, "facts", []),
-        "complementary_queries": getattr(result, "complementary_queries", []),
-        "unresolved_gaps": getattr(result, "unresolved_gaps", []),
+        "facts": result.facts,
+        "complementary_queries": result.complementary_queries,
+        "unresolved_gaps": result.unresolved_gaps,
         "sources": [source.to_dict() for source in sources],
         "rejected": [{"title": source.title, "url": source.url,
                       "reason": reason, "detail": detail}

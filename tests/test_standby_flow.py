@@ -11,7 +11,8 @@ from unittest.mock import patch
 from curio.config import CurioConfig
 from curio.pipeline import run_pipeline
 from curio.pipeline_media import MediaStandby, manual_media_dir
-from curio.stages.research import ResearchSource
+from curio.stages.research import ResearchResult, ResearchSource
+from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter
 
 
@@ -83,8 +84,10 @@ def test_resume_com_foto_manual(tmp_path):
         raise RuntimeError("CHEGOU_NO_TTS")
 
     def _fonte(*a, **k):
-        return [ResearchSource(title="Teste", url="https://exemplo.org/t",
-                               snippet="trecho de teste", origin="mock")]
+        return ResearchResult(
+            TargetEntity(name="Teste"),
+            [ResearchSource(title="Teste", url="https://exemplo.org/t",
+                            snippet="trecho de teste", origin="mock")])
 
     # A pesquisa também vai para a rede: stubada para o teste não depender
     # da Wikipedia (429 intermitente deixava a suíte instável).

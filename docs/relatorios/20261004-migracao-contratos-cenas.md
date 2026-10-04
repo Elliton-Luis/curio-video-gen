@@ -180,3 +180,17 @@ aquisição ativa. Regressões cobrem a rejeição do formato antigo e preservam
 seleção manual, mídia real e reuso validado. Focados: 49 passaram; suíte
 completa: **855 passaram em 146,30 s**; compileall e `git diff --check`
 passaram. Sem geração real nesta fase.
+
+## A4u: resultado da pesquisa é validado na entrada do estágio
+
+`pipeline_research.run_research_stage` declara `ResearchResult` como contrato
+de entrada e valida o tipo imediatamente, antes de registrar fontes ou gravar
+JSON. O estágio lê diretamente `target`, `rejected`, `tried_queries`,
+`weak_warnings`, `facts`, `complementary_queries` e `unresolved_gaps`; removi
+defaults de `getattr` que aceitavam resultados parciais e mascaravam produtor
+inválido. Os testes de integração que forneciam uma lista de fontes como mock
+foram migrados para construir o mesmo `ResearchResult` de produção. Uma nova
+regressão prova que retorno incompleto falha antes de qualquer side effect.
+Focados de pesquisa/pipeline/TTS/TUI: **50 passaram em 151,64 s**; a suíte
+completa passou com **857 testes em 202,95 s**. `compileall` e
+`git diff --check` passaram.
