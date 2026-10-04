@@ -11,6 +11,9 @@ migração arquitetural estão em
 [Auditoria da arquitetura e contratos](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md).
 O relatório distingue a baseline inicial do estado revisto após as migrações;
 descrições marcadas como baseline são históricas, não o fluxo atual.
+No checkout atual, scene-plan e seleção de mídia têm manifestos de input e
+resultados de cena validam a coerência de asset/decision antes de seguir para
+timeline, fontes e render; rows persistidos ainda mantêm o schema de projeto.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

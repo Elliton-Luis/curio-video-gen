@@ -68,6 +68,16 @@ class MediaStageResult:
                 if asset and decision.asset_id and asset.get("asset_id") \
                         and decision.asset_id != asset["asset_id"]:
                     raise ValueError("selection decision asset does not match scene")
+                if decision.status == "none" and asset:
+                    raise ValueError("empty selection decision has a selected asset")
+                if decision.status != "none" and not asset:
+                    raise ValueError("selected decision has no selected asset")
+                if asset:
+                    provider = str(asset.get("provider", "") or "")
+                    if decision.provider and decision.provider != provider:
+                        raise ValueError("selection decision provider does not match asset")
+                    if (decision.status == "synthetic") != (provider == "synth"):
+                        raise ValueError("selection decision status does not match asset type")
             provider = str((asset or {}).get("provider", "") or "")
             if provider == "synth":
                 synthetic += 1

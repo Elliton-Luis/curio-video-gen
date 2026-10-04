@@ -335,12 +335,14 @@ integral passou com **877 testes em 195,02 s**.
 O resultado de aquisição ainda cruza consumidores como rows do formato de
 projeto, mas `MediaStageResult` agora valida a fronteira: IDs de cena únicos,
 listas/assets com shape esperado, asset principal consistente com a primeira
-entrada, `SelectionDecision` associado à cena/asset correto e contagens real /
-sintético / ausente iguais ao conteúdo. `SelectionDecision.from_dict` faz a
-validação do schema persistido, em vez de tratar uma decisão malformada como
-seleção implícita. O JSON externo segue compatível; migrar timeline, render,
-credits e review para um batch tipado permanece uma fase posterior.
+entrada, `SelectionDecision` associado à cena/asset correto, status coerente
+com provider (inclusive `none` sem asset) e contagens real / sintético / ausente
+iguais ao conteúdo. `SelectionDecision.from_dict` valida o schema persistido,
+em vez de tratar decisão malformada como seleção implícita. O JSON externo
+segue compatível; migrar timeline, render, credits e review para um batch
+tipado permanece uma fase posterior.
 
-Integração/funnel/selection focados: **23 passaram em 38,58 s**. `compileall`
-e `git diff --check` passaram; a suíte integral passou com **879 testes em
-184,10 s**.
+Integração/funnel/selection focados: **23 passaram em 38,58 s**; regressões
+direcionadas status/provider passaram (**15 em 0,10 s**). `compileall` e
+`git diff --check` passaram; a suíte integral passou com **879 testes em
+184,10 s**, antes do último reforço do contrato.
