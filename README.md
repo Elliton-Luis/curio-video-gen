@@ -61,7 +61,8 @@ leitura. A projeção também não sincroniza implicitamente `visual_queries` co
 `representations`: estas são a fonte canônica e as queries são uma projeção
 compatível derivada delas. Consultas legadas/declaradas recebem proveniência
 própria e não passam a contar como intenção semântica estruturada no scoring.
-O SearchPlanner mantém a ordem combinada das consultas e não trata esses
+`ScenePlanResult` valida ids únicos e correspondência ordenada entre cenas e
+spans. O SearchPlanner mantém a ordem combinada das consultas e não trata esses
 espelhos como representações editoriais independentes.
 `pipeline_timeline.py` converte Chapters temporizados e seleções em
 `VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de

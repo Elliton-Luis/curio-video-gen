@@ -157,3 +157,15 @@ def test_timeline_span_rejects_negative_or_reversed_time():
         TimelineSpan(scene_id=1, start=1)
     with pytest.raises(ValueError, match="finite"):
         TimelineSpan(scene_id=1, duration_estimate=float("nan"))
+
+
+def test_scene_plan_rejects_duplicate_ids_and_missing_provenance():
+    from curio.stages.scenes import ScenePlanResult
+    from curio.stages.scene_contract import TimelineSpan
+
+    scene = SemanticScene(id=1, narration="A scene.")
+    with pytest.raises(ValueError, match="unique"):
+        ScenePlanResult((scene, scene),
+                        (TimelineSpan(1), TimelineSpan(1)), "llm")
+    with pytest.raises(ValueError, match="source is required"):
+        ScenePlanResult((scene,), (TimelineSpan(1),), "")

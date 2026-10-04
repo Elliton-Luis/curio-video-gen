@@ -45,9 +45,13 @@ class ScenePlanResult:
     source: str
 
     def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("planner source is required")
         if len(self.semantic_scenes) != len(self.timeline_spans):
             raise ValueError("planner scene/timeline counts differ")
         scene_ids = tuple(scene.id for scene in self.semantic_scenes)
+        if len(set(scene_ids)) != len(scene_ids):
+            raise ValueError("planner scene ids must be unique")
         span_ids = tuple(span.scene_id for span in self.timeline_spans)
         if scene_ids != span_ids:
             raise ValueError("planner timeline spans do not match scene order")
