@@ -859,9 +859,10 @@ def test_folha_de_contato_mostra_a_tipografia(tmp_path):
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
     ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
-                  visual_type="card", subject="x")]
+                  visual_type="literal", subject="x")]
+    scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     out = str(tmp_path / "c.html")
-    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj", genre="people")
+    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj", genre="people")
     html = pathlib.Path(out).read_text(encoding="utf-8")
     assert "tipografia" in html.lower() or "Utopia" in html
 
@@ -880,9 +881,10 @@ def test_folha_prefere_o_que_esta_gravado_no_metadata(tmp_path):
     gravado = _typography_report(CurioConfig(), "people")
     gravado["roles"]["quote"]["family"] = "Cormorant Garamond"
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
-                  visual_type="card", subject="x")]
+                  visual_type="literal", subject="x")]
+    scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     out = str(tmp_path / "c.html")
-    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj", genre="people",
+    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj", genre="people",
                           typography=gravado)
     from curio.stages import review as R
     linha = R._typography_from_report(gravado)
@@ -895,9 +897,10 @@ def test_folha_sem_genero_nao_mostra_tipografia(tmp_path):
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
-                  visual_type="card", subject="x")]
+                  visual_type="literal", subject="x")]
+    scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     out = str(tmp_path / "c.html")
-    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj")
+    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj")
     html = pathlib.Path(out).read_text(encoding="utf-8")
     assert "Tipografia" not in html and "typograph" not in html.lower()
 
@@ -908,8 +911,9 @@ def test_dry_run_mostra_a_tipografia():
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
-                  visual_type="card", subject="x")]
-    texto = R.dry_run_text(ch, [], genre="people",
+                  visual_type="literal", subject="x")]
+    scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
+    texto = R.dry_run_text(scenes, [], genre="people",
                            typography=_typography_report(CurioConfig(),
                                                         "people"))
     assert "Tipografia:" in texto

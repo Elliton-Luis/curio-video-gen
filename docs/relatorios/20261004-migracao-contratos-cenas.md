@@ -124,4 +124,16 @@ compatível. Standby usa a quantidade de SemanticScene diretamente. Focados:
 `git diff --check` passaram. Sem geração real nesta fase.
 
 A fronteira de planejamento/enrichment já não depende de Chapter. Restam
-adaptações de leitura/escrita do projeto salvo, metadata e revisão visual.
+adaptações de leitura/escrita do projeto salvo e metadata.
+
+## A4p: revisão visual consome cenas semânticas
+
+`scene_rows`, folha de contato e dry-run recebem `SemanticScene[]` e usam seus
+campos tipados sem recuperar significado via `getattr`. Entrada Chapter falha
+com erro de contrato, e IDs semânticos duplicados são rejeitados. Geração passa
+as cenas atuais; `cmd_review` adapta o formato Chapter persistido ao carregar o
+projeto. Layout, informação exibida, scoring, rejeições e arquivos gerados
+permanecem iguais. Focados: 154 passaram; suíte completa: **851 passaram em
+146,30 s**; compileall e `git diff --check` passaram. Sem geração real nesta
+fase. A leitura e gravação do schema histórico e metadata permanecem como
+fronteiras de compatibilidade.

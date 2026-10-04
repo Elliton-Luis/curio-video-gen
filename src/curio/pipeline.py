@@ -851,7 +851,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if media_scenes:
         from .stages import review as review_stage
         review_stage.write_contact_sheet(
-            paths.contact_sheet, chapters, media_scenes, paths.root, slug,
+            paths.contact_sheet, tuple(semantic_scenes), media_scenes,
+            paths.root, slug,
             threshold=scoring_stage.threshold(), genre=genre_key,
             typography=_typography_report(cfg, genre_key))
     for warning in warnings[:8]:

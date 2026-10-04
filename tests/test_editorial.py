@@ -577,24 +577,26 @@ def test_dry_run_mostra_o_genero_e_nao_mostra_quando_nao_ha():
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
     ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
-                  visual_type="card", subject="x")]
-    com = R.dry_run_text(ch, [], genre="etymology")
+                  visual_type="literal", subject="x")]
+    scenes = tuple(c.semantic_scene("editorial_fixture") for c in ch)
+    com = R.dry_run_text(scenes, [], genre="etymology")
     assert "Gênero:" in com
     assert "Etimologia" in com
-    assert "Gênero:" not in R.dry_run_text(ch, [])
+    assert "Gênero:" not in R.dry_run_text(scenes, [])
 
 
 def test_folha_de_contato_mostra_o_genero(tmp_path):
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
     ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
-                  visual_type="card", subject="x")]
+                  visual_type="literal", subject="x")]
+    scenes = tuple(c.semantic_scene("editorial_fixture") for c in ch)
     out = str(tmp_path / "contact_sheet.html")
-    R.write_contact_sheet(out, ch, [], str(tmp_path), "proj", genre="science")
+    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj", genre="science")
     html = pathlib.Path(out).read_text(encoding="utf-8")
     assert "Ciência" in html and "14s/cena" in html
     out2 = str(tmp_path / "sem.html")
-    R.write_contact_sheet(out2, ch, [], str(tmp_path), "proj")
+    R.write_contact_sheet(out2, scenes, [], str(tmp_path), "proj")
     assert "s/cena" not in pathlib.Path(out2).read_text(encoding="utf-8")
 
 

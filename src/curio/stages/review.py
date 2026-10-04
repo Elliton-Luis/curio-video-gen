@@ -19,6 +19,8 @@ from __future__ import annotations
 import html
 import os
 
+from .scene_contract import SemanticScene
+
 # Quantas rejeições mostrar por cena. Mais que isso vira mural e esconde o
 # que importa; o relatório completo continua no media.json.
 REJECTED_SHOWN = 4
@@ -68,12 +70,18 @@ def _score_badge(score) -> str:
     return f'<span class="s {cls}">{val:.0f}</span>'
 
 
-def scene_rows(chapters, media_scenes: list[dict], base: str) -> list[dict]:
-    """Junta capítulo + mídia + rejeições numa linha por cena."""
+def scene_rows(semantic_scenes: tuple[SemanticScene, ...],
+               media_scenes: list[dict], base: str) -> list[dict]:
+    """Junta semântica + mídia + rejeições numa linha por cena."""
+    if any(not isinstance(scene, SemanticScene) for scene in semantic_scenes):
+        raise TypeError("review requires SemanticScene values")
+    scene_ids = tuple(scene.id for scene in semantic_scenes)
+    if not scene_ids or len(scene_ids) != len(set(scene_ids)):
+        raise ValueError("review requires unique semantic scenes")
     by_scene = {s["chapter_id"]: s for s in media_scenes or []}
     rows = []
-    for ch in chapters:
-        scene = by_scene.get(ch.id, {})
+    for semantic_scene in semantic_scenes:
+        scene = by_scene.get(semantic_scene.id, {})
         assets = list(scene.get("assets") or [])
         chosen = []
         for entry in assets:
@@ -94,13 +102,13 @@ def scene_rows(chapters, media_scenes: list[dict], base: str) -> list[dict]:
                 "strategy": entry.get("strategy", "image"),
             })
         rows.append({
-            "id": ch.id,
-            "narration": ch.narration,
-            "visual_type": getattr(ch, "visual_type", "literal"),
-            "subject": getattr(ch, "subject", ""),
-            "entities": list(getattr(ch, "visual_entities", []) or []),
-            "forbidden": list(getattr(ch, "forbidden", []) or []),
-            "queries": list(getattr(ch, "visual_queries", []) or []),
+            "id": semantic_scene.id,
+            "narration": semantic_scene.narration,
+            "visual_type": semantic_scene.visual_type,
+            "subject": semantic_scene.subject,
+            "entities": list(semantic_scene.visual_entities),
+            "forbidden": list(semantic_scene.forbidden),
+            "queries": list(semantic_scene.visual_queries),
             "chosen": chosen,
             "rejected": list(scene.get("rejected") or [])[:REJECTED_SHOWN],
             "rejected_total": len(scene.get("rejected") or []),
@@ -172,14 +180,16 @@ def _typography_from_report(report: dict | None) -> str:
     return " · ".join(partes)
 
 
-def write_contact_sheet(out_path: str, chapters, media_scenes: list[dict],
+def write_contact_sheet(out_path: str,
+                        semantic_scenes: tuple[SemanticScene, ...],
+                        media_scenes: list[dict],
                         root: str, slug: str = "", threshold: float = 0.0,
                         layers: list[str] | None = None,
                         genre: str = "",
                         typography: dict | None = None) -> str:
     """Gera `review/contact_sheet.html` — uma linha por cena."""
     base = os.path.dirname(os.path.abspath(out_path))
-    rows = scene_rows(chapters, media_scenes, base)
+    rows = scene_rows(semantic_scenes, media_scenes, base)
     layers = layers or ["base"]
     sem_foto = [r for r in rows if not r["chosen"]]
     geradas = [r for r in rows
@@ -312,7 +322,8 @@ visual · <b>{len(geradas)}</b> geradas por código
 
 # --- dry-run -----------------------------------------------------------
 
-def dry_run_text(chapters, media_scenes: list[dict], threshold: float = 0.0,
+def dry_run_text(semantic_scenes: tuple[SemanticScene, ...],
+                 media_scenes: list[dict], threshold: float = 0.0,
                  layers: list[str] | None = None, clip_device: str = "",
                  genre: str = "",
                  typography: dict | None = None) -> str:
@@ -325,7 +336,7 @@ def dry_run_text(chapters, media_scenes: list[dict], threshold: float = 0.0,
     ty = _typography_from_report(typography) or typography_banner(genre)
     if ty:
         out.append(f"Tipografia: {ty}")
-    for r in scene_rows(chapters, media_scenes, "."):
+    for r in scene_rows(semantic_scenes, media_scenes, "."):
         out.append(f"\nCena {r['id']}  [{r['visual_type']}]")
         out.append(f"  texto      : {r['narration'][:150]}")
         if r["subject"]:

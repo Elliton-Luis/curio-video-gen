@@ -32,6 +32,17 @@ def run(out_dir, *args):
     return main(["--out-dir", out_dir, *args])
 
 
+def _semantic(chapters):
+    return tuple(chapter.semantic_scene("review_fixture") for chapter in chapters)
+
+
+def test_review_rejects_chapter_instead_of_reinterpreting_it():
+    chapter = Chapter(id=1, narration="Texto.", duration_estimate=4,
+                      visual_type="literal")
+    with pytest.raises(TypeError, match="SemanticScene"):
+        review_stage.scene_rows((chapter,), [], ".")
+
+
 def _mk(tmp_path, n_cenas=4):
     """Projeto completo o suficiente para review/swap/rerender."""
     out = str(tmp_path / "output")
@@ -116,7 +127,7 @@ def _mk(tmp_path, n_cenas=4):
 
 def test_contact_sheet_gera_html_com_uma_linha_por_cena(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
-    out = review_stage.write_contact_sheet(paths.contact_sheet, chapters, media,
+    out = review_stage.write_contact_sheet(paths.contact_sheet, _semantic(chapters), media,
                                            root, slug,
                                            threshold=scoring_stage.threshold())
     assert os.path.isfile(out)
@@ -135,7 +146,7 @@ def test_contact_sheet_gera_html_com_uma_linha_por_cena(tmp_path):
 def test_contact_sheet_aponta_imagens_por_caminho_relativo(tmp_path):
     """A folha precisa abrir de qualquer diretório, não só do projeto."""
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
-    out = review_stage.write_contact_sheet(paths.contact_sheet, chapters, media,
+    out = review_stage.write_contact_sheet(paths.contact_sheet, _semantic(chapters), media,
                                            root, slug)
     html = open(out, encoding="utf-8").read()
     # relativo ao diretório da folha (review/), não ao projeto
@@ -147,7 +158,7 @@ def test_contact_sheet_conta_cenas_sem_visual(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
     media[1]["assets"] = []
     media[1]["asset"] = None
-    out = review_stage.write_contact_sheet(paths.contact_sheet, chapters, media,
+    out = review_stage.write_contact_sheet(paths.contact_sheet, _semantic(chapters), media,
                                            root, slug)
     html = open(out, encoding="utf-8").read()
     assert "sem visual" in html
@@ -158,7 +169,7 @@ def test_contact_sheet_marca_visual_gerado_por_codigo(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
     media[0]["assets"][0]["asset"].update(provider="synth", license="Original")
     media[0]["assets"][0]["strategy"] = "diagram"
-    out = review_stage.write_contact_sheet(paths.contact_sheet, chapters, media,
+    out = review_stage.write_contact_sheet(paths.contact_sheet, _semantic(chapters), media,
                                            root, slug)
     html = open(out, encoding="utf-8").read()
     assert "diagrama" in html
@@ -169,7 +180,7 @@ def test_contact_sheet_marca_visual_gerado_por_codigo(tmp_path):
 
 def test_dry_run_mostra_a_decisao_por_cena(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
-    txt = review_stage.dry_run_text(chapters, media,
+    txt = review_stage.dry_run_text(_semantic(chapters), media,
                                     threshold=scoring_stage.threshold())
     for ch in chapters:
         assert f"Cena {ch.id}" in txt
@@ -185,7 +196,7 @@ def test_dry_run_diz_quando_nao_houve_escolha(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
     for s in media:
         s["assets"], s["asset"] = [], None
-    txt = review_stage.dry_run_text(chapters, media)
+    txt = review_stage.dry_run_text(_semantic(chapters), media)
     assert txt.count("escolhido  : NENHUM") == len(chapters)
 
 
