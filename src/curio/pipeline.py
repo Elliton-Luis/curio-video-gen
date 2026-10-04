@@ -61,6 +61,7 @@ STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
 class VideoPaths:
     root: str
     script_txt: str
+    script_manifest_json: str
     chapters_json: str
     scene_plan_json: str
     title_txt: str
@@ -91,6 +92,7 @@ def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
     return VideoPaths(
         root=root,
         script_txt=os.path.join(root, "script", "script.txt"),
+        script_manifest_json=os.path.join(root, "script", "artifacts.json"),
         chapters_json=os.path.join(root, "script", "chapters.json"),
         scene_plan_json=os.path.join(root, "script", "scene-plan.json"),
         title_txt=os.path.join(root, "script", "title.txt"),
@@ -728,6 +730,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,
+            "script_manifest": paths.script_manifest_json,
             "research": paths.research_json,
             "chapters": paths.chapters_json,
             "media": paths.media_json,
@@ -929,6 +932,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
         "artifacts": {
             "script": paths.script_txt,
             "title": paths.title_txt,
+            "script_manifest": paths.script_manifest_json,
             "chapters": paths.chapters_json,
             "media": paths.media_json,
             "timeline": paths.timeline_json,

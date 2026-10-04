@@ -284,3 +284,23 @@ regressões de cache, script e render final: **13 passaram**. A checagem
 específica da política de cache final confirma que narração não reutilizada
 bloqueia o MP4 existente. Após todas as mudanças desta fase, a suíte integral
 passou: **872 testes em 183,62 s**. `compileall` e `git diff --check` passaram.
+
+## E4: script e título são estado editorial editável do projeto
+
+CLI/TUI não oferecem edição retroativa de arquivos, mas os caminhos
+`script.txt`/`title.txt` são artefatos de projeto que o usuário pode alterar;
+`from-script` preserva texto, e rerender lê título/roteiro desses arquivos.
+Não faz sentido invalidá-los automaticamente por pesquisa ou configuração. A
+regeneração permanece explícita via `force`; a identidade nova registra hashes
+e proveniência em `script/artifacts.json`, com o hash de script usado para gerar
+o título. Se um arquivo muda depois do manifesto, o conteúdo é tratado como
+edição externa, preservado e rotulado `edited`; mudança de roteiro invalida
+cenas, mídia e TTS; título editado pelo usuário fica preservado. Título gerado
+de roteiro que mudou é regenerado. Projetos legados sem manifesto mantêm seus
+arquivos como estão na primeira migração: não existe evidência histórica para
+distinguir um cache gerado de uma edição externa anterior.
+
+Regressões cobrem script externo alterado, title externo alterado, autocura de
+roteiro legacy, `force`, o caminho TUI e round-trip/validação do manifesto.
+Testes focados passaram (**12**); `compileall` e `git diff --check` passaram; a
+suíte integral passou com **876 testes em 189,81 s**.

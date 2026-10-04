@@ -171,6 +171,8 @@ def test_integracao_completa(tmp_path):
     assert meta["scene_context_enrichment"]["changed"] is True
     assert meta["media_resolution_source"] == "provider"
     assert os.path.isfile(paths.media_manifest_json)
+    assert os.path.isfile(paths.script_manifest_json)
+    assert meta["artifacts"]["script_manifest"] == paths.script_manifest_json
     run_log = meta["execution_log"]
     assert os.path.isfile(run_log)
     events = [json.loads(line) for line in open(run_log, encoding="utf-8")]

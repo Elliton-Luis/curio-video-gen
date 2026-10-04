@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 
 from .runlog import event as run_event
+from .script_artifacts import (ScriptArtifactsManifest, read_manifest,
+                               text_identity, write_manifest)
 from .stages import entity as entity_stage
 from .stages import research as research_stage
 from .stages import script as script_stage
@@ -32,40 +34,54 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
     started = time.monotonic()
     script_mode = provided_script is not None
     warnings: list[str] = []
-    force_scenes = force
-    script_changed = False
+    previous_manifest = read_manifest(paths.script_manifest_json)
+    previous_script = (_read(paths.script_txt)
+                       if os.path.isfile(paths.script_txt) else None)
+    previous_script_hash = (text_identity(previous_script)
+                            if previous_script is not None else None)
 
     if script_mode:
         if not provided_script.strip():
             raise ValueError("roteiro vazio — nada para produzir")
         script = script_stage.ScriptArtifact(provided_script, "provided")
-        cached = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else None
-        script_changed = cached != script.text
-        if cached != script.text:
+        script_changed = previous_script != script.text
+        if script_changed:
             _write(paths.script_txt, script.text)
-            if cached is not None and not force:
+            if previous_script is not None and not force:
                 print("AVISO: roteiro fornecido mudou — refazendo cenas e mídia.",
                       file=sys.stderr)
+        script_origin = "provided"
         force_scenes = force or script_changed
         run_event("result", f"Roteiro fornecido: {len(script.text)} caracteres",
                   operation="script", source=script.source,
                   characters=len(script.text))
     elif not force and os.path.isfile(paths.script_txt):
-        raw_cached = _read(paths.script_txt)
-        healed = strip_list_markers(raw_cached)
-        script_changed = healed != raw_cached
+        assert previous_script is not None
+        edited = bool(previous_manifest and (
+            previous_script_hash != previous_manifest.script_sha256
+            or previous_manifest.script_origin == "edited"))
+        if edited:
+            script = script_stage.ScriptArtifact(previous_script, "edited")
+            script_changed = previous_script_hash != previous_manifest.script_sha256
+            script_origin = "edited"
+            if script_changed:
+                warnings.append("roteiro editado no projeto; cenas e áudio refeitos")
+                run_event("result", "Roteiro editado no projeto; derivados invalidados",
+                          operation="script", source="edited")
+        else:
+            healed = strip_list_markers(previous_script)
+            script_changed = healed != previous_script
+            script_origin = "cache"
+            if script_changed:
+                print("AVISO: roteiro em cache continha numeração de lista — "
+                      "marcadores removidos.", file=sys.stderr)
+                warnings.append("roteiro em cache higienizado (marcadores de lista)")
+                _write(paths.script_txt, healed)
+            script = script_stage.ScriptArtifact(healed, "cache")
+            run_event("cache", f"Roteiro reutilizado: {len(script.text)} caracteres",
+                      artifact="script", characters=len(script.text))
         force_scenes = force or script_changed
-        if healed != raw_cached:
-            print("AVISO: roteiro em cache continha numeração de lista — "
-                  "marcadores removidos.", file=sys.stderr)
-            warnings.append("roteiro em cache higienizado (marcadores de lista)")
-            _write(paths.script_txt, healed)
-        script = script_stage.ScriptArtifact(healed, "cache")
-        run_event("cache", f"Roteiro reutilizado: {len(script.text)} caracteres",
-                  artifact="script", characters=len(script.text))
     else:
-        previous_script = (_read(paths.script_txt)
-                           if os.path.isfile(paths.script_txt) else None)
         script = script_stage.generate_script(
             idea, cfg, metrics, research=research_prompt,
             genre_directive=genre_directive,
@@ -78,6 +94,7 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
                   characters=len(script.text))
         script_changed = previous_script != script.text
         force_scenes = force or script_changed
+        script_origin = script.source
         _write(paths.script_txt, script.text)
 
     grounding = research_stage.verify_grounding(
@@ -91,18 +108,45 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
         print(f"Fundamentação: {grounding['checked']} dado(s) conferidos, "
               "todos nas fontes.")
 
-    if not force_scenes and os.path.isfile(paths.title_txt):
-        cached_title = _read(paths.title_txt).strip()
-        if cached_title:
-            title = script_stage.TitleArtifact(cached_title, "cache")
-        else:
-            title = _generate_title(script.text, idea, cfg, metrics)
-            _write(paths.title_txt, title.text)
+    script_hash = text_identity(script.text)
+    raw_title = _read(paths.title_txt) if os.path.isfile(paths.title_txt) else None
+    cached_title = raw_title.strip() if raw_title is not None else ""
+    title_hash = text_identity(cached_title) if cached_title else None
+    title_edited = bool(not force and previous_manifest and title_hash and (
+        title_hash != previous_manifest.title_sha256
+        or previous_manifest.title_origin == "edited"))
+    if title_edited:
+        title = script_stage.TitleArtifact(cached_title, "edited")
+        title_origin = "edited"
+        title_script_hash = None
+    elif not force_scenes and cached_title:
+        title = script_stage.TitleArtifact(cached_title, "cache")
+        title_origin = (previous_manifest.title_origin
+                        if previous_manifest and title_hash == previous_manifest.title_sha256
+                        else "legacy")
+        title_script_hash = (previous_manifest.title_script_sha256
+                             if previous_manifest and title_origin != "legacy"
+                             else None)
+    elif not force_scenes and os.path.isfile(paths.title_txt):
+        title = _generate_title(script.text, idea, cfg, metrics)
+        _write(paths.title_txt, title.text)
+        title_origin = title.source
+        title_script_hash = script_hash
     else:
         title = _generate_title(script.text, idea, cfg, metrics)
         _write(paths.title_txt, title.text)
+        title_origin = title.source
+        title_script_hash = script_hash
+    title_hash = text_identity(title.text)
+    manifest = ScriptArtifactsManifest(
+        script_sha256=script_hash, script_origin=script_origin,
+        title_sha256=title_hash, title_origin=title_origin,
+        title_script_sha256=title_script_hash)
+    write_manifest(paths.script_manifest_json, manifest)
     print(f"Título: {title.text} ({title.source})")
-    run_event("cache" if title.source == "cache" else "provider",
+    title_event = ("cache" if title.source == "cache" else
+                   "result" if title.source == "edited" else "provider")
+    run_event(title_event,
               f"Título: {title.source}", operation="title",
               source=title.source, characters=len(title.text))
 

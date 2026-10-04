@@ -56,7 +56,11 @@ de metadata existentes. `pipeline_script.run_script_stage` agora é o dono da
 transição de pesquisa para roteiro/título: autocura de roteiro cacheado,
 grounding, invalidação de cenas quando o roteiro muda, título e persistência
 retornam juntos em `ScriptStageResult`; o coordenador só compõe esse resultado
-com a etapa de cenas.
+com a etapa de cenas. `script/artifacts.json` registra hash/proveniência do
+roteiro e título e, para título gerado, o hash do roteiro de origem. Os arquivos
+continuam editáveis: alteração externa é preservada e invalida cenas/TTS; `--force`
+é a solicitação explícita para regenerar. Projetos anteriores ao manifesto
+migram seu estado atual sem inferir se ele foi editado manualmente.
 O cache de TTS registra em `audio/tts-manifest.json` a assinatura do texto e
 dos parâmetros de voz/idioma/duração, além da identidade de `words.json`; cache
 legado sem manifesto só é migrado quando metadata e transcrição comprovam o
@@ -577,10 +581,10 @@ mostra disponibilidade e device.
 
 ```text
 output/[<genero>/]<AAAAMMDD-titulo>/
-├── script/script.txt + chapters.json
+├── script/script.txt + title.txt + artifacts.json + chapters.json
 ├── media/media.json (+ cache/media/ global com licenças)
 ├── timeline/timeline.json (+ visual_timeline.json no modo roteiro-pronto)
-├── audio/narration.wav + words.json (IA) / human.wav (sua voz)
+├── audio/narration.wav + words.json + tts-manifest.json (IA) / human.wav
 │   └── sfx.wav + mixed.wav (SFX discretos, só roteiro-pronto com inserções)
 ├── sources/sources.json (claims factuais + procedência de mídia)
 │   └── FONTES.md (o mesmo em texto claro: fontes, imagens, créditos)
