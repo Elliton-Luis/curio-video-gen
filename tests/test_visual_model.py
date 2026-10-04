@@ -332,6 +332,32 @@ def test_relatorio_visual_conta_estrategia_e_nao_chama_de_falha():
     assert rel["sem_visual"] == 0
 
 
+def test_relatorio_distingue_assets_unicos_reusados_e_sinteticos():
+    from types import SimpleNamespace
+    from curio.metrics import RunMetrics
+    chapters = [SimpleNamespace(id=i, start=0.0, end=5.0) for i in (1, 2, 3)]
+    reused = {"asset": {"provider": "wiki", "asset_id": "map"}}
+    fresh = {"asset": {"provider": "wiki", "asset_id": "event"}}
+    synthetic = {"asset": {"provider": "synth", "asset_id": "card"}}
+    media = [
+        {"chapter_id": 1, "assets": [reused]},
+        {"chapter_id": 2, "assets": [reused, fresh]},
+        {"chapter_id": 3, "assets": [synthetic]},
+    ]
+    metrics = RunMetrics("s", "i", "n")
+    metrics.visual_plan(chapters, media, 2.1)
+    metrics.media_duplicate_queries = 4
+    report = metrics.media_visual_report(3)
+    assert report["unique_assets"] == 2
+    assert report["reused_assets"] == 1
+    assert report["reuse_count"] == 1
+    assert report["unique_asset_ratio"] == 0.667
+    assert report["scenes_with_new_asset"] == 1
+    assert report["scenes_with_reused_asset"] == 1
+    assert report["synthetic_scenes"] == 1
+    assert report["queries_abandoned_duplicates"] == 4
+
+
 def test_uma_cena_sem_visual_e_a_unica_falha():
     from curio.metrics import RunMetrics
     m = RunMetrics("s", "i", "n")

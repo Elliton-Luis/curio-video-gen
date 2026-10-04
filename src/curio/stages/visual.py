@@ -559,6 +559,8 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
         _add("black hole" if is_space_topic(
             f"{getattr(ch, 'narration', '')} "
             f"{' '.join(list(getattr(ch, 'visual_queries', []) or []))}") else "science")
+    # Keep scene-specific alternatives available after a contextual query
+    # returns only an already-used asset.
     return out[:8], generics
 
 
@@ -566,6 +568,16 @@ def _looks_mechanistic(ch, queries: list[str]) -> bool:
     """Cena sobre mecanismo invisível (anticorpo, linha de controle...)?"""
     haystack = f"{ch.narration} {' '.join(queries)}".lower()
     return any(k in haystack for k in _MECHANISM_KEYWORDS)
+
+
+def _selection_asset_key(asset: dict) -> str:
+    """Identity shared across providers when they expose the same source."""
+    source = str(asset.get("source_url") or "")
+    source = source.split("?", 1)[0].rstrip("/").casefold()
+    if source:
+        return f"url:{source}"
+    from .visual_beats import asset_key
+    return asset_key(asset)
 
 
 def _search_scene_with_shortcircuit(
@@ -637,10 +649,18 @@ def _search_scene_with_shortcircuit(
     seen_ids: set[str] = set()
     providers_consulted: set[str] = set()
     query_providers: dict[str, set[str]] = {}
+    abandoned_duplicate_queries: set[str] = set()
+    duplicate_candidates = 0
 
     def _consider(cand: MediaAsset, query: str) -> None:
-        identity = f"{cand.provider}:{cand.asset_id}"
+        nonlocal duplicate_candidates
+        # Provider aliases often expose the same Commons/Met object. Prefer
+        # stable source identity; asset IDs remain provider-scoped fallback.
+        source = (cand.source_url or "").split("?", 1)[0].rstrip("/").casefold()
+        identity = (f"url:{source}" if source else
+                    f"{cand.provider}:{cand.asset_id}")
         if identity in seen_ids:
+            duplicate_candidates += 1
             if metrics:
                 metrics.media_record_funnel("duplicates")
             return
@@ -678,6 +698,8 @@ def _search_scene_with_shortcircuit(
             if len(candidates) >= limit:
                 break
             query_key = query.casefold()
+            identities_before = len(seen_ids)
+            duplicates_before = duplicate_candidates
             shared = (shared_search_cache.setdefault(query_key, {})
                       if shared_search_cache is not None else {})
             active = [prov for prov in providers
@@ -744,9 +766,19 @@ def _search_scene_with_shortcircuit(
                                 "budget_unexamined", len(results) - result_index)
                         break
                     _consider(cand, query)
+            if (len(seen_ids) == identities_before
+                    and duplicate_candidates > duplicates_before):
+                abandoned_duplicate_queries.add(query)
+                if metrics:
+                    metrics.media_duplicate_queries += 1
             if stop_when_proven:
+                # A contextual result already selected elsewhere is not
+                # evidence that this scene has an adequate fresh result.
+                fresh = [entry for entry in candidates
+                         if not asset_uses or not asset_uses.get(
+                             _selection_asset_key(entry["asset"]), 0)]
                 checked = scoring.rank_candidates(
-                    [entry for entry in candidates if not entry["generic"]], ch)
+                    [entry for entry in fresh if not entry["generic"]], ch)
                 if any(entry.get("score", 0) >= min_score
                        and entry.get("score_detail", {}).get("topic_relevance") == 100
                        and entry.get("score_detail", {}).get("scene_relevance", 0) >= 70
@@ -769,7 +801,11 @@ def _search_scene_with_shortcircuit(
     collect(specific_queries, phase_budget, stop_when_proven=True)
     specific, low_specific = score_specific(
         [entry for entry in candidates if not entry["generic"]])
-    if specific:
+    fresh_specific = [entry for entry in specific
+                      if not asset_uses or not asset_uses.get(
+                          _selection_asset_key(entry["asset"]), 0)]
+    deferred_specific = [entry for entry in specific if entry not in fresh_specific]
+    if fresh_specific:
         ranked, low = specific, low_specific
     else:
         collect(generic_queries, len(candidates) + phase_budget)
@@ -821,6 +857,9 @@ def _search_scene_with_shortcircuit(
         ranked, low_generic = scoring.below_threshold(scoreable, min_score)
         low_generic.extend(semantic_rejects)
         low = low_specific + low_generic
+        # Preserve qualified used results solely for the final fallback after
+        # fresh contextual results and synthetic visuals have been tried.
+        ranked.extend(deferred_specific)
     if scoring.clip_enabled(cfg) and ranked:
         status = scoring.clip_status(cfg) or ""
         if "habilitada (" in status:
@@ -867,6 +906,17 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_asset_rejected()
             metrics.media_record_funnel("score_rejected")
+    from .visual_beats import asset_key
+    reused_ranked = []
+    if asset_uses is not None:
+        fresh_ranked = []
+        for entry in ranked:
+            key = _selection_asset_key(entry["asset"])
+            if key and asset_uses.get(key, 0):
+                reused_ranked.append(entry)
+            else:
+                fresh_ranked.append(entry)
+        ranked = fresh_ranked
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
@@ -881,13 +931,12 @@ def _search_scene_with_shortcircuit(
             str(getattr(ch, "visual_type", "") or "literal"))
 
     picked: list[dict] = []
-    from .visual_beats import asset_key
     if asset_uses is not None:
         # All candidates already passed relevance. Prefer fresh assets without
         # altering scores or allowing generic imagery ahead of specific imagery.
         ranked = sorted(ranked, key=lambda entry: (
             -entry.get("score", 0), bool(entry.get("generic")),
-            asset_uses.get(asset_key(entry["asset"]), 0)))
+            asset_uses.get(_selection_asset_key(entry["asset"]), 0)))
 
     download_window = min(max(1, MAX_CONCURRENT_DOWNLOADS), max(1, max_images))
     download_futures: dict[int, object] = {}
@@ -985,7 +1034,7 @@ def _search_scene_with_shortcircuit(
             metrics.media_record_score(entry["score"])
         picked.append(entry)
         if asset_uses is not None:
-            key = asset_key(entry["asset"])
+            key = _selection_asset_key(entry["asset"])
             if asset_uses.get(key, 0):
                 entry["reuse_reason"] = "eligible_pool_exhausted"
             asset_uses[key] = asset_uses.get(key, 0) + 1
@@ -1022,6 +1071,28 @@ def _search_scene_with_shortcircuit(
             if not run_active():
                 print(f"cena {ch.id}: sem foto adequada — visual por código "
                       f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
+    # Reuse only after all specific/context searches and the local visual.
+    if not picked and reused_ranked:
+        for entry in sorted(reused_ranked, key=lambda item: -item.get("score", 0)):
+            asset = MediaAsset.from_dict(entry["asset"])
+            try:
+                if not (asset.local_path and os.path.isfile(asset.local_path)):
+                    asset, acquisition = download_asset(asset, cfg.cache_dir, metrics)
+                else:
+                    acquisition = "cache"
+            except MediaError:
+                continue
+            if not _downloaded_dims_ok(asset):
+                continue
+            asset.used_in = f"cena {ch.id}"
+            entry = dict(entry, asset=asset.to_dict(), acquisition=acquisition,
+                         reuse_reason="fresh_search_and_synthetic_exhausted")
+            picked.append(entry)
+            key = _selection_asset_key(entry["asset"])
+            asset_uses[key] = asset_uses.get(key, 0) + 1
+            if metrics:
+                metrics.media_record_funnel("reused_fallback")
+            break
     if not picked:
         msg = (f"cena {ch.id}: sem imagem adequada "
                f"({', '.join(queries[:3]) or 'sem consultas'})"
@@ -1066,11 +1137,12 @@ def _search_scene_with_shortcircuit(
     audit_candidates = []
     for entry in candidates:
         detail = entry.get("score_detail", {})
-        was_selected = any(
-            (item.get("asset", {}).get("provider"),
-             item.get("asset", {}).get("asset_id")) ==
-            ((entry.get("asset") or {}).get("provider"),
-             (entry.get("asset") or {}).get("asset_id")) for item in picked)
+        selected_item = next((item for item in picked
+            if (item.get("asset", {}).get("provider"),
+                item.get("asset", {}).get("asset_id")) ==
+               ((entry.get("asset") or {}).get("provider"),
+                (entry.get("asset") or {}).get("asset_id"))), None)
+        was_selected = selected_item is not None
         audit_candidates.append({
             "title": str((entry.get("asset") or {}).get("title", ""))[:160],
             "provider": (entry.get("asset") or {}).get("provider", ""),
@@ -1098,7 +1170,9 @@ def _search_scene_with_shortcircuit(
                                         or detail.get("semantic_rejection")
                                         or entry.get("score", 0) < min_score)
                          else "not_selected"),
-            "reason": ("selected by scene relevance, topic relevance, then quality"
+            "reason": (("reused only after fresh searches and local visual exhausted"
+                        if selected_item and selected_item.get("reuse_reason") else
+                        "selected by scene relevance, topic relevance, then quality")
                        if was_selected else entry.get("rejection_reason")
                        or detail.get("semantic_rejection")
                        or ("score below threshold"
@@ -1119,7 +1193,9 @@ def _search_scene_with_shortcircuit(
                      "level": representation_levels.get(
                          query, 5 if query in generics else 3),
                      "providers": sorted(query_providers.get(query, set())),
-                     "status": ("consulted" if query_providers.get(query)
+                     "status": ("abandoned_duplicates"
+                                if query in abandoned_duplicate_queries else
+                                "consulted" if query_providers.get(query)
                                 else "not_consulted_after_higher_priority_match"
                                 if ranked else "no_provider_results")}
                     for query in queries],

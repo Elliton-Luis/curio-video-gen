@@ -108,6 +108,18 @@ def _has_phrase(text: str, phrase: str) -> bool:
 def semantic_relevance(asset: dict, ch) -> dict:
     """Independent topic/scene evidence from complete phrases in metadata."""
     context = dict(getattr(ch, "video_context", {}) or {})
+    has_structured_scene = bool(
+        getattr(ch, "representations", [])
+        or getattr(ch, "visual_intent_structured", "")
+        or str(getattr(ch, "visual_intent", "") or "").startswith("local fallback")
+        or getattr(ch, "event", ""))
+    if not has_structured_scene:
+        # Preserve the established exact-subject scoring for legacy scenes;
+        # the independent topic/scene gate requires actual scene intent.
+        return {"topic_relevance": None, "scene_relevance": None,
+                "topic_matches": [], "scene_matches": [],
+                "topic_evidence": {}, "scene_evidence": {},
+                "metadata_support": 0.0}
     if not context:
         return {"topic_relevance": None, "scene_relevance": None,
                 "topic_matches": [], "scene_matches": [],
@@ -115,6 +127,11 @@ def semantic_relevance(asset: dict, ch) -> dict:
                 "metadata_support": 0.0}
     text = _candidate_text(asset)
     fields = _candidate_fields(asset)
+    verified_single_aliases = {
+        textnorm.fold_phrase(alias)
+        for alias in (getattr(ch, "subject_aliases", []) or [])
+        if len(textnorm.fold_phrase(alias).split()) == 1
+    }
 
     def evidence_for(phrases):
         evidence = {}
@@ -122,8 +139,11 @@ def semantic_relevance(asset: dict, ch) -> dict:
             phrase = str(phrase or "").strip()
             if not phrase:
                 continue
+            normalized_phrase = textnorm.fold_phrase(phrase)
             matching_fields = [name for name, content in fields.items()
-                               if _has_phrase(content, phrase)]
+                               if (_has_phrase(content, phrase)
+                                   or normalized_phrase in verified_single_aliases
+                                   and f" {normalized_phrase} " in f" {content} ")]
             if matching_fields:
                 evidence[phrase] = matching_fields
         return evidence
@@ -133,6 +153,7 @@ def semantic_relevance(asset: dict, ch) -> dict:
                 "aliases", "period"):
         values = context.get(key, []) or []
         topic_phrases.extend([values] if isinstance(values, str) else values)
+    topic_phrases.extend(getattr(ch, "subject_aliases", []) or [])
     topic_evidence = evidence_for(topic_phrases)
     topic_matches = list(topic_evidence)
     scene_phrases = [getattr(ch, "visual_intent_structured", "")]
@@ -146,7 +167,12 @@ def semantic_relevance(asset: dict, ch) -> dict:
     has_scene_plan = bool(getattr(ch, "representations", [])
                           or getattr(ch, "visual_intent_structured", ""))
     if not has_scene_plan:
-        scene_phrases.append(getattr(ch, "event", ""))
+        event = getattr(ch, "event", "")
+        scene_phrases.append(event)
+        if not event:
+            # With no event or structured scene representation, an explicitly
+            # verified scene subject/alias is the only local visual intent.
+            scene_phrases.extend(getattr(ch, "subject_aliases", []) or [])
     for key in ("representations", "visual_entities"):
         values = getattr(ch, key, []) or []
         if key == "representations":

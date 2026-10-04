@@ -53,6 +53,80 @@ def test_new_doppler_topic_needs_no_project_lexicon_entry():
     assert "doppler effect" not in PT_TOPIC_PHRASES
 
 
+def test_used_contextual_asset_does_not_stop_scene_representation_search(
+        monkeypatch, tmp_path):
+    assets = {
+        "map": MediaAsset(provider="fixture", asset_id="map", title="Ottoman Empire map",
+                           download_url="https://fixture.test/map.jpg", license="CC0",
+                           width=2400, height=1800),
+        "event-a": MediaAsset(provider="fixture", asset_id="event-a",
+                               title="Ottoman Empire Siege of Constantinople 1453",
+                               download_url="https://fixture.test/a.jpg", license="CC0",
+                               width=2400, height=1800),
+        "event-b": MediaAsset(provider="fixture", asset_id="event-b",
+                               title="Ottoman Empire Battle of Mohacs 1526",
+                               download_url="https://fixture.test/b.jpg", license="CC0",
+                               width=2400, height=1800),
+    }
+
+    class Provider:
+        name = "fixture"
+        def search(self, query, *args, **kwargs):
+            specific = "event-a" if "Constantinople" in query else (
+                "event-b" if "Mohacs" in query else None)
+            return [assets["map"], *([assets[specific]] if specific else [])]
+
+    chapters = [
+        _chapter("Ottoman Empire", "Siege of Constantinople", "Constantinople",
+                 "Siege of Constantinople 1453"),
+        _chapter("Ottoman Empire", "Battle of Mohacs", "Mohacs",
+                 "Battle of Mohacs 1526"),
+    ]
+    for chapter in chapters:
+        chapter.visual_queries = [chapter.representations[0]["query"]]
+        chapter.narration = chapter.event
+    monkeypatch.setattr(visual, "_waterfall_queries", lambda ch, *_:
+                        (["Ottoman Empire map", ch.representations[0]["query"]], set()))
+    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
+    for candidate in assets.values():
+        candidate.local_path = str(tmp_path / f"{candidate.asset_id}.jpg")
+        (tmp_path / f"{candidate.asset_id}.jpg").write_bytes(b"image")
+    uses = {}
+    selected = []
+    for chapter in chapters:
+        result, _ = visual._search_scene_with_shortcircuit(
+            chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
+            asset_uses=uses)
+        selected.append(result[0]["asset"]["asset_id"])
+    assert selected == ["event-a", "event-b"]
+
+
+def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_path):
+    asset = MediaAsset(provider="fixture", asset_id="only", title="Ottoman Empire map",
+                       download_url="https://fixture.test/map.jpg", license="CC0",
+                       width=1200, height=900)
+
+    class Provider:
+        name = "fixture"
+        def search(self, *_args, **_kwargs):
+            return [asset]
+
+    chapter = _chapter("Ottoman Empire", "Unpictured event", "Ottoman Empire",
+                       "Ottoman Empire map")
+    chapter.id = 2
+    monkeypatch.setattr(visual, "_waterfall_queries",
+                        lambda *_: (["Ottoman Empire map"], set()))
+    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
+    synth = MediaAsset(provider="synth", asset_id="local", title="Local visual",
+                       local_path="", width=1200, height=900)
+    monkeypatch.setattr("curio.stages.visuals.visual_for_scene", lambda *args: synth)
+    uses = {"fixture:only": 1}
+    result, _ = visual._search_scene_with_shortcircuit(
+        chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
+        asset_uses=uses)
+    assert result[0]["asset"]["provider"] == "synth"
+
+
 @pytest.mark.parametrize("topic,event,entity,representation,old_title", [
     ("French Revolution", "Storming of the Bastille", "Bastille",
      "Storming of the Bastille 1789", "File:Dog walker - Buenos Aires.jpg"),

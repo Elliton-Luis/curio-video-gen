@@ -85,6 +85,14 @@ video-gen metrics --slug salario
 # a execução é anterior à metrificação)
 ```
 
+Backfill recupera duração, plano visual, assets e decisões por cena do
+`metadata.json`. Requests, tokens e downloads sem registro persistido ficam
+nulos; não são estimados.
+
+O relatório visual também distingue assets únicos, cenas com asset novo,
+cenas com reuso e cenas sintéticas. Reuso só ocorre após busca por
+representações específicas e contextuais e tentativa de visual local.
+
 Progresso esperado:
 
 ```text
