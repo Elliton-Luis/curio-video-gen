@@ -304,3 +304,12 @@ Regressões cobrem script externo alterado, title externo alterado, autocura de
 roteiro legacy, `force`, o caminho TUI e round-trip/validação do manifesto.
 Testes focados passaram (**12**); `compileall` e `git diff --check` passaram; a
 suíte integral passou com **876 testes em 189,81 s**.
+
+## Atualização do mapa arquitetural
+
+Ao iniciar a próxima revisão de cache, comparei a auditoria inicial com os
+módulos atuais e encontrei fluxo/grafo desatualizados após as fases de
+contratos. Atualizei a auditoria para separar baseline histórica do estado
+revisado em `eed59d7`, e o README agora alerta que as descrições da baseline
+são históricas. A checagem documental `git diff --check` passou. Nenhum código
+ou comportamento foi alterado nesta atualização.

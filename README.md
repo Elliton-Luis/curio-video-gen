@@ -9,6 +9,8 @@ e MP4 final — tudo com **custo próximo de zero** (TTS local + FFmpeg).
 O mapa do fluxo executado, contratos atuais, fontes de verdade e plano de
 migração arquitetural estão em
 [Auditoria da arquitetura e contratos](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md).
+O relatório distingue a baseline inicial do estado revisto após as migrações;
+descrições marcadas como baseline são históricas, não o fluxo atual.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

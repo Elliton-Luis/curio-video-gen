@@ -1,57 +1,58 @@
 # Auditoria da arquitetura real do Curio e plano de migração
 
 Data: 2026-10-04  
-Base examinada: commit `7d0c148` e checkout limpo.  
+Base de auditoria inicial: commit `7d0c148` e checkout limpo. Estado arquitetural revisado contra o checkout em `eed59d7`.
 Escopo: todos os módulos Python de `src/curio`, CLI/TUI, configuração, estágios, adapters, providers, caches, métricas, formatos de projeto, suíte de testes, README, `VIDEO.MD`, `REGRAS.md`, relatório/análises recentes. A leitura estrutural foi feita por inventário AST/imports/chamadas; módulos e caminhos de maior risco foram lidos diretamente, especialmente `pipeline.py`, `scenes.py`, `visual.py`, `visual_context.py`, `scoring.py`, providers/cache, áudio, timeline, render, configuração e persistência.
 
 ## Conclusão
 
-A separação física feita nos commits anteriores é útil e deve ser preservada. O problema restante é o contrato: os módulos continuam trocando objetos mutáveis e dicionários incompletos, e etapas posteriores tentam completar ou deduzir decisões anteriores. O pipeline executa como uma sequência real, mas o seu “estado de cena” não é fechado depois do planejamento.
+A separação física feita nos commits anteriores é útil e está preservada. Esta auditoria começou como baseline do commit indicado acima; os relatórios de migração registram mudanças posteriores. A tabela e o fluxo abaixo foram atualizados em 2026-10-04 contra o checkout atual. Há agora contratos explícitos de cenas, visual, busca, candidatos, seleção, roteiro/título e cache TTS. Ainda permanecem fronteiras em transição: resultados de mídia/timeline/render mantêm estruturas parcialmente em dicts, `visual.py` coordena muita aquisição e fallback, e `pipeline.py` ainda coordena a execução e vários efeitos de projeto.
 
-O principal contrato de cena é `Chapter` (`stages/scenes.py`). Ele mistura narração, identidade, intenção, representações, queries, contexto do vídeo, rejeições e tempo de render. Depois de `build_chapters`, `pipeline.py` chama uma série de mutadores (`attach_video_context`, `anchor_local_topic`, `fill_missing_context`, enriquecimento etimológico), grava novamente `chapters.json` e infere se o resultado é local pela origem/string `local fallback`. A mídia então interpreta `Chapter` outra vez: gera queries, decide provider order, seleciona estratégia, aplica regras semânticas, baixa, escolhe fallback, resolve reuso e entrega dicionários. `scoring.py` também interpreta campos da cena e usa texto de origem para escolher evidência. Essa distribuição de decisão explica por que uma correção local tende a exigir patches nos vizinhos.
+O contrato semântico corrente é `SemanticScene`; o planejamento persiste `ScenePlanResult` (`SemanticScene[]` + `TimelineSpan[]`) em `script/scene-plan.json`. `Chapter` sobrevive como projeção de compatibilidade para dados de projeto e alguns consumidores. `scene_enrichment.py` é a transformação pós-planner. Na mídia, `VisualPlan` e `SearchPlan` separam intenção de query; providers retornam `MediaAsset`, `Candidate` carrega a query/proveniência, avaliação produz evidência/rejeição e `SelectionDecision` declara a seleção. Isso reduz a interpretação cruzada, mas a aquisição ainda é coordenada pelo módulo visual e timeline faz seleção de inserções por heurística lexical.
 
-Não há uma especificação arquitetural existente. `VIDEO.MD` define a identidade editorial do produto, não interfaces de software. README descreve parcialmente as capacidades desejadas; código e artefatos persistidos são a evidência operacional.
+`VIDEO.MD` define a identidade editorial do produto, não interfaces de software. README e relatórios documentam capacidades e migrações; código e artefatos persistidos são a evidência operacional.
 
 ## A. Fluxo realmente executado
 
 ```text
 CLI / TUI / queue
-  → CurioConfig + run_pipeline
-  → RunLog / paths / RunMetrics / SourceRegistry
-  → research_stage: target entity → web/specialized sources → ResearchResult → prompt pack
-  → script: provided | script cache | LLM chain | genre template
-  → grounding checks against research sources
-  → scene count from genre/duration/script
-  → scene cache | scene LLM JSON | deterministic sentence grouping
-  → narration repair / count repair / Chapter construction
-  → post-plan context mutation: attach topic → anchor local → language aliases → etymology
-  → manual media | media.json cache | visual.fetch_media_multi
-  → per scene: waterfall queries → provider requests → normalized assets
-      → hard technical/rights gate → semantic score → shortlist → downloads
-      → synthetic visual → cross-scene reuse if eligible → reuse annotations
-  → SourceRegistry media and credits
-  → AI: TTS/cache → timing alignment/fallback → subtitles
-    Human: estimated timeline → visual timeline → silent render + teleprompter
-  → visual timeline for multi-image mode / timeline artifact
-  → audio selection/signature → cached or rebuilt render segments → final MP4
-  → metadata.json + sources reports + contact sheet + metrics JSON
+  → CurioConfig + run_pipeline (paths, RunLog, RunMetrics, SourceRegistry)
+  → pipeline_research: ResearchResult + target + sources/etymology
+  → pipeline_script: provided/cache/LLM/template → ScriptArtifact + TitleArtifact
+      → grounding + script/artifacts.json; edited text invalidates derived stages
+  → pipeline_scenes: ScenePlanResult from validated cache | LLM | local planner
+      → scene_enrichment transformation → SemanticScene[] + TimelineSpan[]
+      → scene-plan.json; chapters.json is a compatibility projection
+  → pipeline_visual: manual selection | signed project selection cache | acquisition
+      → per SemanticScene: VisualPlan → SearchPlan → provider query/results
+      → MediaAsset → Candidate → evaluation/rejections → SelectionDecision
+      → downloads, diversity/reuse and semantic synthetic fallback
+  → pipeline_media_sources: selected works, rights and credits
+  → assisted: pipeline_audio (TTS/cache manifest → timing → subtitles)
+    human prep: estimated timing → silent render + teleprompter
+  → pipeline_timeline: visual beats/inserts → timeline artifact
+  → pipeline_render + render stage: cached/rebuilt segments → final MP4
+  → pipeline_metadata + metrics: metadata, source reports, contact sheet, metrics
 ```
 
 | Etapa | Entrada → saída atual | Dono atual e quem reescreve/depois usa | Side effects, cache, falhas e testes existentes |
 |---|---|---|---|
 | Entrada/config | CLI/TUI args + TOML/env → `CurioConfig` | `config.py`; CLI aplica overrides; TUI também altera config. `queue.py` clona via `__dict__` e aplica overrides dinamicamente. | Paths/env; defaults/clamps/coerções. `test_*config*`, CLI/TUI tests. |
-| Research/entity | ideia + gênero → `ResearchResult`, `TargetEntity`, fontes, queries, fatos/etimologia | `research.py` coordena consulta e relevância; `entity.py` resolve alvo e identidade; `pipeline_research.py` registra/persiste e retorna `ResearchStageResult` com cópias dos campos do `result`. | Wikipedia/DDG e fontes especializadas via HTTP; cache de etimologia é persistente. Pesquisa pode aceitar grounding fraco (`allow_weak=True`). `test_research*`, entity, etymology, grounding. |
+| Research/entity | ideia + gênero → `ResearchStageResult` (`ResearchResult`, alvo, fontes, fatos/etimologia) | `pipeline_research.py` coordena `stages/research.py`, `stages/entity.py`, fontes e persistência. Consumers downstream recebem contexto/alvo/resultados, não devem refazer pesquisa. | Wikipedia/DDG e fontes especializadas via HTTP; cache de etimologia é persistente. Pesquisa pode aceitar grounding fraco (`allow_weak=True`). `test_research*`, entity, etymology, grounding. |
 | Script/title | pesquisa/entidade, gênero e ideia ou texto do usuário → `script.txt`, `title.txt` | `script.py` decide LLM/template/fallback; `pipeline_script.run_script_stage` coordena cache, autocura, grounding, persistência e `ScriptStageResult`. | Cache ainda representa artefato persistido do projeto; não possui assinatura de pesquisa/configuração. Para texto fornecido, mudança é detectada e invalida cenas/mídia e TTS. Falhas e templates em `test_llm*`, script tests, pipeline integration. |
-| Scene planning | script + contagem + gênero/contexto → `Chapter[]` e `scenes_source` | `scenes.py` chama LLM ou divide frases localmente, corrige narração/quantidade e normaliza payload. `pipeline.py` carrega cache e depois altera contexto e intenção. | LLM JSON; cache `chapters.json`. Falha do planner cai local, mas o consumidor muda de comportamento conforme `scenes_source`/prefixo. `test_visual_model`, `test_pipeline_integration`, LLM fallback/timeout. |
-| Visual context | chapters + ideia + entidade/fonte → mesmos `Chapter[]` mutados | `visual_context.py` anexa tópico, aliases, queries, lugares e tipo; usa `scoring` para identidade e chama `_get_json` privado da pesquisa para Wikipedia langlinks; `etymology.py` também injeta dados nas cenas. | Requisição de idioma depois do planner; escrita repetida em chapters JSON e invalidação por `force_after_script`. `test_visual_context`, entity, scene tests. |
-| Visual planning/search/acquisition | `Chapter[]`, providers/config → `list[dict]` de cenas/seleções | `visual.py` contém geração de queries, prioridade, concorrência/timeout, cache de busca em memória, dedupe, filtros, scoring, shortlist, downloads, síntese, uso/reuso, timeline e SFX/inserções. `scenes`, `scoring`, `media_rules`, `visuals` e `visual_timeline` participam da decisão. | Providers HTTP, download HTTP/cache persistente, Pillow/ffprobe, arquivos sintéticos. Há `fetch_media` separado em `pipeline_media.py`, sem chamada de produção encontrada; usa scoring/reuso antigo. `_fetch_media_fallback` também não tem chamador encontrado. Cobertura em `test_media_*`, `test_visual_*`, queries/diversidade. |
-| Provider/media cache | query → `MediaAsset[]`; asset → bytes local + sidecar | `media/providers.py` normaliza formatos/rights e API; `media/cache.py` baixa bytes e persiste JSON de provenance. Providers não decidem intenção. | Search cache compartilhado apenas dentro do vídeo; downloads `cache/media/<provider>/<asset_id>`. Retry e URL alternativa. Tests `test_media_providers`, `test_media_museums`, funnel/cache. |
-| Candidate/scoring/selection | dict com asset/query + Chapter → score/evidência/rejeição/seleção | `scoring.py` reconstrói intenção/campos de evidência; `visual.py` decide gate, score e winner; `media_rules.py` faz technical/rights/topic hard filters; CLIP opcional continua separado e downstream. | Threshold por env; logs/metrics. `test_visual_topic_anchor`, `test_visual_strategies`, funnel/regressões. |
-| Audio/TTS/subtitle | script/chapter + áudio/cache → `AudioStageResult`, words/timing/subtitles | `pipeline_audio.py` coordena TTS, timing tipado e subtitles; TTS devolve `TTSResult`. Humano usa `finalize_project` com Whisper/transcrição e outro caminho de timeline. | `audio/tts-manifest.json` assina roteiro e config TTS; cache legado só é aceito com metadata/voz/duração e transcrição lexical idêntica. `words.json` é verificado pelo manifesto. Falha de alinhamento vira timeline proporcional. Focados TTS/pipeline e suíte completa verdes. |
-| Visual timeline | Chapter + selected media → beats/backgrounds/inserts/SFX | `visual.py` chama `visual_timeline.build_visual_timeline`; `visual_timeline.py` também escolhe cenas de inserção por releitura lexical de queries/narração; `visual_beats.py` planeja tempos e identidade. | Determinístico por seed, timestamps e config. Persiste `visual_timeline.json` em multi-image. Tests insertions, timeline, visual assets. |
-| Render | chapters/media/timeline + config → segmentos MP4/silent/final | `pipeline_render.py` adapta cenas/dados a `render.py`; renderer escolhe movimento, composição e fallback visual se asset ausente. `pipeline.py` decide assinaturas/cache e encadeia FFmpeg. | ffmpeg/ffprobe, segmentos persistidos, cache por conteúdo/path stat/config e assinatura de transição/áudio. Tests render, pipeline integration, verify. |
-| Metadata/metrics/review | saída de etapas → `metadata.json`, `media.json`, `sources.json`, métricas, contact sheet | `pipeline.py` monta metadata e chama `RunMetrics`; `metrics.py` agrega e faz backfill; review lê Chapters e mídia para reconstruir apresentação. | JSON persistente; backfill lida com campos ausentes parcialmente. Requests/tokens sem registro ficam nulos em parte dos campos. `test_runlog`, sources, review, metrics. |
+| Scene planning | roteiro + alvo de cenas + gênero/diretiva → `ScenePlanResult` (`SemanticScene[]` + `TimelineSpan[]`) | `stages/scenes.py` oferece planners LLM/local que convergem para o contrato. `pipeline_scenes.run_scene_stage` carrega o artefato validado, faz enriquecimento único em `scene_enrichment.py`, valida e persiste `script/scene-plan.json`; `chapters.json` é projeção compatível. `SceneStageResult` é a saída da etapa. | LLM JSON com fallback local; cache do plano por projeto, invalidado explicitamente quando muda roteiro ou `force`. `scene-plan.json` tem versão de schema; `chapters.json` é compatibilidade legada. `test_scene_contract`, scene stage/integration, LLM fallback/timeout. |
+| Semantic enrichment | plano semântico + tópico/alvo/fontes/etimologia → cenas semânticas enriquecidas | `scene_enrichment.enrich_scenes` é a transformação única pós-planner; `VideoContext`, `Alias` e `VisualRepresentation` mantêm contexto e proveniência em `scene_contract.py`. Pesquisa externa de aliases/contexto ocorre nesse limite, não no acquisition. | Enriquecimento pode fazer requests de pesquisa configurados e invalida mídia se mudou o plano. Fallback local e LLM produzem o mesmo contrato; `source`/`planning_mode` continuam provenance. `test_visual_context`, entity, scene tests. |
+| Visual planning | `SemanticScene` → `VisualPlan` | `stages/visual_planning.py` fecha o contrato sem narração para busca e deriva políticas tipadas de gênero/cena. Não adquire mídia. | Determinístico. Os cues atuais de mecanismo/história são uma dívida identificada: validar possível vazamento entre gêneros antes de centralizar mais políticas. Tests visual planning/contracts. |
+| Search planning | `VisualPlan` → `SearchPlan` de queries ordenadas e proveniadas | `stages/search_planning.py` gera árvore limitada de queries sem ler narração; cada `SearchQuery` marca representation, variante, nível e alias. | Determinístico e sem I/O; queries são submetidas depois pela aquisição. `test_search_planning`, query regressions. |
+| Provider acquisition | `SearchPlan` + configuração → resultados `Candidate` | `stages/visual.py` coordena requests, prioridades, concorrência/timeout, cache de pesquisa, download e preparação de candidatos. `media/providers.py` adapta APIs para `MediaAsset`; provider não decide relevância editorial. | Providers HTTP, download/cache persistente, Pillow/ffprobe. `media/cache.py` guarda bytes e provenance. `pipeline_media.py` atende mídia manual/standby; rerender não pesquisa. `test_media_*`, provider/cache/funnel. |
+| Candidate evaluation/selection | `Candidate` + `VisualPlan` → avaliações e `SelectionDecision` | `stages/candidate_evaluation.py` aplica filtros/scoring e produz evidência/rejeições; `stages/media_selection.py` decide relevância e diversidade/reuso; `stages/media_rules.py` aplica restrições técnicas/rights. `stages/visual.py` ainda coordena o fluxo e fallback. | CLIP opcional; fallback sintético e reuso são decisões observáveis. Ainda existe coordenação de aquisição/fallback concentrada em visual stage, alvo de migração incremental. `test_visual_*`, candidate, selection, diversity regressions. |
+| Audio/TTS/subtitle | script + cenas + tempos → `AudioStageResult`, words/timing/subtitles | `pipeline_audio.run_audio_stages` coordena `stages/tts.py`, `timing.py` e `subs.py`; humano usa `finalize_project` com transcrição e o mesmo limite de timing. | `audio/tts-manifest.json` assina roteiro/config TTS; cache legado requer metadata e transcrição idêntica. Mudança de texto invalida áudio derivado. Falha de alinhamento vira timeline proporcional. |
+| Visual timeline | cenas semânticas + seleção → `VisualTimelineResult`/artefato | `pipeline_timeline.py` coordena `stages/visual_timeline.py` e `visual_beats.py`; timeline consome seleção, mas ainda possui heurísticas editoriais para inserções. | Determinístico por seed/timestamps/config; persiste `visual_timeline.json` em multi-image. Inserção lexical continua acoplamento residual. |
+| Render | cenas + seleção + timeline + áudio/config → segmentos e MP4 | `pipeline_render.py` e `stages/render.py` fazem adaptação/composição; `pipeline.py` encadeia as etapas e política de assinatura/cache FFmpeg. | ffmpeg/ffprobe, segmentos persistidos e assinaturas; final reuse também valida narration/subtitle/transition/music inputs. Tests render, pipeline integration, verify. |
+| Metadata/metrics/review | resultados de etapas → `metadata.json`, `media.json`, `sources.json`, métricas/review | `pipeline_metadata.py` projeta metadados e fontes; `metrics.py` agrega métricas; `stages/review.py` apresenta artefatos persistidos. | Backfill mantém campos desconhecidos nulos quando possível. Ainda há métricas live e históricas reconstruídas com fontes distintas; exige canonização faseada. |
 | CLI/TUI/queue | usuário/projeto → invocação/edição/retomada | CLI declara subcomandos; TUI é outra interface para mesmos serviços, mais configuração/menu. Queue serializa estado e invoca `run_pipeline`. `swap` altera `media.json`; `rerender` reconstrói sem buscar; `finalize` usa áudio humano. | Projeto é contrato externo entre execuções; lista/status de queue em JSON. Testes CLI, TUI, queue/standby, review/rerender/CLI. |
+
+As seções D–F abaixo registram achados da auditoria inicial, antes das migrações incrementais. Consulte o relatório de migração e o README para decisões posteriores. Achados de responsabilidade que continuam presentes foram mantidos como dívida; descrições de implementação que já mudaram não devem ser lidas como estado atual.
 
 O layout de saída é o contrato externo de facto para projeto existente: `script/`, `sources/`, `media/`, `audio/`, `subtitles/`, `timeline/`, `render/`, `review/`, `teleprompter/`, `metadata.json`. `Chapter.to_dict/from_dict`, `MediaAsset.to_dict/from_dict`, e dicionários de seleção/timeline formam o schema implícito. O único marcador geral é `pipeline_version="scenes-0.2"`; não há versão/schema por artefato.
 
@@ -69,37 +70,37 @@ graph TD
   CLI[CLI] --> P[pipeline.py]
   TUI[TUI] --> P
   Q[queue.py] --> P
-  P --> R[pipeline_research.py]
-  R --> RS[research.py]
-  RS --> E[entity.py]
-  RS --> ET[etymology.py]
-  P --> SC[scenes.py: Chapter + planner]
-  SC -. lazy local_queries import .-> V[visual.py]
-  P --> VC[visual_context.py]
-  VC --> SC
-  VC --> RS
-  VC --> S[scoring.py]
-  P --> V
-  V --> SC
-  V --> S
-  V --> MR[media_rules.py]
-  V --> VP[media/providers.py]
-  VP --> MC[media/cache.py]
-  V --> VS[visuals.py: synthetic]
-  V --> VT[visual_timeline.py]
-  VT --> VB[visual_beats.py]
+  P --> R[pipeline_research.py] --> RS[stages/research.py]
+  RS --> E[stages/entity.py]
+  RS --> ET[stages/etymology.py]
+  P --> PS[pipeline_script.py] --> SCRIPT[ScriptArtifact / TitleArtifact]
+  P --> PSC[pipeline_scenes.py] --> SC[stages/scenes.py]
+  PSC --> EN[stages/scene_enrichment.py]
+  PSC --> SCHEMA[SemanticScene + TimelineSpan]
+  SC --> LOCAL[stages/scene_local_planning.py]
+  P --> PV[pipeline_visual.py]
+  PV --> VPL[stages/visual_planning.py: VisualPlan]
+  VPL --> SPL[stages/search_planning.py: SearchPlan]
+  PV --> V[stages/visual.py: acquisition coordination]
+  V --> VP[media/providers.py: API adapters]
+  VP --> MC[media/cache.py: bytes]
+  V --> CE[stages/candidate_evaluation.py]
+  CE --> MR[stages/media_rules.py]
+  CE --> SCORE[stages/scoring.py]
+  CE --> SELECT[stages/media_selection.py]
+  V --> VS[stages/visuals.py: synthetic]
   P --> PA[pipeline_audio.py]
-  PA --> TTS[tts.py]
-  PA --> SUB[subs.py]
-  P --> PR[pipeline_render.py]
-  PR --> REN[render.py]
+  PA --> TTS[stages/tts.py]
+  PA --> SUB[stages/subs.py]
+  P --> PT[pipeline_timeline.py] --> VT[stages/visual_timeline.py]
+  VT --> VB[stages/visual_beats.py]
+  P --> PR[pipeline_render.py] --> REN[stages/render.py]
+  P --> PM[pipeline_metadata.py]
   P --> M[metrics.py]
-  P --> SR[sources.py]
+  PM --> SR[stages/sources.py]
 ```
 
-O ciclo `scenes → (lazy) visual.local_queries → scenes validation` é físico/dinâmico. Mais importante, o ciclo conceitual é `scene planner → context mutators → search planner → scorer`: os consumidores inferem e completam a intenção em vez de receber um plano fechado. `visual_context` importa uma função privada de pesquisa; `scoring` é usado por contexto para escolher aliases e por mídia para interpretar cenas/candidatos. `visual.py` chama a timeline e ainda possui funções de timeline/SFX. Isso torna alteração local dependente de detalhes internos de vários módulos.
-
-O pipeline dividido é uma melhora parcial: `pipeline_research`, `pipeline_audio`, `pipeline_media`, `pipeline_render` existem, mas os contratos variam. Research e áudio têm dataclasses de retorno, media retorna tuplas/listas de dicts, render retorna path; o coordenador ainda contém mais de 700 linhas em `_run_pipeline`, mais geração humana e finalize, metadata, cache e side effects.
+O grafo atual já não tem o ciclo físico histórico de `scenes → visual.local_queries → scenes`; isso foi removido ao fazer o planner local produzir `SemanticScene`. O caminho nominal da semântica é dirigido: cenas → enrichment → VisualPlan → SearchPlan → aquisição → avaliação → seleção. O principal acoplamento remanescente é coordenação: `stages/visual.py` orquestra busca, download, fallback e seleção; a timeline conserva heurísticas para inserções; `pipeline.py` mantém a ordem, cache/invalidação e side effects do projeto. `pipeline_media.py` trata mídia manual/standby. A linha de base anterior mencionava Chapters mutáveis e contratos apenas implícitos; essa observação é histórica, não descrição do checkout atual.
 
 ## C. Fontes de verdade atuais e desejadas
 
