@@ -938,10 +938,13 @@ def test_teleprompter_nao_usa_a_fonte_do_genero(tmp_path):
     depois achando que é omissão.
     """
     from curio.stages import teleprompter as TP
-    caps = [Chapter(id=1, narration="A primeira frase da narração.",
-                    duration_estimate=8.0, visual_type="literal")]
+    from curio.stages.scene_contract import SemanticScene, TimelineSpan
+    scenes = (SemanticScene(id=1, narration="A primeira frase da narração.",
+                            visual_type="literal"),)
+    spans = (TimelineSpan(scene_id=1, duration_estimate=8.0,
+                          start=0.0, end=8.0),)
     out = str(tmp_path / "tele.ass")
-    TP.write_teleprompter_ass(caps, out, 1080, 1920)
+    TP.write_teleprompter_ass(scenes, spans, out, 1080, 1920)
     ass = pathlib.Path(out).read_text(encoding="utf-8")
     assert f"Style: Teleprompter,{TP.TELE_FAMILY}," in ass
     for familia in ("Utopia", "Noto Serif", "Minion", "EB Garamond"):
@@ -955,6 +958,15 @@ def test_teleprompter_ignora_gênero_por_completo(tmp_path):
     sig = inspect.signature(TP.write_teleprompter_ass)
     assert "genre" not in sig.parameters
     assert "typo" not in sig.parameters
+
+
+def test_teleprompter_rejeita_semantica_e_timeline_desalinhadas():
+    from curio.stages import teleprompter as TP
+    from curio.stages.scene_contract import SemanticScene, TimelineSpan
+    scenes = (SemanticScene(id=1, narration="Cena um."),)
+    spans = (TimelineSpan(scene_id=2, duration_estimate=2, start=0, end=2),)
+    with pytest.raises(ValueError, match="misaligned"):
+        TP.build_teleprompter_cues(scenes, spans)
 
 
 def test_legenda_e_teleprompter_compartilham_a_mesma_decisao():

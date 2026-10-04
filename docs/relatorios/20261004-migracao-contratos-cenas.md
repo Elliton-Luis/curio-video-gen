@@ -81,3 +81,17 @@ A fronteira visual de planejamento/timing já não depende de Chapter. Permanece
 consumidores downstream de render, subtitles e ferramentas; também permanece
 um adaptador Chapter explícito para operações legadas de replanejamento. A
 próxima fase deve migrar esses consumidores antes de remover a projeção.
+
+## A4m: teleprompter consome semântica e spans separados
+
+`build_teleprompter_cues` e `write_teleprompter_ass` recebem agora
+`SemanticScene[] + TimelineSpan[]`, validam identidade/ordem e distribuem os
+blocos a partir do texto da cena e do span correspondente. `pipeline.py` usa
+diretamente esses dados antes de qualquer projeção Chapter para render. O
+formato ASS, texto, regras de quebra e avisos de mudança de cena foram
+preservados. A regressão cobre rejeição de IDs desalinhados. Focados: 101
+passaram; suíte completa: **849 passaram em 145,75 s**; `compileall` e
+`git diff --check` passaram. O smoke script não chega aos testes do teleprompter:
+falha antes por importar `pipeline._relevance`, removida anteriormente, e usa
+`scenes._local_chapters`, também removida. Isso é dívida do script, não falha
+da mudança atual.

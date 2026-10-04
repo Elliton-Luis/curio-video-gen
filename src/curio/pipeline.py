@@ -973,7 +973,8 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
     t0 = time.monotonic()
     emit(6, "Gerando teleprompter")
     tele_cues = tele_stage.write_teleprompter_ass(
-        chapters, paths.tele_ass, cfg.width, cfg.height)
+        semantic_scenes, timeline_spans, paths.tele_ass,
+        cfg.width, cfg.height)
     tele_info = render_stage.burn_final(
         paths.silent_mp4, paths.tele_ass, None, paths.tele_mp4,
         cfg, estimated_total)

@@ -9,7 +9,7 @@ sincronia final (o áudio humano + Whisper é a fonte da verdade).
 from __future__ import annotations
 
 from . import subs as subs_stage
-from .scenes import Chapter
+from .scene_contract import SemanticScene, TimelineSpan
 
 TELE_FONT_SIZE = 104
 TELE_NEXT_FONT_SIZE = 64
@@ -84,32 +84,42 @@ def _tele_ass_doc(events: list[tuple[float, float, str]],
     return head + "\n".join(body) + "\n"
 
 
-def build_teleprompter_cues(chapters: list[Chapter]
+def build_teleprompter_cues(semantic_scenes: tuple[SemanticScene, ...],
+                            timeline_spans: tuple[TimelineSpan, ...]
                             ) -> list[tuple[float, float, str, int]]:
-    """Espalha blocos de cada capítulo pela sua duração estimada.
+    """Espalha blocos de cada cena pela duração tipada correspondente.
 
-    Retorna (início, fim, bloco, id_do_capítulo). Tempos idênticos a
-    antes — só carrega o capítulo junto para marcar viradas de cena.
+    Retorna (início, fim, bloco, id_da_cena). A semântica vem da cena e o
+    tempo vem do span; batches desalinhados falham no limite.
     """
+    scene_ids = tuple(scene.id for scene in semantic_scenes)
+    span_ids = tuple(span.scene_id for span in timeline_spans)
+    if (any(not isinstance(scene, SemanticScene) for scene in semantic_scenes)
+            or any(not isinstance(span, TimelineSpan) for span in timeline_spans)
+            or not scene_ids or len(scene_ids) != len(set(scene_ids))
+            or scene_ids != span_ids):
+        raise ValueError("teleprompter scenes and spans are misaligned")
     cues = []
-    for ch in chapters:
-        chunks = subs_stage.chunk_words(ch.narration.split(),
+    for scene, span in zip(semantic_scenes, timeline_spans):
+        chunks = subs_stage.chunk_words(scene.narration.split(),
                                         TELE_MAX_WORDS, TELE_MAX_CHARS)
         if not chunks:
             continue
         weights = [len(c) + 1 for c in chunks]
         total = sum(weights)
-        dur = max(ch.end - ch.start, ch.duration_estimate, 1.0)
-        cursor = ch.start
+        dur = max(span.end - span.start, span.duration_estimate, 1.0)
+        cursor = span.start
         for i, (chunk, w) in enumerate(zip(chunks, weights)):
             share = dur * w / total
-            end = ch.start + dur if i == len(chunks) - 1 else cursor + share
-            cues.append((cursor, end, chunk, ch.id))
+            end = span.start + dur if i == len(chunks) - 1 else cursor + share
+            cues.append((cursor, end, chunk, scene.id))
             cursor = end
     return cues
 
 
-def write_teleprompter_ass(chapters: list[Chapter], ass_path: str,
+def write_teleprompter_ass(semantic_scenes: tuple[SemanticScene, ...],
+                           timeline_spans: tuple[TimelineSpan, ...],
+                           ass_path: str,
                            width: int, height: int) -> int:
     """Teleprompter de verdade: atual em destaque + próximo embaixo + virada.
 
@@ -119,7 +129,7 @@ def write_teleprompter_ass(chapters: list[Chapter], ass_path: str,
     com aviso mais longo no fim de cada cena. Só decoração: texto e tempos
     da narração intactos.
     """
-    cues = build_teleprompter_cues(chapters)
+    cues = build_teleprompter_cues(semantic_scenes, timeline_spans)
     events = []
     for i, (start, end, text, cid) in enumerate(cues):
         nxt = cues[i + 1][2] if i + 1 < len(cues) else ""

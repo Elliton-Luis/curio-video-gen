@@ -39,6 +39,8 @@ do enriquecimento semântico quando disponível.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
 `TimelineSpan[]` separados; Chapter permanece como projeção de compatibilidade
 para render e formatos externos enquanto esses consumidores migram.
+O teleprompter também combina texto semântico e spans tipados, validando a
+ordem das cenas antes de distribuir as falas no tempo.
 No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
 de adapter inclui seus retries/backoff. `download_durations` mede a cadeia
