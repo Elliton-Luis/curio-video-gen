@@ -129,3 +129,31 @@ def test_representation_is_canonical_and_query_field_is_compatibility_mirror():
     assert projected_representation.visual_queries == ("Mars surface",)
     assert [rep.query for rep in projected_representation.representations] == [
         "Mars surface"]
+
+
+def test_semantic_projection_round_trips_into_timeline_chapter():
+    chapter = Chapter(
+        id=3, narration="A frase latina abre a cena.", duration_estimate=4.5,
+        start=2.0, end=6.5, subject="Frase latina", text_role="quote",
+        text_language="la", visual_queries=["Latin inscription"])
+
+    projected = Chapter.from_semantic_scene(
+        chapter.semantic_scene("llm"), timing=chapter.timeline_span())
+
+    assert projected.semantic_scene("llm").to_dict() == \
+        chapter.semantic_scene("llm").to_dict()
+    assert (projected.duration_estimate, projected.start, projected.end) == \
+        (4.5, 2.0, 6.5)
+
+
+def test_timeline_span_rejects_negative_or_reversed_time():
+    from curio.stages.scene_contract import TimelineSpan
+
+    with pytest.raises(ValueError, match="non-negative"):
+        TimelineSpan(scene_id=1, start=-1)
+    with pytest.raises(ValueError, match="must not precede"):
+        TimelineSpan(scene_id=1, start=3, end=2)
+    with pytest.raises(ValueError, match="must not precede"):
+        TimelineSpan(scene_id=1, start=1)
+    with pytest.raises(ValueError, match="finite"):
+        TimelineSpan(scene_id=1, duration_estimate=float("nan"))

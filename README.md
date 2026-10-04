@@ -49,7 +49,10 @@ planner, retorna uma batch validada e registra quais complementos foram
 aplicados antes de atualizar `chapters.json`.
 `pipeline_scenes.py` coordena planner/cache/enrichment e retorna
 `SceneStageResult` com origem, cenas semânticas, Chapters de compatibilidade e
-invalidação de mídia explícita. A projeção `Chapter → SemanticScene` não cria
+invalidação de mídia explícita. LLM e fallback local convergem para `SemanticScene`
+antes de enrichment; `TimelineSpan` carrega somente duração e limites temporais,
+e a projeção `SemanticScene + TimelineSpan → Chapter` atende consumidores de
+timeline/render. A projeção `Chapter → SemanticScene` não cria
 mais representações pela narração; somente cache legado incompleto passa por
 recuperação determinística explícita, marcada e persistida na fronteira de
 leitura. A projeção também não sincroniza implicitamente `visual_queries` com

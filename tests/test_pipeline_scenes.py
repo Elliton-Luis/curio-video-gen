@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 
 from curio.pipeline_scenes import run_scene_stage
+from curio.stages.scenes import Chapter
 
 
 def _write_json(path, value):
@@ -18,11 +19,13 @@ def test_legacy_cache_recovery_is_persisted_and_invalidates_media(tmp_path, monk
     }]), encoding="utf-8")
     chapter = None
 
-    def keep_enriched_scenes(chapters, **kwargs):
+    def keep_enriched_scenes(scenes, **kwargs):
         nonlocal chapter
-        chapter = chapters[0]
-        return SimpleNamespace(scenes=chapters, changed=False, source="cache",
-                               applied=[])
+        chapter = Chapter.from_semantic_scene(
+            scenes[0], timing=kwargs["timeline_spans"][0])
+        return SimpleNamespace(
+            chapters=(chapter,), semantic_scenes=tuple(scenes),
+            changed=False, source="cache", applied=[])
 
     monkeypatch.setattr("curio.pipeline_scenes.enrich_scenes",
                         keep_enriched_scenes)

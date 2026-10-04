@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from math import isfinite
 
 
 VISUAL_TYPES = ("literal", "mechanism", "historical_art", "conceptual",
@@ -78,6 +79,32 @@ class VisualRepresentation(Mapping[str, object]):
         if self.evidence:
             result["evidence"] = self.evidence
         return result
+
+
+@dataclass(frozen=True)
+class TimelineSpan:
+    """Timing owned by timeline/render, kept outside scene meaning."""
+
+    scene_id: int
+    duration_estimate: float = 0.0
+    start: float = 0.0
+    end: float = 0.0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int) \
+                or self.scene_id <= 0:
+            raise ValueError("timeline scene_id must be positive")
+        values = (self.duration_estimate, self.start, self.end)
+        if any(isinstance(value, bool) or not isinstance(value, (int, float))
+               or not isfinite(value) or value < 0 for value in values):
+            raise ValueError("timeline values must be finite and non-negative")
+        if self.end < self.start:
+            raise ValueError("timeline end must not precede start")
+
+    def to_dict(self) -> dict[str, float | int]:
+        return {"scene_id": self.scene_id,
+                "duration_estimate": self.duration_estimate,
+                "start": self.start, "end": self.end}
 
 
 @dataclass
@@ -195,6 +222,8 @@ class SemanticScene:
     event: str = ""
     place: str = ""
     period: str = ""
+    text_role: str = ""
+    text_language: str = ""
     representations: tuple[VisualRepresentation, ...] = ()
     visual_queries: tuple[str, ...] = ()
     global_visual_queries: tuple[str, ...] = ()
@@ -253,6 +282,8 @@ class SemanticScene:
             visual_intent_structured=str(chapter.visual_intent_structured),
             primary_entity=str(chapter.primary_entity), event=str(chapter.event),
             place=str(chapter.place), period=str(chapter.period),
+            text_role=str(chapter.text_role),
+            text_language=str(chapter.text_language),
             representations=representations,
             visual_queries=visual_queries,
             global_visual_queries=tuple(chapter.global_visual_queries),
@@ -289,6 +320,7 @@ class SemanticScene:
             "visual_intent_structured": self.visual_intent_structured,
             "primary_entity": self.primary_entity, "event": self.event,
             "place": self.place, "period": self.period,
+            "text_role": self.text_role, "text_language": self.text_language,
             "representations": [rep.to_dict() for rep in self.representations],
             "visual_queries": list(self.visual_queries),
             "global_visual_queries": list(self.global_visual_queries),

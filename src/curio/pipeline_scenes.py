@@ -21,8 +21,8 @@ from .stages.scenes import Chapter
 
 @dataclass(frozen=True)
 class SceneStageResult:
-    chapters: tuple[Chapter, ...]
     semantic_scenes: tuple[SemanticScene, ...]
+    chapters: tuple[Chapter, ...]
     source: str
     enrichment: SceneEnrichmentResult
     invalidate_media: bool
@@ -88,14 +88,16 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     planning_mode = ("deterministic" if source == "local" or any(
         chapter.planning_mode == "deterministic" for chapter in chapters)
         else "llm")
+    semantic_inputs = tuple(chapter.semantic_scene(source) for chapter in chapters)
+    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     enriched = enrich_scenes(
-        chapters, topic=topic, target=target, source=source,
+        semantic_inputs, timeline_spans=timeline_spans,
+        topic=topic, target=target, source=source,
         planning_mode=planning_mode, genre=genre,
         research_sources=research_sources, research_timeout=research_timeout,
         etymology=etymology)
-    chapters = list(enriched.scenes)
-    semantic_scenes = tuple(
-        chapter.semantic_scene(enriched.source) for chapter in chapters)
+    chapters = list(enriched.chapters)
+    semantic_scenes = enriched.semantic_scenes
     if enriched.changed or recovered_legacy:
         write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
     if "local_topic_anchor" in enriched.applied:

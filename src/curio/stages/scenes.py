@@ -29,8 +29,8 @@ from .. import textnorm
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
 from .prompts import SCENES_SYSTEM_PROMPT, SCENES_SYSTEM_PROMPT_EN
-from .scene_contract import (VISUAL_TYPES, SemanticScene, VideoContext,
-                             VisualRepresentation)
+from .scene_contract import (VISUAL_TYPES, SemanticScene, TimelineSpan,
+                             VideoContext, VisualRepresentation)
 
 TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
@@ -349,6 +349,35 @@ class Chapter:
     def semantic_scene(self, source: str = "unknown") -> SemanticScene:
         """Expose meaning downstream without carrying duration or timestamps."""
         return SemanticScene.from_chapter(self, source)
+
+    def timeline_span(self) -> TimelineSpan:
+        """Project only timing into the timeline-owned contract."""
+        return TimelineSpan(self.id, self.duration_estimate, self.start, self.end)
+
+    @classmethod
+    def from_semantic_scene(cls, scene: SemanticScene, *,
+                            timing: TimelineSpan | None = None) -> "Chapter":
+        """Project semantic meaning into the timeline/render compatibility row."""
+        if timing is not None and timing.scene_id != scene.id:
+            raise ValueError("timeline span does not match semantic scene id")
+        timing = timing or TimelineSpan(scene.id)
+        return cls(
+            id=scene.id, narration=scene.narration,
+            duration_estimate=timing.duration_estimate,
+            start=timing.start, end=timing.end,
+            planning_mode=scene.planning_mode, visual_type=scene.visual_type,
+            subject=scene.subject, subject_aliases=list(scene.subject_aliases),
+            visual_entities=list(scene.visual_entities), context=list(scene.context),
+            forbidden=list(scene.forbidden), video_context=scene.video_context,
+            visual_intent=scene.visual_intent,
+            visual_intent_structured=scene.visual_intent_structured,
+            primary_entity=scene.primary_entity, event=scene.event,
+            place=scene.place, period=scene.period,
+            representations=list(scene.representations),
+            visual_queries=list(scene.visual_queries),
+            global_visual_queries=list(scene.global_visual_queries),
+            representation_rejections=list(scene.representation_rejections),
+            text_role=scene.text_role, text_language=scene.text_language)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Chapter":
