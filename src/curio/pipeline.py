@@ -23,7 +23,9 @@ from . import ffmpeg as ff
 from .audio import selection as audio_selection
 from .audio.library import audio_seed
 from .config import CurioConfig
-from .media.providers import classify_rights
+from .media.providers import classify_rights, get_providers
+from .media.artifacts import (media_selection_signature,
+                              selection_cache_is_current, write_manifest)
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
 from . import pipeline_media as pipeline_media_stage
@@ -60,6 +62,7 @@ class VideoPaths:
     chapters_json: str
     title_txt: str
     media_json: str
+    media_manifest_json: str
     sources_json: str
     sources_report: str
     contact_sheet: str
@@ -87,6 +90,7 @@ def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
         chapters_json=os.path.join(root, "script", "chapters.json"),
         title_txt=os.path.join(root, "script", "title.txt"),
         media_json=os.path.join(root, "media", "media.json"),
+        media_manifest_json=os.path.join(root, "media", "media-selection.json"),
         sources_json=os.path.join(root, "sources", "sources.json"),
         sources_report=os.path.join(root, "sources", "FONTES.md"),
         contact_sheet=os.path.join(root, "review", "contact_sheet.html"),
@@ -694,6 +698,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     manual_dir = pipeline_media_stage.manual_media_dir(paths)
     media_scenes = None
     manual = pipeline_media_stage.manual_media_scenes(chapters, manual_dir)
+    available_providers = [provider.name for provider in get_providers(cfg)]
+    media_signature = media_selection_signature(
+        chapters, genre_key, max_images, available_providers,
+        scoring_stage.threshold())
     if manual is not None:
         media_scenes = manual
         msg = (f"mídia manual: {len({e['asset']['local_path'] for s in manual for e in s.get('assets') or []})} "
@@ -706,8 +714,11 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if media_scenes is None and not force_after_script and os.path.isfile(paths.media_json):
         try:
             saved = _read_json(paths.media_json)
+            expected_scene_ids = [chapter.id for chapter in chapters]
             chapter_ok = ([s["chapter_id"] for s in saved] ==
-                          [c.id for c in chapters]) and all(
+                          expected_scene_ids) and selection_cache_is_current(
+                              saved, paths.media_manifest_json, media_signature,
+                              expected_scene_ids) and all(
                 isinstance(s.get("visual_decision"), dict)
                 for s in saved
                 if (s.get("asset") or {}).get("provider") != "manual")
@@ -748,6 +759,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             chapters, cfg, max_images, metrics, genre=genre_key)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
+        if any(scene.get("asset") or scene.get("assets") for scene in media_scenes):
+            write_manifest(paths.media_manifest_json, media_scenes, media_signature)
+        elif os.path.isfile(paths.media_manifest_json):
+            os.unlink(paths.media_manifest_json)
         if media_warnings:
             for warning in media_warnings[:8]:
                 run_event("warning", str(warning), operation="media")

@@ -23,6 +23,12 @@ produz avaliações tipadas com score, evidência e motivo de rejeição.
 `media_selection.py` separa candidatos novos de reusos adiados sem reescrever
 scores e emite uma `SelectionDecision` para visual real, reutilizado, sintético
 ou ausente, sempre com motivo e nível de fallback.
+O cache global guarda bytes baixados; respostas de busca são compartilhadas
+apenas durante uma geração. A seleção do projeto tem manifesto versionado em
+`media/media-selection.json`, ligado às entradas semânticas, gênero, quantidade
+de imagens, providers disponíveis e threshold. Um `media.json` adquirido sem
+manifesto compatível é pesquisado novamente; escolhas manuais continuam
+preservadas. `rerender` só consome a seleção registrada e não pesquisa mídia.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

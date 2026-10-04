@@ -14,11 +14,12 @@ fotografias): a nova imagem entra sobre a atual, assume o destaque e a
 próxima repete o ciclo. Com uma única imagem adequada, o render usa Ken
 Burns sutil em vez de inventar uma segunda.
 
-NOVO PIPELINE DE MÍDIA (short-circuit):
-- Hierarquia rígida: Pixabay → Pexels (se chave) → Wikimedia
-- Para ao primeiro provedor que retorne ativo válido por cena
-- Cache local por termo de busca (visual_search_terms)
-- Apenas 2 termos em inglês por cena (substantivos visuais atómicos)
+Aquisição e escolha editorial são fases distintas: SearchPlan fornece as
+consultas, os providers devolvem candidatos normalizados, e seleção aplica
+gates, scoring e política de diversidade. Resultados de busca iguais são
+compartilhados em memória dentro do vídeo; apenas bytes de assets são
+persistidos no cache global. A seleção por projeto é reutilizável somente
+quando seu manifesto corresponde aos inputs semânticos e à política atual.
 """
 
 from __future__ import annotations
@@ -1151,13 +1152,11 @@ def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
 def fetch_media_multi(chapters, cfg: CurioConfig,
                       max_images: int = 3,
                       metrics=None, genre: str = "") -> tuple[list[dict], list[str]]:
-    """Busca ativos por cena com short-circuit rigoroso e cache local.
+    """Acquire candidates for each scene and select using its explicit plans.
 
-    Hierarquia: Pixabay → Unsplash → Pexels → NASA → Wikimedia → Openverse.
-    Para no primeiro provedor que retornar ativo válido por query.
-    Cache local indexado por termo de busca (visual_search_terms).
-    Cachoeira por cena: termos exatos → avulsos → tema → diagrama →
-    genéricos; cena de mecanismo sem nada ganha diagrama sintético.
+    Exact queries share provider responses in a per-video in-memory cache;
+    downloaded bytes live in the reusable global media cache. This function
+    records project selection separately from both caches.
     """
     max_images = max(1, min(5, int(max_images)))
     # A ordem de provedores é por cena: histórica quer acervo de arte
