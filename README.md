@@ -51,9 +51,9 @@ layout anterior.
 `metadata.json` usa o mesmo construtor de relatório para geração humana e
 assistida: ambos persistem `visual_report`, `provider_downloads` e a proveniência
 do enriquecimento semântico quando disponível.
-`pipeline_research` valida `ResearchResult` antes de registrar ou persistir
-qualquer saída e consome seus campos declarados diretamente; retorno parcial do
-produtor agora falha no limite do estágio.
+`pipeline_research` valida estrutura/tipos de fontes, rejeições, queries, fatos,
+gaps e etimologia antes de registrar ou persistir saída; retorno parcial ou
+malformado falha no limite do estágio sem side effects.
 `script.generate_script` e `generate_title` produzem `ScriptArtifact` e
 `TitleArtifact` validados. O pipeline cria esses mesmos contratos para texto
 fornecido e cache; proveniência/texto continuam gravados nos arquivos e campos

@@ -61,3 +61,39 @@ def test_research_stage_rejects_incomplete_producer_before_side_effects(
             lambda *_args: None,
             lambda *_args: saved.append("written"))
     assert saved == []
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error", "match"),
+    [
+        (lambda result: result.sources.append("bad source"), TypeError,
+         "ResearchSource values"),
+        (lambda result: result.rejected.append(("bad source", "reason", "detail")),
+         TypeError, "ResearchSource, reason, detail"),
+        (lambda result: result.tried_queries.append("  "), TypeError,
+         "tried_queries"),
+        (lambda result: result.facts.append("bad fact"), TypeError,
+         "facts must be a list of objects"),
+    ],
+)
+def test_research_stage_rejects_malformed_result_before_side_effects(
+        monkeypatch, tmp_path, mutate, error, match):
+    result = research.ResearchResult(
+        TargetEntity(name="Black hole"),
+        [research.ResearchSource("Black holes", "https://example.test")],
+        tried_queries=["Black hole"])
+    mutate(result)
+    monkeypatch.setattr(research, "research_topic", lambda *a, **k: result)
+    saved = []
+    registry = SimpleNamespace(add_claim=lambda **_claim: pytest.fail(
+        "malformed result must be rejected before registration"))
+    cfg = SimpleNamespace(language="en", research_max_sources=3,
+                          research_timeout=2)
+    paths = SimpleNamespace(research_json=str(tmp_path / "research.json"))
+
+    with pytest.raises(error, match=match):
+        pipeline_research.run_research_stage(
+            "Black holes", cfg, paths, None, "", [], registry,
+            lambda *_args: None,
+            lambda *_args: saved.append("written"))
+    assert saved == []

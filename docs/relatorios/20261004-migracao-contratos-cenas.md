@@ -365,3 +365,14 @@ migrados para a API do módulo responsável.
 Testes focados de metadata e integração passaram (**11 em 40,49 s**);
 `compileall` e `git diff --check` passaram. A suíte integral será repetida no
 gate final após as migrações seguintes.
+
+## R1: research output validates before side effects
+
+O estágio verificava somente `isinstance(ResearchResult)`, apesar da nota
+anterior no README dizer que validava campos. Agora `validate_research_result`
+rejeita fontes sem título/URL, fontes e tuplas rejeitadas com tipos errados,
+queries vazias, warnings/fatos/gaps com shape inválido e etimologia sem
+contrato antes de registrar claims ou escrever `research.json`. A validação
+mantém `allow_weak` e ausência legítima de fontes para fallback já existente.
+Regressões provam que retorno estruturalmente incompleto falha antes de
+side-effects. Pesquisa/pipeline focados: **31 passaram em 0,15 s**.
