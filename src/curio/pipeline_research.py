@@ -8,18 +8,12 @@ from dataclasses import dataclass
 
 from .runlog import event as run_event
 from .stages import research as research_stage
-from .stages.entity import TargetEntity
 from .stages.research import ResearchSource
 
 
 @dataclass
 class ResearchStageResult:
     result: research_stage.ResearchResult
-    sources: list[ResearchSource]
-    target: TargetEntity | None
-    rejected: list[tuple[ResearchSource, str, str]]
-    queries: list[str]
-    etymology: object
     status: str
     prompt: str
     elapsed: float
@@ -133,5 +127,4 @@ def run_research_stage(idea, cfg, paths, metrics, genre, warnings,
     print(f"Fontes: {len(sources)} ({', '.join(s.title[:40] for s in sources)})")
     elapsed = round(time.monotonic() - started, 2)
     emit(0, "Pesquisando fontes", "OK")
-    return ResearchStageResult(result, sources, target, rejected, queries,
-                               etymology, status, prompt, elapsed)
+    return ResearchStageResult(result, status, prompt, elapsed)

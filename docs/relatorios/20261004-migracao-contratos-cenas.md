@@ -376,3 +376,12 @@ contrato antes de registrar claims ou escrever `research.json`. A validação
 mantém `allow_weak` e ausência legítima de fontes para fallback já existente.
 Regressões provam que retorno estruturalmente incompleto falha antes de
 side-effects. Pesquisa/pipeline focados: **31 passaram em 0,15 s**.
+
+## R2: ResearchResult is the research source of truth
+
+`ResearchStageResult` duplicava `sources`, `target`, `rejected`, `queries` e
+`etymology` já existentes em `ResearchResult`; o coordenador consumia as
+cópias, criando dois lugares para o mesmo fato. Removi esses campos e o
+pipeline agora lê os dados diretamente do resultado validado. O retorno de
+etapa mantém somente `status`, `prompt` e `elapsed`, que são próprios da
+orquestração. Testes de pesquisa/pipeline passaram (**39 em 38,11 s**).

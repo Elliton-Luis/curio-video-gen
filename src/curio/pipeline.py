@@ -405,11 +405,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         idea, cfg, paths, metrics, genre_key, warnings, sources, emit,
         _write_json)
     research = research_output.result
-    research_sources = research_output.sources
-    research_target = research_output.target
-    research_rejected = research_output.rejected
-    research_queries = research_output.queries
-    research_etymology = research_output.etymology
+    research_sources = research.sources
+    research_target = research.target
+    research_rejected = research.rejected
+    research_etymology = research.etymology
     research_status = research_output.status
     research_pack = research_output.prompt
     stage_times["research"] = research_output.elapsed

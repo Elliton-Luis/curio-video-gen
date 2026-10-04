@@ -54,6 +54,9 @@ do enriquecimento semântico quando disponível.
 `pipeline_research` valida estrutura/tipos de fontes, rejeições, queries, fatos,
 gaps e etimologia antes de registrar ou persistir saída; retorno parcial ou
 malformado falha no limite do estágio sem side effects.
+`ResearchResult` é a fonte única para target, fontes, rejeições, consultas e
+etimologia; `ResearchStageResult` contém apenas status, prompt e duração da
+etapa, sem cópias concorrentes desses dados.
 `script.generate_script` e `generate_title` produzem `ScriptArtifact` e
 `TitleArtifact` validados. O pipeline cria esses mesmos contratos para texto
 fornecido e cache; proveniência/texto continuam gravados nos arquivos e campos

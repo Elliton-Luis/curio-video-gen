@@ -37,8 +37,9 @@ def test_research_stage_consumes_declared_result_contract(monkeypatch, tmp_path)
         lambda path, data: saved.update(path=path, data=data))
 
     assert stage.result is result
-    assert stage.target is result.target
-    assert stage.queries == ["Black hole"]
+    assert stage.result.target is result.target
+    assert stage.result.tried_queries == ["Black hole"]
+    assert stage.result.sources is result.sources
     assert stage.status == "partial"
     assert warnings == ["pesquisa: small sample"]
     assert saved["data"]["facts"] == result.facts
