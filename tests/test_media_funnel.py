@@ -43,7 +43,8 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
         "normalized_returned": 6, "unique_considered": 3,
         "hard_rejected": 1, "duplicates": 1, "eligible": 2,
         "budget_unexamined": 2, "score_rejected": 1,
-        "above_threshold": 1, "selected": 1, "used_real": 1,
+        "above_threshold": 1,
+        "selected": 1, "used_real": 1,
     }
     assert metrics.media_assets_rejected == 2
     assert sum(metrics.media_rejections.values()) == 2

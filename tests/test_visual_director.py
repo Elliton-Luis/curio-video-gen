@@ -250,7 +250,8 @@ def test_topic_context_and_representation_survive_local_planner_fallback():
     chapter.visual_intent = "local fallback"
     assert attach_video_context([chapter], "Guerra dos Cem Anos")
     queries, _ = visual._waterfall_queries(chapter, "history")
-    assert queries[0].startswith("Guerra dos Cem Anos ")
+    assert queries[0] == "Guerra dos Cem Anos"
+    assert "Guerra dos Cem Anos Guerra dos Cem Anos" not in queries
     assert "Guerra dos Cem Anos" in queries
     assert chapter.video_context["topic"] == "Guerra dos Cem Anos"
 

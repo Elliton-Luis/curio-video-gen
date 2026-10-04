@@ -59,6 +59,14 @@ def attach_video_context(chapters, topic: str, target=None) -> bool:
             ch.subject = topic
             ch.primary_entity = topic
             ch.visual_entities = []
+            # Local genre cues are incomplete until the global subject is
+            # attached. History topics classify scenes with no explicit
+            # date/event too, and a process verb must not force science.
+            if ch.visual_type != "typographic":
+                from .scenes import classify_visual_type
+                contextual_type = classify_visual_type(f"{ch.narration} {topic}")
+                if contextual_type == "historical_art":
+                    ch.visual_type = contextual_type
             if not ch.visual_intent_structured:
                 ch.visual_intent_structured = (
                     f"Topic-level visual for {topic}; scene representation unresolved")

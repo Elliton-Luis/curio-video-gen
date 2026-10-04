@@ -85,7 +85,7 @@ VISUAL_TYPES = ("literal", "mechanism", "historical_art", "conceptual",
 # Reconhecer isso é o que evita a foto genérica no lugar do diagrama.
 _MECHANISM_HINTS_PT = (
     "como funciona", "como faz", "por que funciona", "o que acontece quando",
-    "acontece quando", "passo a passo", "etapas", "processo", "transforma",
+    "acontece quando", "passo a passo", "etapas", "processo",
     "se transforma", "reage", "reação", "reacao", "muda de cor", "altera",
     "mistura", "combina com", "por dentro", "por baixo dos panos",
     "mecanismo", "funciona porque", "o truque",
@@ -111,6 +111,10 @@ _HISTORICAL_HINTS = (
     "catedral", "basílica", "basilica", "apóstolo", "apostolo", "evangelho",
     "bíblia", "biblia", "oratório", "santuário", "santuario", "capela",
     "nascido em", "nasceu em", "viveu em", "morreu em",
+    "batalha", "battle", "cerco", "siege", "revolução", "revolution",
+    "guerra", "war", "conquista", "conquest", "frota", "fleet",
+    "janízaro", "janizaro", "janissary", "janissaries", "exército",
+    "exercito", "army", "cavalaria", "cavalry",
 )
 # Sinais de que a cena é melhor dita com palavras e não com imagem.
 _TYPOGRAPHIC_HINTS = (
@@ -214,12 +218,12 @@ def classify_visual_type(narration: str) -> str:
     text = (narration or "").lower()
     if not text.strip():
         return "literal"
-    if any(h in text for h in _MECHANISM_HINTS_PT + _MECHANISM_HINTS_EN):
-        return "mechanism"
     if any(h in text for h in _TYPOGRAPHIC_HINTS):
         return "typographic"
     if textnorm.is_space_topic(text):
         return "literal"
+    if any(h in text for h in _MECHANISM_HINTS_PT + _MECHANISM_HINTS_EN):
+        return "mechanism"
     if any(h in text for h in _HISTORICAL_HINTS):
         return "historical_art"
     return "literal"
@@ -254,6 +258,7 @@ class Chapter:
     place: str = ""
     period: str = ""
     representations: list[dict] = field(default_factory=list)
+    representation_rejections: list[dict] = field(default_factory=list)
     # --- papel tipográfico (retrocompatível: tudo opcional) -------------
     # A cena declara a FUNÇÃO do texto, nunca a fonte: `text_role="quote"`
     # significa "isto é uma citação", e quem decide que em `people` citação
@@ -281,6 +286,10 @@ class Chapter:
             # deriva o texto em vez de assumir "literal" às cegas.
             vtype = classify_visual_type(narration) if vtype == "" else "literal"
         from .typography import ROLES
+        visual_queries, visual_query_rejections = _validate_query_list(
+            d.get("visual_queries", []))
+        global_queries, global_query_rejections = _validate_query_list(
+            d.get("global_visual_queries", []))
         papel = str(d.get("text_role", "") or "").strip().lower()
         if papel not in ROLES:
             # chapters.json antigo não tem o campo, e a IA às vezes inventa
@@ -292,8 +301,8 @@ class Chapter:
             id=int(d.get("id", 0)),
             narration=narration,
             duration_estimate=float(d.get("duration_estimate", 0)),
-            visual_queries=[str(q) for q in d.get("visual_queries", [])],
-            global_visual_queries=[str(q) for q in d.get("global_visual_queries", [])],
+            visual_queries=visual_queries,
+            global_visual_queries=global_queries,
             visual_intent=str(d.get("visual_intent", "")),
             visual_type=vtype,
             subject=str(d.get("subject", "") or ""),
@@ -309,6 +318,10 @@ class Chapter:
             place=str(d.get("place", "") or ""),
             period=str(d.get("period", "") or ""),
             representations=_coerce_representations(d.get("representations", [])),
+            representation_rejections=(
+                list(d.get("representation_rejections", []) or [])[:20]
+                + _rejected_representations(d.get("representations", []))
+                + visual_query_rejections + global_query_rejections),
             text_role=papel,
             text_language=str(d.get("text_language", "") or "").strip().lower(),
             start=float(d.get("start", 0.0)),
@@ -347,6 +360,34 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
                 queries = [q for q in (_local_queries(narration) or []) if q][:5]
             except Exception:  # noqa: BLE001 — query nunca é fatal
                 queries = []
+        reps = []
+        for term in queries:
+            if re.match(r"^(battle|siege|revolution|war|conquest)\b", term, re.I):
+                kind = "event"
+            elif re.search(r"\bimp[eé]rio\b", term, re.I):
+                kind = "empire"
+            elif (re.search(rf"\b(king|queen|emperor|pope|rei|rainha|imperador|papa|born|portrait)\s+{re.escape(term)}\b",
+                            narration, re.I)
+                  or re.search(rf"\b(?:sob|under)\s+{re.escape(term.split(',')[0])}\b",
+                               narration, re.I)
+                  or re.search(rf"\b{re.escape(term.split(',')[0])}\b"
+                               r"(?:\s+[A-ZÀ-Þ\w'-]+){0,2}\s+"
+                               r"(?:cercou|derrotou|reconstruiu|governou|liderou|conquistou|patrocinou)\w*\b",
+                               narration, re.I)):
+                kind = "person"
+            elif re.match(r"^(mesquita|catedral|templo|monument|mosque|cathedral|temple|monumento)\b",
+                          term, re.I):
+                kind = "monument"
+            elif term.casefold() in {value.casefold() for value in
+                                     re.findall(r"\b(?:jan[ií]zar\w+|soldad\w+|canh[oõ]es|espadas?|muralhas|fortalezas|navios?|frotas?|moedas|armas|est[aá]tuas|documentos|artefatos|monumentos|ex[eé]rcitos?|cavalarias?|uniformes?)\b",
+                                                narration, re.I)}:
+                kind = ("army" if re.match(
+                    r"(jan[ií]zar|soldad|navio|frota|ex[eé]rcito|cavalaria|uniforme)",
+                    term, re.I) else "artifact")
+            else:
+                kind = "entity"
+            reps.append({"query": term, "kind": kind, "level": 1,
+                         "source": "local_concrete_phrase"})
         chapters.append(Chapter(
             id=len(chapters) + 1,
             narration=narration,
@@ -361,6 +402,8 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
             visual_type=vtype,
             subject=queries[0] if queries else "",
             visual_entities=list(queries[:4]),
+            representations=reps,
+            representation_rejections=_local_representation_rejections(narration),
         ))
     return chapters
 
@@ -485,18 +528,85 @@ def _coerce_representations(raw) -> list[dict]:
         if isinstance(item, dict):
             query = str(item.get("query", item.get("visual", item.get("name", ""))) or "").strip()
             if query:
+                kind = str(item.get("kind", "related") or "related").lower()
+                if _representation_rejection_reason(query, kind):
+                    continue
                 try:
                     level = int(item.get("level", len(out)) or 0)
                 except (TypeError, ValueError):
                     level = len(out)
                 out.append({"query": query,
                             "kind": str(item.get("kind", "related") or "related"),
-                            "level": level})
+                            "level": level,
+                            "source": str(item.get("source", "planner") or "planner")})
         else:
             query = str(item or "").strip()
-            if query:
+            if query and not _representation_rejection_reason(query, "related"):
                 out.append({"query": query, "kind": "related", "level": len(out)})
     return out
+
+
+def _validate_query_list(raw) -> tuple[list[str], list[dict]]:
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return [], []
+    accepted, rejected = [], []
+    for value in raw[:12]:
+        query = str(value or "").strip()
+        reason = _representation_rejection_reason(query, "related")
+        if reason:
+            rejected.append({"query": query, "kind": "related", "reason": reason})
+        elif query and query.casefold() not in {item.casefold() for item in accepted}:
+            accepted.append(query)
+    return accepted, rejected
+
+
+_VISUAL_ORDINALS = {"primeira", "primeiro", "segunda", "segundo", "first",
+                    "second", "third", "initial", "next", "former"}
+_VISUAL_ABSTRACTIONS = {"gold", "ouro", "power", "elite"}
+
+
+def _representation_rejection_reason(query: str, kind: str) -> str:
+    """Reject isolated narration fragments before they become search anchors."""
+    folded = textnorm.fold_phrase(query)
+    words = folded.split()
+    if len(words) == 1 and folded in _VISUAL_ORDINALS:
+        return "isolated_ordinal"
+    if len(words) == 1 and folded in _VISUAL_ABSTRACTIONS:
+        return "isolated_abstract_or_material"
+    if len(words) == 1 and re.search(
+            r"(?:avam|ariam|eram|iram|ando|endo|indo|aram|ou|eu|iu)$", folded):
+        return "isolated_inflected_verb"
+    if len(words) == 1 and kind in {"related", "entity"} and folded in textnorm.VISUAL_STOP_PT:
+        return "isolated_stopword"
+    return ""
+
+
+def _rejected_representations(raw) -> list[dict]:
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    rejected = []
+    for item in raw[:20]:
+        query = str(item.get("query", item.get("visual", item.get("name", "")))
+                    if isinstance(item, dict) else item or "").strip()
+        kind = str(item.get("kind", "related") or "related") if isinstance(item, dict) else "related"
+        reason = _representation_rejection_reason(query, kind)
+        if reason:
+            rejected.append({"query": query, "kind": kind, "reason": reason})
+    return rejected
+
+
+def _local_representation_rejections(narration: str) -> list[dict]:
+    rejected = []
+    for word in re.findall(r"[A-Za-zÀ-ÿ]+", narration):
+        normalized = textnorm.fold_phrase(word)
+        reason = _representation_rejection_reason(normalized, "related")
+        if reason and not any(row["query"] == normalized for row in rejected):
+            rejected.append({"query": normalized, "kind": "related", "reason": reason})
+    return rejected[:20]
 
 
 def _apply_video_context(chapters: list[Chapter], context) -> None:

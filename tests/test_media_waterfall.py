@@ -35,16 +35,18 @@ def test_waterfall_ordem_e_limite():
              glob=("pregnancy test", "water glass"))
     qs, generics = V._waterfall_queries(ch)
     assert qs[0] == "water glass"  # L1: exato da IA
-    assert "microscope" in qs  # L2: avulso
+    assert "microscope" not in qs  # sem pista de ciência, não injeta genérico
     assert "pregnancy test" in qs  # L3: tema
-    assert any(q.endswith("diagram") for q in qs)  # L3b
-    assert "laboratory" in qs  # L4: genérico
-    assert "laboratory" in generics  # genérico marcado p/ núcleo próprio
+    assert not any(q.endswith("diagram") for q in qs)  # sem mecanismo/processo
+    assert "laboratory" not in qs  # sem gênero/cue de ciência, não inventa bancada
     assert len(qs) == len(set(q.lower() for q in qs))  # sem dup
     assert len(qs) <= 8
-    # sem nada da IA: usa local + genéricos, nunca vazio
+    # sem nada da IA: usa conceito local; sem ciência não injeta laboratório.
     qs2, _ = V._waterfall_queries(_ch((), "O sal preservava a comida romana."))
-    assert qs2 and "laboratory" in qs2
+    assert "laboratory" not in qs2 and "microscope" not in qs2
+    science, science_generic = V._waterfall_queries(_ch(
+        ("water glass",), "A laboratory experiment uses a microscope."), "science")
+    assert "laboratory" in science and "laboratory" in science_generic
     # people: acervo (igreja, biblioteca), não laboratório
     qs3, gen3 = V._waterfall_queries(_ch(("saint",)), genre="people")
     assert "church interior" in qs3 and "church interior" in gen3

@@ -345,6 +345,15 @@ um e o motivo de cada exclusão. Para `historical_art`, os museus (Met, AIC)
 e Wikimedia são consultados antes dos bancos genéricos; só entra obra em
 domínio público com imagem e direitos claros.
 
+Queries locais vêm de representações visuais concretas validadas, preservam
+o tópico ou alias confirmado e recebem variantes adequadas ao tipo de cena
+(evento, pessoa, lugar, exército ou artefato). Palavras isoladas, verbos e
+ordinais não viram âncoras; uma busca só é marcada como esgotada quando as
+queries razoáveis foram executadas sem falhas de provider. A auditoria por
+cena registra representações descartadas, queries executadas, providers,
+resultados, rejeições, duplicatas e fallback em `media.json`. Consulte o
+[relatório de formação de queries e validação histórica](docs/relatorios/20261004_relatorio-formacao-queries-diretor-visual.md).
+
 ## Revisão humana
 
 ```bash

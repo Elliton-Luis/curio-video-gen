@@ -73,6 +73,7 @@ PROVIDER_PRIORITY = ("pixabay", "pexels", "nasa",
 # antigo aceitava 1 asset do primeiro provedor; recolher uma dúzia e
 # ordenar é o que permite escolher em vez de tomar o que veio.
 CANDIDATE_MULTIPLIER = 4
+MAX_SCENE_CANDIDATES = 20
 # Rejeições que a folha de contato guarda por cena (o resto é ruído).
 REJECTED_KEPT = 8
 
@@ -254,16 +255,7 @@ def _space_boost(narration: str) -> list[str]:
 
 
 def local_queries(narration: str, k: int = 2) -> list[str]:
-    """Consultas visuais offline a partir do texto do trecho (PT→EN).
-
-    Retorna exatamente 2 termos em inglês (substantivos visuais atómicos).
-    """
-    # Palavras que abrem frase (capitalização gramatical, não entidade).
-    first_words = set()
-    for sent in re.split(r"(?<=[.!?…])\s+", narration.strip()):
-        m = re.match(r"\W*([A-Za-zÀ-ÿ]+)", sent)
-        if m:
-            first_words.add(_strip_acc(m.group(1)))
+    """Conceitos visuais locais; nunca promove palavras frequentes a âncoras."""
     # Entidades: capitalizada no MEIO da frase, ou 1ª palavra só se for
     # substantivo próprio conhecido (ex.: Roma, Cesar).
     mids = set(re.findall(r"[a-zà-ÿ]\s+([A-ZÀ-Þ][a-zà-ÿ]{2,})",
@@ -279,55 +271,91 @@ def local_queries(narration: str, k: int = 2) -> list[str]:
         term = PT_EN.get(base, ent)
         if term not in entities:
             entities.append(term)
-    words = re.findall(r"[a-zà-ÿ]{4,}", narration.lower())
-    freq: dict[str, int] = {}
-    for w in words:
-        base = _strip_acc(w)
-        if base in PT_STOP:
-            continue
-        freq[base] = freq.get(base, 0) + 1
-    # Traduzidos primeiro (substantivos visuais conhecidos); crus por último
-    translated = [(c, _en(b)) for b, c in freq.items() if _en(b)]
-    raw = [(c, b) for b, c in freq.items() if not _en(b)]
-    translated.sort(key=lambda t: -t[0])
-    raw.sort(key=lambda t: -t[0])
-    keywords: list[str] = []
-    for _count, term in translated + raw:
-        if term not in entities and term not in keywords:
-            keywords.append(term)
-    # Tópico espacial vence frequência: "campo"/"tempo" são frequentes e
-    # genéricos — "buraco negro" é o assunto e precisa vir primeiro, ou a
-    # busca pede "field" e o vídeo recebe microscópio.
     boost = list(dict.fromkeys([
         *textnorm.topic_phrases(narration), *_space_boost(narration)]))
-    if boost:
-        ordered = [t for t in boost if t in keywords or t in entities]
-        ordered += [t for t in boost if t not in ordered]
-        rest = [t for t in keywords if t not in ordered]
-        # Termos espaciais traduzidos passam à frente dos genéricos.
-        prio = [t for t in _SPACE_PRIORITY if t in keywords]
-        rest_prio = [t for t in prio if t not in ordered]
-        rest_other = [t for t in keywords if t not in ordered + rest_prio]
-        keywords = ordered + rest_prio + rest_other
-    # Constrói exatamente 2 termos: com tópico espacial, o tema vence a
-    # entidade capitalizada; sem ele, entidade + substantivo visual.
-    queries: list[str] = []
-    if boost and keywords and keywords[0] in boost:
-        queries.append(keywords[0])
-    elif entities:
-        queries.append(entities[0])
-    if keywords:
-        for kw in keywords:
-            if kw not in queries:
-                queries.append(kw)
-                break
-    # Fallback se não houver entidades
-    if len(queries) < 2:
-        if entities and len(entities) > 1:
-            queries.append(entities[1])
-        elif keywords and len(keywords) > 1:
-            queries.append(keywords[1])
-    return queries[:2]
+    # Coletar nomes próprios compostos preserva as unidades semânticas. Não
+    # dividir "Corno de Ouro" em "gold", nem aceitar capitalização de início
+    # de frase como entidade por si só.
+    proper: list[str] = []
+    name_re = re.compile(
+        r"(?<!\w)[A-ZÀ-Þ][\wÀ-ÿ'-]*(?:(?:\s+(?:de|do|da|dos|das|of|the)\s+|\s+)[A-ZÀ-Þ][\wÀ-ÿ'-]*){0,4}")
+    for match in name_re.finditer(narration):
+        role_context = bool(re.match(r"^(?:sob|sobre|under)\s+",
+                                     match.group(0), re.I))
+        phrase = re.sub(r"^(?:o|a|os|as|the|sob|sobre|under)\s+", "",
+                        match.group(0).strip(), flags=re.I)
+        if not phrase:
+            continue
+        first = _strip_acc(phrase.split()[0].lower())
+        if first in PT_STOP or len(phrase) < 4:
+            continue
+        before = narration[:match.start()].rstrip()
+        if not before or before.endswith((".", "!", "?")):
+            if (len(phrase.split()) == 1 and not role_context and first not in PT_EN
+                    and phrase.lower() not in boost):
+                continue
+        if re.search(r",\s*(?:o|a|the)$", before, re.I) and proper:
+            proper[-1] = f"{proper[-1]}, {phrase}"
+        elif phrase not in proper:
+            proper.append(phrase)
+    # Nomes comuns concretos entram apenas quando são complementos nominais
+    # explícitos. Lista curta de classes visuais; verbos e ordinais não passam.
+    concrete = re.findall(
+        r"\b(?:os|as|o|a|the|um|uma)\s+((?:jan[ií]zar\w+|soldad\w+|canh[oõ]es|espadas?|muralhas|fortalezas|navios?|frotas?|moedas|armas|est[aá]tuas|documentos|artefatos|monumentos|ex[eé]rcitos?|cavalarias?|uniformes?))\b",
+        narration, re.I)
+    # Eventos históricos usam uma taxonomia pequena e determinística; o
+    # local/nome próprio é mantido junto ao tipo do evento.
+    event_heads = ("batalha", "battle", "cerco", "siege", "revolução",
+                   "revolution", "guerra", "war", "conquista", "conquest")
+    event = next((head for head in event_heads
+                  if re.search(rf"\b{head}\w*\b", narration, re.I)), "")
+    year = next(iter(re.findall(r"\b(?:1[0-9]{3}|20[0-2][0-9])\b", narration)), "")
+    event_terms = []
+    if event and proper:
+        head = {"batalha": "Battle of", "battle": "Battle of",
+                "cerco": "Siege of", "siege": "Siege of",
+                "revolução": "Revolution", "revolution": "Revolution",
+                "guerra": "War", "war": "War",
+                "conquista": "Conquest of", "conquest": "Conquest of"}
+        direct = re.search(
+            r"\b(?:batalha|battle|cerco|siege|conquista|conquest|revolu[cç][aã]o|revolution|guerra|war)"
+            r"\s+(?:de|do|da|of|at|a)\s+"
+            r"([A-ZÀ-Þ][\wÀ-ÿ'-]*(?:\s+(?:de|do|da|dos|das|of|the)\s+[A-ZÀ-Þ][\wÀ-ÿ'-]*)*)",
+            narration, re.I)
+        siege_object = re.search(r"\b(?:cercou|besieged|sieged)\s+([A-ZÀ-Þ][\wÀ-ÿ'-]+)",
+                                 narration)
+        place = direct.group(1) if direct else (
+            siege_object.group(1) if siege_object else "")
+        if place:
+            if len(place.split()) == 1:
+                place = PT_EN.get(_strip_acc(place.lower()), place)
+            event_query = f"{head[event]} {place}"
+            event_terms.append(event_query)
+            if year:
+                event_terms.append(f"{event_query} {year}")
+    # Keep established domain phrase matching (e.g. induction motor) and
+    # known entities, but never use arbitrary frequency-ranked tokens.
+    result: list[str] = []
+    # Don't split a token from a multi-word place/person (notably a named
+    # landmark ending in a translatable common noun such as "Ouro").
+    embedded = {word.strip(" ,.;:").casefold()
+                for phrase in proper if len(phrase.split()) > 1
+                for word in phrase.split()}
+    embedded.update(PT_EN.get(_strip_acc(word), word).casefold()
+                    for word in list(embedded))
+    safe_entities = [term for term in entities
+                     if term.casefold() not in embedded]
+    for term in [*boost, *event_terms, *proper, *safe_entities, *concrete]:
+        term = re.sub(r"\s+", " ", str(term)).strip(" ,.;:")
+        if scenes_stage._representation_rejection_reason(term, "entity"):
+            continue
+        if len(term.split()) == 1:
+            term = PT_EN.get(_strip_acc(term.lower()), term)
+        if not term:
+            continue
+        if term.casefold() not in {q.casefold() for q in result}:
+            result.append(term)
+    return result[:max(1, min(k, 5))]
 
 
 def read_script_file(path: str) -> str:
@@ -392,7 +420,7 @@ def _relevance(query: str, asset: MediaAsset) -> int:
 
 
 def _provider_priority_order(cfg: CurioConfig, ch=None,
-                            genre: str = "") -> list[MediaProvider]:
+                            genre: str = "", providers=None) -> list[MediaProvider]:
     """Provedores na ordem de prioridade para ESTA cena.
 
     Para `historical_art` os museus e acervos sobem: uma foto de banco
@@ -401,13 +429,22 @@ def _provider_priority_order(cfg: CurioConfig, ch=None,
     domínio público sem chave. A ordem global continua valendo para os
     demais tipos - a escada é por cena, não uma preferência permanente.
     """
-    all_providers = get_providers(cfg)
+    all_providers = list(providers) if providers is not None else get_providers(cfg)
     order = list(PROVIDER_PRIORITY)
     from . import editorial
     adapter = editorial.get(genre or getattr(cfg, "genre", ""))
     adapter_priority = list(adapter.media_provider_priority) if adapter else []
-    if str(getattr(ch, "visual_type", "") or "") == "historical_art":
-        adapter_priority = adapter_priority or ["met", "aic", "wikimedia", "openverse"]
+    visual_type = str(getattr(ch, "visual_type", "") or "")
+    narration = str(getattr(ch, "narration", "") or "").lower()
+    historical_scene = visual_type == "historical_art" or any(
+            cue in narration for cue in ("batalha", "battle", "império", "empire",
+                                         "século", "century", "revolução", "revolution"))
+    if historical_scene:
+        adapter_priority = ["met", "aic", "wikimedia", "openverse"]
+        order = adapter_priority + [p for p in order if p not in adapter_priority]
+    if is_space_topic(narration) or visual_type == "mechanism":
+        order = ["nasa", "wikimedia", "openverse", "pixabay", "pexels",
+                 "met", "aic", "unsplash"]
     if adapter_priority:
         art_first = [p for p in adapter_priority if p in order]
         order = art_first + [p for p in order if p not in art_first]
@@ -441,12 +478,21 @@ def _generic_queries(genre: str = "", ch=None) -> tuple[str, ...]:
             ])
             if is_space_topic(hay):
                 return SPACE_GENERIC_QUERIES
+            if (str(getattr(ch, "visual_type", "") or "") != "historical_art"
+                    and (str(getattr(ch, "visual_type", "") or "") == "mechanism"
+                    or any(word in hay.casefold() for word in
+                           ("microscope", "microscópio", "laboratory", "laboratório",
+                            "experiment", "experimento", "molecule", "molécula",
+                            "science", "ciência", "research", "pesquisa")))):
+                return GENERIC_FALLBACK_QUERIES
         except Exception:  # noqa: BLE001 — genérico nunca é fatal
             pass
     from . import editorial
     adapter = editorial.get(genre)
     if adapter and adapter.generic_media_queries:
         return adapter.generic_media_queries
+    if not genre:
+        return ()
     return GENERIC_FALLBACK_QUERIES
 
 # Meios que trazem ARTE para a frente numa busca. A ordem é o que o
@@ -483,6 +529,10 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
 
     def _add(query: str) -> None:
         query = _sanitize_query(query or "")
+        for anchor in [topic, *context_aliases]:
+            if anchor:
+                query = re.sub(rf"\b({re.escape(anchor)})\s+\1\b", r"\1",
+                               query, flags=re.I)
         if query and query.lower() not in seen:
             seen.add(query.lower())
             out.append(query)
@@ -497,9 +547,7 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
     representations = sorted(
         [r for r in (getattr(ch, "representations", []) or [])
          if isinstance(r, dict) and str(r.get("query", "")).strip()],
-        key=lambda r: (_representation_level(r), str(r.get("query", ""))))
-    for representation in representations:
-        _add(str(representation["query"]))
+        key=lambda r: _representation_level(r))
     from .scoring import _tokens
     names = [set(_tokens(name)) for name in [getattr(ch, "subject", ""),
              *(getattr(ch, "subject_aliases", []) or [])] if _tokens(name)]
@@ -508,27 +556,77 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
     local = str(getattr(ch, "visual_intent", "") or "").startswith("local fallback")
     context = dict(getattr(ch, "video_context", {}) or {})
     topic = str(context.get("topic") or "").strip()
+    context_aliases = [str(x).strip() for x in context.get("aliases", []) or []
+                       if str(x).strip()]
+    anchor_alias = next((alias for alias in context_aliases
+                         if topic and alias.casefold() != topic.casefold()), topic)
+    def contextual(query: str) -> str:
+        query_tokens = set(_tokens(query))
+        anchors = [topic, *context_aliases]
+        if any(set(_tokens(anchor)).issubset(query_tokens)
+               for anchor in anchors if _tokens(anchor)):
+            return query
+        return f"{query} {anchor_alias}".strip()
+    if not local:
+        for representation in representations:
+            focus = str(representation["query"]).strip()
+            kind = str(representation.get("kind", "related"))
+            _add(contextual(focus))
+            media = ("painting", "engraving", "illustration") if kind == "event" else (
+                ("portrait", "bust", "painting", "engraving") if kind == "person" else
+                ("monument", "historical photograph", "engraving") if kind == "monument" else
+                ("army", "uniform", "cavalry", "military engraving") if kind == "army" else
+                ("artifact", "museum object", "historical illustration") if kind == "artifact" else
+                ("historical map", "painting", "engraving") if kind in ("place", "empire", "map") else
+                ("painting", "engraving", "illustration") if (
+                    str(getattr(ch, "visual_type", "")) == "historical_art"
+                    and kind in ("entity", "related")) else ())
+            for medium in media:
+                _add(f"{focus} {medium} {anchor_alias}".strip())
     structured_plan = bool(representations
                           or getattr(ch, "visual_intent_structured", "")
                           or topic)
     if local and topic:
-        # Keep local phrase tied to canonical video context; never search
-        # extracted nouns alone when planner is unavailable.
-        focused = [x for x in local_queries(ch.narration) if x]
-        if focused:
-            focus = focused[0]
-            _add(f"{topic} {focus}")
-        _add(topic)
-        for entity in list(context.get("primary_entities", []) or [])[:3]:
-            _add(str(entity))
-        if str(getattr(ch, "visual_type", "") or "") == "historical_art":
-            for medium in ART_MEDIA_HINTS[:4]:
-                _add(f"{topic} {medium}")
+        # A deterministic compact catalog tree keeps each entity/event tied
+        # to the video topic and adds only media types appropriate to it.
+        period = str(getattr(ch, "period", "") or "")
+        topic_names = [topic, *(context.get("aliases", []) or []),
+                       *(context.get("primary_entities", []) or [])]
+        anchor_token_sets = [set(_tokens(name)) for name in topic_names if _tokens(name)]
+        is_topic_representation = lambda rep: any(
+            tokens.issuperset(_tokens(str(rep.get("query", ""))))
+            for tokens in anchor_token_sets) or str(rep.get("kind", "")) == "empire"
+        specific_representations = [r for r in representations
+            if not is_topic_representation(r)]
+        broad_representations = [r for r in representations
+            if r not in specific_representations]
+        representations_to_search = specific_representations or broad_representations
+        for representation in representations_to_search:
+            focus = str(representation["query"]).strip()
+            kind = str(representation.get("kind", "entity"))
+            _add(f"{focus} {anchor_alias}")
+            if anchor_alias.casefold() != topic.casefold():
+                _add(f"{focus} {topic}")
+            if period:
+                _add(f"{focus} {period} {anchor_alias}")
+            media = ("painting", "engraving", "illustration") if kind == "event" else (
+                ("portrait", "bust", "painting", "engraving") if kind == "person" else
+                ("monument", "historical photograph", "engraving") if kind == "monument" else
+                ("army", "uniform", "cavalry", "military engraving") if kind == "army" else
+                ("artifact", "museum object", "historical illustration") if kind == "artifact" else
+                ("historical map", "painting", "engraving") if kind in ("place", "empire") else
+                ("painting", "engraving", "artifact") if kind == "entity" else ())
+            for medium in media:
+                _add(f"{focus} {medium} {anchor_alias}")
+        for entity in list(context.get("primary_entities", []) or [])[:2]:
+            _add(f"{entity} {topic}")
+        # Broad topic is a late contextual fallback after specific concepts.
+        _add(f"{anchor_alias} historical map")
     if len(ai) >= 2 and not same_subject and not local:
-        _add(" ".join(ai[:2]))
+        _add(contextual(" ".join(ai[:2])))
     for term in ai:
         if not local:
-            _add(term)
+            _add(contextual(term))
     if not ai and not (local and topic) and not structured_plan:
         for term in local_queries(ch.narration):
             _add(term)
@@ -548,17 +646,23 @@ def _waterfall_queries(ch, genre: str = "") -> tuple[list[str], set[str]]:
             for meio in ART_MEDIA_HINTS:
                 _add(f"{term} {meio}")
     if ai and not local:
-        _add(" ".join(ai[:2]) + " diagram")
+        for term in ai:
+            if topic and not set(_tokens(topic)).issubset(set(_tokens(term))):
+                _add(f"{term} {anchor_alias}")
+            else:
+                _add(term)
+        if _looks_mechanistic(ch, ai):
+            _add(" ".join(ai[:2]) + " diagram")
     generics = set()
     for term in _generic_queries(genre, ch):
         before = len(out)
         _add(term)
         if len(out) > before:
             generics.add(term.lower())
-    if not out:
-        _add("black hole" if is_space_topic(
+    if not out and is_space_topic(
             f"{getattr(ch, 'narration', '')} "
-            f"{' '.join(list(getattr(ch, 'visual_queries', []) or []))}") else "science")
+            f"{' '.join(list(getattr(ch, 'visual_queries', []) or []))}"):
+        _add("black hole")
     # Keep scene-specific alternatives available after a contextual query
     # returns only an already-used asset.
     return out[:8], generics
@@ -650,7 +754,12 @@ def _search_scene_with_shortcircuit(
     providers_consulted: set[str] = set()
     query_providers: dict[str, set[str]] = {}
     abandoned_duplicate_queries: set[str] = set()
+    unexecuted_queries: dict[str, str] = {}
     duplicate_candidates = 0
+    query_audit: dict[str, dict] = {q: {"results": 0, "duplicates": 0,
+                                        "rejected": 0, "eligible": 0, "providers": [],
+                                        "by_provider": {}, "errors_by_provider": {}}
+                                    for q in queries}
 
     def _consider(cand: MediaAsset, query: str) -> None:
         nonlocal duplicate_candidates
@@ -661,6 +770,7 @@ def _search_scene_with_shortcircuit(
                     f"{cand.provider}:{cand.asset_id}")
         if identity in seen_ids:
             duplicate_candidates += 1
+            query_audit[query]["duplicates"] += 1
             if metrics:
                 metrics.media_record_funnel("duplicates")
             return
@@ -669,6 +779,7 @@ def _search_scene_with_shortcircuit(
             metrics.media_record_funnel("unique_considered")
         why = _validate_asset_for(cand, blocked)
         if why:
+            query_audit[query]["rejected"] += 1
             semantic = scoring.semantic_relevance(cand.to_dict(), ch)
             rejected.append({"title": cand.title, "query": query,
                              "reason": why, "provider": cand.provider,
@@ -681,6 +792,7 @@ def _search_scene_with_shortcircuit(
             return
         if metrics:
             metrics.media_record_funnel("eligible")
+        query_audit[query]["eligible"] += 1
         candidates.append({
             "asset": cand.to_dict(),
             "query": query,
@@ -694,19 +806,30 @@ def _search_scene_with_shortcircuit(
 
     def collect(query_list: list[str], limit: int,
                 stop_when_proven: bool = False) -> None:
-        for query in query_list:
-            if len(candidates) >= limit:
+        for query_index, query in enumerate(query_list):
+            if len(candidates) >= MAX_SCENE_CANDIDATES:
+                for pending in query_list[query_index:]:
+                    unexecuted_queries.setdefault(pending, "scene_candidate_budget")
                 break
+            candidates_before_query = len(candidates)
             query_key = query.casefold()
             identities_before = len(seen_ids)
             duplicates_before = duplicate_candidates
+            rejected_before = len(rejected)
             shared = (shared_search_cache.setdefault(query_key, {})
                       if shared_search_cache is not None else {})
             active = [prov for prov in providers
                       if not getattr(prov, "_disabled", False)]
+            scene_order = [p.name for p in
+                           _provider_priority_order(cfg, ch, genre, providers)]
+            rank = {name: index for index, name in enumerate(scene_order)}
+            active.sort(key=lambda p: rank.get(p.name, len(rank)))
             providers_consulted.update(prov.name for prov in active)
             query_providers.setdefault(query, set()).update(
                 prov.name for prov in active)
+            query_audit[query]["providers"] = [prov.name for prov in active]
+            if not active:
+                query_audit[query]["unavailable"] = True
             if metrics and active:
                 metrics.media_queries_count += 1
             tasks = []
@@ -721,7 +844,8 @@ def _search_scene_with_shortcircuit(
             # Wait in provider-priority order, even though requests run at
             # once. Candidate order and tie-breaks remain deterministic.
             for prov, future, cached_results in tasks:
-                if len(candidates) >= limit:
+                if (len(candidates) >= MAX_SCENE_CANDIDATES
+                        or len(candidates) - candidates_before_query >= limit):
                     for _later_provider, later, _cached in tasks:
                         if later is not None:
                             later.cancel()
@@ -736,10 +860,12 @@ def _search_scene_with_shortcircuit(
                         results = future.result(timeout=remaining)
                     except concurrent.futures.TimeoutError:
                         future.cancel()
+                        query_audit[query]["errors_by_provider"][prov.name] = "timeout"
                         if metrics:
                             metrics.media_record_timeout()
                         continue
                     except MediaError as exc:
+                        query_audit[query]["errors_by_provider"][prov.name] = str(exc)
                         if (any(code in str(exc) for code in ("429", "401", "403"))
                                 or "Too Many Requests" in str(exc)):
                             prov._disabled = True
@@ -759,6 +885,9 @@ def _search_scene_with_shortcircuit(
                     if metrics:
                         metrics.media_record_results(prov.name, len(results))
                         metrics.media_record_funnel("normalized_returned", len(results))
+                query_audit[query]["results"] += len(results)
+                query_audit[query]["by_provider"][prov.name] = (
+                    query_audit[query]["by_provider"].get(prov.name, 0) + len(results))
                 for result_index, cand in enumerate(results):
                     if len(candidates) >= limit:
                         if metrics:
@@ -783,6 +912,8 @@ def _search_scene_with_shortcircuit(
                        and entry.get("score_detail", {}).get("topic_relevance") == 100
                        and entry.get("score_detail", {}).get("scene_relevance", 0) >= 70
                        for entry in checked):
+                    for pending in query_list[query_index + 1:]:
+                        unexecuted_queries.setdefault(pending, "fresh_match_proven")
                     break
 
     def score_specific(entries: list[dict]):
@@ -797,7 +928,10 @@ def _search_scene_with_shortcircuit(
     # Generic queries só rodam quando nenhuma foto específica passa o gate.
     specific_queries = [q for q in queries if q.lower() not in generics]
     generic_queries = [q for q in queries if q.lower() in generics]
-    phase_budget = max_images * CANDIDATE_MULTIPLIER
+    # Bound each query, then keep exploring later representations unless a
+    # strong fresh result proves sufficient. The scene-wide cap prevents an
+    # oversized provider response from multiplying downloads without bound.
+    phase_budget = max(1, max_images * CANDIDATE_MULTIPLIER)
     collect(specific_queries, phase_budget, stop_when_proven=True)
     specific, low_specific = score_specific(
         [entry for entry in candidates if not entry["generic"]])
@@ -808,7 +942,7 @@ def _search_scene_with_shortcircuit(
     if fresh_specific:
         ranked, low = specific, low_specific
     else:
-        collect(generic_queries, len(candidates) + phase_budget)
+        collect(generic_queries, phase_budget)
         generic_ranked = []
         for entry in [e for e in candidates if e["generic"]]:
             info = scoring.generic_score(entry["asset"], entry["query"])
@@ -1127,13 +1261,16 @@ def _search_scene_with_shortcircuit(
     scene_rejected = rejected[:REJECTED_KEPT]
     video_context = dict(getattr(ch, "video_context", {}) or {})
     representation_levels = {}
+    representation_kinds = {}
     for rep in (getattr(ch, "representations", []) or []):
         if isinstance(rep, dict):
+            rep_query = str(rep.get("query", ""))
+            representation_kinds[rep_query] = str(rep.get("kind", "related"))
             try:
-                representation_levels[str(rep.get("query", ""))] = int(
+                representation_levels[rep_query] = int(
                     rep.get("level", 0) or 0)
             except (TypeError, ValueError):
-                representation_levels[str(rep.get("query", ""))] = 0
+                representation_levels[rep_query] = 0
     audit_candidates = []
     for entry in candidates:
         detail = entry.get("score_detail", {})
@@ -1189,15 +1326,45 @@ def _search_scene_with_shortcircuit(
             *(getattr(ch, "context", []) or [])]))[:12],
         "primary_entity": getattr(ch, "primary_entity", "") or getattr(ch, "subject", ""),
         "representations": getattr(ch, "representations", []) or [],
+        "representations_discarded": getattr(ch, "representation_rejections", []) or [],
+        "aliases": list(video_context.get("aliases", []) or []),
         "queries": [{"query": query,
                      "level": representation_levels.get(
                          query, 5 if query in generics else 3),
-                     "providers": sorted(query_providers.get(query, set())),
-                     "status": ("abandoned_duplicates"
+                     "providers": query_audit[query]["providers"],
+                     "provider_errors": dict(query_audit[query]["errors_by_provider"]),
+                     "results": query_audit[query]["results"],
+                     "results_by_provider": dict(query_audit[query]["by_provider"]),
+                     "duplicates": query_audit[query]["duplicates"],
+                     "eligible_candidates": query_audit[query]["eligible"],
+                     "rejected_candidates_total": len([
+                         item for item in rejected if item.get("query") == query]),
+                     "outcome": ("duplicates_only" if query in abandoned_duplicate_queries else
+                                 "rejected" if query_audit[query]["rejected"] else
+                                 "eligible" if query_audit[query]["eligible"] else
+                                 "empty_or_unavailable"),
+                     "representations": [rep for rep in representation_levels
+                         if rep.casefold() in query.casefold()],
+                     "representation_kinds": {rep: representation_kinds[rep]
+                         for rep in representation_levels
+                         if rep.casefold() in query.casefold()},
+                     "aliases_used": [alias for alias in
+                         list(video_context.get("aliases", []) or [])
+                         if str(alias).casefold() in query.casefold()],
+                     "query_variant": next((suffix for suffix in
+                         ("historical map", "painting", "engraving", "illustration",
+                          "portrait", "bust", "artifact", "museum object",
+                          "monument", "historical photograph")
+                         if query.casefold().endswith(suffix)), "contextual_entity"),
+                     "status": ("not_consulted_budget_exhausted"
+                                if unexecuted_queries.get(query) == "scene_candidate_budget" else
+                                "not_consulted_after_fresh_match"
+                                if unexecuted_queries.get(query) == "fresh_match_proven" else
+                                "abandoned_duplicates"
                                 if query in abandoned_duplicate_queries else
                                 "consulted" if query_providers.get(query)
-                                else "not_consulted_after_higher_priority_match"
-                                if ranked else "no_provider_results")}
+                                else "no_provider_results"),
+                     "unexecuted_reason": unexecuted_queries.get(query, "")}
                     for query in queries],
         "providers_consulted": sorted(providers_consulted),
         "candidates": (audit_candidates + [{"title": item.get("title", ""),
@@ -1218,6 +1385,31 @@ def _search_scene_with_shortcircuit(
                           "reason": "No candidate passed semantic gates; rendered safe local visual"}
                          if first and (first or {}).get("provider") == "synth" else None)),
         "fallback": strategy_used if synthetic or not picked else "",
+        "search_exhausted": bool(
+            (not picked or picked[0].get("reuse_reason")
+             or (first or {}).get("provider") == "synth")
+            and not unexecuted_queries
+            and all(query_audit[q]["providers"]
+                    and not query_audit[q]["errors_by_provider"]
+                    and not query_audit[q].get("unavailable") for q in queries)),
+        "search_exhaustion_reason": (
+            "new_asset_selected" if picked and (first or {}).get("provider") != "synth"
+            and not picked[0].get("reuse_reason") else
+            "queries_not_executed" if unexecuted_queries else
+            "provider_errors" if any(a["errors_by_provider"] for a in query_audit.values()) else
+            "no_available_provider" if any(not a["providers"] for a in query_audit.values()) else
+            "all_queries_consulted_no_valid_asset" if synthetic or not picked else
+            "asset_reuse_after_search" if picked else ""),
+        "fallback_level": ("synthetic_after_incomplete_search"
+                           if (first or {}).get("provider") == "synth"
+                           and (unexecuted_queries or any(
+                               a["errors_by_provider"] or not a["providers"]
+                               for a in query_audit.values())) else
+                           "synthetic_after_exhaustion"
+                           if (first or {}).get("provider") == "synth" else
+                           "reused" if picked and picked[0].get("reuse_reason") else
+                           "specific" if picked and picked[0].get("query") in representation_levels
+                           else "representation_or_media_variant" if picked else "exhausted"),
     }
     return [{
         "chapter_id": ch.id,
