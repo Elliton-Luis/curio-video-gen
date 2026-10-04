@@ -246,15 +246,14 @@ def test_specific_mapping_ranks_above_mission_poster_fallback():
 
 
 def test_topic_context_and_representation_survive_local_planner_fallback():
-    chapter = scenes.build_local_semantic_scenes(
-        "A Bastilha foi tomada. O evento mudou Paris.", 2).timeline_chapters()[0]
-    chapter.planning_mode = "deterministic"
-    assert attach_video_context([chapter], "Guerra dos Cem Anos")
-    queries, _ = plan_queries(chapter, "history")
+    scene = scenes.build_local_semantic_scenes(
+        "A Bastilha foi tomada. O evento mudou Paris.", 2).semantic_scenes[0]
+    scene = attach_video_context((scene,), "Guerra dos Cem Anos")[0]
+    queries, _ = plan_queries(scene, "history")
     assert queries[0] == "Guerra dos Cem Anos"
     assert "Guerra dos Cem Anos Guerra dos Cem Anos" not in queries
     assert "Guerra dos Cem Anos" in queries
-    assert chapter.video_context["topic"] == "Guerra dos Cem Anos"
+    assert scene.video_context["topic"] == "Guerra dos Cem Anos"
 
 
 def test_structured_plan_never_adds_narration_keywords_to_queries():

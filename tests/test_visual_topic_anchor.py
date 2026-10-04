@@ -5,7 +5,6 @@ from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter, build_local_semantic_scenes
 from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages.scene_local_planning import local_visual_representations
-from curio.stages.visual_context import anchor_local_topic
 
 
 def test_absoluto_never_generates_sun_query():

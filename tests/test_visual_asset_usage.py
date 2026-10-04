@@ -115,13 +115,14 @@ def test_missing_science_context_uses_verified_topic_and_english_alias(monkeypat
     from curio.stages.entity import TargetEntity
     from curio.stages.research import ResearchSource
     from curio.stages.visual_context import fill_missing_context
+    from curio.stages.scene_contract import SemanticScene
     monkeypatch.setattr("curio.stages.research._get_json", lambda *a, **kw: {
         "query": {"pages": {"1": {"langlinks": [{"lang": "en", "*": "Black hole"}]}}}})
-    ch = Chapter(1, "Nem a luz escapa de um buraco negro.", 8)
+    ch = SemanticScene(1, "Nem a luz escapa de um buraco negro.")
     source = ResearchSource(title="Buraco negro", url="https://pt.wikipedia.org/wiki/Buraco_negro",
                             snippet="Buraco negro é um objeto astronômico.")
-    assert fill_missing_context([ch], TargetEntity("buraco negro", is_entity=False),
-                                "science", [source])
+    ch = fill_missing_context((ch,), TargetEntity("buraco negro", is_entity=False),
+                              "science", [source])[0]
     assert ch.subject == "buraco negro" and "Black hole" in ch.subject_aliases
     assert ch.visual_queries[0] == "Black hole"
     assert ch.narration == "Nem a luz escapa de um buraco negro."
@@ -140,15 +141,19 @@ def test_literal_rome_context_keeps_maps_and_artifacts_eligible(monkeypatch):
     from curio.stages.entity import TargetEntity
     from curio.stages.visual_context import fill_missing_context
     from curio.stages import scoring
-    ch = Chapter(1, "Júlio César chegou em Roma.", 8)
-    assert fill_missing_context([ch], TargetEntity("Júlio César"), "people")
+    from curio.stages.scene_contract import SemanticScene
+    ch = SemanticScene(1, "Júlio César chegou em Roma.")
+    ch = fill_missing_context((ch,), TargetEntity("Júlio César"), "people")[0]
     assert ch.subject == "Roma" and "rome" in ch.subject_aliases
     assets = [entry(i) for i in range(3)]
     for item, title in zip(assets, ("Rome Julius Caesar bust", "Rome Roman Republic map", "Rome ancient coin")):
         item["asset"]["title"] = title
         assert scoring.base_score(item["asset"], ch)["score"] >= scoring.threshold()
-    ch.start, ch.end = 0, 8
-    timeline = visual.build_visual_timeline([ch], [{"chapter_id": 1, "assets": assets}], insertions=0)
+    from curio.stages.scene_contract import TimelineSpan
+    timeline_scene = Chapter.from_semantic_scene(
+        ch, timing=TimelineSpan(scene_id=1, duration_estimate=8, start=0, end=8))
+    timeline = visual.build_visual_timeline(
+        [timeline_scene], [{"chapter_id": 1, "assets": assets}], insertions=0)
     assert len(timeline[0]["backgrounds"]) == 3
 
 

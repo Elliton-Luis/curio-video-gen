@@ -30,6 +30,16 @@ reconstrói o contrato sem usar `Chapter`.
   `20261004-validacao-arquitetural-execucoes-reais.md` e antecedem esta
   alteração.
 
+## A4j: enrichment semântico puro
+
+O enrichment deixa de mutar `Chapter`: as transformações de contexto global,
+âncoras locais, contexto de entidade e etimologia recebem/devolvem
+`SemanticScene`. `scene_enrichment` valida a batch e gera `Chapter` só como
+projeção compatível de saída. Uma regressão integral mostrou o antigo `False`
+de `fill_missing_context` para entidade sem nome sendo confundido com batch;
+esse caminho agora retorna as cenas originais. Após a correção, os focados
+passaram (39) e a suíte completa passou com 844 testes em 145,67 s.
+
 ## Próxima fronteira
 
 O pipeline ainda cria `Chapter` dentro de enrichment e os consumidores de

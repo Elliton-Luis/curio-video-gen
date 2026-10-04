@@ -1,13 +1,12 @@
 from curio.stages.entity import TargetEntity
 from curio.stages.scene_enrichment import enrich_scenes
-from curio.stages.scenes import Chapter
+from curio.stages.scene_contract import SemanticScene
 
 
 def test_scene_enrichment_returns_valid_batch_without_mutating_planner_output():
-    original = Chapter(
+    original = SemanticScene(
         id=1,
         narration="A massa de uma estrela curva o espaço.",
-        duration_estimate=5,
         subject="massa",
         visual_intent="local fallback: massa estrela",
         planning_mode="deterministic",
@@ -20,7 +19,8 @@ def test_scene_enrichment_returns_valid_batch_without_mutating_planner_output():
         source="local", planning_mode="deterministic", genre="science")
 
     assert original.to_dict() == before
-    assert result.chapters[0] is not original
+    assert result.chapters[0].semantic_scene("local").to_dict() == \
+        result.semantic_scenes[0].to_dict() | {"source": "local"}
     assert result.semantic_scenes[0].contract_errors() == []
     assert result.semantic_scenes[0].video_context.topic == "Buracos negros"
     assert result.semantic_scenes[0].global_visual_queries
@@ -31,22 +31,22 @@ def test_scene_enrichment_returns_valid_batch_without_mutating_planner_output():
 
 
 def test_scene_enrichment_is_an_explicit_identity_transform_when_no_context():
-    chapter = Chapter(1, "Uma descrição da cena.", 4)
+    chapter = SemanticScene(1, "Uma descrição da cena.")
 
     result = enrich_scenes([chapter], topic="", source="llm",
                            planning_mode="llm", genre="")
 
-    assert result.semantic_scenes[0].to_dict() == chapter.semantic_scene("llm").to_dict()
+    assert result.semantic_scenes[0].to_dict() == chapter.to_dict()
     assert result.source == "llm"
     assert result.applied == ()
     assert not result.changed
 
 
 def test_semantic_scene_input_uses_same_enrichment_contract():
-    chapter = Chapter(
-        1, "A estrela curva o espaço.", 4, subject="estrela",
+    chapter = SemanticScene(
+        1, "A estrela curva o espaço.", subject="estrela",
         planning_mode="deterministic", text_role="quote")
-    semantic = chapter.semantic_scene("local")
+    semantic = chapter
 
     result = enrich_scenes([semantic], topic="Buracos negros",
                            source="local", planning_mode="deterministic")
@@ -55,3 +55,12 @@ def test_semantic_scene_input_uses_same_enrichment_contract():
     assert result.semantic_scenes[0].text_role == "quote"
     assert result.chapters[0].duration_estimate == 0.0
     assert result.chapters[0].text_role == "quote"
+
+
+def test_scene_enrichment_rejects_misaligned_timeline_contract():
+    import pytest
+    from curio.stages.scene_contract import SemanticScene, TimelineSpan
+
+    with pytest.raises(ValueError, match="spans do not match scene order"):
+        enrich_scenes((SemanticScene(1, "A scene."),), topic="", source="llm",
+                      timeline_spans=(TimelineSpan(2),))

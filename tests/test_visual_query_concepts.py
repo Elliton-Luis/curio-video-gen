@@ -5,7 +5,6 @@ from curio.stages.scenes import Chapter, build_local_semantic_scenes, classify_v
 from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages import visual
 from curio.stages.scene_local_planning import local_visual_representations
-from curio.stages.visual_context import attach_video_context
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
 

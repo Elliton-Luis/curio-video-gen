@@ -34,6 +34,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import replace
 
 from .. import textnorm
 from ..ua import user_agent
@@ -728,26 +729,22 @@ def visual_concepts(chain: list[Etymon], head: str = "") -> tuple[list, list]:
     return entities[:4], context[:3]
 
 
-def enrich_chapters(chapters, etymology: Etymology | None) -> bool:
-    """Preenche entidades/contexto vazios com a cadeia (não destrutivo).
-
-    Só escreve onde a cena não declarou nada: cena da IA intacta nunca é
-    reescrita. Devolve True se algo mudou (p/ forçar refazer a mídia).
-    """
+def enrich_scenes(scenes, etymology: Etymology | None):
+    """Return semantic scenes with missing etymology visuals filled."""
+    from .scene_contract import SemanticScene
     if etymology is None:
-        return False
-    changed = False
-    for ch in chapters or []:
-        try:
-            if not getattr(ch, "visual_entities", None) and etymology.visual_entities:
-                ch.visual_entities = list(etymology.visual_entities[:4])
-                changed = True
-            if not getattr(ch, "context", None) and etymology.visual_context:
-                ch.context = list(etymology.visual_context[:3])
-                changed = True
-        except Exception:  # noqa: BLE001 — cena estranha: pula
-            continue
-    return changed
+        return tuple(scenes or ())
+    enriched = []
+    for scene in scenes or ():
+        if not isinstance(scene, SemanticScene):
+            raise TypeError("etymology enrichment requires SemanticScene")
+        updates = {}
+        if not scene.visual_entities and etymology.visual_entities:
+            updates["visual_entities"] = tuple(etymology.visual_entities[:4])
+        if not scene.context and etymology.visual_context:
+            updates["context"] = tuple(etymology.visual_context[:3])
+        enriched.append(replace(scene, **updates) if updates else scene)
+    return tuple(enriched)
 
 
 def prompt_block(etymology: Etymology | None, language: str = "pt-BR") -> str:

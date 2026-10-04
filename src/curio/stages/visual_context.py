@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 import urllib.parse
+from dataclasses import replace
 
 from .. import textnorm
 from . import editorial
 from . import scoring
-from .scene_contract import VideoContext
+from .scene_contract import SemanticScene, VideoContext, VisualRepresentation
 
 _HONORIFICS = {"sao", "santo", "santa", "saint"}
 
@@ -19,15 +20,23 @@ _GENERIC_PERSON = {"homem", "homens", "mulher", "mulheres", "pessoa",
                    "boy", "girl", "menino", "menina"}
 
 
-def attach_video_context(chapters, topic: str, target=None) -> bool:
-    """Attach one shared, evidence-bounded topic context to every scene."""
+def _semantic_batch(scenes) -> tuple[SemanticScene, ...]:
+    batch = tuple(scenes or ())
+    if any(not isinstance(scene, SemanticScene) for scene in batch):
+        raise TypeError("visual context enrichment requires SemanticScene")
+    return batch
+
+
+def attach_video_context(scenes, topic: str, target=None) -> tuple[SemanticScene, ...]:
+    """Return scenes with shared topic context; never mutate planner output."""
+    scenes = _semantic_batch(scenes)
     topic = str(topic or "").strip()
     if target is not None:
         canonical = str(getattr(target, "name", "") or "").strip()
         if canonical:
             topic = canonical
     if not topic:
-        return False
+        return tuple(scenes or ())
     aliases = list(dict.fromkeys(
         str(x).strip() for x in
         ([topic] + list(getattr(target, "aliases", []) or [])) if str(x).strip()))
@@ -37,10 +46,9 @@ def attach_video_context(chapters, topic: str, target=None) -> bool:
             return [value] if value.strip() else []
         return list(value) if isinstance(value, (list, tuple)) else []
 
-    changed = False
-    for ch in chapters or []:
-        old = ch.to_dict()
-        context = dict(getattr(ch, "video_context", {}) or {})
+    enriched = []
+    for scene in scenes or ():
+        context = scene.video_context.to_dict()
         current_topic = context.get("topic") or topic
         if isinstance(current_topic, list):
             current_topic = current_topic[0] if current_topic else topic
@@ -53,28 +61,26 @@ def attach_video_context(chapters, topic: str, target=None) -> bool:
         context["period"] = str(context.get("period") or "")
         context["aliases"] = list(dict.fromkeys(
             [*_list(context.get("aliases")), *aliases]))[:8]
-        ch.video_context = VideoContext.from_value(context)
-        if getattr(ch, "planning_mode", "unknown") == "deterministic":
+        updates = {"video_context": VideoContext.from_value(context)}
+        if scene.planning_mode == "deterministic":
             # Local noun extraction is search support, not trusted screen
             # content. Show the known topic until scene meaning is resolved.
-            ch.subject = topic
-            ch.primary_entity = topic
-            ch.visual_entities = []
+            updates.update(subject=topic, primary_entity=topic, visual_entities=())
             # Local genre cues are incomplete until the global subject is
             # attached. History topics classify scenes with no explicit
             # date/event too, and a process verb must not force science.
-            if ch.visual_type != "typographic":
+            if scene.visual_type != "typographic":
                 from .scenes import classify_visual_type
-                contextual_type = classify_visual_type(f"{ch.narration} {topic}")
+                contextual_type = classify_visual_type(f"{scene.narration} {topic}")
                 if contextual_type == "historical_art":
-                    ch.visual_type = contextual_type
-            if not ch.visual_intent_structured:
-                ch.visual_intent_structured = (
+                    updates["visual_type"] = contextual_type
+            if not scene.visual_intent_structured:
+                updates["visual_intent_structured"] = (
                     f"Topic-level visual for {topic}; scene representation unresolved")
-        if not getattr(ch, "global_visual_queries", []):
-            ch.global_visual_queries = [topic]
-        changed = changed or old != ch.to_dict()
-    return changed
+        if not scene.global_visual_queries:
+            updates["global_visual_queries"] = (topic,)
+        enriched.append(replace(scene, **updates))
+    return tuple(enriched)
 
 
 def _identity_tokens(name):
@@ -134,61 +140,74 @@ def _generic_person_subject(ch, names, genre: str) -> bool:
     return True
 
 
-def fill_missing_context(chapters, target, genre: str = "", sources=(),
-                         timeout: int = 20) -> bool:
-    """Preserva identidade da pesquisa sem reescrever narração ou cenas da IA.
+def _with_visual_queries(scene: SemanticScene, queries, *, source: str,
+                         kind: str) -> SemanticScene:
+    existing = {rep.query.casefold(): rep for rep in scene.representations}
+    representations = []
+    seen = set()
+    for query in queries:
+        query = str(query or "").strip()
+        if query and query.casefold() not in seen:
+            key = query.casefold()
+            representations.append(existing.get(key) or VisualRepresentation(
+                query=query, kind=kind, level=len(representations), source=source))
+            seen.add(key)
+    for representation in scene.representations:
+        key = representation.query.casefold()
+        if key not in seen:
+            representations.append(representation)
+            seen.add(key)
+    return replace(scene, representations=tuple(representations),
+                   visual_queries=tuple(rep.query for rep in representations))
 
-    Cenas sem assunto e consultas recebem contexto completo. Cenas cujo
-    assunto já é o nome da entidade apenas ganham aliases e uma consulta
-    ancorada na entidade; assunto, narração e consultas existentes ficam.
-    """
+
+def fill_missing_context(scenes, target, genre: str = "", sources=(),
+                         timeout: int = 20) -> tuple[SemanticScene, ...]:
+    """Return entity context enrichment without mutating semantic scenes."""
+    scenes = _semantic_batch(scenes)
     if target is None:
-        return False
+        return scenes
     names = list(dict.fromkeys(n.strip() for n in target.all_names() if n.strip()))
     if not names:
-        return False
+        return scenes
     if not getattr(target, "is_entity", False) and not any(
             _subject_matches_entity(source.title, names) for source in sources):
-        return False  # Anchor a topic only to a verified canonical source title.
-    empty = [ch for ch in chapters
-             if not ch.subject and not ch.visual_queries]
-    bare = [ch for ch in chapters if ch not in empty and
-            (not ch.subject_aliases or (_subject_matches_entity(ch.subject, names)
-             and not any(alias not in names for alias in ch.subject_aliases)))]
+        return scenes  # Only anchor to an entity confirmed by research.
+    empty = [scene for scene in scenes
+             if not scene.subject and not scene.visual_queries]
+    bare = [scene for scene in scenes if scene not in empty and
+            (not scene.subject_aliases or (
+                _subject_matches_entity(scene.subject, names)
+                and not any(alias not in names for alias in scene.subject_aliases)))]
     if not empty and not bare:
-        return False
+        return scenes
     english = _language_alias(names, sources, timeout) if sources else ""
     if english and english not in names:
         names.append(english)
     person_tokens = {t for name in names for t in _identity_tokens(name)}
-    needs = [ch for ch in chapters
-             if ch in empty
-             or (ch in bare and (_subject_matches_entity(ch.subject, names)
-                                 or _generic_person_subject(ch, names, genre)))]
+    needs = [scene for scene in scenes
+             if scene in empty
+             or (scene in bare and (_subject_matches_entity(scene.subject, names)
+                                    or _generic_person_subject(scene, names, genre)))]
     english_subject = english
     if english and names[0].startswith(("São ", "Santo ", "Santa ")):
         english_subject = english if english.startswith("Saint ") else f"Saint {english}"
     perfil = editorial.get(genre)
     medium = perfil.visual_context_medium if perfil else ""
-    changed = False
-    for ch in needs:
-        previous = ch.to_dict()
-        # The English name comes from the accepted Wikipedia article's
-        # language link. Keep it in scoring context as well as search queries.
-        context = dict(getattr(ch, "video_context", {}) or {})
+    replacements = {}
+    for scene in needs:
+        context = scene.video_context.to_dict()
         for key in ("primary_entities", "aliases"):
-            current = context.get(key, []) or []
-            if isinstance(current, str):
-                current = [current]
-            context[key] = list(dict.fromkeys([*current, *names]))[:8]
-        ch.video_context = VideoContext.from_value(context)
-        if not ch.subject and not ch.visual_queries:
+            context[key] = list(dict.fromkeys(
+                [*(context.get(key, []) or []), *names]))[:8]
+        updates = {"video_context": VideoContext.from_value(context)}
+        if not scene.subject and not scene.visual_queries:
             subject = names[0]
             aliases = names
             # Um local precisa constar literalmente na cena, não ser adivinhado.
             places = re.findall(
                 r"\b(?:em|in)\s+([A-ZÀ-Þ][\wÀ-ÿ'-]+"
-                r"(?:\s+(?:de|da|do)\s+[A-ZÀ-Þ][\wÀ-ÿ'-]+)*)", ch.narration)
+                r"(?:\s+(?:de|da|do)\s+[A-ZÀ-Þ][\wÀ-ÿ'-]+)*)", scene.narration)
             for place in places:
                 tokens = set(scoring._tokens(place))
                 if tokens and not tokens.intersection(person_tokens):
@@ -202,47 +221,54 @@ def fill_missing_context(chapters, target, genre: str = "", sources=(),
                         if english_term:
                             aliases.append(english_term)
                     break
-            ch.subject = subject
-            # Não aceitar apelido isolado como identidade de uma pessoa ambígua.
-            ch.subject_aliases = [name for name in aliases
-                                   if len(_identity_tokens(name)) >= 2 or name == subject
-                                   or subject != names[0]]
+            updates["subject"] = subject
+            updates["subject_aliases"] = tuple(
+                name for name in aliases
+                if len(_identity_tokens(name)) >= 2 or name == subject
+                or subject != names[0])
             queries = list(dict.fromkeys(aliases))
             if subject == names[0]:
                 queries = [f"{english_subject or subject} {medium}".strip(), subject,
                            *([english] if english else [])]
-            ch.set_visual_queries(
-                list(dict.fromkeys(queries))[:5], source="entity_context",
+            scene = _with_visual_queries(
+                scene, list(dict.fromkeys(queries))[:5], source="entity_context",
                 kind="person" if "portrait" in medium.casefold() else "entity")
-            ch.global_visual_queries = list(ch.visual_queries)
-            ch.forbidden = list(dict.fromkeys(ch.forbidden + list(target.forbidden)))
+            updates["visual_queries"] = scene.visual_queries
+            updates["representations"] = scene.representations
+            updates["global_visual_queries"] = scene.visual_queries
+            updates["forbidden"] = tuple(dict.fromkeys(
+                [*scene.forbidden, *target.forbidden]))
         else:
             # Cena da IA com assunto da entidade: só aliases e consulta
             # ancorada; assunto e consultas existentes ficam intactas.
-            ch.subject_aliases = list(dict.fromkeys([
-                *ch.subject_aliases, *(name for name in names
-                                     if len(_identity_tokens(name)) >= 2 or name == ch.subject)]))
+            updates["subject_aliases"] = tuple(dict.fromkeys([
+                *scene.subject_aliases, *(name for name in names
+                     if len(_identity_tokens(name)) >= 2 or name == scene.subject)]))
             anchored = f"{english_subject or names[0]} {medium}".strip()
-            existing = {q.lower() for q in ch.visual_queries}
+            existing = {q.lower() for q in scene.visual_queries}
             if anchored.lower() not in existing:
-                ch.set_visual_queries(
-                    [anchored, *ch.visual_queries][:5],
+                scene = _with_visual_queries(
+                    scene, [anchored, *scene.visual_queries][:5],
                     source="verified_entity_context",
                     kind="person" if "portrait" in medium.casefold() else "entity")
-                ch.global_visual_queries = list(ch.visual_queries)
-            ch.forbidden = list(dict.fromkeys(ch.forbidden + list(target.forbidden)))
-        changed = changed or ch.to_dict() != previous
-    return changed
+                updates["visual_queries"] = scene.visual_queries
+                updates["representations"] = scene.representations
+                updates["global_visual_queries"] = scene.visual_queries
+            updates["forbidden"] = tuple(dict.fromkeys(
+                [*scene.forbidden, *target.forbidden]))
+        replacements[scene.id] = replace(scene, **updates)
+    return tuple(replacements.get(scene.id, scene) for scene in scenes)
 
 
-def anchor_local_topic(chapters, idea: str, target=None) -> bool:
-    """Add verified video topic to local-fallback scenes as a hard visual anchor.
+def anchor_local_topic(scenes, idea: str, target=None) -> tuple[SemanticScene, ...]:
+    """Return local scenes anchored to the verified video topic.
 
     Local scene splitting lacks the LLM's scene context. Without this anchor,
     a scene query `mass` in a black-hole video scored bus station photo at 85;
     `sun` from `absoluto` selected Argentine flag in French Revolution video.
     Full phrase anchor prevents scene nouns from drifting to homonyms.
     """
+    scenes = _semantic_batch(scenes)
     candidates = []
     if target is not None:
         candidates.extend([getattr(target, "name", ""),
@@ -253,22 +279,16 @@ def anchor_local_topic(chapters, idea: str, target=None) -> bool:
                        if textnorm.translate_phrase(value)), "")
     anchors = [translated or query]
     if not anchors:
-        return False
-    changed = False
-    for chapter in chapters or []:
-        current = list(getattr(chapter, "global_visual_queries", []) or [])
-        merged = anchors
-        if current != merged:
-            chapter.global_visual_queries = merged
-            changed = True
-        context = dict(getattr(chapter, "video_context", {}) or {})
+        return tuple(scenes or ())
+    enriched = []
+    for scene in scenes or ():
+        context = scene.video_context.to_dict()
         context.setdefault("topic", query)
         context.setdefault("primary_entities", [query])
         context.setdefault("secondary_entities", [])
         context.setdefault("places", [])
         context.setdefault("events", [])
         context.setdefault("period", "")
-        if context != chapter.video_context:
-            chapter.video_context = VideoContext.from_value(context)
-            changed = True
-    return changed
+        enriched.append(replace(scene, global_visual_queries=tuple(anchors),
+                                video_context=VideoContext.from_value(context)))
+    return tuple(enriched)

@@ -131,16 +131,17 @@ def test_prompt_prioriza_cadeia_e_manda_parafrasear():
 
 
 def test_enrich_preenche_vazio_e_preserva_ia():
+    from curio.stages.scene_contract import SemanticScene
     ety = E.Etymology(word="candidato", visual_entities=["candidatus"],
                       visual_context=["Roma antiga"])
-    vazia = Chapter(1, "A palavra vem do latim.", 5.0)
-    cheia = Chapter(2, "Outra cena.", 5.0, visual_entities=["sal"],
+    vazia = SemanticScene(1, "A palavra vem do latim.")
+    cheia = SemanticScene(2, "Outra cena.", visual_entities=("sal",),
                     context=["roma"])
-    assert E.enrich_chapters([vazia, cheia], ety) is True
-    assert vazia.visual_entities == ["candidatus"]
-    assert vazia.context == ["Roma antiga"]
-    assert cheia.visual_entities == ["sal"]  # IA intacta
-    assert E.enrich_chapters([cheia], None) is False
+    enriched = E.enrich_scenes([vazia, cheia], ety)
+    assert enriched[0].visual_entities == ("candidatus",)
+    assert enriched[0].context == ("Roma antiga",)
+    assert enriched[1].visual_entities == ("sal",)  # plano existente intacto
+    assert E.enrich_scenes([cheia], None) == (cheia,)
 
 
 def test_research_etymology_soma_sem_substituir(monkeypatch, tmp_path):

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import etymology as etymology_stage
 from .visual_context import (anchor_local_topic, attach_video_context,
@@ -46,32 +45,55 @@ def enrich_scenes(scenes, *, topic: str, target=None, source: str,
     for scene in scenes or []:
         if isinstance(scene, SemanticScene):
             semantic_inputs.append(scene)
-        else:
+        elif isinstance(scene, Chapter):
             semantic_inputs.append(scene.semantic_scene(source or "unknown"))
             inferred_spans[scene.id] = scene.timeline_span()
+        else:
+            raise TypeError("scene enrichment requires SemanticScene or Chapter")
+    scene_ids = tuple(scene.id for scene in semantic_inputs)
+    if len(scene_ids) != len(set(scene_ids)):
+        raise ValueError("scene enrichment scene ids must be unique")
+    if any(scene.contract_errors() for scene in semantic_inputs):
+        raise ValueError("scene enrichment received invalid semantic scene")
+    if timeline_spans and tuple(span.scene_id for span in timeline_spans) != scene_ids:
+        raise ValueError("scene enrichment spans do not match scene order")
     explicit_spans = {span.scene_id: span for span in timeline_spans}
     timings = {**inferred_spans, **explicit_spans}
-    timeline = [Chapter.from_semantic_scene(
-        scene, timing=timings.get(scene.id)) for scene in semantic_inputs]
-    enriched = deepcopy(timeline)
+    enriched = tuple(semantic_inputs)
     applied = []
     deterministic = planning_mode == "deterministic"
     if deterministic:
-        for scene in enriched:
-            scene.planning_mode = "deterministic"
-    if attach_video_context(enriched, topic, target):
+        enriched = tuple(replace(scene, planning_mode="deterministic")
+                         for scene in enriched)
+        if enriched != tuple(semantic_inputs):
+            applied.append("planning_mode")
+    updated = attach_video_context(enriched, topic, target)
+    if updated != enriched:
         applied.append("video_context")
-    if deterministic and anchor_local_topic(enriched, topic, target):
-        applied.append("local_topic_anchor")
-    if fill_missing_context(enriched, target, genre, research_sources,
-                            research_timeout):
+    enriched = updated
+    if deterministic:
+        updated = anchor_local_topic(enriched, topic, target)
+        if updated != enriched:
+            applied.append("local_topic_anchor")
+        enriched = updated
+    updated = fill_missing_context(enriched, target, genre, research_sources,
+                                   research_timeout)
+    if updated != enriched:
         applied.append("verified_entity_context")
-    if etymology_stage.enrich_chapters(enriched, etymology):
+    enriched = updated
+    updated = etymology_stage.enrich_scenes(enriched, etymology)
+    if updated != enriched:
         applied.append("etymology_visual_context")
+    enriched = updated
     for scene in enriched:
-        scene.require_valid()
-    semantic_scenes = tuple(scene.semantic_scene(source or "unknown")
-                            for scene in enriched)
+        errors = scene.contract_errors()
+        if errors:
+            raise ValueError(f"enrichment emitted invalid scene: {errors}")
+    semantic_scenes = tuple(enriched)
+    chapters = tuple(Chapter.from_semantic_scene(
+        scene, timing=timings.get(scene.id)) for scene in semantic_scenes)
+    for chapter in chapters:
+        chapter.require_valid()
     return SceneEnrichmentResult(
-        semantic_scenes=semantic_scenes, chapters=tuple(enriched),
+        semantic_scenes=semantic_scenes, chapters=chapters,
         source=str(source or "unknown"), applied=tuple(applied))

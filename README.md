@@ -44,9 +44,10 @@ cadeias e pode exceder tempo de parede quando downloads sobrepõem. A duração
 individual de cada tentativa HTTP de busca continua desconhecida, então
 `time_per_request` é `null`.
 O enriquecimento pós-planner de contexto está centralizado em
-`scene_enrichment.py`: recebe proveniência explícita, clona a saída do
-planner, retorna uma batch validada e registra quais complementos foram
-aplicados antes de atualizar `chapters.json`.
+`scene_enrichment.py`: consome cenas semânticas e devolve uma transformação
+validada sem mutar a saída do planner. Contexto global, âncoras, aliases
+verificados e contexto etimológico têm transformações puras; `Chapter` só é
+projetado no final para manter timeline/render e `chapters.json` compatíveis.
 `scenes.build_semantic_scenes` e `build_local_semantic_scenes` retornam
 `ScenePlanResult` com cenas semânticas e tempos separados. `pipeline_scenes.py`
 coordena planner/cache/enrichment e retorna
