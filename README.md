@@ -63,6 +63,8 @@ espelhos como representações editoriais independentes.
 beats no mesmo limite.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
+mesmo estágio registra a auditoria por cena e distingue seleção real,
+sintética e cena sem visual; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e
 avisos explícitos; o coordenador consome esses resultados nos estágios seguintes.
 `pipeline_metadata.py` fecha persistência de geração e finalize: mede o estágio

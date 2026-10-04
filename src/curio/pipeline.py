@@ -592,31 +592,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         force_after_script, _write_json)
     media_scenes = media_result.scenes
     warnings.extend(media_result.warnings)
-    for scene in media_scenes:
-        if metrics and scene.get("visual_decision"):
-            metrics.media_record_scene_decision(
-                int(scene.get("chapter_id", 0)), scene["visual_decision"])
-        entries = scene.get("assets") or []
-        asset = scene.get("asset") or {}
-        synth = asset.get("provider") == "synth"
-        run_event(
-            "fallback" if synth else "result",
-            f"Mídia cena {scene.get('chapter_id')}: "
-            f"{len(entries)} asset(s); "
-            f"{'visual sintético' if synth else asset.get('provider', 'sem asset')}",
-            operation="media", scene=scene.get("chapter_id"),
-            candidates=len(entries), provider=asset.get("provider", ""),
-            fallback=synth,
-            rejected=len(scene.get("rejected") or []))
-    real_media_count = sum(
-        1 for scene in media_scenes
-        if (scene.get("asset") or {}).get("provider") != "synth")
-    run_event("result", f"Mídia: {real_media_count}/{len(media_scenes)} cena(s) com asset real; "
-              f"{len(media_scenes) - real_media_count} sintético(s)",
-              operation="media", real_assets=real_media_count,
-              synthetic_scenes=len(media_scenes) - real_media_count,
-              downloads=metrics.media_downloads,
-              cache_hits=metrics.media_cache_hits)
     provenance = pipeline_media_sources_stage.record_selected_media(
         semantic_scenes, media_scenes, sources)
     media_rights_notes = list(provenance.rights_notes)

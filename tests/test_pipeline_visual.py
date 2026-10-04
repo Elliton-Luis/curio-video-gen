@@ -90,3 +90,34 @@ def test_resolve_media_researches_when_manifest_signature_is_stale(tmp_path, mon
     assert len(calls) == 1
     assert json.loads(open(paths.media_manifest_json, encoding="utf-8").read())[
         "input_signature"] != "old-signature"
+
+
+def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
+    from curio.pipeline_visual import _record_selection
+
+    events = []
+    decisions = []
+    monkeypatch.setattr("curio.pipeline_visual.run_event",
+                        lambda *args, **kwargs: events.append((args, kwargs)))
+    metrics = SimpleNamespace(
+        media_downloads=2, media_cache_hits=1,
+        media_record_scene_decision=lambda scene_id, decision:
+            decisions.append((scene_id, decision)))
+    scenes = [
+        {"chapter_id": 1, "asset": {"provider": "wikimedia"},
+         "assets": [{"asset": {"provider": "wikimedia"}}],
+         "visual_decision": {"state": "real"}},
+        {"chapter_id": 2, "asset": {"provider": "synth"},
+         "assets": [{"asset": {"provider": "synth"}}]},
+        {"chapter_id": 3, "asset": None, "assets": []},
+    ]
+
+    result = _record_selection(scenes, "provider", [], metrics)
+
+    assert (result.real_scenes, result.synthetic_scenes,
+            result.scenes_without_visual) == (1, 1, 1)
+    assert decisions == [(1, {"state": "real"})]
+    summary = events[-1][1]
+    assert summary["real_assets"] == 1
+    assert summary["synthetic_scenes"] == 1
+    assert summary["scenes_without_visual"] == 1

@@ -24,6 +24,9 @@ class MediaStageResult:
     scenes: list[dict]
     source: str
     warnings: list[str]
+    real_scenes: int
+    synthetic_scenes: int
+    scenes_without_visual: int
 
 
 def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
@@ -46,14 +49,14 @@ def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
                   operation="media", source="manual", scenes=len(manual))
         _write_selection(paths, manual, signature, source="manual",
                          write_json=write_json)
-        return MediaStageResult(manual, "manual", warnings)
+        return _record_selection(manual, "manual", warnings, metrics)
 
     if not force and os.path.isfile(paths.media_json):
         cached = _read_current_cache(scenes, paths, signature, max_images)
         if cached is not None:
             run_event("cache", "Mídia reutilizada do cache",
                       operation="media", scenes=len(cached))
-            return MediaStageResult(cached, "project-cache", warnings)
+            return _record_selection(cached, "project-cache", warnings, metrics)
 
     selected, acquisition_warnings = visual_stage.fetch_media_multi(
         scenes, cfg, max_images, metrics, genre=genre)
@@ -62,7 +65,46 @@ def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
                      write_json=write_json)
     for warning in acquisition_warnings[:8]:
         run_event("warning", str(warning), operation="media")
-    return MediaStageResult(selected, "provider", warnings)
+    return _record_selection(selected, "provider", warnings, metrics)
+
+
+def _record_selection(scenes: list[dict], source: str, warnings: list[str],
+                      metrics) -> MediaStageResult:
+    """Record the resolution outcome once, regardless of selection source."""
+    real_scenes = synthetic_scenes = scenes_without_visual = 0
+    for scene in scenes:
+        if metrics and scene.get("visual_decision"):
+            metrics.media_record_scene_decision(
+                int(scene.get("chapter_id", 0)), scene["visual_decision"])
+        entries = scene.get("assets") or []
+        asset = scene.get("asset") or {}
+        provider = str(asset.get("provider", "") or "")
+        synthetic = provider == "synth"
+        if synthetic:
+            synthetic_scenes += 1
+        elif provider:
+            real_scenes += 1
+        else:
+            scenes_without_visual += 1
+        run_event(
+            "fallback" if synthetic or not provider else "result",
+            f"Mídia cena {scene.get('chapter_id')}: {len(entries)} asset(s); "
+            f"{'visual sintético' if synthetic else provider or 'sem visual'}",
+            operation="media", scene=scene.get("chapter_id"),
+            candidates=len(entries), provider=provider,
+            fallback=synthetic or not provider,
+            rejected=len(scene.get("rejected") or []))
+    run_event(
+        "result",
+        f"Mídia: {real_scenes}/{len(scenes)} cena(s) com asset real; "
+        f"{synthetic_scenes} sintético(s), {scenes_without_visual} sem visual",
+        operation="media", real_assets=real_scenes,
+        synthetic_scenes=synthetic_scenes,
+        scenes_without_visual=scenes_without_visual,
+        downloads=getattr(metrics, "media_downloads", 0),
+        cache_hits=getattr(metrics, "media_cache_hits", 0))
+    return MediaStageResult(scenes, source, warnings, real_scenes,
+                            synthetic_scenes, scenes_without_visual)
 
 
 def _read_current_cache(scenes: list[SemanticScene], paths, signature: str,
