@@ -47,6 +47,9 @@ aplicados antes de atualizar `chapters.json`.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com a origem explícita; o
 coordenador continua responsável por créditos/fontes e pelos estágios seguintes.
+A auditoria e a evidência de execução real desta migração estão em
+[`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
+e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).
 `SemanticScene` agora separa os campos semânticos usados por aquisição e
 scoring dos tempos em `Chapter`, ainda usado por timeline e render. A saída do
 planner/cache será migrada para esse contrato em etapas; a compatibilidade
