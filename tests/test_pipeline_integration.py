@@ -19,6 +19,7 @@ from curio.stages.script import ScriptArtifact, TitleArtifact
 from curio.stages.scenes import Chapter
 from curio.stages.scene_contract import ScenePlanResult
 from curio.stages.scene_contract import SemanticScene
+from curio.stages.tts import TTSResult
 
 SCRIPT = (
     "Marte leva 687 dias para dar uma volta completa no Sol. "
@@ -158,9 +159,8 @@ def _fake_tts(text, wav_path, provider, voice, speed, duration_target,
     if words_path:
         with open(words_path, "w", encoding="utf-8") as fh:
             json.dump(words, fh)
-    return type("Res", (), {"duration": total, "words": words,
-                            "provider": provider, "voice": voice,
-                            "speed": speed})()
+    return TTSResult(path=wav_path, duration=total, words=words,
+                     provider=provider, voice=voice, speed=speed)
 
 
 def test_integracao_completa(tmp_path):

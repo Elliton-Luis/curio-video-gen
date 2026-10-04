@@ -161,6 +161,16 @@ def transition_signature(semantic_scenes: tuple[SemanticScene, ...],
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
+def final_cache_is_current(*, output_exists: bool, force: bool,
+                           subtitles_changed: bool, transition_dirty: bool,
+                           narration_reused: bool,
+                           audio_cache_matches: bool) -> bool:
+    """Reuse final MP4 only when every embedded artifact remains current."""
+    return bool(output_exists and not force and not subtitles_changed
+                and not transition_dirty and narration_reused
+                and audio_cache_matches)
+
+
 def _validate_render_inputs(semantic_scenes, timeline_spans) -> None:
     if (any(not isinstance(scene, SemanticScene) for scene in semantic_scenes)
             or any(not isinstance(span, TimelineSpan) for span in timeline_spans)):

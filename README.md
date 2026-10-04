@@ -57,6 +57,11 @@ transição de pesquisa para roteiro/título: autocura de roteiro cacheado,
 grounding, invalidação de cenas quando o roteiro muda, título e persistência
 retornam juntos em `ScriptStageResult`; o coordenador só compõe esse resultado
 com a etapa de cenas.
+O cache de TTS registra em `audio/tts-manifest.json` a assinatura do texto e
+dos parâmetros de voz/idioma/duração, além da identidade de `words.json`; cache
+legado sem manifesto só é migrado quando metadata e transcrição comprovam o
+mesmo roteiro. Se o roteiro mudar, a invalidação chega explicitamente ao áudio,
+e o MP4 final só é reutilizado quando o áudio usado nele continua vigente.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
 `TimelineSpan[]` separados; `Chapter` permanece como projeção de compatibilidade
 para metadata e formatos externos.

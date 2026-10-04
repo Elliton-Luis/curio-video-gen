@@ -16,6 +16,8 @@ from curio.stages.tts import (
     _check_edge_result,
     tts_coverage_ok,
 )
+from curio.audio.artifacts import (TTSCacheManifest, legacy_words_match_text,
+                                   tts_input_signature, words_signature)
 
 
 def _words(n, step=0.4):
@@ -43,6 +45,76 @@ def test_coverage_ok_bordas():
     assert tts_coverage_ok(_words(5), "") is False
     assert tts_coverage_ok(_words(9), _text(10)) is True  # 90% exato passa
     assert tts_coverage_ok(_words(8), _text(10)) is False
+
+
+def test_tts_cache_signature_includes_text_and_voice_configuration():
+    base = tts_input_signature("Texto inicial", "edge-tts", "pt-BR-AntonioNeural",
+                               170, 0.0, "pt-BR")
+    assert base != tts_input_signature("Outro texto", "edge-tts",
+                                       "pt-BR-AntonioNeural", 170, 0.0,
+                                       "pt-BR")
+    assert base != tts_input_signature("Texto inicial", "espeak-ng", "pt-br",
+                                       170, 0.0, "pt-BR")
+    assert base != tts_input_signature("Texto inicial", "edge-tts",
+                                       "pt-BR-AntonioNeural", 180, 0.0,
+                                       "pt-BR")
+
+
+def test_legacy_word_boundaries_must_match_text_not_only_word_count():
+    assert legacy_words_match_text(_words(3), _text(3))
+    assert not legacy_words_match_text(_words(3), "foo bar baz")
+
+
+def test_legacy_tts_cache_rejects_same_length_script_with_different_words(
+        tmp_path):
+    from types import SimpleNamespace
+    from curio.config import CurioConfig
+    from curio.pipeline_audio import _cache_result
+
+    old_text = "red fox runs"
+    new_text = "blue car fly"
+    assert len(old_text) == len(new_text)
+    metadata = {"script_chars": len(old_text), "duration_target": 0.0,
+                "tts_provider": "edge-tts",
+                "tts_voice": "pt-BR-AntonioNeural", "tts_speed": 170}
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    cfg = CurioConfig()
+    paths = SimpleNamespace(metadata_json=str(metadata_path))
+
+    assert _cache_result(None, [
+        {"text": word, "start": index, "end": index + 1}
+        for index, word in enumerate(old_text.split())
+    ], "signature", new_text, paths, cfg) is None
+
+
+def test_legacy_tts_cache_rejects_missing_producer_settings(tmp_path):
+    from types import SimpleNamespace
+    from curio.config import CurioConfig
+    from curio.pipeline_audio import _cache_result
+
+    text = "red fox runs"
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(json.dumps({
+        "script_chars": len(text), "duration_target": 0.0,
+        "tts_provider": "edge-tts", "tts_voice": "pt-BR-AntonioNeural",
+    }), encoding="utf-8")
+    words = [{"text": word, "start": index, "end": index + 1}
+             for index, word in enumerate(text.split())]
+
+    assert _cache_result(None, words, "signature", text,
+                         SimpleNamespace(metadata_json=str(metadata_path)),
+                         CurioConfig()) is None
+
+
+def test_tts_manifest_rejects_inconsistent_boundary_provenance():
+    manifest = TTSCacheManifest("sig", "edge-tts", "voice", 170, 2.0,
+                                True, words_signature(_words(1)))
+    assert TTSCacheManifest.from_dict(manifest.to_dict()) == manifest
+    invalid = manifest.to_dict()
+    invalid["words_signature"] = None
+    with pytest.raises(ValueError, match="disagrees"):
+        TTSCacheManifest.from_dict(invalid)
 
 
 def test_check_edge_result_ok():
@@ -143,6 +215,12 @@ def _seed_caches(root, script_words=359, audio_words=54):
     with open(os.path.join(root, "audio", "words.json"), "w",
               encoding="utf-8") as fh:
         json.dump(words, fh)
+    with open(os.path.join(root, "metadata.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"script_chars": len(text), "duration_target": 0.0,
+                   "tts_provider": "edge-tts",
+                   "tts_voice": "pt-BR-AntonioNeural",
+                   "tts_speed": 170}, fh)
     open(os.path.join(root, "render", "final.mp4"), "wb").write(b"ftyp")
     return text
 
@@ -218,3 +296,4 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
     meta = pipe.run_pipeline("ideia teste", cfg, slug=slug, max_images=1)
     assert meta["tts_reused"] is True
     assert meta["audio_duration"] == 30.0
+    assert os.path.isfile(pipe.video_paths(out_dir, slug).tts_manifest_json)

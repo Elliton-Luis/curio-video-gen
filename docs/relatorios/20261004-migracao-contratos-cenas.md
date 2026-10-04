@@ -253,3 +253,34 @@ privado `pipeline.script_stage`; migrei o patch do teste para o módulo dono do
 estágio. O teste da TUI, integração, grounding e contratos passou: **28 testes
 em 35,87 s**. A suíte completa final passou: **863 testes em 172,90 s**;
 `python -m compileall -q src/curio` e `git diff --check` passaram.
+
+## E3: cache de TTS tem identidade verificável
+
+A causa concreta era dupla: `pipeline_audio` aceitava qualquer cache com
+cobertura suficiente de timestamps, sem conferir se os tokens eram do roteiro
+atual nem se provider/voz/idioma/configuração continuavam iguais; além disso,
+um roteiro fornecido alterado invalidava cenas e mídia, mas o áudio recebia
+apenas o `force` original. Agora `audio/artifacts.py` define a assinatura e o
+manifesto `audio/tts-manifest.json`: hash exato do texto, provider, voz,
+velocidade, duração-alvo, idioma, resultado realmente sintetizado e identidade
+dos word boundaries. TTS registra `TTSResult` após sucesso; os arquivos
+`words.json` de provider anterior não sobrevivem a uma síntese sem boundaries.
+
+Caches legados sem manifesto só são migrados se `metadata.json` confirmar
+duração/configuração compatível e os tokens transcritos coincidirem exatamente
+com o roteiro, além de cobertura. Se essa prova faltar, a síntese é refeita; os
+arquivos antigos seguem legíveis e rerender continua fora desta busca. A etapa
+de roteiro agora retorna `script_changed`, que invalida explicitamente cenas e
+mídia e também força TTS quando o conteúdo muda. Um teste cobre roteiro legado
+com mesmo comprimento e quantidade de palavras, porém conteúdo diferente; o
+teste de geração cacheada confirma a migração para manifesto. A revisão do
+consumidor final encontrou outro elo da mesma cadeia: MP4 final podia ser
+reutilizado quando TTS acabara de sintetizar outro áudio, se legendas e trilha
+musical parecessem iguais. `pipeline_render.final_cache_is_current` agora exige
+reuso vigente de narração além das assinaturas de legenda/transição/trilha.
+
+Validação focada de TTS e integração: **21 passaram em 118,99 s**; contratos,
+regressões de cache, script e render final: **13 passaram**. A checagem
+específica da política de cache final confirma que narração não reutilizada
+bloqueia o MP4 existente. Após todas as mudanças desta fase, a suíte integral
+passou: **872 testes em 183,62 s**. `compileall` e `git diff --check` passaram.

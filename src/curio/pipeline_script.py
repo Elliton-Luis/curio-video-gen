@@ -19,6 +19,7 @@ class ScriptStageResult:
     script: script_stage.ScriptArtifact
     title: script_stage.TitleArtifact
     grounding: dict
+    script_changed: bool
     force_scenes: bool
     warnings: tuple[str, ...]
     elapsed: float
@@ -32,24 +33,28 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
     script_mode = provided_script is not None
     warnings: list[str] = []
     force_scenes = force
+    script_changed = False
 
     if script_mode:
         if not provided_script.strip():
             raise ValueError("roteiro vazio — nada para produzir")
         script = script_stage.ScriptArtifact(provided_script, "provided")
         cached = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else None
+        script_changed = cached != script.text
         if cached != script.text:
             _write(paths.script_txt, script.text)
             if cached is not None and not force:
                 print("AVISO: roteiro fornecido mudou — refazendo cenas e mídia.",
                       file=sys.stderr)
-                force_scenes = True
+        force_scenes = force or script_changed
         run_event("result", f"Roteiro fornecido: {len(script.text)} caracteres",
                   operation="script", source=script.source,
                   characters=len(script.text))
     elif not force and os.path.isfile(paths.script_txt):
         raw_cached = _read(paths.script_txt)
         healed = strip_list_markers(raw_cached)
+        script_changed = healed != raw_cached
+        force_scenes = force or script_changed
         if healed != raw_cached:
             print("AVISO: roteiro em cache continha numeração de lista — "
                   "marcadores removidos.", file=sys.stderr)
@@ -59,6 +64,8 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
         run_event("cache", f"Roteiro reutilizado: {len(script.text)} caracteres",
                   artifact="script", characters=len(script.text))
     else:
+        previous_script = (_read(paths.script_txt)
+                           if os.path.isfile(paths.script_txt) else None)
         script = script_stage.generate_script(
             idea, cfg, metrics, research=research_prompt,
             genre_directive=genre_directive,
@@ -69,6 +76,8 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
         run_event("provider", f"Roteiro: {script.source}; {len(script.text)} caracteres",
                   operation="script", source=script.source,
                   characters=len(script.text))
+        script_changed = previous_script != script.text
+        force_scenes = force or script_changed
         _write(paths.script_txt, script.text)
 
     grounding = research_stage.verify_grounding(
@@ -99,7 +108,8 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
 
     return ScriptStageResult(
         script=script, title=title, grounding=grounding,
-        force_scenes=force_scenes, warnings=tuple(warnings),
+        script_changed=script_changed, force_scenes=force_scenes,
+        warnings=tuple(warnings),
         elapsed=round(time.monotonic() - started, 2))
 
 

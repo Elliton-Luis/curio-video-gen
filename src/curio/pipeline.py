@@ -71,6 +71,7 @@ class VideoPaths:
     contact_sheet: str
     narration_wav: str
     words_json: str
+    tts_manifest_json: str
     research_json: str
     timeline_json: str
     visual_json: str
@@ -100,6 +101,7 @@ def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
         contact_sheet=os.path.join(root, "review", "contact_sheet.html"),
         narration_wav=os.path.join(root, "audio", "narration.wav"),
         words_json=os.path.join(root, "audio", "words.json"),
+        tts_manifest_json=os.path.join(root, "audio", "tts-manifest.json"),
         research_json=os.path.join(root, "sources", "research.json"),
         timeline_json=os.path.join(root, "timeline", "timeline.json"),
         visual_json=os.path.join(root, "timeline", "visual_timeline.json"),
@@ -543,9 +545,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            title_source=title_source)
 
     # [4/6] Narração, alinhamento e legendas são um estágio coeso.
+    audio_force = force or script_result.script_changed
     audio_result = pipeline_audio_stage.run_audio_stages(
         script_text, tuple(semantic_scenes), timeline_spans,
-        paths, cfg, force, metrics, warnings, emit,
+        paths, cfg, audio_force, metrics, warnings, emit,
         _write_json, stage_times, pacing=pacing, caption_style=cap_style)
     timeline_spans = audio_result.timeline_spans
     words = audio_result.words
@@ -601,9 +604,12 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     audio_cache_matches = (
         previous_audio.get("signature") == new_audio_meta.get("signature")
         or legacy_audio_cache)
-    if (not force and not subs_changed and not transition_dirty and
-            audio_cache_matches and
-            os.path.isfile(paths.final_mp4)):
+    if pipeline_render_stage.final_cache_is_current(
+            output_exists=os.path.isfile(paths.final_mp4), force=force,
+            subtitles_changed=subs_changed,
+            transition_dirty=transition_dirty,
+            narration_reused=bool(tts_info.get("reused")),
+            audio_cache_matches=audio_cache_matches):
         video_duration = ff.probe_duration(paths.final_mp4)
         render_info = {"backend": "cache", "encoder": "cache",
                        "duration": video_duration, "path": paths.final_mp4}
