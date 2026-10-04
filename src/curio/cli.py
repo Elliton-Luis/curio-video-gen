@@ -478,7 +478,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     if visual_timeline is not None:
         # Replaneja só a geometria: as imagens podem ter mudado de ordem.
         visual_timeline = visual_timeline_stage.rebuild_visual_timeline(
-            chapters, media, cfg)
+            semantic_scenes, timeline_spans, media, cfg)
         _write_json(paths.visual_json, visual_timeline)
 
     transition_mode = _transition_mode(cfg)

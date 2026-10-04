@@ -267,13 +267,11 @@ def visual_summary(visual_timeline: list[dict]) -> str:
     return "; ".join(parts)
 
 
-def rebuild_visual_timeline(chapters, media_scenes: list[dict], cfg,
+def rebuild_visual_timeline(semantic_scenes, timeline_spans,
+                            media_scenes: list[dict], cfg,
                             seed: str = "") -> list[dict]:
-    """Adapt a legacy Chapter batch before replanning after a media swap."""
+    """Replan geometry from canonical scene and timing contracts."""
     from .visual import build_visual_timeline
-    semantic_scenes = tuple(chapter.semantic_scene("timeline_compat")
-                            for chapter in chapters)
-    timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     return build_visual_timeline(
         semantic_scenes, timeline_spans, media_scenes,
         overlap_cap=float(cfg.visual_overlap), seed=seed,

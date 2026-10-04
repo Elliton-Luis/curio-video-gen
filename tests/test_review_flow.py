@@ -244,8 +244,9 @@ def test_swap_respeita_a_ordem_na_reconstrucao(tmp_path):
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
     run(cfg.out_dir, "swap", "--slug", slug, "--scene", "1", "--pick", "1")
     media = json.load(open(paths.media_json, encoding="utf-8"))
-    vt = visual_timeline.rebuild_visual_timeline(chapters, media, cfg,
-                                                 seed=slug)
+    vt = visual_timeline.rebuild_visual_timeline(
+        _semantic(chapters), tuple(ch.timeline_span() for ch in chapters),
+        media, cfg, seed=slug)
     ids = [im["asset_id"] for im in vt[0]["images"]]
     assert ids[0] == "a1", f"swap desfeito pelo replanejamento: {ids}"
 

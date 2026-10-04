@@ -44,6 +44,8 @@ spans; `Chapter` é criado nas fronteiras que serializam ou consomem o formato
 histórico. A folha de contato e o dry-run leem `SemanticScene` diretamente.
 O teleprompter também combina texto semântico e spans tipados, validando a
 ordem das cenas antes de distribuir as falas no tempo.
+O `rerender` replaneja geometria visual com os mesmos contratos, preservando
+ordem manual sem converter Chapter dentro do replanejamento.
 O render silencioso recebe os mesmos contratos: identidade/texto vêm de
 `SemanticScene`, duração vem de `TimelineSpan`, e a assinatura das transições
 rejeita batches desalinhados. `Chapter` é adaptado ao reabrir projetos salvos;

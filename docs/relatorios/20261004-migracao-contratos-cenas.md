@@ -137,3 +137,12 @@ permanecem iguais. Focados: 154 passaram; suíte completa: **851 passaram em
 146,30 s**; compileall e `git diff --check` passaram. Sem geração real nesta
 fase. A leitura e gravação do schema histórico e metadata permanecem como
 fronteiras de compatibilidade.
+
+## A4q: rerender usa contrato canônico ao replanejar a timeline visual
+
+`rebuild_visual_timeline` recebe agora `SemanticScene[]` e `TimelineSpan[]`;
+seu adaptador Chapter foi removido. A CLI ainda desserializa o projeto salvo
+uma vez na entrada e passa os dois contratos ao replanejamento; a ordem manual
+de imagens permanece intacta. Focados: 29 passaram; suíte completa: **851
+passaram em 145,93 s**; compileall e `git diff --check` passaram. Sem nova
+geração real nesta fase.
