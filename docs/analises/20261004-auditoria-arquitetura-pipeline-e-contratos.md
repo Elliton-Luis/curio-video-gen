@@ -313,6 +313,12 @@ falha induzida de LLM/provider. O plano detalhado acima permanece a sequência
 de trabalho; as execuções recentes refinam o critério de qualidade para a
 próxima fase de aquisição.
 
+A fase G2a adiciona `ScriptArtifact` e `TitleArtifact`: planner, texto fornecido
+e cache convergem para payloads não vazios com proveniência antes de entrarem
+nos consumidores. O coordenador valida o tipo antes de persistir; o schema
+externo permanece igual. Esta é uma etapa adicional do plano G, não o
+encerramento das demais fronteiras de execução.
+
 Fase B3 substitui o prefixo textual `local fallback` por `planning_mode` (`llm`, `deterministic`, `unknown`) nos contratos de Chapter/SemanticScene/VisualPlan. Novos producers declaram o modo; somente `Chapter.from_dict` infere-o para arquivos legados. Enrichment, planejamento de busca e scoring consomem proveniência explícita. Scoring não extrai mais núcleo nem âncora da narração; sem plano semântico, não concede nota por coincidência lexical, e regressão prova que representação declarada continua pontuando. Focados: 92 passaram; compileall/diff-check passaram; suíte final: **821 testes em 145,51 s** (um teste legado que exigia tokenização da narração foi migrado para os dois contratos novos).
 
 E2 fecha a invalidação que a provenance nova exige: `planning_mode` passa a fazer parte da assinatura do manifesto e `SELECTION_POLICY_VERSION` sobe para 2, fazendo seleções adquiridas antigas serem buscadas novamente. A regressão compara dois planos com semântica textual idêntica e modos distintos. Testes focados passaram (26), compileall/diff-check passaram.

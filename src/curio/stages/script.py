@@ -8,6 +8,7 @@ Com chave configurada, a NVIDIA é autoritativa e falhas são explícitas
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
@@ -67,6 +68,34 @@ CLOSER_PT = ""
 CLOSER_EN = ""
 
 
+@dataclass(frozen=True)
+class ScriptArtifact:
+    """Non-empty narration text and producer/cache provenance."""
+
+    text: str
+    source: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str) or not self.text.strip():
+            raise ValueError("script artifact text must be non-empty")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("script artifact source is required")
+
+
+@dataclass(frozen=True)
+class TitleArtifact:
+    """Display title and producer/cache provenance."""
+
+    text: str
+    source: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str) or not self.text.strip():
+            raise ValueError("title artifact text must be non-empty")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("title artifact source is required")
+
+
 def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") -> str:
     topic = idea.strip().rstrip("?.!").strip()
     if str(language or "").lower().startswith("en"):
@@ -110,7 +139,7 @@ def _template_script(idea: str, max_chars: int | None, language: str = "pt-BR") 
 def generate_script(idea: str, cfg: CurioConfig, metrics=None,
                     research: str | None = None,
                     genre_directive: str | None = None,
-                    entity_context: str | None = None) -> tuple[str, str]:
+                    entity_context: str | None = None) -> ScriptArtifact:
     """Retorna (roteiro, fonte). Fonte: 'nvidia:...' | 'openrouter:...' | 'gemini:...' | 'groq:...' | 'curated' | 'template'.
 
     Com duração escolhida, o tamanho é meta (corta com dignidade); no modo
@@ -130,7 +159,7 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None,
             research=research, genre_directive=genre_directive,
             entity_context=entity_context,
             timeout_max=getattr(cfg, "nvidia_timeout_max", None))
-        return text, _label
+        return ScriptArtifact(text, _label)
 
     english = str(cfg.language or "").lower().startswith("en")
     if not english:
@@ -139,7 +168,7 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None,
             curated = curated.rstrip() + CLOSER_PT
         if curated:
             if auto or max_chars is None or len(curated) <= (max_chars or 0):
-                return curated, "curated"
+                return ScriptArtifact(curated, "curated")
             # Com meta de duração: corta o corpo, mas preserva o gancho final.
             body = (curated[: len(curated) - len(CLOSER_PT)]
                     if CLOSER_PT else curated)
@@ -151,9 +180,10 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None,
                     break
             else:
                 cut = cut.rsplit(" ", 1)[0].rstrip(",;:") + "."
-            return f"{cut}{CLOSER_PT}", "curated"
+            return ScriptArtifact(f"{cut}{CLOSER_PT}", "curated")
 
-    return _template_script(idea, max_chars, cfg.language), "template"
+    return ScriptArtifact(_template_script(idea, max_chars, cfg.language),
+                          "template")
 
 
 TITLE_MAX_CHARS = 90  # limite duro de validação (prompt pede ≤55)
@@ -194,7 +224,7 @@ def _fallback_title(script_text: str, idea: str) -> str:
 
 
 def generate_title(script_text: str, idea: str, cfg: CurioConfig,
-                   metrics=None) -> tuple[str, str]:
+                   metrics=None) -> TitleArtifact:
     """Gera o título-pergunta do vídeo a partir do roteiro (não da ideia).
 
     Retorna (título, fonte): 'nvidia:...' | 'openrouter:...' | 'gemini:...' |
@@ -215,7 +245,8 @@ def generate_title(script_text: str, idea: str, cfg: CurioConfig,
                 metrics, or_model=cfg.openrouter_model,
                 or_base_url=cfg.openrouter_base_url,
                 extra=cfg.llm_overrides())
-            return _validate_title(str(data.get("title", "")), script_text), label
+            return TitleArtifact(
+                _validate_title(str(data.get("title", "")), script_text), label)
         except (nvidia_stage.NvidiaError, ValueError) as exc:
             from ..runlog import event as run_event
             logged = run_event("fallback", f"Título IA inválido: {exc}; usando ideia",
@@ -224,4 +255,4 @@ def generate_title(script_text: str, idea: str, cfg: CurioConfig,
             if not logged:
                 print(f"AVISO: título IA inválido ({exc}) — usando fallback.",
                       file=sys.stderr)
-    return _fallback_title(script_text, idea), "fallback"
+    return TitleArtifact(_fallback_title(script_text, idea), "fallback")

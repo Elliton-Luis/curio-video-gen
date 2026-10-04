@@ -490,10 +490,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     force_after_script = force
     if script_mode:
         assert provided_script is not None
-        script_text = provided_script
-        if not script_text.strip():
+        if not provided_script.strip():
             raise ValueError("roteiro vazio — nada para produzir")
-        script_source = "provided"
+        script_artifact = script_stage.ScriptArtifact(provided_script, "provided")
+        script_text, script_source = script_artifact.text, script_artifact.source
         run_event("result", f"Roteiro fornecido: {len(script_text)} caracteres",
                   operation="script", source=script_source,
                   characters=len(script_text))
@@ -518,7 +518,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             warnings.append("roteiro em cache higienizado (marcadores de lista)")
             with open(paths.script_txt, "w", encoding="utf-8") as fh:
                 fh.write(healed)
-        script_text, script_source = healed, "cache"
+        script_artifact = script_stage.ScriptArtifact(healed, "cache")
+        script_text, script_source = script_artifact.text, script_artifact.source
         run_event("cache", f"Roteiro reutilizado: {len(script_text)} caracteres",
                   artifact="script", characters=len(script_text))
     else:
@@ -527,11 +528,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         # alternativas e as armadilhas de homônimo. Nenhuma segunda
         # resolução acontece aqui: é o mesmo objeto.
         from .stages import entity as entity_stage
-        script_text, script_source = script_stage.generate_script(
+        script_artifact = script_stage.generate_script(
             idea, cfg, metrics, research=research_pack,
             genre_directive=genre_directive,
             entity_context=entity_stage.script_context(
                 research_target, cfg.language))
+        if not isinstance(script_artifact, script_stage.ScriptArtifact):
+            raise TypeError("generate_script must return ScriptArtifact")
+        script_text, script_source = script_artifact.text, script_artifact.source
         run_event("provider", f"Roteiro: {script_source}; {len(script_text)} caracteres",
                   operation="script", source=script_source,
                   characters=len(script_text))
@@ -557,17 +561,23 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     # Título-pergunta (IA a partir do roteiro; nunca entra na narração).
     if not force_after_script and os.path.isfile(paths.title_txt):
-        video_title, title_source = _read(paths.title_txt).strip(), "cache"
-        if not video_title:
-            video_title, title_source = script_stage.generate_title(
+        cached_title = _read(paths.title_txt).strip()
+        if cached_title:
+            title_artifact = script_stage.TitleArtifact(cached_title, "cache")
+        else:
+            title_artifact = script_stage.generate_title(
                 script_text, idea, cfg, metrics)
+            if not isinstance(title_artifact, script_stage.TitleArtifact):
+                raise TypeError("generate_title must return TitleArtifact")
             with open(paths.title_txt, "w", encoding="utf-8") as fh:
-                fh.write(video_title)
+                fh.write(title_artifact.text)
     else:
-        video_title, title_source = script_stage.generate_title(
-            script_text, idea, cfg, metrics)
+        title_artifact = script_stage.generate_title(script_text, idea, cfg, metrics)
+        if not isinstance(title_artifact, script_stage.TitleArtifact):
+            raise TypeError("generate_title must return TitleArtifact")
         with open(paths.title_txt, "w", encoding="utf-8") as fh:
-            fh.write(video_title)
+            fh.write(title_artifact.text)
+    video_title, title_source = title_artifact.text, title_artifact.source
     print(f"Título: {video_title} ({title_source})")
     run_event("cache" if title_source == "cache" else "provider",
               f"Título: {title_source}", operation="title",

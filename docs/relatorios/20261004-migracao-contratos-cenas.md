@@ -221,3 +221,16 @@ layout antigo. Testes instrumentam `textbbox` real do Pillow e exigem ausência
 de colisões tanto para cards científicos como tipográficos. Focados de layout,
 tipografia e receipt: **124 passaram**; compileall e `git diff --check`
 passaram. A suíte integral passou com **860 testes em 177,31 s**.
+
+## G2a: roteiro e título atravessam o pipeline como artefatos validados
+
+`generate_script` agora produz `ScriptArtifact(text, source)` e
+`generate_title` produz `TitleArtifact(text, source)`, ambos imutáveis e
+rejeitando texto vazio ou proveniência ausente. O coordenador cria os mesmos
+contratos para roteiro fornecido, cache curado e título em cache, valida o tipo
+de retorno dos produtores antes de persistir e só extrai strings ao entrar nos
+consumidores e formatos atuais. CLI, TUI, fontes do roteiro, conteúdo e schema
+de saída permanecem iguais. Os mocks do pipeline foram migrados dos tuples
+posicionais para contratos. Focados: **13 passaram em 35,89 s**; a suíte
+integral passou com **863 testes em 191,55 s**. `compileall` e
+`git diff --check` passaram.

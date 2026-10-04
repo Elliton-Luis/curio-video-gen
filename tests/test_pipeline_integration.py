@@ -15,6 +15,7 @@ from curio.config import CurioConfig
 from curio.pipeline import run_pipeline, video_paths
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
+from curio.stages.script import ScriptArtifact, TitleArtifact
 from curio.stages.scenes import Chapter
 from curio.stages.scene_contract import ScenePlanResult
 from curio.stages.scene_contract import SemanticScene
@@ -119,9 +120,10 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
     patches = [
         patch("curio.stages.research.research_topic", return_value=ResearchResult(
             TargetEntity(name="Marte"), _sources(), tried_queries=["Marte"])),
-        patch("curio.stages.script.generate_script", return_value=(SCRIPT, "mock")),
+        patch("curio.stages.script.generate_script",
+              return_value=ScriptArtifact(SCRIPT, "mock")),
         patch("curio.stages.script.generate_title",
-              return_value=("Por que Marte é vermelho?", "mock")),
+              return_value=TitleArtifact("Por que Marte é vermelho?", "mock")),
         scene_builder,
         patch("curio.stages.visual.fetch_media_multi",
               side_effect=acquire_media),

@@ -49,6 +49,10 @@ do enriquecimento semântico quando disponível.
 `pipeline_research` valida `ResearchResult` antes de registrar ou persistir
 qualquer saída e consome seus campos declarados diretamente; retorno parcial do
 produtor agora falha no limite do estágio.
+`script.generate_script` e `generate_title` produzem `ScriptArtifact` e
+`TitleArtifact` validados. O pipeline cria esses mesmos contratos para texto
+fornecido e cache; proveniência/texto continuam gravados nos arquivos e campos
+de metadata existentes.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
 `TimelineSpan[]` separados; `Chapter` permanece como projeção de compatibilidade
 para metadata e formatos externos.

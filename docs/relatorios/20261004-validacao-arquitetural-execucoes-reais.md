@@ -255,4 +255,6 @@ remove cadeias de entidades não tipográficas, separa as regiões de texto e
 versiona a chave de cache para não reutilizar PNG antigo. Os testes comparam
 caixas de texto reais do Pillow para cards científicos e tipográficos, e a nova
 amostra visual não tem colisões. Após V1, a suíte integral passou com **860
-testes em 177,31 s**; `compileall` e `git diff --check` passaram.
+testes em 177,31 s**. Após a migração G2a de roteiro/título, a suíte integral
+passou com **863 testes em 191,55 s**; `compileall` e `git diff --check`
+passaram.
