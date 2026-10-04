@@ -29,41 +29,11 @@ from .. import textnorm
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
 from .prompts import SCENES_SYSTEM_PROMPT, SCENES_SYSTEM_PROMPT_EN
-from .scene_contract import (VISUAL_TYPES, SemanticScene, TimelineSpan,
-                             VideoContext, VisualRepresentation)
+from .scene_contract import (VISUAL_TYPES, ScenePlanResult, SemanticScene,
+                             TimelineSpan, VideoContext, VisualRepresentation)
 
 TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
-
-
-@dataclass(frozen=True)
-class ScenePlanResult:
-    """Planner output: scene meaning and timeline spans are separate values."""
-
-    semantic_scenes: tuple[SemanticScene, ...]
-    timeline_spans: tuple[TimelineSpan, ...]
-    source: str
-
-    def __post_init__(self) -> None:
-        if not self.source.strip():
-            raise ValueError("planner source is required")
-        if len(self.semantic_scenes) != len(self.timeline_spans):
-            raise ValueError("planner scene/timeline counts differ")
-        scene_ids = tuple(scene.id for scene in self.semantic_scenes)
-        if len(set(scene_ids)) != len(scene_ids):
-            raise ValueError("planner scene ids must be unique")
-        span_ids = tuple(span.scene_id for span in self.timeline_spans)
-        if scene_ids != span_ids:
-            raise ValueError("planner timeline spans do not match scene order")
-        errors = [scene.contract_errors() for scene in self.semantic_scenes]
-        if any(errors):
-            raise ValueError("planner emitted invalid semantic scene")
-
-    def timeline_chapters(self) -> tuple["Chapter", ...]:
-        """Create the compatibility projection consumed by render stages."""
-        return tuple(Chapter.from_semantic_scene(scene, timing=span)
-                     for scene, span in zip(self.semantic_scenes,
-                                            self.timeline_spans))
 
 
 LEGACY_MAX_SCENES = 12          # teto de scenes_for_length sem gênero

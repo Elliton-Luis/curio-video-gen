@@ -14,8 +14,9 @@ from .stages import nvidia as nvidia_stage
 from .stages import scenes as scenes_stage
 from .stages import visual as visual_stage
 from .stages.scene_local_planning import recover_legacy_chapters
-from .stages.scene_contract import SemanticScene
+from .stages.scene_contract import ScenePlanResult, SemanticScene
 from .stages.scene_enrichment import SceneEnrichmentResult, enrich_scenes
+from .stages.scene_plan_artifact import plan_from_dict, plan_to_dict
 from .stages.scenes import Chapter
 
 
@@ -38,6 +39,16 @@ def load_chapters(paths) -> list[Chapter]:
     return chapters
 
 
+def _chapter_projection_differs(path: str, chapters: list[Chapter]) -> bool:
+    """Detect stale compatibility output without treating it as cache truth."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            stored = json.load(fh)
+    except (OSError, ValueError):
+        return True
+    return stored != [chapter.to_dict() for chapter in chapters]
+
+
 def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
                     force: bool, script_mode: bool, genre: str,
                     scene_target_seconds: float, max_scenes: int | None,
@@ -47,16 +58,34 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
                     write_json) -> SceneStageResult:
     """Plan/restore, enrich and persist one validated scene batch."""
     started = time.monotonic()
-    if not force and os.path.isfile(paths.chapters_json):
-        chapters = load_chapters(paths)
+    scene_plan_path = getattr(paths, "scene_plan_json", "")
+    has_scene_plan = bool(scene_plan_path and os.path.isfile(scene_plan_path))
+    has_legacy_chapters = os.path.isfile(paths.chapters_json)
+    if not force and (has_scene_plan or has_legacy_chapters):
+        persist_chapters = False
+        persist_plan = False
         source = "cache"
-        recovered_legacy = recover_legacy_chapters(chapters)
-        semantic_inputs = tuple(chapter.semantic_scene(source)
-                                for chapter in chapters)
-        timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
+        if has_scene_plan:
+            with open(scene_plan_path, encoding="utf-8") as fh:
+                stored_plan = plan_from_dict(json.load(fh))
+            semantic_inputs = stored_plan.semantic_scenes
+            timeline_spans = stored_plan.timeline_spans
+            plan_source = stored_plan.source
+            recovered_legacy = False
+        else:
+            chapters = load_chapters(paths)
+            recovered_legacy = recover_legacy_chapters(chapters)
+            semantic_inputs = tuple(chapter.semantic_scene("legacy_chapters_cache")
+                                    for chapter in chapters)
+            timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
+            plan_source = "legacy_chapters_cache"
+            persist_chapters = recovered_legacy
+            persist_plan = True
         if script_mode:
             visual_stage.validate_preserved(script_text, semantic_inputs)
     else:
+        persist_chapters = True
+        persist_plan = True
         recovered_legacy = False
         if script_mode:
             count = visual_stage.scenes_for_script(script_text, cfg, genre)
@@ -75,7 +104,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
             semantic_inputs = plan.semantic_scenes
             timeline_spans = plan.timeline_spans
             source = plan.source
-            chapters = list(plan.timeline_chapters())
+            plan_source = plan.source
         except nvidia_stage.NvidiaError as exc:
             logged = run_event(
                 "fallback", f"Cenas: chain LLM falhou; divisão local ({exc})",
@@ -88,10 +117,9 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
             semantic_inputs = plan.semantic_scenes
             timeline_spans = plan.timeline_spans
             source = plan.source
-            chapters = list(plan.timeline_chapters())
+            plan_source = plan.source
         if script_mode:
             visual_stage.validate_preserved(script_text, semantic_inputs)
-        write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
 
     scene_event = ("provider" if source not in ("local", "cache")
                    else "fallback" if source == "local" else "cache")
@@ -106,8 +134,16 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
         etymology=etymology)
     chapters = list(enriched.chapters)
     semantic_scenes = enriched.semantic_scenes
-    if enriched.changed or recovered_legacy:
+    persist_chapters = persist_chapters or enriched.changed
+    persist_chapters = persist_chapters or _chapter_projection_differs(
+        paths.chapters_json, chapters)
+    persist_plan = persist_plan or enriched.changed
+    if persist_chapters:
         write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
+    if scene_plan_path and persist_plan:
+        write_json(scene_plan_path, plan_to_dict(ScenePlanResult(
+            semantic_scenes=semantic_scenes,
+            timeline_spans=tuple(timeline_spans), source=plan_source)))
     if "local_topic_anchor" in enriched.applied:
         run_event("result", "Cenas locais ancoradas no tema do vídeo",
                   operation="scenes", source=source,

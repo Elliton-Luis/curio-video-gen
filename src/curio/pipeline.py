@@ -61,6 +61,7 @@ class VideoPaths:
     root: str
     script_txt: str
     chapters_json: str
+    scene_plan_json: str
     title_txt: str
     media_json: str
     media_manifest_json: str
@@ -89,6 +90,7 @@ def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
         root=root,
         script_txt=os.path.join(root, "script", "script.txt"),
         chapters_json=os.path.join(root, "script", "chapters.json"),
+        scene_plan_json=os.path.join(root, "script", "scene-plan.json"),
         title_txt=os.path.join(root, "script", "title.txt"),
         media_json=os.path.join(root, "media", "media.json"),
         media_manifest_json=os.path.join(root, "media", "media-selection.json"),

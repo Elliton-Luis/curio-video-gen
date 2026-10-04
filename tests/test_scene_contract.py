@@ -160,7 +160,7 @@ def test_timeline_span_rejects_negative_or_reversed_time():
 
 
 def test_scene_plan_rejects_duplicate_ids_and_missing_provenance():
-    from curio.stages.scenes import ScenePlanResult
+    from curio.stages.scene_contract import ScenePlanResult
     from curio.stages.scene_contract import TimelineSpan
 
     scene = SemanticScene(id=1, narration="A scene.")
@@ -188,3 +188,24 @@ def test_semantic_scene_json_roundtrip_does_not_require_chapter_projection():
     with pytest.raises(ValueError, match="must be a list"):
         SemanticScene.from_dict({"id": 2, "narration": "A scene.",
                                  "representations": "loose keyword"})
+
+
+def test_scene_plan_artifact_keeps_semantics_and_time_separate():
+    from curio.stages.scene_contract import TimelineSpan
+    from curio.stages.scene_plan_artifact import plan_from_dict, plan_to_dict
+    from curio.stages.scene_contract import ScenePlanResult
+
+    plan = ScenePlanResult(
+        (SemanticScene(id=1, narration="A scene."),),
+        (TimelineSpan(1, 4, 1, 5),), "local")
+    data = plan_to_dict(plan)
+
+    assert "start" not in data["semantic_scenes"][0]
+    assert data["timeline_spans"] == [{"scene_id": 1,
+                                      "duration_estimate": 4,
+                                      "start": 1, "end": 5}]
+    assert plan_from_dict(data).semantic_scenes[0].to_dict() == \
+        plan.semantic_scenes[0].to_dict()
+    data["schema_version"] = 999
+    with pytest.raises(ValueError, match="schema_version"):
+        plan_from_dict(data)

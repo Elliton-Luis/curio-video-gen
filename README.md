@@ -65,6 +65,10 @@ própria e não passam a contar como intenção semântica estruturada no scorin
 spans; `SemanticScene.from_dict` valida e reconstrói o contrato sem passar por
 `Chapter`. O SearchPlanner mantém a ordem combinada das consultas e não trata
 esses espelhos como representações editoriais independentes.
+O cache canônico do pipeline fica em `script/scene-plan.json` (schema 1), com
+semântica e `TimelineSpan` separados. Projetos existentes migram ao serem lidos
+de `chapters.json`; esse arquivo continua sendo atualizado como projeção para
+CLI, TUI e render enquanto esses consumidores forem dependentes do formato.
 `pipeline_timeline.py` converte Chapters temporizados e seleções em
 `VisualTimelineResult`, grava as inserções opcionais e atualiza as métricas de
 beats no mesmo limite.
@@ -82,6 +86,8 @@ e mantém `metrics_file` no metadata persistido.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).
+O relatório desta migração de contratos está em
+[`docs/relatorios/20261004-migracao-contratos-cenas.md`](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `SemanticScene` separa os campos semânticos dos tempos em `Chapter`. Planner
 LLM, reparos estruturais e fallback local produzem esse contrato diretamente;
 `Chapter` é uma projeção explícita para persistência compatível e consumidores

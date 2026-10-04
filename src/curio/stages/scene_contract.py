@@ -301,6 +301,14 @@ class SemanticScene:
             raise ValueError("semantic scene id must be an integer")
         if not isinstance(narration, str):
             raise ValueError("semantic scene narration must be text")
+        string_fields = ("source", "planning_mode", "visual_type", "subject",
+                         "visual_intent", "visual_intent_structured",
+                         "primary_entity", "event", "place", "period",
+                         "text_role", "text_language")
+        for field_name in string_fields:
+            field_value = value.get(field_name, "")
+            if not isinstance(field_value, str):
+                raise ValueError(f"semantic scene {field_name} must be text")
         list_fields = ("subject_aliases", "visual_entities", "context", "forbidden",
                        "representations", "visual_queries", "global_visual_queries",
                        "representation_rejections")
@@ -308,6 +316,19 @@ class SemanticScene:
             field_value = value.get(field_name, [])
             if not isinstance(field_value, (list, tuple)):
                 raise ValueError(f"semantic scene {field_name} must be a list")
+        for field_name in ("subject_aliases", "visual_entities", "context",
+                           "forbidden", "visual_queries", "global_visual_queries"):
+            if any(not isinstance(item, str) for item in value.get(field_name, [])):
+                raise ValueError(f"semantic scene {field_name} entries must be text")
+        context = value.get("video_context", {})
+        if not isinstance(context, (Mapping, VideoContext)):
+            raise ValueError("semantic scene video_context must be an object")
+        if any(not isinstance(item, (Mapping, VisualRepresentation))
+               for item in value.get("representations", [])):
+            raise ValueError("semantic scene representations must be objects")
+        if any(not isinstance(item, Mapping)
+               for item in value.get("representation_rejections", [])):
+            raise ValueError("semantic scene representation_rejections must be objects")
         return cls(
             id=scene_id, narration=narration,
             source=str(value.get("source", "unknown") or "unknown"),
@@ -371,6 +392,39 @@ class SemanticScene:
             "global_visual_queries": list(self.global_visual_queries),
             "representation_rejections": list(self.representation_rejections),
         }
+
+
+@dataclass(frozen=True)
+class ScenePlanResult:
+    """Validated batch output: scene meaning and timing share only IDs."""
+
+    semantic_scenes: tuple[SemanticScene, ...]
+    timeline_spans: tuple[TimelineSpan, ...]
+    source: str
+
+    def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("planner source is required")
+        if not self.semantic_scenes:
+            raise ValueError("planner must emit at least one scene")
+        if len(self.semantic_scenes) != len(self.timeline_spans):
+            raise ValueError("planner scene/timeline counts differ")
+        scene_ids = tuple(scene.id for scene in self.semantic_scenes)
+        if len(set(scene_ids)) != len(scene_ids):
+            raise ValueError("planner scene ids must be unique")
+        span_ids = tuple(span.scene_id for span in self.timeline_spans)
+        if scene_ids != span_ids:
+            raise ValueError("planner timeline spans do not match scene order")
+        errors = [scene.contract_errors() for scene in self.semantic_scenes]
+        if any(errors):
+            raise ValueError("planner emitted invalid semantic scene")
+
+    def timeline_chapters(self) -> tuple["Chapter", ...]:
+        """Create the compatibility projection consumed by render stages."""
+        from .scenes import Chapter
+        return tuple(Chapter.from_semantic_scene(scene, timing=span)
+                     for scene, span in zip(self.semantic_scenes,
+                                            self.timeline_spans))
 
 
 def _string_list(value: object) -> list[str]:

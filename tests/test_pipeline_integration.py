@@ -14,7 +14,8 @@ from unittest.mock import patch
 from curio.config import CurioConfig
 from curio.pipeline import run_pipeline, video_paths
 from curio.stages.research import ResearchSource
-from curio.stages.scenes import Chapter, ScenePlanResult
+from curio.stages.scenes import Chapter
+from curio.stages.scene_contract import ScenePlanResult
 from curio.stages.scene_contract import SemanticScene
 
 SCRIPT = (
