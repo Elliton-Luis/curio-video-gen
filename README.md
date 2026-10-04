@@ -51,6 +51,8 @@ por VisualPlan/SearchPlan.
 `planning_mode` registra a proveniência LLM/determinística; o prefixo textual
 `local fallback` é interpretado apenas ao carregar capítulos antigos. Scoring
 consome assunto/evento/representações declarados e não extrai termos da narração.
+Aquisição automática tem um único caminho (`visual.fetch_media_multi`);
+`pipeline_media.py` trata apenas mídia manual e estado de standby.
 
 Princípio editorial: *o vídeo pode simplificar uma ideia para torná-la
 acessível, mas não deve falsificá-la para torná-la mais viral.*

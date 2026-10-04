@@ -683,10 +683,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     emit(3, "Buscando mídia")
     manual_dir = pipeline_media_stage.manual_media_dir(paths)
     media_scenes = None
-    manual = pipeline_media_stage.manual_media_scenes(chapters, manual_dir)
+    manual = pipeline_media_stage.manual_media_scenes(semantic_scenes, manual_dir)
     available_providers = [provider.name for provider in get_providers(cfg)]
     media_signature = media_selection_signature(
-        chapters, genre_key, max_images, available_providers,
+        semantic_scenes, genre_key, max_images, available_providers,
         scoring_stage.threshold())
     if manual is not None:
         media_scenes = manual
@@ -710,11 +710,12 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 if (s.get("asset") or {}).get("provider") != "manual")
             files_ok = True
             for s in saved:
-                chapter = next((ch for ch in chapters if ch.id == s["chapter_id"]), None)
-                if chapter is None:
+                scene = next((item for item in semantic_scenes
+                              if item.id == s["chapter_id"]), None)
+                if scene is None:
                     files_ok = False
                     break
-                blocked = visual_stage.media_rules.scene_blocklist(chapter)
+                blocked = visual_stage.media_rules.scene_blocklist(scene)
                 if any(visual_stage.media_rules.rejection_reason(
                         entry.get("asset") or {}, blocked) for entry in s.get("assets", [])
                        if (entry.get("asset") or {}).get("provider") != "synth"):
@@ -786,7 +787,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # Rótulo curto do assunto de cada cena, para o título do registro:
     # "cena 3 · rolo de papel térmico [pixabay_12345]" diz do que se trata;
     # "cena 3 [pixabay_12345]" só diz onde.
-    rotulos = {c.id: pipeline_media_stage.scene_label(c) for c in chapters}
+    rotulos = {scene.id: pipeline_media_stage.scene_label(scene)
+               for scene in semantic_scenes}
     for scene in media_scenes:
         rotulo = rotulos.get(scene["chapter_id"], f"cena {scene['chapter_id']}")
         for entry in scene.get("assets") or []:

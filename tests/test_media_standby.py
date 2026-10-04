@@ -16,7 +16,8 @@ from curio.stages.scenes import Chapter
 
 def _chapters(n=3):
     return [Chapter(id=i + 1, narration=f"Narração da cena {i + 1}.",
-                    duration_estimate=5.0) for i in range(n)]
+                    duration_estimate=5.0).semantic_scene()
+            for i in range(n)]
 
 
 def test_count_assets_suporta_os_dois_formatos():
