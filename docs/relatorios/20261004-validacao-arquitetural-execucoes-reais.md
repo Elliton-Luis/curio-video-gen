@@ -112,3 +112,98 @@ completa da validação inicial passou com 825 testes em 148,36 s; os testes
 focados de medição passaram (27), e a suíte completa após instrumentação passou
 com 829 testes em 146,52 s; `compileall` e
 `git diff --check` passaram.
+
+## Execuções após os contratos A4a–A4t
+
+As duas execuções abaixo foram geradas depois da migração de consumidores para
+`SemanticScene` e `TimelineSpan`. Foram execuções completas com LLM e serviços
+configurados no ambiente; a segunda repetição do vídeo de ciência reaproveitou
+roteiro/cenas e bytes de assets, mas voltou a consultar providers. Os projetos
+gerados estão em `output/architecture-refactor-validation/` (diretório local
+ignorado pelo Git).
+
+| Projeto | Cenas | Cenas com asset real | Assets reais únicos | Reusos | Sintéticos | Busca | Render | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `black-hole-lensing` | 3 | 2 | 4 | 0 | 1 | 52,23 s | 12,60 s | 79,16 s |
+| `battle-mohacs` | 3 | 1 | 2 | 0 | 2 | 35,99 s | 14,32 s | 69,53 s |
+
+“Assets reais únicos” conta IDs distintos de provider selecionados nas cenas,
+incluindo imagens complementares dentro da mesma cena; não equivale ao número
+de cenas cobertas. A primeira cena de ciência usou três imagens (Wikimedia,
+Pixabay e Pixabay), e a terceira uma NASA, totalizando quatro IDs reais únicos
+em duas cenas cobertas. A primeira cena histórica selecionou duas imagens
+Pixabay (dois IDs únicos), mas somente uma imagem era adequada ao evento.
+`unique_asset_ratio` ficou em 1,0 e o reuso em zero nos dois projetos; isso
+prova identidade distinta, não pertinência editorial.
+
+### Proveniência e qualidade observada
+
+Em `black-hole-lensing`, foram planejadas 24 consultas (8 por cena), com
+Wikimedia, Pixabay, Unsplash e NASA retornando resultados; Met e AIC falharam
+com HTTP 410 e 500, e Pexels foi ignorado por falta de chave. A cena 1
+selecionou a imagem polarizada de Sagitário A do EHT (Wikimedia; representação
+“Sagitário A supermassive black hole center of galaxy”, score 100). A cena 2,
+com `Event Horizon Telescope logo / global network of radio telescopes /
+Sagittarius A* image Event Horizon Telescope`, recebeu 79 resultados, mas
+nenhum passou o score para seleção nova; terminou em card sintético. A cena 3
+selecionou o campo profundo Hubble da NASA (score 52,25; query
+“gravitational lensing black hole light bending”). A imagem é astronomicamente
+coerente, mas não mostra lente gravitacional; adequação parcial. Inspeção
+visual da imagem EHT confirmou a imagem direta de Sagitário A. As duas imagens
+Pixabay da cena 1 são variações de um túnel luminoso, metáforas genéricas, e
+não observações ou diagramas confiáveis de buraco negro.
+
+Em `battle-mohacs`, também foram planejadas 24 consultas. Pixabay devolveu a
+imagem vencedora, enquanto buscas retornaram 27 candidatos; foram registrados
+25 rejeitados por “no topic evidence”, 1 termo bloqueado e 4 consultas
+abandonadas por duplicatas. A primeira cena selecionou duas imagens, ambas com
+tags da Hungria/Danúbio. Uma delas é o Parlamento Húngaro moderno, visualmente
+inspecionado e claramente inadequado para a batalha de 1526; apesar disso,
+passou os gates com score 100 por evidência territorial (`Danube river`). As
+outras duas cenas receberam cards sintéticos. O registro de seleção marca
+`search_exhausted=false` e `search_exhaustion_reason=provider_errors`, portanto
+essas cenas não demonstram exaustão real do espaço de busca. Met/AIC tiveram
+falhas HTTP em ciência; Pexels continuou sem credencial. O pipeline registrou
+explicitamente a busca incompleta, mas ainda selecionou um falso positivo
+histórico. Isso é falha editorial real e bloqueia qualquer afirmação de que a
+aquisição histórica está resolvida.
+
+Consultas de Mohács mantiveram entidade, evento, data/local e tipo visual, por
+exemplo `Batalha de Mohács 1526 mapa`, `Luís II 1526 26000 soldados Danúbio`
+e `Vitória Otomana 1526 Batalha de Mohács`. Os providers produziram resultados
+fora do domínio (Parlamento de Budapeste, fotos de obra/monastério e conteúdo
+genérico); a validação demonstra que query contextual correta ainda não
+garante candidato bom. O scoring de evidência territorial precisa deixar de
+equivaler a evidência de evento/período quando a cena é histórica.
+
+### Rerender, cache e testes de falha
+
+O rerender de `black-hole-lensing` concluiu em 21,13 s com libx264; o log
+informou que roteiro, narração e legendas vieram do cache, sem nova pesquisa,
+aquisição de mídia ou TTS. A repetição de geração reutilizou o roteiro e plano
+de cena, e os quatro bytes selecionados foram hits de cache de download; ainda
+assim, consultou providers de novo (40,2 s de mídia). Portanto o cache de bytes
+está comprovado e o rerender respeita a seleção persistida, mas esta repetição
+não comprovou cache de decisão da busca.
+
+A suíte completa após a última fase de código, A4t, passou com **855 testes em
+146,30 s**; `compileall` e `git diff --check` também passaram. Uma rodada
+direcionada posterior a essas execuções passou com **60 testes em 0,19 s**:
+fallback local, timeout NVIDIA, JSON inválido, timeout de provider de mídia,
+cache/manifests e decisões de seleção. Ainda não foi executada uma geração e2e
+com falha de LLM e falha de provider induzidas simultaneamente; não se deve
+tratar esses testes unitários como substitutos dessa prova.
+
+### Estado da migração
+
+As fases A4a–A4t concluídas transferiram planejamento, timing, render, review,
+teleprompter, replanejamento, metadata, finalize e aquisição para os contratos
+canônicos em commits pequenos. O fluxo de Chapter foi removido desses
+consumidores e segue apenas nas fronteiras de projeto persistido/metadata.
+Ainda não é uma refatoração arquitetural encerrada: pesquisa/script/configuração,
+estado de execução, integração TUI/queue, relatórios/metadados e as decisões de
+scoring/fallback continuam com partes em transição conforme o mapa da auditoria.
+As execuções reais deixam dois próximos limites concretos: eliminar o falso
+positivo de período/local em história e provar o cache de seleção sem esconder
+mudança de plano. Não houve profile comparável pré/pós sob os mesmos providers;
+os tempos acima são observações pontuais, não promessa de ganho de performance.

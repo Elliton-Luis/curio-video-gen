@@ -111,6 +111,11 @@ e mantém `metrics_file` no metadata persistido.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).
+As execuções pós-migração incluem uma amostra científica e outra histórica,
+rerender/cache e inspeção visual. Elas confirmam contratos e ausência de reuso,
+mas também registram um falso positivo grave (Parlamento de Budapeste para
+Mohács) e busca incompleta quando providers falham; a aquisição histórica
+continua sendo uma limitação aberta, descrita no relatório.
 O relatório desta migração de contratos está em
 [`docs/relatorios/20261004-migracao-contratos-cenas.md`](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `SemanticScene` separa os campos semânticos dos tempos em `Chapter`. Planner
