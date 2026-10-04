@@ -128,7 +128,10 @@ def _write_json(path: str, data) -> None:
 
 
 def _load_chapters(paths: VideoPaths) -> list[Chapter]:
-    return [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
+    chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
+    for chapter in chapters:
+        chapter.require_valid()
+    return chapters
 
 
 def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:

@@ -1,4 +1,6 @@
 import pytest
+import json
+from types import SimpleNamespace
 
 from curio.stages.scene_contract import Alias, VideoContext, VisualRepresentation
 from curio.stages.scenes import Chapter
@@ -55,3 +57,21 @@ def test_alias_provenance_roundtrip_preserves_verified_evidence():
     alias = context.aliases[0]
     assert (alias.source, alias.verified) == ("wikipedia_langlink", True)
     assert VideoContext.from_value(context.to_dict()).aliases[0] == alias
+
+
+def test_legacy_cache_is_normalized_and_validated_at_load_boundary(tmp_path):
+    from curio.pipeline import _load_chapters
+
+    cache = tmp_path / "chapters.json"
+    cache.write_text(json.dumps([{
+        "id": 1, "narration": "A scene.", "duration_estimate": 2,
+        "video_context": {"topic": "History"},
+        "representations": [{"query": "historical map", "kind": "map"}],
+    }]), encoding="utf-8")
+    loaded = _load_chapters(SimpleNamespace(chapters_json=str(cache)))
+    assert loaded[0].require_valid() is loaded[0]
+    assert isinstance(loaded[0].representations[0], VisualRepresentation)
+
+    cache.write_text(json.dumps([{"id": 1, "narration": "  "}]), encoding="utf-8")
+    with pytest.raises(ValueError, match="narration_required"):
+        _load_chapters(SimpleNamespace(chapters_json=str(cache)))

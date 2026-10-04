@@ -433,6 +433,8 @@ def _local_chapters(script: str, n_scenes: int = TARGET_SCENES) -> list[Chapter]
             representations=reps,
             representation_rejections=_local_representation_rejections(narration),
         ))
+    for chapter in chapters:
+        chapter.require_valid()
     return chapters
 
 
