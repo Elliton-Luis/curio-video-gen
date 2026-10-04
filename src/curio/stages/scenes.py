@@ -29,7 +29,8 @@ from .. import textnorm
 from ..config import CurioConfig
 from . import nvidia as nvidia_stage
 from .prompts import SCENES_SYSTEM_PROMPT, SCENES_SYSTEM_PROMPT_EN
-from .scene_contract import VideoContext, VisualRepresentation
+from .scene_contract import (VISUAL_TYPES, SemanticScene, VideoContext,
+                             VisualRepresentation)
 
 TARGET_SCENES = 5
 WORDS_PER_MINUTE = 150
@@ -78,9 +79,6 @@ def scenes_for_length(words: int, target_seconds: float = 9.0,
     teto = LEGACY_MAX_SCENES if max_scenes is None else int(max_scenes)
     return max(3, min(teto, round(est_seconds / alvo)))
 
-
-VISUAL_TYPES = ("literal", "mechanism", "historical_art", "conceptual",
-                "typographic")
 
 # Sinais de que a cena explica um PROCESSO, não uma coisa. Uma foto de
 # laboratório não mostra "o calor altera o corante" — mostra um frasco.
@@ -305,6 +303,10 @@ class Chapter:
         if errors:
             raise ValueError(f"scene {self.id} violates contract: {', '.join(errors)}")
         return self
+
+    def semantic_scene(self, source: str = "unknown") -> SemanticScene:
+        """Expose meaning downstream without carrying duration or timestamps."""
+        return SemanticScene.from_chapter(self, source)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Chapter":

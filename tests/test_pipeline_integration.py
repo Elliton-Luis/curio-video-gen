@@ -15,6 +15,7 @@ from curio.config import CurioConfig
 from curio.pipeline import run_pipeline, video_paths
 from curio.stages.research import ResearchSource
 from curio.stages.scenes import Chapter
+from curio.stages.scene_contract import SemanticScene
 
 SCRIPT = (
     "Marte leva 687 dias para dar uma volta completa no Sol. "
@@ -105,6 +106,11 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
                            side_effect=scene_error) if scene_error else
                      patch("curio.stages.scenes.build_chapters",
                            return_value=(chapters, "mock")))
+
+    def acquire_media(scenes, _cfg, _max_images, metrics=None, genre=""):
+        assert all(isinstance(scene, SemanticScene) for scene in scenes)
+        return _media(scenes, images), []
+
     patches = [
         patch("curio.stages.research.research_topic", return_value=_sources()),
         patch("curio.stages.script.generate_script", return_value=(SCRIPT, "mock")),
@@ -112,8 +118,7 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
               return_value=("Por que Marte é vermelho?", "mock")),
         scene_builder,
         patch("curio.stages.visual.fetch_media_multi",
-              side_effect=lambda chs, c, mx, metrics=None, genre="": (
-                  _media(chs, images), [])),
+              side_effect=acquire_media),
         patch("curio.stages.tts.synthesize", side_effect=_fake_tts),
     ]
     for p in patches:

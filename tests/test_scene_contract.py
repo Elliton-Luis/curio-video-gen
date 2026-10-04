@@ -2,7 +2,8 @@ import pytest
 import json
 from types import SimpleNamespace
 
-from curio.stages.scene_contract import Alias, VideoContext, VisualRepresentation
+from curio.stages.scene_contract import (Alias, SemanticScene, VideoContext,
+                                         VisualRepresentation)
 from curio.stages.scenes import Chapter
 
 
@@ -75,3 +76,27 @@ def test_legacy_cache_is_normalized_and_validated_at_load_boundary(tmp_path):
     cache.write_text(json.dumps([{"id": 1, "narration": "  "}]), encoding="utf-8")
     with pytest.raises(ValueError, match="narration_required"):
         _load_chapters(SimpleNamespace(chapters_json=str(cache)))
+
+
+def test_semantic_scene_excludes_timeline_and_preserves_meaning_provenance():
+    chapter = Chapter.from_dict({
+        "id": 7, "narration": "Battle of Mohács in 1526.",
+        "duration_estimate": 5, "start": 12, "end": 17,
+        "visual_type": "historical_art", "event": "Battle of Mohács",
+        "representations": [{"query": "Battle of Mohács 1526",
+                             "kind": "event", "source": "planner"}],
+    })
+
+    scene = chapter.semantic_scene("llm")
+
+    assert isinstance(scene, SemanticScene)
+    assert scene.source == "llm"
+    assert scene.event == "Battle of Mohács"
+    assert scene.representations[0].kind == "event"
+    assert scene.contract_errors() == []
+    assert not hasattr(scene, "duration_estimate")
+    assert not hasattr(scene, "start")
+    assert not hasattr(scene, "end")
+    assert "duration_estimate" not in scene.to_dict()
+    scene.video_context.topic = "changed downstream"
+    assert chapter.video_context.topic != "changed downstream"

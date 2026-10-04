@@ -7,7 +7,12 @@ from untyped dictionaries.  Provenance is additive and survives round trips.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
+
+
+VISUAL_TYPES = ("literal", "mechanism", "historical_art", "conceptual",
+                "typographic")
 
 
 @dataclass(frozen=True)
@@ -167,6 +172,104 @@ class VideoContext(Mapping[str, object]):
 
     def __len__(self) -> int:
         return len(self.to_dict())
+
+
+@dataclass(frozen=True)
+class SemanticScene:
+    """Validated scene meaning without timeline or render timing fields."""
+
+    id: int
+    narration: str
+    source: str = "unknown"
+    visual_type: str = "literal"
+    subject: str = ""
+    subject_aliases: tuple[str, ...] = ()
+    visual_entities: tuple[str, ...] = ()
+    context: tuple[str, ...] = ()
+    forbidden: tuple[str, ...] = ()
+    video_context: VideoContext = field(default_factory=VideoContext)
+    visual_intent: str = ""
+    visual_intent_structured: str = ""
+    primary_entity: str = ""
+    event: str = ""
+    place: str = ""
+    period: str = ""
+    representations: tuple[VisualRepresentation, ...] = ()
+    visual_queries: tuple[str, ...] = ()
+    global_visual_queries: tuple[str, ...] = ()
+    representation_rejections: tuple[dict, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name in ("subject_aliases", "visual_entities", "context", "forbidden",
+                     "visual_queries", "global_visual_queries"):
+            value = getattr(self, name)
+            if isinstance(value, str):
+                value = (value,) if value.strip() else ()
+            object.__setattr__(self, name, tuple(
+                str(item).strip() for item in value if str(item).strip()))
+        object.__setattr__(self, "video_context",
+                           VideoContext.from_value(self.video_context))
+        object.__setattr__(self, "representations", tuple(
+            rep for index, value in enumerate(self.representations)
+            if (rep := VisualRepresentation.from_value(value, index))))
+        object.__setattr__(self, "representation_rejections", tuple(
+            dict(item) for item in self.representation_rejections
+            if isinstance(item, Mapping)))
+        errors = self.contract_errors()
+        if errors:
+            raise ValueError(f"semantic scene {self.id} invalid: {', '.join(errors)}")
+
+    @classmethod
+    def from_chapter(cls, chapter, source: str = "unknown") -> "SemanticScene":
+        return cls(
+            id=int(chapter.id), narration=str(chapter.narration), source=source,
+            visual_type=str(chapter.visual_type), subject=str(chapter.subject),
+            subject_aliases=tuple(chapter.subject_aliases),
+            visual_entities=tuple(chapter.visual_entities),
+            context=tuple(chapter.context), forbidden=tuple(chapter.forbidden),
+            video_context=deepcopy(chapter.video_context),
+            visual_intent=str(chapter.visual_intent),
+            visual_intent_structured=str(chapter.visual_intent_structured),
+            primary_entity=str(chapter.primary_entity), event=str(chapter.event),
+            place=str(chapter.place), period=str(chapter.period),
+            representations=tuple(chapter.representations),
+            visual_queries=tuple(chapter.visual_queries),
+            global_visual_queries=tuple(chapter.global_visual_queries),
+            representation_rejections=tuple(chapter.representation_rejections),
+        )
+
+    def contract_errors(self) -> list[str]:
+        errors = []
+        if self.id <= 0:
+            errors.append("scene_id_positive")
+        if not self.narration.strip():
+            errors.append("narration_required")
+        if self.visual_type not in VISUAL_TYPES:
+            errors.append("visual_type_unknown")
+        if not isinstance(self.video_context, VideoContext):
+            errors.append("video_context_not_normalized")
+        if any(not isinstance(rep, VisualRepresentation)
+               for rep in self.representations):
+            errors.append("representation_not_normalized")
+        return errors
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id, "narration": self.narration, "source": self.source,
+            "visual_type": self.visual_type, "subject": self.subject,
+            "subject_aliases": list(self.subject_aliases),
+            "visual_entities": list(self.visual_entities),
+            "context": list(self.context), "forbidden": list(self.forbidden),
+            "video_context": self.video_context.to_dict(),
+            "visual_intent": self.visual_intent,
+            "visual_intent_structured": self.visual_intent_structured,
+            "primary_entity": self.primary_entity, "event": self.event,
+            "place": self.place, "period": self.period,
+            "representations": [rep.to_dict() for rep in self.representations],
+            "visual_queries": list(self.visual_queries),
+            "global_visual_queries": list(self.global_visual_queries),
+            "representation_rejections": list(self.representation_rejections),
+        }
 
 
 def _string_list(value: object) -> list[str]:

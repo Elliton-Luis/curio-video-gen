@@ -663,6 +663,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         research_timeout=cfg.research_timeout,
         etymology=scene_etymology)
     chapters = list(enrichment.scenes)
+    semantic_scenes = [chapter.semantic_scene(enrichment.source)
+                       for chapter in chapters]
     if enrichment.changed:
         force_after_script = True
         _write_json(paths.chapters_json, [chapter.to_dict() for chapter in chapters])
@@ -747,7 +749,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             media_scenes = None
     if media_scenes is None:
         media_scenes, media_warnings = visual_stage.fetch_media_multi(
-            chapters, cfg, max_images, metrics, genre=genre_key)
+            semantic_scenes, cfg, max_images, metrics, genre=genre_key)
         warnings.extend(media_warnings)
         _write_json(paths.media_json, media_scenes)
         if any(scene.get("asset") or scene.get("assets") for scene in media_scenes):
