@@ -1,11 +1,9 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G69, com registro
-separado do trabalho G70 interrompido e ainda sem validação.
+**Escopo:** auditoria documentada e migrações incrementais até G70.
 **Estado:** em andamento; este relatório não certifica a conclusão da
-refatoração integral. O worktree contém alterações G70 não commitadas; elas não
-fazem parte dos resultados validados abaixo.
+refatoração integral.
 
 ## Arquitetura antes das migrações recentes
 
@@ -89,6 +87,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `833df32` | Congelou recursivamente evidência de `CandidateEvaluation` e manteve a projeção para seleção como cópia independente (G67). |
 | `0e62a18` | Unificou snapshots de assets e congelou recursivamente rows da seleção, preservando a projeção JSON (G68). |
 | `1d1335f` | Manteve `SelectedAsset` tipado em candidatos de reuso cross-scene até decidir o donor (G69). |
+| `dd19b24` | Introduziu `RankedSelectionCandidate` e tipou `SelectionPool`; CLIP atualiza evidência imutável e auditoria associa rejeições pós-aquisição por identidade (G70). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -109,7 +108,13 @@ relatórios listados em `docs/README.md`.
   decide relevância editorial.
 - **Avaliação:** `CandidateEvaluation`/`EvaluationBatch`; reporta score e
   rejeições com evidência JSON recursivamente imutável, sem gerar query ou
-  decidir fallback editorial. `to_selection_entry()` projeta cópia editável.
+  decidir fallback editorial. `with_clip_score()` retorna uma avaliação nova;
+  `to_selection_entry()` projeta cópia editável.
+- **Shortlist ranqueada:** `RankedSelectionCandidate` reúne avaliação aceita e
+  snapshot do asset preparado. Score CLIP tem fonte única na evidência da
+  avaliação. `SelectionPool` divide somente candidatos tipados entre novos e
+  reutilizados; a projeção JSON ocorre na transição ao lifecycle legado de
+  aquisição/seleção.
 - **Seleção:** `SelectionDecision`; distingue asset novo, reuso, sintético e
   ausência, com motivo/fallback validado. `MediaStageResult`/`SceneMediaSelection`
   expõem `MediaAssetSnapshot` e rows aninhadas imutáveis; `to_dict()` é adapter.
@@ -123,7 +128,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G69
+## Arquivos alterados nas fases G57–G70
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -191,7 +196,7 @@ e `tests/test_media_selection.py`.
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G69.
+relatório e os relatórios G57–G70.
 
 
 ## Estado das fases
@@ -205,7 +210,7 @@ relatório e os relatórios G57–G69.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G69 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G70 commitadas; parcial. | `visual.py` ainda orquestra várias fases e projeta para rows mutáveis antes do restante do lifecycle de aquisição, dedupe, fallback e persistência; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -254,6 +259,11 @@ passaram. Não houve geração real nesta fase.
 G69: **63 testes focados passaram**; suíte ampla: **936 passaram, 1 excluído**
 pelo HTTP 429 da API da Wikipédia, em 178,81 s. Compileall e diff check
 passaram. Não houve geração real nesta fase.
+G70: **89 testes focados passaram**; a suíte ampla passou com **937 testes e 1
+excluído** por HTTP 429 da Wikipédia em 179,65 s; esse gate ocorreu antes da
+inclusão do último teste unitário de rejeição de rows untyped, validado na
+bateria focada subsequente. Compileall e diff check passaram após esse teste.
+Não houve geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -290,9 +300,8 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G69 passam os gates registrados. G70 está incompleta e não validada.
-Auditoria integral, ownership único de todas as decisões e validação final
-permanecem objetivos abertos.
+G57–G70 passam os gates registrados. Auditoria integral, ownership único de
+todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
 
@@ -544,50 +553,40 @@ editáveis que representam transições de estado. A próxima migração deve
 especificar esse lifecycle antes de substituir o formato. Commit: `1d1335f`.
 
 
-## G70 — shortlist tipada de seleção (interrompida; sem commit)
+## G70 — shortlist tipada de seleção (`dd19b24`)
 
-O trabalho em andamento tentava fechar a dívida indicada por G69: `SelectionPool`
-recebia rows `dict` mesmo depois de avaliação, e `visual.py` alterava score e
-asset durante o passe opcional de CLIP antes de separar assets frescos e
-reutilizados. A proposta em edição introduz `RankedSelectionCandidate`, que
-agrupa `CandidateEvaluation`, `MediaAssetSnapshot` e score CLIP; o pool passa a
-receber esses valores tipados e o coordenador projeta para dict somente ao
-entrar no lifecycle legado de aquisição/seleção.
+G69 havia deixado uma fronteira concreta: após a avaliação, `SelectionPool` e o
+passe opcional de CLIP usavam rows mutáveis para carregar score, asset baixado e
+estado de reuso. G70 introduz `RankedSelectionCandidate`, que associa
+`CandidateEvaluation` a `MediaAssetSnapshot` e mantém esse tipo durante CLIP,
+ordenação e separação entre assets novos e reutilizados. `CandidateEvaluation`
+é a fonte única do score e da evidência CLIP; `SelectionPool` rejeita entradas
+que não sejam candidatos ranqueados tipados. A projeção JSON só ocorre na
+fronteira com o restante do lifecycle legado de aquisição/seleção.
 
-As alterações locais observadas, ainda não commitadas, estão em:
+A migração revelou que a auditoria pós-download dependia de aliasing acidental:
+a row avaliada e a row posteriormente mutada eram o mesmo dict. Ao removê-lo,
+uma rejeição por resolução aparecia como `not_selected`. G70 associa a rejeição
+de lifecycle à identidade estável do candidato e preserva uma razão de auditoria
+explícita, sem compartilhar dicts entre avaliação e seleção. A correção também
+registra falha de download como rejeição auditável. Não altera queries, gates,
+thresholds, ranking editorial, fórmula CLIP ou política de reuso.
 
-- `src/curio/stages/media_contracts.py`: método `CandidateEvaluation.with_clip_score()`
-  para atualizar score/evidência de CLIP por cópia;
-- `src/curio/stages/media_selection.py`: contrato `RankedSelectionCandidate`
-  e `SelectionPool` tipado;
-- `src/curio/stages/visual.py`: transporte tipado durante shortlist/CLIP/pool,
-  seguido de projeção para as rows consumidas pelo restante do estágio;
-- `tests/test_media_selection.py`: fixtures tipadas e uma regressão para score
-  CLIP e snapshot preparado.
+Arquivos: `src/curio/stages/media_contracts.py`,
+`src/curio/stages/media_selection.py`, `src/curio/stages/visual.py`,
+`src/curio/stages/visual_audit.py` e `tests/test_media_selection.py`.
+Regressões cobrem score CLIP e snapshot preparado imutáveis, rejeição de rows
+untyped em `SelectionPool` e classificação/auditoria da falha de resolução
+pós-download. Passaram **89 testes focados**, `compileall` e `git diff --check`;
+a suíte ampla passou com **937 testes em 179,65 s** e um teste externo
+desselecionado por HTTP 429 da Wikipédia (o gate integral antecedeu a inclusão
+do último teste unitário; a bateria focada posterior passou com 89). Não houve
+geração real nem inspeção visual nesta fase.
 
-Este trabalho foi interrompido antes da validação. Não há commit G70, relatório
-de testes concluídos, `compileall` ou `git diff --check` registrados. Portanto,
-os resultados G57–G69 acima continuam sendo os últimos gates comprovados, e a
-alteração local G70 não deve ser descrita como fase concluída. Se for retomado,
-o próximo passo é revisar o diff e validar comportamento e compatibilidade do
-CLIP/download antes de decidir se o contrato fica ou é descartado. Nenhum ajuste
-de query, threshold, provider ou política editorial era o objetivo dessa
-tentativa.
-
-### Estado exato da etapa de mídia
-
-O objetivo arquitetural imediato era tirar `dict` editável da transição entre
-avaliação, CLIP opcional, separação de candidatos frescos/reutilizados e
-seleção, preservando a ordem e a fórmula de score existentes. Isso não era uma
-tentativa de corrigir os problemas anteriores de query semântica, falta de
-diversidade ou qualidade de assets; esses continuam como regressões/limitações
-que exigem validação própria. Até G69, busca/coleta, avaliação e decisões
-principais têm contratos tipados, mas `visual.py` ainda concentra coordenação e
-projeta candidatos em rows mutáveis para o lifecycle posterior de download,
-dedupe por conteúdo, fallback e persistência.
-
-No estado capturado, os quatro arquivos listados permanecem modificados no
-worktree. Como G70 não foi validada nem commitada, não há afirmação de que a
-shortlist tipada preserve todos os comportamentos de erro e ordenação do CLIP.
-A validação real de aquisição, inspeção visual e comparação antes/depois também
-não foi executada para G70.
+O escopo alcançado é deliberadamente local. Após `SelectionPool`, o coordenador
+projeta os itens para dicts porque o lifecycle subsequente ainda altera
+candidate rows durante download, hashes, escolha e fallback. `visual.py` ainda
+coordena essas transições; extraí-las exige um contrato de aquisição/resultado
+que mantenha estados e auditoria sem recolocar aliasing implícito. A validação
+real de providers e qualidade editorial continua pendente. Ver o
+[relatório G70](20261005-ranked-selection-candidate-contract.md).
