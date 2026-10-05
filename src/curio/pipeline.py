@@ -315,6 +315,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, project_artifacts.write_json)
     visual_timeline = timeline_result.entries
+    stage_times["visual_timeline"] = timeline_result.elapsed
 
     # [6/6] Montagem dinâmica + final
     emit(6, "Montando vídeo")

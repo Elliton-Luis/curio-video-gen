@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from curio.media.selection_result import MediaStageResult
-from curio.pipeline_timeline import build_visual_timeline
+from curio.pipeline_timeline import VisualTimelineResult, build_visual_timeline
 from curio.stages.scene_contract import SemanticScene, TimelineSpan
 from tests.media_test_support import with_selection
 
@@ -34,6 +34,8 @@ def test_timeline_stage_returns_and_persists_the_same_plan(tmp_path, monkeypatch
     media_result = _selection()
     from curio.media.selection_metrics import MediaMetricsInput
     metric_input = MediaMetricsInput.from_result(media_result)
+    ticks = iter((10.0, 12.5))
+    monkeypatch.setattr("curio.pipeline_timeline.time.monotonic", lambda: next(ticks))
 
     result = build_visual_timeline(
         semantic_scenes, spans, media_result,
@@ -44,6 +46,7 @@ def test_timeline_stage_returns_and_persists_the_same_plan(tmp_path, monkeypatch
     assert result.entries is entries
     assert result.insertion_count == 1
     assert result.enabled is True
+    assert result.elapsed == 2.5
     assert writes == [(str(tmp_path / "visual.json"), entries)]
     assert metrics.visual[0:2] == (spans, metric_input)
     assert metrics.visual[3] is entries
@@ -81,3 +84,10 @@ def test_timeline_rejects_untyped_or_misaligned_media():
         build_visual_timeline(
             args[0], args[1], _selection(2), args[3], "slug", 0.8,
             False, 0, "drop_in", -15, True, _Metrics(), lambda *_: None)
+
+
+def test_visual_timeline_result_rejects_invalid_elapsed_and_entries():
+    with pytest.raises(ValueError, match="elapsed"):
+        VisualTimelineResult([], 0, False, float("nan"))
+    with pytest.raises(TypeError, match="entries"):
+        VisualTimelineResult(["not an object"], 0, False, 0.0)

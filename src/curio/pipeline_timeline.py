@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
+import time
 
 from .media.selection_metrics import MediaMetricsInput
 from .media.selection_result import MediaStageResult
@@ -16,6 +18,22 @@ class VisualTimelineResult:
     entries: list[dict]
     insertion_count: int
     enabled: bool
+    elapsed: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.entries, list) or any(
+                not isinstance(entry, dict) for entry in self.entries):
+            raise TypeError("visual timeline result entries must be objects")
+        if (isinstance(self.insertion_count, bool)
+                or not isinstance(self.insertion_count, int)
+                or self.insertion_count < 0):
+            raise ValueError("visual timeline insertion count must be non-negative")
+        if not isinstance(self.enabled, bool):
+            raise TypeError("visual timeline enabled must be boolean")
+        if (isinstance(self.elapsed, bool)
+                or not isinstance(self.elapsed, (int, float))
+                or not isfinite(self.elapsed) or self.elapsed < 0):
+            raise ValueError("visual timeline elapsed must be finite and non-negative")
 
 
 def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
@@ -25,6 +43,7 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
                           insert_style: str, insert_gain_db: int,
                           enabled: bool, metrics, write_json) -> VisualTimelineResult:
     """Build/persist the optional overlay plan and update its metric projection."""
+    started = time.monotonic()
     if not isinstance(media_result, MediaStageResult):
         raise TypeError("visual timeline requires a MediaStageResult")
     scene_ids = tuple(scene.id for scene in semantic_scenes)
@@ -51,7 +70,8 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
     else:
         count = 0
     metrics.visual_plan(timeline_spans, metric_input, BEAT_SECONDS, entries)
-    return VisualTimelineResult(entries, count, enabled)
+    return VisualTimelineResult(entries, count, enabled,
+                                max(0.0, time.monotonic() - started))
 
 
 def _count_insertions(entries: list[dict]) -> int:
