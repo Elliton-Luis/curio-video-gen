@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G85.
+**Escopo:** auditoria documentada e migrações incrementais até G85/F5.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -255,7 +255,7 @@ relatório e os relatórios G57–G70.
 | C — SearchPlan | C1 concluída. | Replays reais para saúde/qualidade de providers. |
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
-| F — métricas/estado | F1–F4 parciais. | Definições canônicas, unknown/null consistente, lifecycle timers, profile por suboperação e reconciliação seleção-render. |
+| F — métricas/estado | F1–F5 parciais. | F5 unifica validação de elapsed nos contratos. Definições canônicas, unknown/null, lifecycle timers, profile por suboperação e reconciliação seleção-render permanecem. |
 | G — simplificação do pipeline | G1, G3–G5 e G7–G85 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 move a origem da provenance auditada para `VisualPlan`. `visual.py` ainda compõe busca, tiers, fallback e parte da auditoria final. Rows aninhadas e adapters de leitura/reuso permanecem. Coordenadores das demais etapas precisam convergir/remover adapters após prova de ausência de consumidores. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
@@ -379,6 +379,11 @@ suíte completa: **967 passaram em 191,41 s**. `compileall` e
 `git diff --check` passaram. Foi adicionada duração explícita à etapa; sem
 profile de geração real. Ver
 [relatório F4](20261005-visual-timeline-stage-timing.md).
+
+F5: resultados de etapas e contratos temporais: **48 testes focados passaram**
+em **0,24 s**; suíte completa: **977 passaram em 191,23 s**. `compileall` e
+`git diff --check` passaram. Sem geração real; somente validação comum de
+duração. Ver [relatório F5](20261005-stage-elapsed-contract.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -945,3 +950,11 @@ focados e 966 completos passaram; consulte
 não há profile comparativo nem reconciliação completa entre mídia selecionada
 e render. A suíte completa passou com 967 testes; veja
 [relatório F4](20261005-visual-timeline-stage-timing.md).
+
+## F5 — contrato de duração de estágio (`e534ee3`)
+
+`validate_stage_elapsed()` define duração em segundos numérica, finita e não
+negativa e é usada pelos resultados de pesquisa, roteiro, cenas, áudio, render
+e timeline. Booleanos e valores inválidos falham antes de chegar ao metadata.
+48 focados e 977 testes completos passaram; veja
+[relatório F5](20261005-stage-elapsed-contract.md).

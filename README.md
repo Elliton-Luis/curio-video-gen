@@ -208,7 +208,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G85/F4 está em
+O relatório completo do estado registrado até G85/F5 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -247,6 +247,10 @@ verifica que SearchPlan e VisualPlan pertencem à mesma cena. Suíte completa:
 F4 mede a construção/projeção da timeline visual e inclui a duração em
 `stage_times["visual_timeline"]`; suíte completa: 967 testes. Ver
 [relatório F4](docs/relatorios/20261005-visual-timeline-stage-timing.md).
+F5 define duração de estágio como segundos finitos e não negativos nos
+resultados de pesquisa, roteiro, cenas, áudio, render e timeline. Suíte
+completa: 977 testes. Ver
+[relatório F5](docs/relatorios/20261005-stage-elapsed-contract.md).
 O manifesto de roteiro schema 2 também assina inputs de roteiro e título, incluindo contexto de pesquisa, políticas e rotas: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e

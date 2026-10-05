@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G85 e métricas até F4.
-**Estado:** trabalho incompleto. G80–G85 e F4 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G85 e métricas até F5.
+**Estado:** trabalho incompleto. G80–G85 e F4–F5 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -112,6 +112,7 @@ hashes e diffs.
 | `bc131b9` | Move aplicação da camada CLIP e reranqueamento para `candidate_evaluation.py` (G84). |
 | `8ae6616` | Faz auditoria de query/candidato consumir provenance do `VisualPlan` e rejeitar plano de cena divergente (G85). |
 | `11ac1f3` | Mede a etapa de timeline visual em `VisualTimelineResult` e agrega duração explícita nos stage times (F4). |
+| `e534ee3` | Compartilha a validação de durações nos resultados de etapa (F5). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -265,7 +266,7 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F4 parciais. | Lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F5 parciais. | Lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G85 commitadas. | Simplificar coordenador; migrar campos restantes da auditoria final e adapters após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
@@ -433,6 +434,18 @@ sem alterar timers existentes. Focados: **16 passaram**; suíte integral:
 geração real. F4 não conclui os lifecycle timers ou profile requerido na Fase H;
 ver [relatório F4](20261005-visual-timeline-stage-timing.md).
 
+## F5 — contrato compartilhado de elapsed (`e534ee3`)
+
+Os resultados de research, script, scenes, audio, render e timeline agora usam
+`validate_stage_elapsed`: segundos numéricos finitos e não negativos, com
+booleanos rejeitados. Resultados anteriores tinham validações inconsistentes,
+e alguns aceitavam elapsed sem validação. Valores válidos e chaves serializadas
+permanecem iguais. Arquivos alterados: novo `src/curio/stage_timing.py`, seis
+coordenadores/resultados de estágio e testes de contrato. **48 focados**
+passaram; suíte completa: **977 em 191,23 s**; compileall e diff check
+passaram. Não houve geração real. Consulte
+[relatório F5](20261005-stage-elapsed-contract.md).
+
 ## Referências de relatórios
 
 - [`Relatório de arquitetura e estado da migração até G85`](20261005-relatorio-arquitetura-estado-atual.md)
@@ -451,4 +464,5 @@ ver [relatório F4](20261005-visual-timeline-stage-timing.md).
 - [`G84 — camada CLIP na avaliação de candidatos`](20261005-clip-layer-candidate-evaluation.md)
 - [`G85 — auditoria visual baseada no VisualPlan`](20261005-visual-audit-from-visual-plan.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
+- [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`Inventário de relatórios do projeto`](../README.md)
