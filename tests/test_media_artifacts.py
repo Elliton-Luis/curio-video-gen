@@ -135,6 +135,32 @@ def test_backfill_does_not_sum_overlapping_stage_timings_for_total(tmp_path):
     assert timing["finished_at"] == "2026-10-05T12:00:00+00:00"
 
 
+def test_backfill_without_visual_timeline_keeps_render_reconciliation_unknown(
+        tmp_path):
+    from curio.metrics import backfill_from_metadata
+    import json
+
+    report_path = backfill_from_metadata("partial", {
+        "chapters": [{"id": 1, "start": 0, "end": 4,
+                      "duration_estimate": 4}],
+        "media": [{
+            "chapter_id": 1,
+            "asset": {"provider": "wikimedia", "asset_id": "asset-1"},
+            "assets": [{"asset": {
+                "provider": "wikimedia", "asset_id": "asset-1"}}],
+            "visual_decision": {"selection": {"status": "real"}},
+        }],
+    }, str(tmp_path / "metrics"))
+
+    with open(report_path, encoding="utf-8") as stream:
+        pipeline = json.load(stream)["pipeline"]
+
+    assert pipeline["visual_timeline_source"] == "estimated_from_selection"
+    assert pipeline["selection_render_reconciliation"]["observed"] is False
+    assert pipeline["selection_render_reconciliation"][
+        "selected_assets_unique"] is None
+
+
 def test_backfill_uses_explicit_valid_total_duration(tmp_path):
     from curio.metrics import backfill_from_metadata
     import json

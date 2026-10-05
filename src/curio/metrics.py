@@ -110,6 +110,7 @@ class RunMetrics:
         self.visual_beat_seconds = 0.0
         self.visual_asset_uses = 0
         self.visual_asset_ids: set[str] = set()
+        self.visual_timeline_observed = False
         # Candidates admitted to a per-scene download shortlist. This is not
         # the final set of real assets assigned to scenes.
         self.media_shortlist_ids: set[str] = set()
@@ -333,6 +334,7 @@ class RunMetrics:
             raise TypeError("visual metrics require TimelineSpan values")
         if not isinstance(media_input, MediaMetricsInput):
             raise TypeError("visual metrics require MediaMetricsInput")
+        self.visual_timeline_observed = visual_timeline is not None
         from .stages.visual_beats import asset_key, plan
         by_scene = {scene.scene_id: scene for scene in media_input.scenes}
         by_timeline = {s["chapter_id"]: s for s in (visual_timeline or [])}
@@ -509,6 +511,40 @@ class RunMetrics:
         chapters = meta.get("chapters") or []
         selection_fields = (self.media_selection_stats.visual_report_fields()
                             if self.media_selection_stats else {})
+        reconciliation_known = bool(
+            self.visual_timeline_observed
+            and self.media_selection_stats is not None
+            and self.media_selection_stats.scenes_with_unknown_decision is not None)
+        selected_ids = set(self.media_available_ids)
+        rendered_ids = set(self.visual_asset_ids)
+        matched_ids = selected_ids & rendered_ids
+        if reconciliation_known:
+            reconciliation = {
+                "observed": True,
+                "selected_assets_unique": len(selected_ids),
+                "rendered_assets_unique": len(rendered_ids),
+                "selected_and_rendered_assets_unique": len(matched_ids),
+                "selected_but_not_rendered_assets_unique": len(
+                    selected_ids - rendered_ids),
+                "rendered_without_selected_assets_unique": len(
+                    rendered_ids - selected_ids),
+                "selected_asset_render_coverage": round(
+                    len(matched_ids) / max(1, len(selected_ids)), 3),
+                "selected_but_not_rendered_ids": sorted(selected_ids - rendered_ids),
+                "rendered_without_selected_ids": sorted(rendered_ids - selected_ids),
+            }
+        else:
+            reconciliation = {
+                "observed": False,
+                "selected_assets_unique": None,
+                "rendered_assets_unique": None,
+                "selected_and_rendered_assets_unique": None,
+                "selected_but_not_rendered_assets_unique": None,
+                "rendered_without_selected_assets_unique": None,
+                "selected_asset_render_coverage": None,
+                "selected_but_not_rendered_ids": None,
+                "rendered_without_selected_ids": None,
+            }
         selected_visual_scenes = selection_fields.get("scenes_with_selected_visual")
         scenes_without_visual = selection_fields.get("sem_visual")
         reused_scenes = selection_fields.get("scenes_with_reused_asset")
@@ -554,6 +590,10 @@ class RunMetrics:
                 # Timeline identity includes synthetic and real assets. The
                 # scene-level `visual_report.unique_assets` counts real media.
                 "visual_timeline_assets_unique": len(self.visual_asset_ids),
+                "visual_timeline_source": (
+                    "persisted" if self.visual_timeline_observed
+                    else "estimated_from_selection"),
+                "selection_render_reconciliation": reconciliation,
                 "visual_assets_unique": len(self.visual_asset_ids),  # legacy alias
                 "visual_asset_beat_counts": dict(self.visual_asset_beat_counts),
                 "visual_asset_scene_counts": dict(self.visual_asset_scene_counts),
@@ -704,7 +744,7 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
         if isinstance(decision, dict):
             collector.media_record_scene_decision(
                 int(scene.get("chapter_id", 0)), decision)
-    visual_timeline = []
+    visual_timeline = None
     timeline_path = (meta.get("artifacts") or {}).get("visual_timeline")
     if timeline_path:
         try:

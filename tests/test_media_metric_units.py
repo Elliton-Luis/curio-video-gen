@@ -198,6 +198,73 @@ def test_download_and_shared_search_cache_metrics_have_explicit_units():
     assert media["cache_misses"] == media["download_cache_misses"]
 
 
+def test_selection_to_timeline_reconciliation_reports_missing_and_foreign_assets():
+    from curio.media.selection_metrics import MediaMetricsInput
+
+    selected = [
+        {"provider": "fixture", "asset_id": "a"},
+        {"provider": "fixture", "asset_id": "b"},
+    ]
+    rows = [{
+        "chapter_id": 1,
+        "assets": [{"asset": asset} for asset in selected],
+        "visual_decision": {"selection": {"status": "real"}},
+    }]
+    timeline = [{
+        "chapter_id": 1,
+        "start": 0,
+        "end": 2,
+        "images": [
+            {**selected[0], "start": 0, "duration": 2},
+            {"provider": "fixture", "asset_id": "foreign",
+             "start": 0, "duration": 1, "order": 1},
+        ],
+        "visual_beats": [{
+            "start": 0, "end": 2,
+            "asset_id": "a", "provider": "fixture",
+        }],
+    }]
+    metrics = RunMetrics("test", "topic", "narration")
+    metrics.visual_plan((TimelineSpan(1, 2, 0, 2),),
+                        MediaMetricsInput.from_persisted_rows(rows), 2,
+                        timeline)
+
+    report = metrics.to_dict({"media": rows}, {}, "metrics")["pipeline"]
+    reconcile = report["selection_render_reconciliation"]
+
+    assert report["visual_timeline_source"] == "persisted"
+    assert reconcile == {
+        "observed": True,
+        "selected_assets_unique": 2,
+        "rendered_assets_unique": 2,
+        "selected_and_rendered_assets_unique": 1,
+        "selected_but_not_rendered_assets_unique": 1,
+        "rendered_without_selected_assets_unique": 1,
+        "selected_asset_render_coverage": 0.5,
+        "selected_but_not_rendered_ids": ["fixture:b"],
+        "rendered_without_selected_ids": ["fixture:foreign"],
+    }
+
+
+def test_selection_render_reconciliation_stays_unknown_without_timeline():
+    from curio.media.selection_metrics import MediaMetricsInput
+
+    metrics = RunMetrics("test", "topic", "narration")
+    metrics.visual_plan((TimelineSpan(1, 2, 0, 2),),
+                        MediaMetricsInput.from_persisted_rows([{
+                            "chapter_id": 1,
+                            "assets": [{"asset": {"provider": "fixture",
+                                                   "asset_id": "a"}}],
+                        }]), 2)
+
+    report = metrics.to_dict({}, {}, "metrics")["pipeline"]
+
+    assert report["visual_timeline_source"] == "estimated_from_selection"
+    assert report["selection_render_reconciliation"]["observed"] is False
+    assert report["selection_render_reconciliation"][
+        "selected_assets_unique"] is None
+
+
 def test_live_media_result_uses_typed_metrics_input_and_missing_scene_is_unknown():
     import pytest
     from curio.media.selection_metrics import MediaMetricsInput
