@@ -25,6 +25,16 @@ def test_pipeline_input_rejects_empty_required_values(kwargs):
         PipelineInput(**kwargs)
 
 
+@pytest.mark.parametrize("kwargs", [
+    {"topic": 42},
+    {"topic": "Black holes", "script": object()},
+    {"topic": "Black holes", "display_title": object()},
+])
+def test_pipeline_input_rejects_non_text_fields(kwargs):
+    with pytest.raises(TypeError):
+        PipelineInput(**kwargs)
+
+
 def test_pipeline_input_is_immutable():
     request = PipelineInput(topic="Black holes")
 
