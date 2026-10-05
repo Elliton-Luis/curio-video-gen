@@ -30,19 +30,15 @@ import time
 from typing import TYPE_CHECKING
 
 from ..config import CurioConfig
-from ..media.asset_snapshot import MediaAssetSnapshot
 from ..media.selection_result import SceneMediaSelection, SelectedAsset
-from ..media.providers import (
-    MediaAsset,
-    MediaError,
-    MediaProvider,
-)
+from ..media.providers import MediaProvider
 from ..media.visual_decision import VisualDecision
 from . import media_rules
 from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
-from .candidate_evaluation import (describe_technical_rejections,
+from .candidate_evaluation import (apply_clip_layer,
+                                  describe_technical_rejections,
                                   evaluate_generic, evaluate_specific)
 from .media_selection import (annotate_reuse, make_selection_decision,
                               RankedSelectionCandidate,
@@ -53,7 +49,6 @@ from .visual_audit import candidate_audit_rows, search_query_audit_rows
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 from .scene_candidate_search import SceneCandidateCollector
-from . import media_acquisition
 
 if TYPE_CHECKING:
     from ..media.selection_result import MediaStageResult
@@ -236,44 +231,8 @@ def _search_scene_with_shortcircuit(
         ranked_candidates.extend(deferred_specific)
     collection = collector.snapshot()
     rejected = list(describe_technical_rejections(collection.rejected, ch))
-    def apply_clip(candidates_to_rank):
-        if not scoring.clip_enabled(cfg) or not candidates_to_rank:
-            return candidates_to_rank
-        status = scoring.clip_status(cfg) or ""
-        if "habilitada (" not in status:
-            return candidates_to_rank
-        shortlist_size = max(1, min(max_images * 2, 10))
-        clip_applied = False
-        for index in range(min(shortlist_size, len(candidates_to_rank))):
-            entry = candidates_to_rank[index]
-            try:
-                downloaded = media_acquisition.download_media(
-                    MediaAsset.from_dict(entry.asset.to_dict()),
-                    cfg.cache_dir, metrics)
-                asset = downloaded.asset
-                if not media_acquisition.downloaded_dimensions_valid(asset):
-                    continue
-                asset_snapshot = MediaAssetSnapshot.from_media_asset(asset)
-                entry = entry.with_prepared_asset(asset_snapshot)
-                clip_score = scoring.clip_score_image(asset.local_path, ch, cfg)
-            except (MediaError, TypeError, OSError):
-                clip_score = None
-            if clip_score is None:
-                candidates_to_rank[index] = entry
-                continue
-            clip_applied = True
-            candidates_to_rank[index] = entry.with_clip_score(
-                clip_score, asset_snapshot)
-        candidates_to_rank.sort(key=lambda item: (
-            -item.score,
-            -item.evaluation.evidence.get("scene_relevance", 0),
-            item.order))
-        if metrics and clip_applied:
-            metrics.media_layers_used["clip"] = metrics.media_layers_used.get("clip", 0) + 1
-            metrics.media_layer_device = scoring.clip_device(cfg)
-        return candidates_to_rank
-
-    ranked_candidates = apply_clip(ranked_candidates)
+    ranked_candidates = apply_clip_layer(
+        ranked_candidates, ch, cfg, metrics, max_images)
 
     def append_low_rejections(entries):
         for entry in entries:
@@ -335,7 +294,8 @@ def _search_scene_with_shortcircuit(
             metrics.media_selection_time += time.monotonic() - score_started
         generic_ranked = [RankedSelectionCandidate.from_evaluation(item)
                           for item in generic_result.accepted]
-        generic_ranked = apply_clip(generic_ranked)
+        generic_ranked = apply_clip_layer(
+            generic_ranked, ch, cfg, metrics, max_images)
         generic_low = [item.to_selection_entry()
                        for item in generic_result.rejected]
         generic_entries = [item.to_selection_entry()

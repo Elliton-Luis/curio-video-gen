@@ -7,6 +7,55 @@ from .media_contracts import (Candidate, CandidateEvaluation, CandidateRejection
                               EvaluationBatch)
 
 
+def apply_clip_layer(candidates: list["RankedSelectionCandidate"], scene,
+                     cfg, metrics, max_images: int
+                     ) -> list["RankedSelectionCandidate"]:
+    """Prepare and rerank the bounded shortlist with optional CLIP evidence."""
+    from ..media.asset_snapshot import MediaAssetSnapshot
+    from ..media.providers import MediaAsset, MediaError
+    from . import media_acquisition
+    from .media_selection import RankedSelectionCandidate
+
+    if not isinstance(candidates, list) or any(
+            not isinstance(item, RankedSelectionCandidate) for item in candidates):
+        raise TypeError("CLIP evaluation requires ranked selection candidates")
+    if not scoring.clip_enabled(cfg) or not candidates:
+        return candidates
+    status = scoring.clip_status(cfg) or ""
+    if "habilitada (" not in status:
+        return candidates
+
+    shortlist_size = max(1, min(max_images * 2, 10))
+    clip_applied = False
+    for index in range(min(shortlist_size, len(candidates))):
+        entry = candidates[index]
+        try:
+            downloaded = media_acquisition.download_media(
+                MediaAsset.from_dict(entry.asset.to_dict()), cfg.cache_dir, metrics)
+            asset = downloaded.asset
+            if not media_acquisition.downloaded_dimensions_valid(asset):
+                continue
+            asset_snapshot = MediaAssetSnapshot.from_media_asset(asset)
+            entry = entry.with_prepared_asset(asset_snapshot)
+            clip_score = scoring.clip_score_image(asset.local_path, scene, cfg)
+        except (MediaError, TypeError, OSError):
+            clip_score = None
+        if clip_score is None:
+            candidates[index] = entry
+            continue
+        clip_applied = True
+        candidates[index] = entry.with_clip_score(clip_score, asset_snapshot)
+
+    candidates.sort(key=lambda item: (
+        -item.score,
+        -item.evaluation.evidence.get("scene_relevance", 0),
+        item.order))
+    if metrics and clip_applied:
+        metrics.media_layers_used["clip"] = metrics.media_layers_used.get("clip", 0) + 1
+        metrics.media_layer_device = scoring.clip_device(cfg)
+    return candidates
+
+
 def evaluate_specific(candidates: list[Candidate], scene,
                       threshold: float) -> EvaluationBatch:
     """Score scene-specific candidates and partition by the semantic gate."""
