@@ -1,7 +1,7 @@
 """Contexto de pesquisa preserva identidade e alinha busca e scoring."""
 
 from curio.stages.entity import TargetEntity
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages import scoring
 from curio.stages.visual_context import fill_missing_context
 from curio.stages.research import ResearchSource

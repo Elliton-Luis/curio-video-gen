@@ -5,7 +5,7 @@ from curio.media.artifacts import (
     selection_cache_is_current,
     write_manifest,
 )
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 
 
 def test_media_selection_signature_tracks_semantics_but_not_timing():

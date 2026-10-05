@@ -21,7 +21,7 @@ from .stages import render as render_stage
 from .stages import scenes as scenes_stage
 from .stages import teleprompter as tele_stage
 from .stages import editorial as editorial_stage
-from .stages.scenes import Chapter
+from .stages.scene_projection import Chapter
 from .stages.scene_contract import SemanticScene, TimelineSpan
 
 

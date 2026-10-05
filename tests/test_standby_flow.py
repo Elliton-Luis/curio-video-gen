@@ -13,7 +13,7 @@ from curio.pipeline import run_pipeline
 from curio.pipeline_media import MediaStandby, manual_media_dir
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from tests.media_test_support import with_selection
 
 

@@ -7,7 +7,6 @@ from untyped dictionaries.  Provenance is additive and survives round trips.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from copy import deepcopy
 from dataclasses import dataclass, field
 from math import isfinite
 
@@ -262,35 +261,6 @@ class SemanticScene:
         errors = self.contract_errors()
         if errors:
             raise ValueError(f"semantic scene {self.id} invalid: {', '.join(errors)}")
-
-    @classmethod
-    def from_chapter(cls, chapter, source: str = "unknown") -> "SemanticScene":
-        """Project the canonical representations and their query mirror."""
-        context = deepcopy(chapter.video_context)
-        representations = tuple(
-            rep for index, value in enumerate(chapter.representations)
-            if (rep := VisualRepresentation.from_value(value, index)))
-        visual_queries = tuple(rep.query for rep in representations)
-        return cls(
-            id=int(chapter.id), narration=str(chapter.narration), source=source,
-            planning_mode=str(getattr(chapter, "planning_mode", "unknown")),
-            visual_type=str(chapter.visual_type), subject=str(chapter.subject),
-            subject_aliases=tuple(chapter.subject_aliases),
-            visual_entities=tuple(chapter.visual_entities),
-            visual_steps=tuple(chapter.visual_steps),
-            context=tuple(chapter.context), forbidden=tuple(chapter.forbidden),
-            video_context=context,
-            visual_intent=str(chapter.visual_intent),
-            visual_intent_structured=str(chapter.visual_intent_structured),
-            primary_entity=str(chapter.primary_entity), event=str(chapter.event),
-            place=str(chapter.place), period=str(chapter.period),
-            text_role=str(chapter.text_role),
-            text_language=str(chapter.text_language),
-            representations=representations,
-            visual_queries=visual_queries,
-            global_visual_queries=tuple(chapter.global_visual_queries),
-            representation_rejections=tuple(chapter.representation_rejections),
-        )
 
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> "SemanticScene":

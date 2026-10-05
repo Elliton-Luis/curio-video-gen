@@ -1,7 +1,7 @@
 from curio.media.providers import MediaAsset
 from curio.stages.candidate_evaluation import evaluate_specific
 from curio.stages.media_contracts import Candidate
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.visual_contracts import SearchQuery
 
 

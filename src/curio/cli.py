@@ -27,7 +27,7 @@ from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from . import pipeline_render as pipeline_render_stage
 from .media.selection_metrics import MediaMetricsInput
 from . import pipeline_media as pipeline_media_stage
-from .stages.scenes import Chapter
+from .stages.scene_projection import Chapter
 from .slug import slugify
 from .stages import nvidia as nvidia_stage
 from .stages import research as research_stage

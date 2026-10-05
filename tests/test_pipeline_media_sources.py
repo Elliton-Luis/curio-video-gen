@@ -1,6 +1,6 @@
 from curio.pipeline_media_sources import record_selected_media
 from curio.media.selection_result import MediaStageResult
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from tests.media_test_support import with_selection
 
 

@@ -17,7 +17,7 @@ from curio.project_paths import video_paths
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
 from curio.stages.script import ScriptArtifact, TitleArtifact
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.scene_contract import ScenePlanResult
 from curio.stages.scene_contract import SemanticScene
 from curio.stages.tts import TTSResult

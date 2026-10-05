@@ -9,7 +9,7 @@ import json
 
 from curio.stages import etymology as E
 from curio.stages import research as R
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 
 
 CANDIDATO_PT = """==Portuguese==

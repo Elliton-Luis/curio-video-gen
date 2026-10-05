@@ -19,7 +19,7 @@ from curio.stages import scenes as S
 from curio.stages import visual as V
 from curio.stages.scene_local_planning import (
     local_visual_representations, recover_legacy_chapters)
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 
 
 N1 = ("Um buraco negro é um objeto astronômico denso e massivo cujo intenso "

@@ -22,7 +22,7 @@ from curio.stages import research as research_stage
 from curio.stages import script as script_stage
 from curio.stages import tts as tts_stage
 from curio.stages import visual as visual_stage, visual_timeline
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from tests.media_test_support import with_selection
 
 pytest.importorskip("PIL")

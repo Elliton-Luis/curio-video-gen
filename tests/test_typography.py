@@ -14,7 +14,8 @@ from dataclasses import replace
 import pytest
 
 from curio.stages import typography as T
-from curio.stages.scenes import Chapter, text_role_for
+from curio.stages.scene_projection import Chapter
+from curio.stages.scenes import text_role_for
 from curio.stages import visuals as V
 from curio.stages.visual_planning import build_visual_plan
 from curio.stages.visual_fallback_planning import build_visual_fallback_plan
@@ -877,7 +878,7 @@ def test_diagrama_sem_genero_usa_a_fonte_de_exibicao(tmp_path):
 
 def test_folha_de_contato_mostra_a_tipografia(tmp_path):
     from curio.stages import review as R
-    from curio.stages.scenes import Chapter
+    from curio.stages.scene_projection import Chapter
     ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
@@ -898,7 +899,7 @@ def test_folha_prefere_o_que_esta_gravado_no_metadata(tmp_path):
     from curio.config import CurioConfig
     from curio.pipeline_metadata import typography_report
     from curio.stages import review as R
-    from curio.stages.scenes import Chapter
+    from curio.stages.scene_projection import Chapter
     gravado = typography_report(CurioConfig(), "people")
     gravado["roles"]["quote"]["family"] = "Cormorant Garamond"
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
@@ -917,7 +918,7 @@ def test_folha_prefere_o_que_esta_gravado_no_metadata(tmp_path):
 
 def test_folha_sem_genero_nao_mostra_tipografia(tmp_path):
     from curio.stages import review as R
-    from curio.stages.scenes import Chapter
+    from curio.stages.scene_projection import Chapter
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
@@ -932,7 +933,7 @@ def test_dry_run_mostra_a_tipografia():
     from curio.config import CurioConfig
     from curio.pipeline_metadata import typography_report
     from curio.stages import review as R
-    from curio.stages.scenes import Chapter
+    from curio.stages.scene_projection import Chapter
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)

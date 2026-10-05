@@ -10,7 +10,7 @@ Contratos garantidos aqui (o resto é escolha estética):
 import pytest
 
 from curio.stages import visual_timeline as VT
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from tests.test_support.visual_timeline import build_visual_timeline
 
 

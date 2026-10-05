@@ -16,7 +16,7 @@ from .audio.artifacts import (TTSCacheManifest, legacy_words_match_text,
 from .stages import subs as subs_stage
 from .stages import tts as tts_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
-from .stages.scenes import Chapter
+from .stages.scene_projection import Chapter
 from .stages.timing import align_word_boundaries, proportional_spans
 
 

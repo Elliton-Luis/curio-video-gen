@@ -21,7 +21,7 @@ from curio.media.providers import MediaAsset
 from curio.metrics import RunMetrics
 from curio.stages import media_rules, scoring
 from curio.stages import visual as V
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 
 
 def _cena_thermal() -> Chapter:

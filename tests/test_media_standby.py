@@ -12,7 +12,7 @@ from curio.pipeline_media import (
 )
 from curio.media.selection_result import MediaStageResult
 from curio.queue import QueueItemStatus, VideoQueue, retry_failed
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 
 
 def _semantic_scenes(n=3):

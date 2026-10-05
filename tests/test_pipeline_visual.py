@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from curio.media.artifacts import media_selection_signature, write_manifest
 from curio.pipeline_visual import resolve_media
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.scoring import threshold
 from tests.media_test_support import with_selection
 

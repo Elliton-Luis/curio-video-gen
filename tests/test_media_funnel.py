@@ -4,7 +4,7 @@ from curio.config import CurioConfig
 from curio.media.providers import MediaAsset
 from curio.metrics import RunMetrics
 from curio.stages import media_acquisition, visual, scoring
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from tests.test_support.search_plan import patch_search_plan
 
 

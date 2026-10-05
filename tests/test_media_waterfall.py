@@ -7,7 +7,7 @@ from curio.media.providers import MediaAsset, MediaError
 from curio.metrics import RunMetrics
 from curio.media.providers import min_dimension as media_rules_min_dimension
 from curio.stages import media_acquisition, visual as V
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.visual_planning import build_visual_plan
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 

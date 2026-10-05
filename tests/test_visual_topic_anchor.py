@@ -2,7 +2,8 @@
 
 from curio.stages import scoring
 from curio.stages.entity import TargetEntity
-from curio.stages.scenes import Chapter, build_local_semantic_scenes
+from curio.stages.scene_projection import Chapter
+from curio.stages.scenes import build_local_semantic_scenes
 from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages.scene_local_planning import local_visual_representations
 

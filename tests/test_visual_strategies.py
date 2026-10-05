@@ -7,7 +7,7 @@ import pytest
 
 from curio.config import CurioConfig
 from curio.stages import scoring, visuals
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.scene_contract import SemanticScene
 from curio.stages.visual_contracts import VisualRepresentation
 from curio.stages.visual_fallback_planning import (

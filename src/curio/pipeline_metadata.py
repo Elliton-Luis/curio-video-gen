@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from .media.selection_result import MediaStageResult
 from .runlog import current_log_path
-from .stages.scenes import Chapter
+from .stages.scene_projection import Chapter
 
 
 def typography_report(cfg, genre_key: str = "") -> dict:

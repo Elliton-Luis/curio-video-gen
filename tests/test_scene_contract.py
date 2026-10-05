@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from curio.stages.scene_contract import (Alias, SemanticScene, VideoContext,
                                          VisualRepresentation)
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 
 
 def test_legacy_scene_json_roundtrips_into_typed_contract_and_back():

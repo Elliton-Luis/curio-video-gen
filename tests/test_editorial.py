@@ -13,7 +13,8 @@ import pytest
 
 from curio.config import CurioConfig
 from curio.stages import editorial as E
-from curio.stages.scenes import Chapter, scenes_for_length
+from curio.stages.scene_projection import Chapter
+from curio.stages.scenes import scenes_for_length
 from curio.stages.visual_planning import build_visual_plan
 from curio.stages.visual_fallback_planning import build_visual_fallback_plan
 
@@ -551,7 +552,7 @@ def test_banner_vazio_sem_genero_ou_genero_desconhecido():
 
 def test_dry_run_mostra_o_genero_e_nao_mostra_quando_nao_ha():
     from curio.stages import review as R
-    from curio.stages.scenes import Chapter
+    from curio.stages.scene_projection import Chapter
     ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("editorial_fixture") for c in ch)
@@ -564,7 +565,7 @@ def test_dry_run_mostra_o_genero_e_nao_mostra_quando_nao_ha():
 
 def test_folha_de_contato_mostra_o_genero(tmp_path):
     from curio.stages import review as R
-    from curio.stages.scenes import Chapter
+    from curio.stages.scene_projection import Chapter
     ch = [Chapter(id=1, narration="Uma cena.", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("editorial_fixture") for c in ch)

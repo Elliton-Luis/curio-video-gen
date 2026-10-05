@@ -25,7 +25,7 @@ from .stages import render as render_stage
 from .stages import subs as subs_stage
 from .stages import transcribe as transcribe_stage
 from .stages import visual_timeline as visual_timeline_stage
-from .stages.scenes import Chapter
+from .stages.scene_projection import Chapter
 from .stages.scene_contract import TimelineSpan
 from .stages.visual_beats import BEAT_SECONDS
 

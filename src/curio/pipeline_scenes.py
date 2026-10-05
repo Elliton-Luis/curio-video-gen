@@ -21,7 +21,7 @@ from .stages.scene_plan_artifact import (ScenePlanManifest, plan_from_dict,
                                          plan_to_dict, read_manifest,
                                          scene_plan_inputs_signature,
                                          write_manifest)
-from .stages.scenes import Chapter
+from .stages.scene_projection import Chapter
 
 
 @dataclass(frozen=True)

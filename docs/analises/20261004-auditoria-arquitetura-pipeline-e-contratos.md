@@ -480,3 +480,11 @@ resultado, a auditoria, o evento e as métricas agora usam o `VisualFallbackPlan
 canônico do contador; `synth_diagrams` permanece apenas como alias público no
 JSON. G41 passou com **903 testes em 178,91 s**. A fase muda somente
 observabilidade, sem alterar bytes ou aquisição.
+
+## G42 — projeção `Chapter` isolada do planejador
+
+A leitura do código confirmou que `stages/scenes.py` já produz `SemanticScene`, mas ainda definia a classe persistida `Chapter` junto ao planner. Essa classe concentra o schema histórico `chapters.json`, espelho de query, serialização, conversões `SemanticScene`/`TimelineSpan` e normalização de dados antigos. A conversão `Chapter → SemanticScene` ainda estava implementada no próprio contrato semântico, o que invertia a direção de dependência. Os únicos outros vínculos com lógica de planejamento eram `classify_visual_type` e os validadores/coercers de query/representation usados ao carregar o formato legado.
+
+G42 moveu `Chapter` e a conversão `Chapter → SemanticScene` para `stages/scene_projection.py`; `scene_contract.py` não conhece mais o formato legado. A desserialização delega explicitamente a normalização legada aos helpers do planner na fronteira de leitura; isso mantém o comportamento dos projetos existentes sem fazer consumidores internos importarem o módulo planner para obter o formato de persistência. CLI, pipeline e testes importam agora do módulo dono. `stages.scenes.Chapter` permanece apenas como reexport externo temporário para compatibilidade.
+
+Contrato preservado: leitura/escrita de `chapters.json`, round-trip semântico/timeline, normalização das representações e aceitação dos capítulos históricos. Critério desta fase: testes de contrato/integração e suíte total verdes, ausência de imports internos da classe pelo planner, `compileall` e `git diff --check`. A projeção ainda é uma estrutura compatível ampla; separar semanticamente seus campos internos fica para uma fase posterior, quando os últimos consumidores do schema forem migrados.

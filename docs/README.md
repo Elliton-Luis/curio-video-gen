@@ -163,3 +163,5 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `melhorias/20260928-123219_melhoria_backlog-v1.md` — 9 itens priorizados
   (Piper TTS, base curada 10 temas, validador editorial, templates visuais,
   testes de fumaça, `batch`, …).
+
+- `relatorios/20261005-scene-projection-boundary.md` — separa o modelo de compatibilidade `Chapter` do planner de cenas.

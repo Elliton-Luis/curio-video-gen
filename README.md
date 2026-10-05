@@ -182,8 +182,9 @@ legado sem manifesto só é migrado quando metadata e transcrição comprovam o
 mesmo roteiro. Se o roteiro mudar, a invalidação chega explicitamente ao áudio,
 e o MP4 final só é reutilizado quando o áudio usado nele continua vigente.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
-`TimelineSpan[]` separados; `Chapter` permanece como projeção de compatibilidade
-para metadata e formatos externos.
+`TimelineSpan[]` separados; `Chapter` vive em
+`stages/scene_projection.py` como projeção de compatibilidade para metadata e
+formatos externos; `stages/scenes.py` mantém apenas reexport legado.
 Aquisição por provider e mídia manual recebem somente `SemanticScene`; reuse
 consulta a mesma intenção tipada, sem adaptadores de Chapter.
 O metadata recebe semântica e timing tipados e só materializa `chapters` ao

@@ -9,7 +9,7 @@ from curio.media import providers as P
 from curio.metrics import RunMetrics
 from curio.stages import media_acquisition, scoring, visual
 from curio.stages.media_provider_policy import ordered_providers
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.visual_planning import build_visual_plan
 from tests.test_support.search_plan import patch_search_plan
 

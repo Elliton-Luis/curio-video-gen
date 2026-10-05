@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 
 from curio.stages.entity import TargetEntity
-from curio.stages.scenes import Chapter, build_local_semantic_scenes, classify_visual_type
+from curio.stages.scene_projection import Chapter
+from curio.stages.scenes import build_local_semantic_scenes, classify_visual_type
 from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages import media_acquisition, visual
 from curio.stages.scene_local_planning import local_visual_representations

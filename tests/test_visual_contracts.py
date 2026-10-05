@@ -1,4 +1,4 @@
-from curio.stages.scenes import Chapter
+from curio.stages.scene_projection import Chapter
 from curio.stages.scene_contract import SemanticScene
 from curio.stages.scene_local_planning import (
     local_visual_representations, recover_legacy_chapters)
