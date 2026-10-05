@@ -822,3 +822,27 @@ Regressões cobrem inputs atuais, mudança de pesquisa, título ligado a script
 antigo, manifesto v1, edição manual e artefatos legados sem manifesto. 14 testes
 focados passaram; suíte integral: **909 testes em 192,93 s**; compileall e diff
 check passaram. Código em `3ef2f38` e `4163fdf`; regressões em `bb07252`.
+
+## G22: seleção de mídia tipada na fronteira do estágio
+
+`MediaStageResult` ainda carregava cenas como `list[dict]`; o coordenador e o
+registro de direitos voltavam a interpretar os mesmos campos para descobrir
+asset, decisão, provider e contagens. Isso permitia que consumidores divergentes
+contassem/lessem a seleção de modos diferentes.
+
+O contrato agora pertence a `media/selection_result.py`: `SelectedAsset`,
+`SceneMediaSelection` e `MediaStageResult` validam identidade de cena/asset,
+coerência com `SelectionDecision` e números finitos. Contagens real/sintético/
+ausente são derivadas de uma única seleção tipada. `pipeline_media_sources`
+consome diretamente a seleção para direitos e proveniência. Para os consumidores
+ainda não migrados, `to_rows()` é uma projeção explícita e isolada do formato
+persistido; preserva campos adicionais existentes sem mutação. Assim, timeline,
+render, revisão e metadata continuam compatíveis enquanto migram para contratos
+próprios.
+
+Regressões verificam round-trip sem alteração do schema, isolamento da projeção,
+validação de identidade/decisão e registro de direitos a partir do contrato.
+26 testes focados passaram; a suíte integral após a refatoração: **911 testes**;
+`compileall` e `git diff --check` passaram. O contrato não muda escolha editorial,
+cache nem fallback. Próxima migração: consumidores de timeline/render e metadata,
+um limite por fase.

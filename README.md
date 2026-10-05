@@ -216,8 +216,10 @@ o coordenador os mescla explicitamente, sem emprestar seus dict/list de estado.
 e rerender migram para o contrato separado.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com origem explícita; o
-contrato valida IDs únicos, coerência entre asset/entries/decision e os totais
-de seleção. O mesmo estágio registra a auditoria por cena e distingue seleção real,
+contrato tipado em `media/selection_result.py` valida IDs únicos, identidade e
+coerência entre asset/entries/decision. Contagens de seleção são derivadas desse
+contrato. `to_rows()` projeta explicitamente o schema persistido para consumidores
+ainda em migração. O estágio registra auditoria por cena e distingue seleção real,
 sintética e cena sem visual; o
 `pipeline_media_sources.py` registra direitos/proveniência e retorna créditos e
 avisos explícitos; o mesmo componente persiste `sources.json` e `FONTES.md` nos

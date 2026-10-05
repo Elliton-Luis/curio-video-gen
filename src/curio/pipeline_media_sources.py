@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .media.providers import classify_rights
+from .media.selection_result import SceneMediaSelection
 from .stages import sources as sources_stage
 from .stages.scene_contract import SemanticScene
 
@@ -32,44 +33,43 @@ def persist_source_artifacts(registry, paths, *, research=(), grounding=None,
     }
 
 
-def record_selected_media(scenes: list[SemanticScene], selections: list[dict],
+def record_selected_media(scenes: list[SemanticScene],
+                          selections: tuple[SceneMediaSelection, ...],
                           registry) -> MediaSourceResult:
     """Write provenance for downloaded assets and return editorial notices."""
     labels = {scene.id: _scene_label(scene) for scene in scenes}
     notes: list[str] = []
     credits: list[str] = []
     for selected in selections:
-        scene_id = int(selected["chapter_id"])
+        scene_id = selected.scene_id
         label = labels.get(scene_id, f"cena {scene_id}")
-        for entry in selected.get("assets") or []:
-            asset = entry.get("asset") or {}
-            if not asset.get("local_path"):
+        for entry in selected.assets:
+            asset = entry.asset
+            if not asset.local_path:
                 continue
-            rights = asset.get("rights_status", "") or classify_rights(
-                asset.get("license", ""), asset.get("provider", ""))
-            asset["rights_status"] = rights
+            rights = asset.rights_status or classify_rights(
+                asset.license, asset.provider)
             title = sources_stage.media_record_title(
-                scene_label=label, provider=asset.get("provider", ""),
-                asset_id=asset.get("asset_id", ""),
-                fallback=str(asset.get("title", ""))[:80])
+                scene_label=label, provider=asset.provider,
+                asset_id=asset.asset_id, fallback=asset.title[:80])
             registry.add_media(
-                title=title, origin_url=asset.get("source_url", ""),
-                file_url=asset.get("download_url", ""),
-                provider=asset.get("provider", ""),
-                author=asset.get("author", ""),
-                license=asset.get("license", ""),
-                license_url=asset.get("license_url", ""),
-                local_path=asset.get("local_path", ""),
+                title=title, origin_url=asset.source_url,
+                file_url=asset.download_url,
+                provider=asset.provider,
+                author=asset.author,
+                license=asset.license,
+                license_url=asset.license_url,
+                local_path=asset.local_path,
                 used_in=f"cena {scene_id}", rights_status=rights,
-                query=entry.get("query", ""), scene=f"cena {scene_id}",
-                asset_id=asset.get("asset_id", ""))
-            _append_attribution(asset, scene_id, credits, notes)
+                query=entry.query, scene=f"cena {scene_id}",
+                asset_id=asset.asset_id)
+            _append_attribution(asset.to_dict(), scene_id, credits, notes)
             if rights == "verify":
                 _append_unique(notes, (
-                    f"Cena {scene_id}: '{asset.get('title', '')[:60]}' entrou no vídeo com "
-                    f"licença a conferir ({asset.get('provider', '')}: "
-                    f"{asset.get('license') or 'desconhecida'}) — confira em "
-                    f"{asset.get('license_url') or asset.get('source_url') or 'sem link'}"))
+                    f"Cena {scene_id}: '{asset.title[:60]}' entrou no vídeo com "
+                    f"licença a conferir ({asset.provider}: "
+                    f"{asset.license or 'desconhecida'}) — confira em "
+                    f"{asset.license_url or asset.source_url or 'sem link'}"))
     return MediaSourceResult(tuple(credits), tuple(notes))
 
 

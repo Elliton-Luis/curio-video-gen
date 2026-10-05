@@ -57,7 +57,7 @@ def test_resolve_media_consumes_only_cache_with_current_manifest(tmp_path, monke
                            metrics=None, force=False, write_json=_write_json)
 
     assert result.source == "project-cache"
-    assert result.scenes == selected
+    assert result.to_rows() == selected
 
 
 def test_resolve_media_researches_when_manifest_signature_is_stale(tmp_path, monkeypatch):
@@ -86,7 +86,7 @@ def test_resolve_media_researches_when_manifest_signature_is_stale(tmp_path, mon
                            metrics=None, force=False, write_json=_write_json)
 
     assert result.source == "provider"
-    assert result.warnings == ["refresh"]
+    assert result.warnings == ("refresh",)
     assert len(calls) == 1
     assert json.loads(open(paths.media_manifest_json, encoding="utf-8").read())[
         "input_signature"] != "old-signature"
@@ -104,11 +104,11 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
         media_record_scene_decision=lambda scene_id, decision:
             decisions.append((scene_id, decision)))
     scenes = [
-        {"chapter_id": 1, "asset": {"provider": "wikimedia"},
-         "assets": [{"asset": {"provider": "wikimedia"}}],
+        {"chapter_id": 1, "asset": {"provider": "wikimedia", "asset_id": "real"},
+         "assets": [{"asset": {"provider": "wikimedia", "asset_id": "real"}}],
          "visual_decision": {"state": "real"}},
-        {"chapter_id": 2, "asset": {"provider": "synth"},
-         "assets": [{"asset": {"provider": "synth"}}]},
+        {"chapter_id": 2, "asset": {"provider": "synth", "asset_id": "synthetic"},
+         "assets": [{"asset": {"provider": "synth", "asset_id": "synthetic"}}]},
         {"chapter_id": 3, "asset": None, "assets": []},
     ]
 
@@ -125,7 +125,7 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
 
 def test_media_stage_rejects_mismatched_selection_and_asset():
     import pytest
-    from curio.pipeline_visual import MediaStageResult
+    from curio.media.selection_result import MediaStageResult
 
     scene = {"chapter_id": 1,
              "asset": {"provider": "wikimedia", "asset_id": "chosen"},
@@ -135,7 +135,7 @@ def test_media_stage_rejects_mismatched_selection_and_asset():
                  "scene_id": 2, "status": "real", "asset_id": "chosen",
                  "provider": "wikimedia", "reason": "selected"}}}
     with pytest.raises(ValueError, match="another scene"):
-        MediaStageResult([scene], "provider", [], 1, 0, 0)
+        MediaStageResult.from_rows([scene], "provider")
 
 
 def test_selection_decision_roundtrip_validates_identity():

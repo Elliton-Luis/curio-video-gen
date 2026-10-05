@@ -87,7 +87,7 @@ def test_cross_scene_reuse_prefers_scene_relevance_then_nearest_donor():
 
 
 def test_cross_scene_reuse_updates_the_selection_contract():
-    from curio.pipeline_visual import MediaStageResult
+    from curio.media.selection_result import MediaStageResult
     from curio.stages.scene_contract import SemanticScene
     from curio.stages.visual import _resolve_reuse_multi
 
@@ -120,7 +120,7 @@ def test_cross_scene_reuse_updates_the_selection_contract():
 
     _resolve_reuse_multi(media_scenes, scenes)
     reused = media_scenes[1]
-    outcome = MediaStageResult(media_scenes, "provider", [], 2, 0, 0)
+    outcome = MediaStageResult.from_rows(media_scenes, "provider")
 
     assert outcome.real_scenes == 2
     assert reused["reused_from"] == 1
@@ -130,3 +130,40 @@ def test_cross_scene_reuse_updates_the_selection_contract():
     assert reused["visual_decision"]["selection"]["asset_id"] == "ottoman-map"
     assert reused["visual_decision"]["selection"]["fallback_level"] == (
         "validated_reuse")
+
+
+def test_media_stage_result_uses_typed_scene_selection_and_roundtrips_project_row():
+    from curio.media.providers import MediaAsset
+    from curio.media.selection_result import (MediaStageResult,
+                                              SceneMediaSelection)
+
+    rows = [{
+        "chapter_id": 1,
+        "asset": {"provider": "wikimedia", "asset_id": "map-1",
+                  "title": "Historical map"},
+        "assets": [{"asset": {"provider": "wikimedia", "asset_id": "map-1",
+                                "title": "Historical map"},
+                    "query": "historical map", "score": 87.5}],
+        "visual_decision": {"selected": {"asset_id": "map-1"}},
+        "extension_field": {"source": "legacy"},
+    }]
+    result = MediaStageResult.from_rows(rows, "provider")
+
+    assert isinstance(result.scenes[0], SceneMediaSelection)
+    assert isinstance(result.scenes[0].asset, MediaAsset)
+    assert result.scenes[0].assets[0].query == "historical map"
+    assert result.real_scenes == result.selected_asset_count == 1
+    assert result.to_rows() == rows
+    projected = result.to_rows()
+    projected[0]["asset"]["title"] = "mutated projection"
+    assert result.scenes[0].asset.title == "Historical map"
+
+
+def test_media_stage_result_rejects_selected_asset_without_identity():
+    import pytest
+    from curio.media.selection_result import MediaStageResult
+
+    with pytest.raises(ValueError, match="provider and asset id"):
+        MediaStageResult.from_rows(
+            [{"chapter_id": 1, "asset": {"provider": "wikimedia"},
+              "assets": []}], "provider")

@@ -1,4 +1,5 @@
 from curio.pipeline_media_sources import record_selected_media
+from curio.media.selection_result import MediaStageResult
 from curio.stages.scenes import Chapter
 
 
@@ -20,12 +21,16 @@ def test_selected_asset_provenance_records_credit_and_missing_author_warning():
              "local_path": "/tmp/mohacs.jpg", "author": ""}
     registry = _Registry()
 
+    selections = MediaStageResult.from_rows(
+        [{"chapter_id": 1,
+          "asset": asset,
+          "assets": [{"asset": asset, "query": "Battle of Mohács"}]}],
+        "provider").scenes
     result = record_selected_media(
-        [scene], [{"chapter_id": 1,
-                   "assets": [{"asset": asset, "query": "Battle of Mohács"}]}],
+        [scene], selections,
         registry)
 
-    assert asset["rights_status"] == "clear"
+    assert registry.media[0]["rights_status"] == "clear"
     assert registry.media[0]["title"] == (
         "cena 1 · Battle of Mohács [wikimedia_mohacs-1]")
     assert registry.media[0]["query"] == "Battle of Mohács"
@@ -42,12 +47,16 @@ def test_unknown_license_is_registered_with_explicit_verification_note():
              "local_path": "/tmp/object.jpg", "author": "Artist"}
     registry = _Registry()
 
+    selections = MediaStageResult.from_rows(
+        [{"chapter_id": 1,
+          "asset": asset,
+          "assets": [{"asset": asset, "query": "historical object"}]}],
+        "provider").scenes
     result = record_selected_media(
-        [scene], [{"chapter_id": 1,
-                   "assets": [{"asset": asset, "query": "historical object"}]}],
+        [scene], selections,
         registry)
 
-    assert asset["rights_status"] == "verify"
+    assert registry.media[0]["rights_status"] == "verify"
     assert not result.credits
     assert len(result.rights_notes) == 1
     assert "licença a conferir" in result.rights_notes[0]

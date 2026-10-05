@@ -254,18 +254,18 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     media_result = pipeline_visual_stage.resolve_media(
         semantic_scenes, cfg, paths, max_images, genre_key, metrics,
         force_after_script, project_artifacts.write_json)
-    media_scenes = media_result.scenes
+    media_scenes = media_result.to_rows()
     warnings.extend(media_result.warnings)
     provenance = pipeline_media_sources_stage.record_selected_media(
-        semantic_scenes, media_scenes, sources)
+        semantic_scenes, media_result.scenes, sources)
     media_rights_notes = list(provenance.rights_notes)
     credits = list(provenance.credits)
     stage_times["media"] = round(time.monotonic() - media_t0, 2)
     emit(3, "Buscando mídia",
-         "AVISO" if any(s["asset"] is None for s in media_scenes) else "OK")
+         "AVISO" if media_result.scenes_without_visual else "OK")
 
     # Sem nenhuma imagem o vídeo NÃO é produzido: standby até fotos manuais.
-    if pipeline_media_stage.count_assets(media_scenes) == 0:
+    if media_result.selected_asset_count == 0:
         pipeline_media_stage.write_manual_readme(manual_dir, slug, len(semantic_scenes))
         sources.save(paths.sources_json)
         sources_stage.write_report(paths.sources_report, sources,
