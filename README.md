@@ -197,6 +197,9 @@ G73 (`7b965a1`) mantém as shortlists fresh e reutilizada tipadas até cada cand
 G74 (`57a9a21`) representa sucesso e rejeições de cada tentativa com `CandidateAcquisitionOutcome`, preservando origem, identidade e motivo.
 G75 (`c4ef8c5`) extrai as tentativas de aquisição de mídia para um owner próprio;
 `visual.py` conserva a política de fallback sintético e reuso.
+G76 (`b87ba98`) unifica download/cache e validação técnica dos caminhos fresh e
+reuse sob `TechnicalAcquisitionAttempt`, preservando o tratamento editorial de
+cada caminho.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).

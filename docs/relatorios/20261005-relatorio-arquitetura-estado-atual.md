@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G75.
+**Escopo:** auditoria documentada e migrações incrementais até G76.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -93,6 +93,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `7b965a1` | Mantém shortlist e reserva de reuso como `RankedSelectionCandidate` até cada tentativa de aquisição (G73). |
 | `57a9a21` | Modela sucesso/falha técnica por candidato como `CandidateAcquisitionOutcome`, com projeções distintas para seleção e auditoria (G74). |
 | `c4ef8c5` | Extrai tentativas de aquisição dos candidatos ranqueados para `media_candidate_acquisition.py`; fallback editorial permanece em `visual.py` (G75). |
+| `b87ba98` | Unifica download/cache/validação dimensional dos caminhos fresh e reuse por `TechnicalAcquisitionAttempt` (G76). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -208,6 +209,10 @@ G75 (`c4ef8c5`): `src/curio/stages/media_candidate_acquisition.py` (novo),
 gates técnicos pós-download e outcomes. `visual.py` mantém a ordem de fallback
 fresh → sintético → reuso. A aquisição ainda atualiza métricas/logging e consulta
 uso cross-scene para deduplicação; esses owners seguem como dívida registrada.
+G76 (`b87ba98`) altera `media_candidate_acquisition.py` e
+`tests/test_media_selection.py`. A operação de download/cache e validação de
+dimensões agora é compartilhada e emite `TechnicalAcquisitionAttempt`; o
+tratamento de rejeições fresh e a decisão de reuse continuam distintos.
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
@@ -225,7 +230,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G75 commitadas; parcial. | `visual.py` ainda possui a política de fallback; acquisition conserva efeitos de metrics/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G76 commitadas; parcial. | `visual.py` ainda possui a política de fallback; acquisition conserva janela/futures, effects de metrics/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -294,6 +299,9 @@ Wikipédia em 172,28 s. Compileall e diff check passaram; sem geração real.
 G75: bateria focada: **102 passaram**; suíte ampla: **943 passaram, 1
 desmarcado** por HTTP 429 da Wikipédia em **171,12 s**. Compileall e diff check
 passaram; sem geração real. Ver [relatório G75](20261005-candidate-media-acquisition.md).
+G76: **103 focados**; suíte ampla: **944 passaram, 1 desmarcado** por HTTP 429
+da Wikipédia em **171,65 s**. Compileall e diff check passaram; sem geração
+real. Ver [relatório G76](20261005-shared-technical-acquisition-attempt.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -726,3 +734,16 @@ desmarcado por HTTP 429 em 171,12 s. Compileall e diff check passaram. Sem
 geração real. A extração ainda deixa efeitos de métricas/logging e deduplicação
 cross-scene dentro do owner de aquisição; são limites a auditar, não divergências
 que esta fase tenha eliminado. Ver o [relatório G75](20261005-candidate-media-acquisition.md).
+
+## G76 — tentativa técnica comum fresh/reuse (`b87ba98`)
+
+G76 unificou download/cache, timeout e validação de dimensões para candidatos
+fresh e reutilizados por meio de `TechnicalAcquisitionAttempt` e
+`_acquire_and_validate()`. O caminho fresh preserva janela concorrente e
+auditoria de falhas; o caminho de reuso continua avançando quando uma tentativa
+falha. A ordem editorial e a deduplicação permanecem intactas.
+
+103 testes focados passaram; suíte ampla: 944 passaram e 1 teste externo foi
+desmarcado por HTTP 429 em 171,65 s. Compileall e diff check passaram; sem
+geração real. A aquisição ainda concentra janela/futures, deduplicação,
+metrics/logging e efeitos operacionais. Ver [relatório G76](20261005-shared-technical-acquisition-attempt.md).
