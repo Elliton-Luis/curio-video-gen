@@ -500,3 +500,7 @@ Contrato preservado: leitura/escrita de `chapters.json`, round-trip semântico/t
 ## G45 — pedido de render explícito
 
 O novo `run_render_stage` possuía entrada com muitos argumentos posicionais, frágil a trocas e sem validar todos os invariantes na construção. G45 introduz `RenderStageInput`: verifica batch semântico/span, correspondência com `SceneRenderPlan`, formato da timeline/configuração visual, duração finita positiva e tipos das flags/metadata textuais. O coordenador monta o pedido por nomes e o executor consome somente o contrato validado. Regressão garante erro antes de efeitos quando IDs de cenas e spans divergem.
+
+## G46 — projeção assistida de metadata no owner
+
+`_run_pipeline` ainda montava o schema final de geração assistida, lendo campos de pesquisa, título, TTS, timeline, render e áudio e ligando-os diretamente ao JSON público. G46 moveu essa projeção para `pipeline_metadata.build_assisted_run_metadata`, que consome `ResearchStageResult`, `ScriptStageResult`, `SceneStageResult`, `AudioStageResult`, `VisualTimelineResult` e `RenderStageResult`, além dos valores de execução. O coordenador persiste fontes e encaminha os resultados; o formato externo permanece igual. A suíte específica de metadata/pipeline confirmou campos e artefatos após a migração.

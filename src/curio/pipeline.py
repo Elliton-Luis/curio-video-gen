@@ -199,9 +199,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     research = research_output.result
     research_sources = research.sources
     research_target = research.target
-    research_rejected = research.rejected
     research_etymology = research.etymology
-    research_status = research_output.status
     research_pack = research_output.prompt
     stage_times["research"] = research_output.elapsed
 
@@ -309,11 +307,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         paths, cfg, audio_force, metrics, emit,
         project_artifacts.write_json, pacing=pacing, caption_style=cap_style)
     timeline_spans = audio_result.timeline_spans
-    words = audio_result.words
     audio_duration = audio_result.audio_duration
     tts_info = audio_result.tts_info
-    timed_source = audio_result.timed_source
-    cue_count = audio_result.cue_count
     subs_changed = audio_result.subtitles_changed
     warnings.extend(audio_result.warnings)
     stage_times.update(audio_result.stage_times)
@@ -343,13 +338,9 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     render_result = pipeline_render_stage.run_render_stage(render_request)
     render_info = render_result.render_info
     video_duration = render_result.duration
-    sfx_path = render_result.sfx_path
-    new_audio_meta = render_result.audio_metadata
     warnings.extend(render_result.warnings)
     credits.extend(render_result.credits)
     stage_times["render"] = render_result.elapsed
-    transition_plan = render_result.transition_plan
-    visual_plan_signature = render_result.visual_plan_signature
     run_event("result", f"Render: {render_info['backend']} / "
               f"{render_info['encoder']}; {video_duration:.1f}s",
               operation="render", backend=render_info["backend"],
@@ -358,92 +349,19 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     emit(6, "Montando vídeo", "OK")
 
     finalize_started = time.monotonic()
-    metadata = pipeline_metadata_stage.build_base_metadata(
-        idea, slug, cfg, script_text, script_source,
-        tuple(semantic_scenes), timeline_spans, scenes_source, media_result,
-        warnings, stage_times, metrics, started)
-    metadata.update({
-        "genre": genre_key,
-        "scene_context_enrichment": enrichment.to_dict(),
-        "project_dir": os.path.relpath(paths.root, cfg.out_dir),
-        "genre_profile": editorial_stage.summary(perfil),
-        "typography": pipeline_metadata_stage.typography_report(cfg, genre_key),
-        "narration": "ai",
-        "mode": "script" if script_mode else "idea",
-        "video_title": video_title,
-        "title_source": title_source,
-        "timeline_source": timed_source,
-        "duration_actual": round(video_duration, 2),
-        "audio_duration": round(audio_duration, 2),
-        "subtitle_cues": cue_count,
-        "subtitle_source": ("wordboundary" if words and
-                            tts_info["provider"] == "edge-tts"
-                            else "proporcional"),
-        "tts_provider": tts_info["provider"],
-        "tts_voice": tts_info["voice"],
-        "tts_speed": tts_info["speed"],
-        "tts_reused": tts_info["reused"],
-        "render_backend": render_info["backend"],
-        "render_encoder": render_info["encoder"],
-        "visual": ({
-            "max_images": max_images,
-            "overlap_cap": overlap_cap,
-            "sfx": bool(sfx_path),
-            "insertions": timeline_result.insertion_count,
-            "insert_budget": insert_budget,
-            "insert_style": cfg.visual_insert_style,
-            "insert_gain_db": cfg.visual_insert_gain_db,
-        } if max_images > 1 else None),
-        "audio": new_audio_meta,
-        "visual_transition_signature": transition_plan.signature,
-        "visual_plan_signature": visual_plan_signature,
-        "visual_transitions": render_result.transition_metadata,
-        "sources": {
-            "claims": len(sources.claims),
-            "media": len(sources.media),
-            "report": paths.sources_report,
-            "blocked_media": sum(1 for m in sources.media
-                                 if m.rights_status == "blocked"),
-            # Créditos prontos: só entra o que a licença exige de fato.
-            "credits": credits,
-        },
-        "research": {
-            "sources": len(research_sources),
-            "status": research_status,
-            "titles": [rs.title for rs in research_sources],
-            "etymology": (research_etymology.to_dict()
-                          if research_etymology is not None else None),
-            "grounding": grounding,
-            "target_entity": (research_target.to_dict()
-                              if research_target is not None else None),
-            "rejected": [{"title": s.title, "reason": m}
-                         for s, m, _d in research_rejected],
-        },
-        "artifacts": {
-            "script": paths.script_txt,
-            "title": paths.title_txt,
-            "script_manifest": paths.script_manifest_json,
-            "research": paths.research_json,
-            "chapters": paths.chapters_json,
-            "media": paths.media_json,
-            "audio": paths.narration_wav,
-            "words": paths.words_json,
-            "timeline": paths.timeline_json,
-            **({"visual_timeline": paths.visual_json}
-               if max_images > 1 else {}),
-            **({"sfx": sfx_path} if sfx_path else {}),
-            **({"music": render_result.music_path}
-               if render_result.music_path else {}),
-            "subtitles": paths.subs_srt,
-            "subtitles_ass": paths.subs_ass,
-            "silent": paths.silent_mp4,
-            "video": paths.final_mp4,
-        },
-    })
     source_summary = pipeline_media_sources_stage.persist_source_artifacts(
         sources, paths, research=research_sources, grounding=grounding,
         media_notes=media_rights_notes, credits=credits)
-    metadata["sources"] = source_summary
+    metadata = pipeline_metadata_stage.build_assisted_run_metadata(
+        idea=idea, slug=slug, cfg=cfg, paths=paths,
+        script_result=script_result, research_output=research_output,
+        scene_result=scene_result, media_result=media_result,
+        audio_result=audio_result, render_result=render_result,
+        visual_timeline_result=timeline_result, source_summary=source_summary,
+        genre=genre_key, script_mode=script_mode, max_images=max_images,
+        overlap_cap=overlap_cap, insert_budget=insert_budget,
+        warnings=warnings, stage_times=stage_times, metrics=metrics,
+        started=started)
     # Folha de contato: o autor revisa o vídeo em ~1 min sem assistir.
     from .stages import review as review_stage
     review_stage.write_contact_sheet(

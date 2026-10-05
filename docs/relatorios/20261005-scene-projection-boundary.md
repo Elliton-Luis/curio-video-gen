@@ -66,3 +66,17 @@ Validação G45: contrato/política: 11 passaram; pipeline, TTS, render e cache:
 34 passaram em 119,48 s. `compileall` e `git diff --check` passaram. A suíte
 integral permanece em 904 testes verdes após G44; a validação integral final
 será repetida após a série estrutural.
+
+## Continuação G46 — projeção assistida de metadata
+
+A montagem dos campos do JSON assistido saiu de `_run_pipeline` e foi para
+`pipeline_metadata.build_assisted_run_metadata`. A função consome os resultados
+tipados de pesquisa, roteiro, cenas, áudio, timeline e render. O coordenador
+continua responsável pela ordem dos estágios e persistência do registro de
+fontes; o schema salvo foi preservado.
+
+Validação focada de metadata, integração e cenas: **15 passaram em 46,72 s**.
+A suíte completa será repetida antes do commit.
+
+Validação integral após G46: **904 passaram em 174,16 s**; `compileall` e
+`git diff --check` passaram.

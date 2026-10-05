@@ -189,6 +189,9 @@ Aquisição por provider e mídia manual recebem somente `SemanticScene`; reuse
 consulta a mesma intenção tipada, sem adaptadores de Chapter.
 O metadata recebe semântica e timing tipados e só materializa `chapters` ao
 serializar o schema existente.
+`pipeline_metadata.build_assisted_run_metadata` projeta resultados tipados de
+pesquisa, roteiro, cenas, áudio, timeline e render no JSON público; `_run_pipeline`
+coordena os estágios sem montar esse schema campo a campo.
 O resultado de planejamento/enrichment carrega apenas cenas semânticas e
 spans; `Chapter` é criado nas fronteiras que serializam ou consomem o formato
 histórico. A folha de contato e o dry-run leem `SemanticScene` diretamente.
