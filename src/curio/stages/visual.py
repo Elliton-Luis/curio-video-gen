@@ -291,8 +291,8 @@ def _search_scene_with_shortcircuit(
     from .visual_beats import asset_key
     selection_pool = prepare_selection_pool(
         ranked_candidates, asset_uses, _selection_asset_key)
-    ranked = [item.to_selection_entry() for item in selection_pool.fresh]
-    reused_ranked = [item.to_selection_entry() for item in selection_pool.reused]
+    ranked = list(selection_pool.fresh)
+    reused_ranked = list(selection_pool.reused)
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
@@ -320,7 +320,7 @@ def _search_scene_with_shortcircuit(
             index = next_download
             next_download += 1
             try:
-                candidate = MediaAsset.from_dict(ranked[index]["asset"])
+                candidate = MediaAsset.from_dict(ranked[index].asset.to_dict())
             except TypeError:
                 continue
             if candidate.local_path and os.path.isfile(candidate.local_path):
@@ -329,9 +329,10 @@ def _search_scene_with_shortcircuit(
                 candidate, cfg.cache_dir, metrics)
 
     fill_download_window()
-    for rank_index, entry in enumerate(ranked):
+    for rank_index, ranked_candidate in enumerate(ranked):
         if len(picked) >= max_images:
             break
+        entry = ranked_candidate.to_selection_entry()
         asset_dict = entry["asset"]
         if metrics:
             metrics.media_record_funnel("selected")
@@ -478,7 +479,8 @@ def _search_scene_with_shortcircuit(
                       f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
     # Reuse only after all specific/context searches and the local visual.
     if not picked and reused_ranked:
-        for entry in sorted(reused_ranked, key=lambda item: -item.get("score", 0)):
+        for candidate in sorted(reused_ranked, key=lambda item: -item.score):
+            entry = candidate.to_selection_entry()
             asset = MediaAsset.from_dict(entry["asset"])
             try:
                 if not (asset.local_path and os.path.isfile(asset.local_path)):
