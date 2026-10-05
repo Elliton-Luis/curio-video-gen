@@ -24,9 +24,7 @@ quando seu manifesto corresponde aos inputs semânticos e à política atual.
 
 from __future__ import annotations
 
-import concurrent.futures
 from collections.abc import Mapping
-import os
 import sys
 import time
 from typing import TYPE_CHECKING
@@ -37,7 +35,6 @@ from ..media.providers import (
     MediaAsset,
     MediaError,
     MediaProvider,
-    classify_rights,
 )
 from ..media.visual_decision import VisualDecision
 from . import media_rules
@@ -48,7 +45,7 @@ from .candidate_evaluation import (describe_technical_rejections,
                                   evaluate_generic, evaluate_specific)
 from .media_selection import (annotate_reuse, make_selection_decision,
                               RankedSelectionCandidate,
-                              prepare_selection_pool, record_asset_usage,
+                              prepare_selection_pool,
                               resolve_cross_scene_reuse)
 from .media_selection import SelectionDecision
 from .visual_audit import candidate_audit_rows, search_query_audit_rows
@@ -288,7 +285,6 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_asset_rejected()
             metrics.media_record_funnel("score_rejected")
-    from .visual_beats import asset_key
     selection_pool = prepare_selection_pool(
         ranked_candidates, asset_uses, _selection_asset_key)
     ranked = list(selection_pool.fresh)
@@ -307,143 +303,15 @@ def _search_scene_with_shortcircuit(
             str(getattr(ch, "visual_type", "") or "literal"))
 
     from ..media.selection_result import SelectedAsset
-    from .media_acquisition_contracts import CandidateAcquisitionOutcome
-    picked: list[SelectedAsset] = []
-    scene_content_seen: set[str] = set()
-    download_window = min(max(1, media_acquisition.MAX_CONCURRENT_DOWNLOADS),
-                          max(1, max_images))
-    download_futures: dict[int, object] = {}
-    next_download = 0
+    from .media_candidate_acquisition import acquire_ranked_candidates
 
-    def fill_download_window() -> None:
-        nonlocal next_download
-        while len(download_futures) < download_window and next_download < len(ranked):
-            index = next_download
-            next_download += 1
-            candidate = MediaAsset.from_dict(ranked[index].asset.to_dict())
-            if candidate.local_path and os.path.isfile(candidate.local_path):
-                continue
-            download_futures[index] = media_acquisition.submit_download(
-                candidate, cfg.cache_dir, metrics)
-
-    fill_download_window()
-    for rank_index, ranked_candidate in enumerate(ranked):
-        if len(picked) >= max_images:
-            break
-        asset_dict = ranked_candidate.asset.to_dict()
-        if metrics:
-            metrics.media_record_funnel("selected")
-            metrics.media_shortlist_ids.add(asset_key(asset_dict))
-        asset = MediaAsset.from_dict(asset_dict)
-        local = asset.local_path
-        acquisition = "cache" if local and os.path.isfile(local) else "download"
-        if not (local and os.path.isfile(local)):
-            future = download_futures.pop(rank_index, None)
-            try:
-                if future is None:
-                    future = media_acquisition.submit_download(
-                        asset, cfg.cache_dir, metrics)
-                downloaded = future.result(
-                    timeout=media_acquisition.DOWNLOAD_TIMEOUT)
-                asset, acquisition = downloaded.asset, downloaded.origin
-                fill_download_window()
-            except (MediaError, concurrent.futures.TimeoutError) as exc:
-                if future is not None:
-                    future.cancel()
-                fill_download_window()
-                rejection_reason = f"download failed: {exc}"
-                outcome = CandidateAcquisitionOutcome(
-                    candidate=ranked_candidate,
-                    asset=MediaAssetSnapshot.from_media_asset(asset),
-                    disposition="download_failed", rejection_stage="download",
-                    reason=rejection_reason)
-                rejected.append(outcome.to_rejection_row())
-                msg = f"cena {ch.id}: download falhou ({exc})"
-                warnings.append(msg)
-                from ..runlog import event as run_event
-                logged = run_event("warning", msg, operation="media_download",
-                                   scene=ch.id, provider=asset.provider,
-                                   error=str(exc))
-                if not logged:
-                    print(f"AVISO: {msg}", file=sys.stderr)
-                if metrics:
-                    metrics.media_record_funnel("download_failed")
-                continue
-        if not media_acquisition.downloaded_dimensions_valid(asset):
-            msg = (f"cena {ch.id}: '{asset.title[:50]}' rejeitado após "
-                   f"download (resolução insuficiente ou ilegível)")
-            warnings.append(msg)
-            outcome = CandidateAcquisitionOutcome(
-                candidate=ranked_candidate,
-                asset=MediaAssetSnapshot.from_media_asset(asset),
-                disposition="invalid_dimensions", origin=acquisition,
-                rejection_stage="dimensions",
-                reason="resolução/legibilidade após download")
-            rejected.append(outcome.to_rejection_row())
-            if metrics:
-                metrics.media_record_asset_rejected()
-                metrics.media_record_rejection("resolução/legibilidade após download")
-                metrics.media_record_funnel("post_download_rejected")
-            continue
-        content_key = _selection_asset_key(asset.to_dict())
-        if (content_key.startswith("sha256:")
-                and (content_key in scene_content_seen
-                     or (asset_uses is not None
-                         and asset_uses.get(content_key, 0)))):
-            record_asset_usage(asset_uses, asset_dict, asset.to_dict(),
-                               _selection_asset_key, increment=False)
-            outcome = CandidateAcquisitionOutcome(
-                candidate=ranked_candidate,
-                asset=MediaAssetSnapshot.from_media_asset(asset),
-                disposition="duplicate_content", origin=acquisition,
-                rejection_stage="duplicate_content",
-                reason="duplicate content hash", content_identity=content_key)
-            rejected.append(outcome.to_rejection_row())
-            if metrics:
-                metrics.media_record_asset_rejected()
-                metrics.media_record_rejection("duplicate content hash")
-                metrics.media_record_funnel("duplicate_content_hash")
-            continue
-        asset.used_in = f"cena {ch.id}"
-        if not asset.rights_status:
-            asset.rights_status = classify_rights(asset.license or "",
-                                                  asset.provider)
-        if asset.rights_status == "verify":
-            if metrics:
-                metrics.media_record_rights("verify")
-            msg = (f"cena {ch.id}: licença a conferir manualmente "
-                   f"({asset.provider}: {asset.license or 'desconhecida'}) — "
-                   f"{asset.license_url or asset.source_url or 'sem link'}")
-            warnings.append(msg)
-            from ..runlog import event as run_event
-            logged = run_event("warning", msg, operation="media_rights",
-                               scene=ch.id, provider=asset.provider,
-                               rights_status="verify")
-            if not logged:
-                print(f"AVISO: {msg}", file=sys.stderr)
-        if ranked_candidate.generic and metrics:
-            metrics.media_record_funnel("generic_used")
-        if metrics:
-            metrics.media_record_score(ranked_candidate.score)
-        if content_key.startswith("sha256:"):
-            scene_content_seen.add(content_key)
-        reuse_reason = ""
-        if asset_uses is not None:
-            acquired_asset = MediaAssetSnapshot.from_media_asset(asset)
-            key = _selection_asset_key(acquired_asset.to_dict())
-            if asset_uses.get(key, 0):
-                reuse_reason = "eligible_pool_exhausted"
-            record_asset_usage(asset_uses, asset_dict, acquired_asset.to_dict(),
-                               _selection_asset_key)
-        outcome = CandidateAcquisitionOutcome(
-            candidate=ranked_candidate,
-            asset=MediaAssetSnapshot.from_media_asset(asset),
-            disposition="selected", origin=acquisition,
-            content_identity=content_key, selected_order=len(picked),
-            reuse_reason=reuse_reason)
-        picked.append(outcome.to_selected_asset())
-        if metrics:
-            metrics.media_record_funnel("used_real")
+    acquisition_batch = acquire_ranked_candidates(
+        ch.id, ranked, max_images, cfg.cache_dir, metrics, asset_uses)
+    picked: list[SelectedAsset] = [
+        outcome.to_selected_asset() for outcome in acquisition_batch.selected]
+    rejected.extend(outcome.to_rejection_row()
+                    for outcome in acquisition_batch.rejected)
+    warnings.extend(acquisition_batch.warnings)
 
     strategy_used = "image"
     if not picked:
@@ -478,35 +346,11 @@ def _search_scene_with_shortcircuit(
                       f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
     # Reuse only after all specific/context searches and the local visual.
     if not picked and reused_ranked:
-        for candidate in sorted(reused_ranked, key=lambda item: -item.score):
-            asset = MediaAsset.from_dict(candidate.asset.to_dict())
-            try:
-                if not (asset.local_path and os.path.isfile(asset.local_path)):
-                    downloaded = media_acquisition.submit_download(
-                        asset, cfg.cache_dir, metrics).result(
-                            timeout=media_acquisition.DOWNLOAD_TIMEOUT)
-                    asset, acquisition = downloaded.asset, downloaded.origin
-                else:
-                    acquisition = "cache"
-            except (MediaError, concurrent.futures.TimeoutError):
-                continue
-            if not media_acquisition.downloaded_dimensions_valid(asset):
-                continue
-            asset.used_in = f"cena {ch.id}"
-            acquired_snapshot = MediaAssetSnapshot.from_media_asset(asset)
-            key = _selection_asset_key(acquired_snapshot.to_dict())
-            record_asset_usage(asset_uses, candidate.asset.to_dict(),
-                               acquired_snapshot.to_dict(),
-                               _selection_asset_key)
-            outcome = CandidateAcquisitionOutcome(
-                candidate=candidate, asset=acquired_snapshot,
-                disposition="selected", origin=acquisition,
-                content_identity=key, selected_order=len(picked),
-                reuse_reason="fresh_search_and_synthetic_exhausted")
-            picked.append(outcome.to_selected_asset())
-            if metrics:
-                metrics.media_record_funnel("reused_fallback")
-            break
+        from .media_candidate_acquisition import acquire_reuse_fallback
+        reuse_outcome = acquire_reuse_fallback(
+            ch.id, reused_ranked, cfg.cache_dir, metrics, asset_uses)
+        if reuse_outcome is not None:
+            picked.append(reuse_outcome.to_selected_asset())
     if not picked:
         msg = (f"cena {ch.id}: sem imagem adequada "
                f"({', '.join(queries[:3]) or 'sem consultas'})"

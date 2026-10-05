@@ -114,6 +114,57 @@ def test_candidate_acquisition_outcome_projects_selected_and_rejected_states():
             selected_order=0)
 
 
+def test_candidate_acquisition_batch_is_immutable_and_partitions_outcomes():
+    from dataclasses import FrozenInstanceError
+    from curio.stages.media_candidate_acquisition import CandidateAcquisitionBatch
+
+    batch = CandidateAcquisitionBatch((), ())
+
+    assert batch.selected == ()
+    assert batch.rejected == ()
+    with pytest.raises(FrozenInstanceError):
+        batch.warnings = ("changed",)
+
+
+def test_acquisition_tries_ranked_candidates_and_deduplicates_downloaded_content(
+        monkeypatch):
+    from concurrent.futures import Future
+    from curio.media.providers import MediaAsset
+    from curio.stages import media_acquisition, media_candidate_acquisition
+    from curio.stages.media_acquisition import DownloadedMedia
+    from curio.stages.media_contracts import Candidate, CandidateEvaluation
+    from curio.stages.visual_contracts import SearchQuery
+
+    def ranked(asset_id):
+        candidate = Candidate(
+            MediaAsset("fixture", asset_id, title=asset_id,
+                       source_url=f"https://example.test/{asset_id}"),
+            SearchQuery("historical artifact", "scene_representation"),
+            f"fixture:{asset_id}")
+        return RankedSelectionCandidate.from_evaluation(
+            CandidateEvaluation(candidate, 80, {}, True))
+
+    def completed_download(asset, _cache_dir, _metrics):
+        future = Future()
+        future.set_result(DownloadedMedia(asset, "download"))
+        return future
+
+    monkeypatch.setattr(media_acquisition, "submit_download", completed_download)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid",
+                        lambda _asset: True)
+    monkeypatch.setattr(media_candidate_acquisition, "asset_identity",
+                        lambda _asset: "sha256:same-content")
+
+    batch = media_candidate_acquisition.acquire_ranked_candidates(
+        1, [ranked("first"), ranked("duplicate")], 2, "/cache")
+
+    assert [item.disposition for item in batch.outcomes] == [
+        "selected", "duplicate_content"]
+    assert len(batch.selected) == 1
+    assert len(batch.rejected) == 1
+    assert batch.rejected[0].content_identity == "sha256:same-content"
+
+
 def test_asset_usage_links_provider_identity_to_downloaded_content_hash():
     usage = {}
     searched = {"asset_id": "same-id", "provider": "wikimedia",
