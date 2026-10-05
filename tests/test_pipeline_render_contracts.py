@@ -143,7 +143,7 @@ def test_visual_render_usage_records_paths_passed_and_unavailable_assets(
     present_key = asset_key(timeline[0]["images"][0])
     assert result.scenes[0].requested_asset_ids == tuple(
         sorted((missing_key, present_key)))
-    assert result.scenes[0].passed_asset_ids == (present_key,)
+    assert result.scenes[0].segment_asset_ids == (present_key,)
     assert result.scenes[0].unavailable_asset_ids == (missing_key,)
     assert result.scenes[0].omitted_asset_ids == (missing_key,)
     assert result.scenes[0].fallback_used is False
@@ -173,7 +173,7 @@ def test_visual_render_usage_marks_synthetic_fallback_when_no_file_is_usable(
 
     usage = result.scenes[0]
     assert usage.requested_asset_ids == ("fixture:missing",)
-    assert usage.passed_asset_ids == ()
+    assert usage.segment_asset_ids == ()
     assert usage.unavailable_asset_ids == ("fixture:missing",)
     assert usage.fallback_used is True
     assert usage.segment_reused is False
@@ -213,7 +213,8 @@ def test_primary_asset_render_usage_covers_legacy_non_timeline_path(
         (TimelineSpan(1, 2, 0, 2), TimelineSpan(2, 2, 2, 4)),
         plan, "topic", paths, CurioConfig(), str(tmp_path / "silent.mp4"))
 
-    assert result.scenes[0].passed_asset_ids == (asset_key(rows[0]["asset"]),)
+    assert result.scenes[0].segment_asset_ids == (
+        asset_key(rows[0]["asset"]),)
     assert result.scenes[0].fallback_used is False
     assert result.scenes[0].segment_reused is False
     assert result.scenes[1].unavailable_asset_ids == (

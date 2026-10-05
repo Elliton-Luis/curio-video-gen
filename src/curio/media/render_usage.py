@@ -9,7 +9,7 @@ from dataclasses import dataclass
 class VisualRenderSceneUsage:
     scene_id: int
     requested_asset_ids: tuple[str, ...]
-    passed_asset_ids: tuple[str, ...]
+    segment_asset_ids: tuple[str, ...]
     unavailable_asset_ids: tuple[str, ...]
     omitted_asset_ids: tuple[str, ...]
     fallback_used: bool
@@ -19,7 +19,7 @@ class VisualRenderSceneUsage:
         if isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int) \
                 or self.scene_id <= 0:
             raise ValueError("render usage scene id must be positive")
-        for name in ("requested_asset_ids", "passed_asset_ids",
+        for name in ("requested_asset_ids", "segment_asset_ids",
                      "unavailable_asset_ids", "omitted_asset_ids"):
             values = getattr(self, name)
             if not isinstance(values, tuple) or any(
@@ -28,25 +28,25 @@ class VisualRenderSceneUsage:
             if len(values) != len(set(values)):
                 raise ValueError(f"render usage {name} must be unique")
         requested = set(self.requested_asset_ids)
-        if (not set(self.passed_asset_ids) <= requested
+        if (not set(self.segment_asset_ids) <= requested
                 or not set(self.unavailable_asset_ids) <= requested
                 or not set(self.omitted_asset_ids) <= requested):
             raise ValueError("render usage IDs must belong to requested assets")
-        if set(self.passed_asset_ids) & set(self.unavailable_asset_ids):
-            raise ValueError("render usage asset cannot be passed and unavailable")
-        if set(self.omitted_asset_ids) != requested - set(self.passed_asset_ids):
-            raise ValueError("render usage omitted IDs must match unpassed IDs")
+        if set(self.segment_asset_ids) & set(self.unavailable_asset_ids):
+            raise ValueError("segment asset cannot be available and unavailable")
+        if set(self.omitted_asset_ids) != requested - set(self.segment_asset_ids):
+            raise ValueError("render usage omitted IDs must match unused IDs")
         if (not isinstance(self.fallback_used, bool)
                 or not isinstance(self.segment_reused, bool)):
             raise TypeError("render usage flags must be boolean")
-        if self.fallback_used != (not self.passed_asset_ids):
-            raise ValueError("render usage fallback must match passed asset IDs")
+        if self.fallback_used != (not self.segment_asset_ids):
+            raise ValueError("render usage fallback must match segment asset IDs")
 
     def to_dict(self) -> dict:
         return {
             "scene_id": self.scene_id,
             "requested_asset_ids": list(self.requested_asset_ids),
-            "passed_asset_ids": list(self.passed_asset_ids),
+            "segment_asset_ids": list(self.segment_asset_ids),
             "unavailable_asset_ids": list(self.unavailable_asset_ids),
             "omitted_asset_ids": list(self.omitted_asset_ids),
             "fallback_used": self.fallback_used,
