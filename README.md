@@ -136,8 +136,10 @@ recalculado. O manifesto persiste somente o hash, não os valores de configuraç
 beats no mesmo limite.
 `pipeline_audio.py` consome `SemanticScene[]` e `TimelineSpan[]`; o alinhador
 `stages/timing.py` devolve spans novos a partir de word boundaries ou pacing
-proporcional. `timeline.json` continua sendo uma projeção `Chapter` enquanto
-subtitle, render e rerender migram para o contrato separado.
+proporcional. O `AudioStageResult` traz warnings e tempos próprios do estágio;
+o coordenador os mescla explicitamente, sem emprestar seus dict/list de estado.
+`timeline.json` continua sendo uma projeção `Chapter` enquanto subtitle, render
+e rerender migram para o contrato separado.
 `pipeline_visual.py` resolve a seleção em ordem manual → cache de projeto
 validado → aquisição e retorna `MediaStageResult` com origem explícita; o
 contrato valida IDs únicos, coerência entre asset/entries/decision e os totais

@@ -385,3 +385,17 @@ cópias, criando dois lugares para o mesmo fato. Removi esses campos e o
 pipeline agora lê os dados diretamente do resultado validado. O retorno de
 etapa mantém somente `status`, `prompt` e `elapsed`, que são próprios da
 orquestração. Testes de pesquisa/pipeline passaram (**39 em 38,11 s**).
+
+## G4: audio stage returns owned state deltas
+
+`run_audio_stages` mutava `stage_times` e `warnings` recebidos do coordenador,
+depois retornava a mesma referência de tempos dentro de `AudioStageResult`.
+Agora o resultado é frozen, contém tempos e warnings criados localmente, e o
+coordenador os mescla explicitamente. O contrato valida duração, spans, fonte
+de timing, contagem de cues e tempos finitos/não negativos. Isso mantém
+progresso/métricas/arquivos dentro das responsabilidades existentes sem
+compartilhar estado geral da execução.
+
+Testes diretos cobrem fallback proporcional, resultado imutável e rejeição de
+tempos inválidos; integração/TTS focados passaram (**26 em 143,41 s**).
+Revalidar com a suíte completa no gate final.

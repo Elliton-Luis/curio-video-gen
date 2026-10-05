@@ -513,8 +513,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     audio_force = force or script_result.script_changed
     audio_result = pipeline_audio_stage.run_audio_stages(
         script_text, tuple(semantic_scenes), timeline_spans,
-        paths, cfg, audio_force, metrics, warnings, emit,
-        _write_json, stage_times, pacing=pacing, caption_style=cap_style)
+        paths, cfg, audio_force, metrics, emit,
+        _write_json, pacing=pacing, caption_style=cap_style)
     timeline_spans = audio_result.timeline_spans
     words = audio_result.words
     audio_duration = audio_result.audio_duration
@@ -522,6 +522,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     timed_source = audio_result.timed_source
     cue_count = audio_result.cue_count
     subs_changed = audio_result.subtitles_changed
+    warnings.extend(audio_result.warnings)
     stage_times.update(audio_result.stage_times)
 
     timeline_result = pipeline_timeline_stage.build_visual_timeline(

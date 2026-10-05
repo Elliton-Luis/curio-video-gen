@@ -7,6 +7,7 @@ import json
 import sys
 import time
 from dataclasses import dataclass
+from math import isfinite
 
 from . import ffmpeg as ff
 from .audio.artifacts import (TTSCacheManifest, legacy_words_match_text,
@@ -19,7 +20,7 @@ from .stages.scenes import Chapter
 from .stages.timing import align_word_boundaries, proportional_spans
 
 
-@dataclass
+@dataclass(frozen=True)
 class AudioStageResult:
     timeline_spans: tuple[TimelineSpan, ...]
     words: list[dict] | None
@@ -28,16 +29,41 @@ class AudioStageResult:
     timed_source: str
     cue_count: int
     subtitles_changed: bool
+    warnings: tuple[str, ...]
     stage_times: dict[str, float]
+
+    def __post_init__(self) -> None:
+        if any(not isinstance(span, TimelineSpan) for span in self.timeline_spans):
+            raise TypeError("audio result timing must contain TimelineSpan values")
+        if isinstance(self.audio_duration, bool) or not isinstance(
+                self.audio_duration, (int, float)) or not isfinite(
+                    self.audio_duration) or self.audio_duration < 0:
+            raise ValueError("audio result duration must be finite and non-negative")
+        if self.timed_source not in {"wordboundary", "proporcional"}:
+            raise ValueError("audio result timing source is invalid")
+        if isinstance(self.cue_count, bool) or not isinstance(self.cue_count, int) \
+                or self.cue_count < 0:
+            raise ValueError("audio subtitle cue count must be non-negative")
+        if not isinstance(self.subtitles_changed, bool):
+            raise TypeError("audio subtitle change marker must be boolean")
+        if any(not isinstance(value, str) or not value.strip()
+               for value in self.warnings):
+            raise ValueError("audio warnings must be non-empty strings")
+        if not isinstance(self.stage_times, dict) or any(
+                not isinstance(key, str) or isinstance(value, bool)
+                or not isinstance(value, (int, float)) or not isfinite(value)
+                or value < 0 for key, value in self.stage_times.items()):
+            raise ValueError("audio stage times must be finite non-negative values")
 
 
 def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...],
                      timeline_spans: tuple[TimelineSpan, ...], paths, cfg, force: bool,
-                     metrics, warnings: list, emit, write_json,
-                     stage_times: dict[str, float],
+                     metrics, emit, write_json,
                      pacing=None, caption_style=None) -> AudioStageResult:
     """Run TTS, timing alignment and subtitle generation."""
     start_time = time.monotonic()
+    warnings: list[str] = []
+    stage_times: dict[str, float] = {}
     emit(4, "Gerando narração")
     words = None
     tts_cached = False
@@ -169,7 +195,7 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
     emit(5, "Sincronizando legendas", "OK")
     return AudioStageResult(aligned_spans, words, audio_duration, tts_info,
                             timed_source, cue_count, subtitles_changed,
-                            stage_times)
+                            tuple(warnings), stage_times)
 
 
 def _read_words(path):
