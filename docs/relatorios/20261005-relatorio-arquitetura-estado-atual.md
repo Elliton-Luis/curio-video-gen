@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G63.
+**Escopo:** auditoria documentada e migrações incrementais até G64.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -81,6 +81,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `7a568aa` | Agrupou fatos da auditoria por query em `SearchQueryAudit` e centralizou a projeção ordenada por `SearchPlan` em `visual_audit.py` (G61). |
 | `a51c06d` | Extraiu coleta e gates técnicos de candidatos por cena para `SceneCandidateCollector` (G62). |
 | `73f6e6c` | Validou a decisão visual persistida e centralizou updates de seleção/reuso em `VisualDecision` (G63). |
+| `519c1fa` | Substituiu o payload genérico interno por campos nomeados e imutáveis em `VisualDecision`, mantendo adaptadores JSON compatíveis (G64). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -110,7 +111,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G63
+## Arquivos alterados nas fases G57–G64
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -151,16 +152,20 @@ Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 preservando os dois testes anteriores e adicionando três casos);
 `tests/test_scene_candidate_search.py` (G62, cinco regressões de contrato).
 `tests/test_visual_decision.py` (G63: round-trip, preservação de extensões,
-updates imutáveis, tipos dos campos conhecidos e seleção obrigatória).
+updates imutáveis, tipos dos campos conhecidos e seleção obrigatória; G64:
+atributos explícitos, imutabilidade recursiva e rejeição de campos desconhecidos).
 
 G63 (`73f6e6c`): `src/curio/media/visual_decision.py`,
 `src/curio/media/selection_result.py`, `src/curio/pipeline_media.py`,
 `src/curio/pipeline_visual.py`, `src/curio/stages/media_selection.py`,
 `src/curio/stages/visual.py` e `tests/test_visual_decision.py`.
 
+G64 (`519c1fa`): `src/curio/media/visual_decision.py` e
+`tests/test_visual_decision.py`.
+
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G63.
+relatório e os relatórios G57–G64.
 
 
 ## Estado das fases
@@ -174,7 +179,7 @@ relatório e os relatórios G57–G63.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G63 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G64 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -205,6 +210,9 @@ G63: **124 testes focados passaram** e **929 testes passaram** na suíte integra
 com `test_standby_sem_imagens` excluído. Esse teste fez request real à API da
 Wikipédia e recebeu HTTP 429; na primeira rodada do lote, os outros 109
 passaram. `python -m compileall -q src tests` e `git diff --check` passaram.
+G64: **31 testes focados passaram**; suíte: **930 passaram, 1 excluído** por
+HTTP 429 da API real da Wikipédia. `python -m compileall -q src tests` e
+`git diff --check` passaram. Não houve nova geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -241,7 +249,7 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G63 passam os gates registrados. Auditoria integral, ownership único de
+G57–G64 passam os gates registrados. Auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
@@ -327,7 +335,56 @@ Arquivos: `src/curio/media/visual_decision.py`,
 passou nos demais testes antes de falhar nesse request externo. Não houve nova
 geração de vídeo.
 
-Limite: `VisualDecision` valida campos e seleção, mas retém payloads de auditoria
-como estruturas JSON e preserva extensions por compatibilidade. Isso evita uma
-migração de formato e cria uma fronteira única de validação/mutação, sem afirmar
-que cada linha interna do relatório já tem dataclass própria.
+Limite registrado ao final de G63: os campos de auditoria eram mappings JSON,
+com extensões preservadas por compatibilidade. G64 nomeia os campos conhecidos,
+mas cada linha de query/candidato ainda não tem dataclass própria.
+
+
+## G64 — campos explícitos em `VisualDecision` (`519c1fa`)
+
+G63 havia validado a decisão aninhada e os tipos dos campos conhecidos, mas o
+envelope continuava armazenando os fatos conhecidos dentro de um mapping
+genérico. Isso mantinha acesso por chave como representação interna e deixava
+consumidores dependentes de payload arbitrário.
+
+G64 declara os campos conhecidos como atributos (`topic`, `visual_plan`,
+`visual_intent`, entidades, representações, aliases, queries, providers,
+candidatos, seleção, fallback e estado/razão de esgotamento). A criação por
+produtores rejeita nomes desconhecidos; a leitura legada preserva extensões. A presença é registrada para serializar sem converter campo ausente em `null`.
+Mappings e sequências são congelados recursivamente e `to_dict()` gera uma cópia
+JSON mutável.
+
+Arquivos: `src/curio/media/visual_decision.py` e
+`tests/test_visual_decision.py`. Passaram 31 testes focados e a suíte com 930
+passados/1 excluído após HTTP 429 na API real da Wikipédia; compileall e diff
+check também passaram. Não houve geração real nesta fase. Query/candidate rows
+continuam mappings JSON e a decisão segue projetada no formato persistido
+histórico. Commit: `519c1fa`.
+
+## Escopo exato do trabalho de mídia em andamento
+
+G64 não tentava ajustar relevância, thresholds ou providers. O objetivo era
+continuar a migração estrutural após as regressões de repetição e queries ruins:
+fazer cada fronteira entregar contrato válido e impedir que o coordenador
+reconstrua ou altere silenciosamente a decisão de uma etapa anterior.
+
+G61 centralizou o acúmulo/projeção de auditoria por query; G62 isolou coleta de
+candidatos, deduplicação e gates técnicos; G63 introduziu `VisualDecision` como
+owner da decisão e dos updates de seleção/reuso. A tarefa imediata era remover o
+mapping genérico restante desse contrato e nomear os fatos já persistidos, sem
+mudar a estratégia de consulta ou seleção editorial. Permanecem incompletos os
+contratos individuais de rows de query/candidato, a orquestração ainda
+concentrada em `visual.py`, a centralização total de fallback e novas
+validações reais de provider/aquisição.
+
+Regressões históricas a preservar e revalidar: país irrelevante em narrativa
+histórica (Argentina na Revolução Francesa); Mughal Empire associado a Marco Aurélio; ônibus em buraco negro; queries soltas como `gold`, `formavam` e
+`primeira`; contaminação entre gêneros (`laboratory`, `microscope`); repetição
+de mapa entre cenas; fallback após falha/JSON inválido/timeout de LLM; cache
+antigo ou malformado; dedupe depois de download; rerender sem nova pesquisa; e
+indisponibilidade, timeout ou HTTP 429 de providers.
+
+G64 não reexecutou aquisição histórica nem inspecionou assets, portanto não
+apresenta contagem atual de cenas/assets como validação da busca. Os resultados
+históricos disponíveis e suas limitações estão nos relatórios de execução
+listados em `docs/README.md`.
