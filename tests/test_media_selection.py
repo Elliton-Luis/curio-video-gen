@@ -72,6 +72,48 @@ def test_selection_pool_rejects_untyped_candidate_rows():
                                lambda asset: asset.get("asset_id", ""))
 
 
+def test_candidate_acquisition_outcome_projects_selected_and_rejected_states():
+    from curio.media.asset_snapshot import MediaAssetSnapshot
+    from curio.media.providers import MediaAsset
+    from curio.stages.media_acquisition_contracts import CandidateAcquisitionOutcome
+    from curio.stages.media_contracts import Candidate, CandidateEvaluation
+    from curio.stages.visual_contracts import SearchQuery
+
+    candidate = Candidate(
+        MediaAsset("fixture", "asset-1", title="Battle painting"),
+        SearchQuery("Battle painting", "scene_representation"),
+        "fixture:asset-1")
+    ranked = RankedSelectionCandidate.from_evaluation(
+        CandidateEvaluation(candidate, 82, {"scene_relevance": 80}, True))
+    downloaded = MediaAssetSnapshot.from_media_asset(MediaAsset(
+        "fixture", "asset-1", title="Battle painting",
+        local_path="/cache/battle.jpg", size_bytes=12000))
+
+    selected = CandidateAcquisitionOutcome(
+        candidate=ranked, asset=downloaded, disposition="selected",
+        origin="download", content_identity="sha256:abc",
+        selected_order=0)
+    selected_asset = selected.to_selected_asset()
+    assert selected_asset.asset.local_path == "/cache/battle.jpg"
+    assert selected_asset.query == "Battle painting"
+    assert selected_asset.acquisition == "download"
+    assert selected_asset.score == 82
+
+    rejected = CandidateAcquisitionOutcome(
+        candidate=ranked, asset=downloaded,
+        disposition="invalid_dimensions", origin="download",
+        rejection_stage="dimensions",
+        reason="resolução/legibilidade após download")
+    rejection_row = rejected.to_rejection_row()
+    assert rejection_row["identity"] == "fixture:asset-1"
+    assert rejection_row["audit_reason"] == "resolution/legibility after download"
+
+    with pytest.raises(ValueError, match="selected candidate requires acquisition origin"):
+        CandidateAcquisitionOutcome(
+            candidate=ranked, asset=downloaded, disposition="selected",
+            selected_order=0)
+
+
 def test_asset_usage_links_provider_identity_to_downloaded_content_hash():
     usage = {}
     searched = {"asset_id": "same-id", "provider": "wikimedia",

@@ -307,6 +307,7 @@ def _search_scene_with_shortcircuit(
             str(getattr(ch, "visual_type", "") or "literal"))
 
     from ..media.selection_result import SelectedAsset
+    from .media_acquisition_contracts import CandidateAcquisitionOutcome
     picked: list[SelectedAsset] = []
     scene_content_seen: set[str] = set()
     download_window = min(max(1, media_acquisition.MAX_CONCURRENT_DOWNLOADS),
@@ -319,10 +320,7 @@ def _search_scene_with_shortcircuit(
         while len(download_futures) < download_window and next_download < len(ranked):
             index = next_download
             next_download += 1
-            try:
-                candidate = MediaAsset.from_dict(ranked[index].asset.to_dict())
-            except TypeError:
-                continue
+            candidate = MediaAsset.from_dict(ranked[index].asset.to_dict())
             if candidate.local_path and os.path.isfile(candidate.local_path):
                 continue
             download_futures[index] = media_acquisition.submit_download(
@@ -332,15 +330,11 @@ def _search_scene_with_shortcircuit(
     for rank_index, ranked_candidate in enumerate(ranked):
         if len(picked) >= max_images:
             break
-        entry = ranked_candidate.to_selection_entry()
-        asset_dict = entry["asset"]
+        asset_dict = ranked_candidate.asset.to_dict()
         if metrics:
             metrics.media_record_funnel("selected")
             metrics.media_shortlist_ids.add(asset_key(asset_dict))
-        try:
-            asset = MediaAsset.from_dict(asset_dict)
-        except TypeError:
-            continue
+        asset = MediaAsset.from_dict(asset_dict)
         local = asset.local_path
         acquisition = "cache" if local and os.path.isfile(local) else "download"
         if not (local and os.path.isfile(local)):
@@ -358,12 +352,12 @@ def _search_scene_with_shortcircuit(
                     future.cancel()
                 fill_download_window()
                 rejection_reason = f"download failed: {exc}"
-                entry["rejection_reason"] = rejection_reason
-                rejected.append({
-                    "title": asset.title, "query": entry["query"],
-                    "reason": rejection_reason, "provider": asset.provider,
-                    "identity": entry.get("identity", ""),
-                })
+                outcome = CandidateAcquisitionOutcome(
+                    candidate=ranked_candidate,
+                    asset=MediaAssetSnapshot.from_media_asset(asset),
+                    disposition="download_failed", rejection_stage="download",
+                    reason=rejection_reason)
+                rejected.append(outcome.to_rejection_row())
                 msg = f"cena {ch.id}: download falhou ({exc})"
                 warnings.append(msg)
                 from ..runlog import event as run_event
@@ -376,15 +370,16 @@ def _search_scene_with_shortcircuit(
                     metrics.media_record_funnel("download_failed")
                 continue
         if not media_acquisition.downloaded_dimensions_valid(asset):
-            entry["rejection_reason"] = "resolution/legibility after download"
             msg = (f"cena {ch.id}: '{asset.title[:50]}' rejeitado após "
                    f"download (resolução insuficiente ou ilegível)")
             warnings.append(msg)
-            rejected.append({"title": asset.title, "query": entry["query"],
-                             "reason": "resolução/legibilidade após download",
-                             "audit_reason": "resolution/legibility after download",
-                             "provider": asset.provider,
-                             "identity": entry.get("identity", "")})
+            outcome = CandidateAcquisitionOutcome(
+                candidate=ranked_candidate,
+                asset=MediaAssetSnapshot.from_media_asset(asset),
+                disposition="invalid_dimensions", origin=acquisition,
+                rejection_stage="dimensions",
+                reason="resolução/legibilidade após download")
+            rejected.append(outcome.to_rejection_row())
             if metrics:
                 metrics.media_record_asset_rejected()
                 metrics.media_record_rejection("resolução/legibilidade após download")
@@ -397,12 +392,13 @@ def _search_scene_with_shortcircuit(
                          and asset_uses.get(content_key, 0)))):
             record_asset_usage(asset_uses, asset_dict, asset.to_dict(),
                                _selection_asset_key, increment=False)
-            entry["rejection_reason"] = "duplicate content hash"
-            rejected.append({"title": asset.title, "query": entry["query"],
-                             "reason": "duplicate content hash",
-                             "provider": asset.provider,
-                             "identity": entry.get("identity", ""),
-                             "content_identity": content_key})
+            outcome = CandidateAcquisitionOutcome(
+                candidate=ranked_candidate,
+                asset=MediaAssetSnapshot.from_media_asset(asset),
+                disposition="duplicate_content", origin=acquisition,
+                rejection_stage="duplicate_content",
+                reason="duplicate content hash", content_identity=content_key)
+            rejected.append(outcome.to_rejection_row())
             if metrics:
                 metrics.media_record_asset_rejected()
                 metrics.media_record_rejection("duplicate content hash")
@@ -425,24 +421,27 @@ def _search_scene_with_shortcircuit(
                                rights_status="verify")
             if not logged:
                 print(f"AVISO: {msg}", file=sys.stderr)
-        entry = dict(entry)
-        entry["asset"] = asset.to_dict()
-        if entry.get("generic") and metrics:
+        if ranked_candidate.generic and metrics:
             metrics.media_record_funnel("generic_used")
-        entry["order"] = len(picked)
-        entry["acquisition"] = acquisition
-        entry["score"] = entry.get("score", 0)
         if metrics:
-            metrics.media_record_score(entry["score"])
+            metrics.media_record_score(ranked_candidate.score)
         if content_key.startswith("sha256:"):
             scene_content_seen.add(content_key)
+        reuse_reason = ""
         if asset_uses is not None:
-            key = _selection_asset_key(entry["asset"])
+            acquired_asset = MediaAssetSnapshot.from_media_asset(asset)
+            key = _selection_asset_key(acquired_asset.to_dict())
             if asset_uses.get(key, 0):
-                entry["reuse_reason"] = "eligible_pool_exhausted"
-            record_asset_usage(asset_uses, asset_dict, entry["asset"],
+                reuse_reason = "eligible_pool_exhausted"
+            record_asset_usage(asset_uses, asset_dict, acquired_asset.to_dict(),
                                _selection_asset_key)
-        picked.append(SelectedAsset.from_dict(entry, len(picked)))
+        outcome = CandidateAcquisitionOutcome(
+            candidate=ranked_candidate,
+            asset=MediaAssetSnapshot.from_media_asset(asset),
+            disposition="selected", origin=acquisition,
+            content_identity=content_key, selected_order=len(picked),
+            reuse_reason=reuse_reason)
+        picked.append(outcome.to_selected_asset())
         if metrics:
             metrics.media_record_funnel("used_real")
 
@@ -480,8 +479,7 @@ def _search_scene_with_shortcircuit(
     # Reuse only after all specific/context searches and the local visual.
     if not picked and reused_ranked:
         for candidate in sorted(reused_ranked, key=lambda item: -item.score):
-            entry = candidate.to_selection_entry()
-            asset = MediaAsset.from_dict(entry["asset"])
+            asset = MediaAsset.from_dict(candidate.asset.to_dict())
             try:
                 if not (asset.local_path and os.path.isfile(asset.local_path)):
                     downloaded = media_acquisition.submit_download(
@@ -495,12 +493,17 @@ def _search_scene_with_shortcircuit(
             if not media_acquisition.downloaded_dimensions_valid(asset):
                 continue
             asset.used_in = f"cena {ch.id}"
-            entry = dict(entry, asset=asset.to_dict(), acquisition=acquisition,
-                         reuse_reason="fresh_search_and_synthetic_exhausted")
-            key = _selection_asset_key(entry["asset"])
-            record_asset_usage(asset_uses, entry["asset"], entry["asset"],
+            acquired_snapshot = MediaAssetSnapshot.from_media_asset(asset)
+            key = _selection_asset_key(acquired_snapshot.to_dict())
+            record_asset_usage(asset_uses, candidate.asset.to_dict(),
+                               acquired_snapshot.to_dict(),
                                _selection_asset_key)
-            picked.append(SelectedAsset.from_dict(entry, len(picked)))
+            outcome = CandidateAcquisitionOutcome(
+                candidate=candidate, asset=acquired_snapshot,
+                disposition="selected", origin=acquisition,
+                content_identity=key, selected_order=len(picked),
+                reuse_reason="fresh_search_and_synthetic_exhausted")
+            picked.append(outcome.to_selected_asset())
             if metrics:
                 metrics.media_record_funnel("reused_fallback")
             break
