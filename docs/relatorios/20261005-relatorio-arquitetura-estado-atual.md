@@ -74,7 +74,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `52fa80b` | Validou estados de `SelectionDecision`. |
 | `bbd49bf` | Removeu query duplicada de `VisualPlan`. |
 | `31695f3` | Removeu `visual_queries` runtime de `SemanticScene`, preservando projeções legadas (G57). |
-| *(G58 desta entrega)* | Moveu a resolução e anotação de reuso cross-scene para `media_selection.py`. |
+| `9f4e627` | Moveu a resolução e anotação de reuso cross-scene para `media_selection.py` (G58). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
