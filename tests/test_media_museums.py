@@ -8,6 +8,7 @@ from curio.config import CurioConfig
 from curio.media import providers as P
 from curio.metrics import RunMetrics
 from curio.stages import media_acquisition, scoring, visual
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.media_provider_policy import ordered_providers
 from curio.stages.scene_projection import Chapter
 from curio.stages.visual_planning import build_visual_plan
@@ -172,7 +173,7 @@ def test_museum_search_runs_again_but_download_bytes_are_reused(monkeypatch, tmp
                  subject_aliases=["Julius Caesar"])
     cfg = CurioConfig(cache_dir=str(tmp_path))
     for _ in range(2):
-        scenes, _ = visual._search_scene_with_shortcircuit(
+        scenes, _ = search_scene_rows(visual,
             ch, [museum], cfg, 1, RunMetrics("t", "cesar", "ai"), str(tmp_path))
         assert scenes[0]["asset"]["asset_id"] == "1"
         assert scenes[0]["asset"]["provider"] == "met"
@@ -207,7 +208,7 @@ def test_museum_failure_falls_through_to_next_provider(monkeypatch, tmp_path):
     ch = Chapter(1, "Júlio César chegou ao poder.", 8, subject="Júlio César",
                  subject_aliases=["Julius Caesar"])
     cfg = CurioConfig(cache_dir=str(tmp_path))
-    scenes, _ = visual._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(visual,
         ch, [DeadMuseum(), Live()], cfg, 1,
         RunMetrics("t", "cesar", "ai"), str(tmp_path))
     assert scenes[0]["asset"]["provider"] == "wikimedia"
@@ -239,7 +240,7 @@ def test_museum_assets_join_scoring_dedup_and_cache(monkeypatch, tmp_path):
                  subject_aliases=["Julius Caesar"])
     cfg = CurioConfig(cache_dir=str(tmp_path))
     metrics = RunMetrics("t", "cesar", "ai")
-    scenes, _ = visual._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(visual,
         ch, [Museum()], cfg, 1, metrics, str(tmp_path))
     assert scenes[0]["asset"]["asset_id"] == "1"
     assert downloads == ["https://images.metmuseum.org/small.jpg"]

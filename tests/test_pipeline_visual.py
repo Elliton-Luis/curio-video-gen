@@ -38,14 +38,16 @@ def _write_json(path, data):
 
 def test_visual_acquisition_stage_returns_validated_selection(monkeypatch):
     from curio.stages import visual
+    from curio.media.selection_result import MediaStageResult
 
     scene = SemanticScene(1, "Marte tem duas luas.")
     monkeypatch.setattr(visual, "ordered_providers", lambda *args: [])
+    selection = MediaStageResult.from_rows([with_selection({
+        "chapter_id": scene.id, "asset": None, "assets": [],
+    })], "provider").scenes[0]
     monkeypatch.setattr(
         visual, "_search_scene_with_shortcircuit",
-        lambda current, *_args, **_kwargs: ([with_selection({
-            "chapter_id": current.id, "asset": None, "assets": [],
-        })], ["sem asset disponível"]))
+        lambda *_args, **_kwargs: (selection, ["sem asset disponível"]))
 
     result = visual.fetch_media_multi(
         [scene], SimpleNamespace(cache_dir="/tmp/curio-test-cache"))

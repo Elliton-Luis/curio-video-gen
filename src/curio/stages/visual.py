@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 
 from ..config import CurioConfig
 from ..media.asset_snapshot import MediaAssetSnapshot
+from ..media.selection_result import SceneMediaSelection
 from ..media.providers import (
     MediaAsset,
     MediaError,
@@ -92,7 +93,7 @@ def _search_scene_with_shortcircuit(
     genre: str = "",
     asset_uses: dict | None = None,
     shared_search_cache: dict | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[SceneMediaSelection, list[str]]:
     """Busca mídia de uma cena: COLETA candidatos, depois FILTRA e PONTUA.
 
     O comportamento antigo parava no primeiro asset que passasse no gate e
@@ -168,7 +169,7 @@ def _search_scene_with_shortcircuit(
                       operation="media", scene=ch.id,
                       strategy=fallback_plan.strategy, form=fallback_plan.form,
                       reason=fallback_plan.reason)
-            return [{
+            return SceneMediaSelection.from_dict({
                 "chapter_id": ch.id,
                 "asset": synth.to_dict(),
                 "assets": [{"asset": synth.to_dict(), "query": "",
@@ -179,7 +180,7 @@ def _search_scene_with_shortcircuit(
                 "visual_type": vtype,
                 "strategy": fallback_plan.strategy,
                 "visual_decision": visual_decision.to_dict(),
-            }], warnings
+            }), warnings
 
     from . import scoring
     min_score = scoring.threshold()
@@ -534,7 +535,7 @@ def _search_scene_with_shortcircuit(
     selection = make_selection_decision(
         ch.id, picked, decision["fallback_level"])
     decision = VisualDecision.create(selection, **decision).to_dict()
-    return [{
+    return SceneMediaSelection.from_dict({
         "chapter_id": ch.id,
         "asset": first,
         "assets": picked_rows,
@@ -543,7 +544,7 @@ def _search_scene_with_shortcircuit(
         "visual_decision": decision,
         "visual_type": str(getattr(ch, "visual_type", "") or "literal"),
         "strategy": strategy_used,
-    }], warnings
+    }), warnings
 
 
 def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
@@ -576,7 +577,7 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     # An empty provider list still uses the per-scene synthetic fallback.
     # Do not copy an unrelated neighbor's asset merely to fill the timeline.
     all_warnings = []
-    scenes = []
+    scene_selections = []
     # O estado de variedade atravessa as cenas: é ele que impede seis cenas
     # conceituais de virarem seis cards idênticos.
     from .visual_fallback_planning import VisualDiversityState
@@ -588,17 +589,18 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     shared_search_cache: dict[str, dict[str, list[dict]]] = {}
 
     for scene in semantic_scenes:
-        scene_scenes, scene_warnings = _search_scene_with_shortcircuit(
+        scene_selection, scene_warnings = _search_scene_with_shortcircuit(
             scene, providers, cfg, max_images, metrics, cfg.cache_dir,
             visual_state=visual_state, genre=genre, asset_uses=asset_uses,
             shared_search_cache=shared_search_cache,
         )
-        scenes.extend(scene_scenes)
+        scene_selections.append(scene_selection)
         all_warnings.extend(scene_warnings)
     
     from ..media.selection_result import MediaStageResult
     from .media_selection import annotate_reuse, resolve_cross_scene_reuse
 
-    result = MediaStageResult.from_rows(scenes, "provider", all_warnings)
+    result = MediaStageResult(tuple(scene_selections), "provider",
+                              tuple(all_warnings))
     result = resolve_cross_scene_reuse(result, semantic_scenes)
     return annotate_reuse(result)

@@ -6,6 +6,7 @@ from curio.stages.scene_projection import Chapter
 from curio.stages.scenes import build_local_semantic_scenes, classify_visual_type
 from curio.stages.scene_enrichment import enrich_scenes
 from curio.stages import media_acquisition, visual
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.scene_local_planning import local_visual_representations
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -146,7 +147,7 @@ def test_search_continues_after_topic_only_candidate(tmp_path, monkeypatch):
         visual_entities=["Battle of Mohacs"], global_visual_queries=["Ottoman Empire"],
         representations=[{"query": "Battle of Mohacs", "kind": "event", "level": 1}],
         video_context={"topic": "Ottoman Empire", "aliases": ["Ottoman Empire"]})
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))
     assert provider.calls == ["Ottoman Empire historical map",
@@ -198,7 +199,7 @@ def test_search_does_not_stop_before_download_and_dimension_validation(
                           "level": 1}],
         video_context={"topic": "Ottoman Empire"})
 
-    rows, _ = visual._search_scene_with_shortcircuit(
+    rows, _ = search_scene_rows(visual,
         chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))
 
@@ -225,7 +226,7 @@ def test_provider_failures_never_claim_search_exhausted(tmp_path, monkeypatch):
         representations=[{"query": "Battle of Mohacs", "kind": "event", "level": 1}],
         video_context={"topic": "Ottoman Empire", "aliases": ["Ottoman Empire"]})
     patch_search_plan(monkeypatch, visual, ["Battle of Mohacs Ottoman Empire"])
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         chapter, [BrokenProvider()], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))
     decision = result[0]["visual_decision"]

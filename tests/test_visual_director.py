@@ -7,6 +7,7 @@ import pytest
 from curio.config import CurioConfig
 from curio.media.providers import MediaAsset
 from curio.stages import media_acquisition, media_search, scenes, scoring, visual
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.visual_context import attach_video_context
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -104,7 +105,7 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
     uses = {}
     selected = []
     for chapter in chapters:
-        result, _ = visual._search_scene_with_shortcircuit(
+        result, _ = search_scene_rows(visual,
             chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
             asset_uses=uses)
         selected.append(result[0]["asset"]["asset_id"])
@@ -134,14 +135,14 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
                         lambda *args: synth)
     from curio.media.identity import asset_identity
     uses = {asset_identity(asset.to_dict()): 1}
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
         asset_uses=uses)
     assert result[0]["asset"]["provider"] == "synth"
 
     monkeypatch.setattr("curio.stages.visuals.render_fallback_plan",
                         lambda *args: None)
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
         asset_uses=uses)
     assert result[0]["asset"]["asset_id"] == "only"
@@ -380,7 +381,7 @@ def test_scene_funnel_rejects_topic_only_distractor_and_records_reason(
     monkeypatch.setattr(media_search, "SEARCH_TIMEOUT", 2)
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
     metric = RunMetrics("session", "topic", "narration")
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         ch, [Provider()], cfg, 1, metric, str(tmp_path))
     scene = result[0]
     assert scene["asset"]["asset_id"] == "event"
@@ -405,7 +406,7 @@ def test_zero_score_threshold_never_bypasses_semantic_rejection(tmp_path, monkey
             return [candidate]
 
     monkeypatch.setenv("CURIO_MEDIA_SCORE_MIN", "0")
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         ch, [Provider()], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))
     assert result[0]["asset"]["provider"] == "synth"
@@ -447,7 +448,7 @@ def test_post_download_resolution_failure_is_audited_and_falls_back_safely(
     monkeypatch.setattr(media_acquisition, "download_asset", download)
     monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid",
                         lambda asset: asset.asset_id != "map")
-    output, _ = visual._search_scene_with_shortcircuit(
+    output, _ = search_scene_rows(visual,
         ch, [Provider()], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))
     scene = output[0]
@@ -511,7 +512,7 @@ def test_generic_representation_runs_after_specific_candidate_download_failure(
     monkeypatch.setattr("curio.stages.visuals.render_fallback_plan",
                         lambda *_args: None)
 
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en"),
         1, None, str(tmp_path))
 
@@ -568,7 +569,7 @@ def test_generic_search_fills_remaining_asset_slots_in_rank_order(tmp_path, monk
         media_candidate_acquisition.media_acquisition,
         "downloaded_dimensions_valid", lambda _asset: True)
 
-    result, _ = visual._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(visual,
         chapter, [Provider()], SimpleNamespace(cache_dir=str(tmp_path), language="en"),
         2, None, str(tmp_path))
 
@@ -617,7 +618,7 @@ def test_end_to_end_funnel_for_known_ambiguous_and_new_topics(
                         lambda asset, *_args, **_kwargs: _set_local(asset, local))
     monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
-    scenes_out, _ = visual._search_scene_with_shortcircuit(
+    scenes_out, _ = search_scene_rows(visual,
         ch, [Provider()], cfg, 1, RunMetrics("session", topic, "narration"),
         str(tmp_path))
     scene = scenes_out[0]
@@ -678,7 +679,7 @@ def test_clip_only_reranks_approved_shortlist(tmp_path, monkeypatch):
     monkeypatch.setattr(scoring, "clip_score_image",
                         lambda path, _ch, _cfg=None: .9 if path.endswith("higher.jpg") else -.2)
     metrics = RunMetrics("s", "French Revolution", "narration")
-    output, _ = visual._search_scene_with_shortcircuit(
+    output, _ = search_scene_rows(visual,
         ch, [Provider()], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, metrics, str(tmp_path))
     assert output[0]["asset"]["asset_id"] == "higher"

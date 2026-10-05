@@ -17,6 +17,7 @@ from curio.metrics import RunMetrics
 from curio.stages import media_rules, scoring
 from curio.stages import scenes as S
 from curio.stages import visual as V
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.scene_local_planning import (
     local_visual_representations, recover_legacy_chapters)
 from curio.stages.scene_projection import Chapter
@@ -127,6 +128,6 @@ def test_busca_prefere_buraco_negro_a_laboratorio(tmp_path, monkeypatch):
              global_visual_queries=["black hole"],
              subject="black hole", visual_entities=["black hole", "gravity"])
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR")
-    scenes, _ = V._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(V,
         ch, [prov], cfg, 1, RunMetrics("s", "i", "n"), str(tmp_path))
     assert scenes[0]["asset"]["asset_id"] == "bh"

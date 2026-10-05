@@ -4,6 +4,7 @@ from curio.config import CurioConfig
 from curio.media.providers import MediaAsset
 from curio.metrics import RunMetrics
 from curio.stages import media_acquisition, visual, scoring
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.scene_projection import Chapter
 from tests.test_support.search_plan import patch_search_plan
 
@@ -37,7 +38,7 @@ def test_funnel_counts_each_loss_once_and_does_not_double_search(monkeypatch, tm
     ch = Chapter(1, "Receipt.", 3, subject="receipt")
     metrics = RunMetrics("fixture", "receipt", "ai")
     cfg = CurioConfig(cache_dir=str(tmp_path))
-    scenes, _ = visual._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(visual,
         ch, [Provider()], cfg, 1, metrics, str(tmp_path))
     assert metrics.media_searches == {"fixture": 1}
     assert metrics.media_funnel == {
@@ -85,7 +86,7 @@ def test_generic_candidate_passes_on_own_terms_after_specifics(monkeypatch, tmp_
                  subject="Tomás de Aquino")
     metrics = RunMetrics("fixture", "tomas", "ai")
     cfg = CurioConfig(cache_dir=str(tmp_path))
-    scenes, _ = visual._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(visual,
         ch, [Provider()], cfg, 1, metrics, str(tmp_path))
     picked = scenes[0]["assets"][0]
     assert picked["generic"] is True

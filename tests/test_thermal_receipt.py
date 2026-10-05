@@ -21,6 +21,7 @@ from curio.media.providers import MediaAsset
 from curio.metrics import RunMetrics
 from curio.stages import media_rules, scoring
 from curio.stages import visual as V
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.scene_projection import Chapter
 
@@ -226,7 +227,7 @@ def test_cena_sem_foto_boa_nao_inventa_etapas_de_diagrama(tmp_path, monkeypatch)
     ch = _cena_thermal()
     m = RunMetrics("s", "idea", "narr")
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR")
-    scenes, warns = V._search_scene_with_shortcircuit(
+    scenes, warns = search_scene_rows(V,
         ch, [p1], cfg, 2, m, str(tmp_path))
     asset = scenes[0]["asset"]
     assert asset is not None, "a cena ficou sem visual nenhum"
@@ -253,7 +254,7 @@ def test_cena_com_boas_imagens_escolhe_a_mais_proxima(tmp_path, monkeypatch):
     p1 = _FakeProv("pixabay", [MediaAsset(**a) for a in acervo])
     ch = _cena_thermal()
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR")
-    scenes, _ = V._search_scene_with_shortcircuit(ch, [p1], cfg, 2, None,
+    scenes, _ = search_scene_rows(V, ch, [p1], cfg, 2, None,
                                                  str(tmp_path))
     escolhidos = [e["asset"]["asset_id"] for e in scenes[0]["assets"]]
     assert "g1" not in escolhidos, "genérica não devia entrar no topo"
@@ -295,7 +296,7 @@ def test_cena_tipografica_nao_busca_foto(tmp_path, monkeypatch):
     cfg = CurioConfig()
     cfg.cache_dir = str(tmp_path)
     m = RunMetrics("s", "i", "n")
-    scenes, warns = V._search_scene_with_shortcircuit(
+    scenes, warns = search_scene_rows(V,
         ch, [_Explode()], cfg, 2, m, cfg.cache_dir)
 
     asset = scenes[0]["asset"]

@@ -7,6 +7,7 @@ from curio.media.providers import MediaAsset, MediaError
 from curio.metrics import RunMetrics
 from curio.media.providers import min_dimension as media_rules_min_dimension
 from curio.stages import media_acquisition, visual as V
+from tests.test_support.media_scene_search import search_scene_rows
 from curio.stages.scene_projection import Chapter
 from curio.stages.visual_planning import build_visual_plan
 from tests.test_support.search_plan import patch_search_plan, plan_queries
@@ -72,7 +73,7 @@ def test_provider_searches_run_bounded_concurrently(tmp_path):
 
     ch = _ch(("black hole",), "A black hole bends space.", subject="black hole",
              visual_entities=["black hole"], visual_type="literal")
-    V._search_scene_with_shortcircuit(
+    search_scene_rows(V,
         ch, [ParallelProvider("a"), ParallelProvider("b"),
              ParallelProvider("c")],
         SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
@@ -99,7 +100,7 @@ def test_selected_asset_downloads_use_bounded_pool(tmp_path, monkeypatch):
     ])
     ch = _ch(("water glass",), "The water glass is on the table.",
              subject="water glass", visual_entities=["water glass"])
-    scenes, _ = V._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(V,
         ch, [provider], SimpleNamespace(cache_dir=str(tmp_path)), 2, None,
         str(tmp_path))
     assert len(scenes[0]["assets"]) == 2
@@ -114,10 +115,10 @@ def test_exact_scene_query_reuses_provider_results_within_video(tmp_path, monkey
     second = _ch(("water glass",), "The water glass is empty.", cid=2,
                  subject="water glass", visual_entities=["water glass"])
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
-    V._search_scene_with_shortcircuit(first, [provider], cfg, 1, None,
+    search_scene_rows(V, first, [provider], cfg, 1, None,
                                       str(tmp_path), shared_search_cache=shared)
     calls_after_first = len(provider.calls)
-    V._search_scene_with_shortcircuit(second, [provider], cfg, 1, None,
+    search_scene_rows(V, second, [provider], cfg, 1, None,
                                       str(tmp_path), shared_search_cache=shared)
     assert len(provider.calls) == calls_after_first
 
@@ -173,10 +174,10 @@ def test_used_asset_does_not_end_search_before_alternative_representation(
     second = _ch(("water glass",), "The water glass is empty.", cid=2,
                  subject="water glass", visual_entities=["water glass"])
 
-    V._search_scene_with_shortcircuit(first, [provider], cfg, 1, None,
+    search_scene_rows(V, first, [provider], cfg, 1, None,
                                       str(tmp_path), asset_uses=usage)
     provider.calls.clear()
-    result, _ = V._search_scene_with_shortcircuit(
+    result, _ = search_scene_rows(V,
         second, [provider], cfg, 1, None, str(tmp_path), asset_uses=usage)
 
     assert "water glass cup" in provider.calls
@@ -282,7 +283,7 @@ def test_todos_os_provedores_sao_consultados(tmp_path, monkeypatch):
                                    title="nasa water glass")])
     ch = _ch(("water glass",), subject="water glass",
              visual_entities=["glass", "water"])
-    scenes, warns = V._search_scene_with_shortcircuit(
+    scenes, warns = search_scene_rows(V,
         ch, [p1, p2], SimpleNamespace(cache_dir=str(tmp_path)), 1, None,
         str(tmp_path))
     assert p1.calls and p2.calls, "provedor posterior não foi consultado"
@@ -300,7 +301,7 @@ def test_provedor_que_so_devolve_lixo_nao_esgota_a_cena(tmp_path, monkeypatch):
                                         title="thermal paper receipt")])
     ch = _ch(("thermal paper receipt",), subject="thermal paper receipt",
              visual_entities=["receipt", "paper"])
-    scenes, _ = V._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(V,
         ch, [p1, p2], SimpleNamespace(cache_dir=str(tmp_path)), 1, None,
         str(tmp_path))
     assert scenes[0]["asset"]["asset_id"] == "w1real"
@@ -318,7 +319,7 @@ def test_waterfall_avanca_ate_generico_e_401_desativa(tmp_path, monkeypatch):
     ch = _ch(("water glass",), subject="science laboratory",
              visual_entities=["laboratory", "science"])
     m = RunMetrics("s", "idea", "narr")
-    scenes, _ = V._search_scene_with_shortcircuit(
+    scenes, _ = search_scene_rows(V,
         ch, [p1, p2, p3], SimpleNamespace(cache_dir=str(tmp_path)), 1, m,
         str(tmp_path))
     assert scenes[0]["asset"]["provider"] == "wikimedia"
@@ -332,7 +333,7 @@ def test_synth_diagram_em_cena_mecanistica_sem_nada(tmp_path):
              "Antibodies tagged with gold bind to the hormone hCG.")
     m = RunMetrics("s", "idea", "narr")
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
-    scenes, warns = V._search_scene_with_shortcircuit(
+    scenes, warns = search_scene_rows(V,
         ch, [], cfg, 1, m, str(tmp_path))
     assert scenes[0]["asset"]["provider"] == "synth"
     assert scenes[0]["asset"]["local_path"].endswith(".png")
@@ -350,7 +351,7 @@ def test_cena_sem_foto_boa_troca_de_estrategia(tmp_path):
     """
     ch = _ch(("roman legion",), "A legião romana marchou até o rio.",
              subject="roman legion", visual_entities=["legion", "roman"])
-    scenes, warns = V._search_scene_with_shortcircuit(
+    scenes, warns = search_scene_rows(V,
         ch, [], SimpleNamespace(cache_dir=str(tmp_path), language="pt-BR"),
         1, None, str(tmp_path))
     asset = scenes[0]["asset"]
@@ -386,7 +387,7 @@ def test_provider_search_not_reused_between_video_runs(tmp_path, monkeypatch):
              visual_entities=["water glass"])
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
     for _ in range(2):
-        scenes, _ = V._search_scene_with_shortcircuit(
+        scenes, _ = search_scene_rows(V,
             ch, [provider], cfg, 1, RunMetrics("s", "idea", "narr"),
             str(tmp_path))
         assert scenes[0]["asset"]["used_in"] == "cena 1"
