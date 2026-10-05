@@ -101,10 +101,10 @@ O payload de `VisualDecision` agora é montado em `stages/visual_audit.py`, a
 partir de `SemanticScene`, planos, coleção de candidatos e decisão de seleção
 validados; `visual.py` não recompõe esse dicionário. A mudança G88 preserva o
 schema persistido e passou com 994 testes. A auditoria arquitetural e os
-relatórios G88/G89/F8 registram as responsabilidades e pendências restantes.
+relatórios G88–G92/F8–F9 registram as responsabilidades e pendências restantes.
 As avaliações semânticas também permanecem como `CandidateEvaluation` imutável
 até a auditoria; o thaw da evidência ocorre somente na projeção JSON. G89 passou
-com 995 testes. Rows de rejeição técnica ainda serão migradas em fase própria.
+com 995 testes. G90–G92 mantêm rejeições tipadas até a projeção da auditoria.
 As métricas de seleção usam uma projeção canônica em
 `media/selection_metrics.py`: `MediaMetricsInput` é a entrada validada para
 `visual_plan`, criada diretamente do `MediaStageResult` ao vivo ou por adaptador
@@ -118,6 +118,10 @@ sintéticos usados na timeline) e
 `visual_timeline_assets_reused_across_scenes`. Os antigos
 `visual_assets_unique`/`visual_assets_reused` permanecem aliases de schema para
 projetos/consumidores existentes.
+`consumption.media` e `visual_report` também derivam métricas de seleção da
+mesma projeção tipada. `assets`, `fallbacks` e `reused` são aliases históricos;
+sem seleção projetada, os valores são `null`. Ver
+[relatório F9](docs/relatorios/20261005-selection-metrics-single-projection.md).
 Cards sintéticos comuns exibem assunto e trecho de narração sem converter
 entidades de busca em cadeia explicativa; somente cenas tipográficas desenham
 cadeias declaradas. Uma versão própria na chave do cache descarta PNGs com o
@@ -216,7 +220,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G92/F8 está em
+O relatório completo do estado registrado até G92/F9 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -226,6 +230,14 @@ O tempo de mídia subiu para 129 s, com 20 retries e 4 timeouts do Wikimedia.
 `consumption.media.shortlist_assets_unique` conta candidatos encaminhados para
 download; `real_scene_assets_unique` segue a seleção final e coincide com
 `visual_report.unique_assets`. `selected_unique` permanece alias compatível.
+Os totais de seleção em `consumption.media` e `pipeline.visual_report` derivam
+da mesma projeção por cena (`MediaSelectionStats`): `unique_assets`,
+`real_asset_occurrences`, `reused_assets`, `reuse_count`, `scenes_with_new_asset`,
+`scenes_with_reused_asset`, `synthetic_scenes`, `scenes_without_visual` e
+`scenes_with_unknown_decision`. Os campos históricos `assets`, `fallbacks` e
+`reused` são aliases, respectivamente, de cenas com visual selecionado, cenas
+sem visual e cenas com asset reutilizado; antes da projeção, esses valores são
+`null` (desconhecidos), não zeros inferidos das rows.
 G79 separa assunto de título em `from-script` por `--topic`; a causa, execução
 real e limitações estão em
 [docs/relatorios/20261005-topic-title-separation-and-real-runs.md](docs/relatorios/20261005-topic-title-separation-and-real-runs.md).

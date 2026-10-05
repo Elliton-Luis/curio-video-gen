@@ -1,12 +1,12 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G92 e métricas até F8.
-**Estado:** trabalho incompleto. G80–G92 e F4–F8 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G92 e métricas até F9.
+**Estado:** trabalho incompleto. G80–G92 e F4–F9 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G92
+> **Atualização:** F6–F9 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`) e G86–G92
 > (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
@@ -130,6 +130,7 @@ hashes e diffs.
 | `e187697` | Mantém resultados de aquisição rejeitados tipados até a auditoria (G91). |
 | `6191b8b` | Projeta rejeições e totais de query diretamente de outcomes tipados (G92). |
 | `b0b272e` | Faz a métrica live de duração total consumir o elapsed canônico do pipeline (F8). |
+| `ed34825` | Projeta os totais de seleção em `consumption.media` a partir da mesma estatística tipada de `visual_report` (F9). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -290,9 +291,12 @@ em preparação humana, foram repetidos os testes de integração, metadata e
 timing: **22 passaram em 36,48 s**. Compileall e `git diff --check` passaram.
 Detalhes e a ressalva sobre a ordem das verificações estão no relatório F6.
 
-F6 fecha o acumulador mutável comum, mas a fase de métricas permanece parcial:
-definições canônicas globais, unknown/null em históricos, timers adicionais,
-profile por suboperação e conciliação seleção-render continuam pendentes.
+F6 fecha o acumulador mutável comum. F9 unifica a projeção dos totais de seleção
+entre `consumption.media` e `visual_report`; os três nomes históricos permanecem
+aliases explícitos. A fase de métricas continua parcial: definições canônicas
+globais para request/retry/cache/timing, backfill de contadores históricos,
+timers adicionais, profile por suboperação e conciliação seleção-render seguem
+pendentes. Ver [relatório F9](20261005-selection-metrics-single-projection.md).
 
 ## Trabalho de mídia: escopo e ponto exato
 
@@ -330,12 +334,12 @@ query, provider, ranking ou seleção de imagem.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F8 parciais. | Definições canônicas para demais campos, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F9 parciais. | Definições canônicas para requests/retries/cache/timing, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G92 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallback e métricas; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G92/F8. Não representam
+Os status são os registrados na auditoria e neste relatório até G92/F9. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -565,6 +569,16 @@ tipados. Os focados passaram com 105, suíte completa com 997 em 194,65 s,
 compileall e diff check passaram. A lista persistida ainda é mapping na
 fronteira externa. Ver [relatório G92](20261005-typed-rejection-projections.md).
 
+## F9 — projeção única das métricas de seleção (`ed34825`)
+
+`consumption.media` agora projeta contagens de asset real, único, reutilizado,
+sintético, ausente e desconhecido a partir do mesmo `MediaSelectionStats`
+consumido por `visual_report`. `assets`, `fallbacks` e `reused` permanecem como
+aliases do formato anterior. Sem projeção da seleção, os valores ficam `null`;
+rows de metadata não são usadas para inferir zeros. **26 testes focados e 999
+testes completos em 198,62 s** passaram; compileall e diff check passaram. Ver
+[relatório F9](20261005-selection-metrics-single-projection.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -616,4 +630,5 @@ passaram. Não houve geração real. Consulte
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)
 - [`F7 — duração desconhecida no backfill`](20261005-backfill-unknown-total-duration.md)
 - [`F8 — fonte única da duração total live`](20261005-live-metric-total-duration.md)
+- [`F9 — projeção única das métricas de seleção`](20261005-selection-metrics-single-projection.md)
 - [`Inventário de relatórios do projeto`](../README.md)
