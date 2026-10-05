@@ -458,6 +458,125 @@ def test_post_download_resolution_failure_is_audited_and_falls_back_safely(
     assert map_audit["reason"] == "resolution/legibility after download"
 
 
+def test_generic_representation_runs_after_specific_candidate_download_failure(
+        tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from curio.media.providers import MediaError
+    from curio.stages import media_candidate_acquisition
+    from curio.stages.media_acquisition import DownloadedMedia
+
+    chapter = _chapter("Ottoman Empire", "Battle of Mohacs", "Mohacs",
+                       "Battle of Mohacs 1526")
+    specific = MediaAsset(
+        "fixture", "specific", title="Battle of Mohacs 1526 painting",
+        download_url="https://fixture.test/specific.jpg", width=1600, height=1200)
+    contextual = MediaAsset(
+        "fixture", "contextual", title=(
+            "Ottoman Empire Battle of Mohacs 1526 historical map"),
+        download_url="https://fixture.test/contextual.jpg", width=1600, height=1200)
+
+    class Provider:
+        name = "fixture"
+
+        def __init__(self):
+            self.queries = []
+
+        def search(self, query, *_args, **_kwargs):
+            self.queries.append(query)
+            return [specific] if query == "Battle of Mohacs 1526" else [contextual]
+
+    provider = Provider()
+    patch_search_plan(
+        monkeypatch, visual,
+        ["Battle of Mohacs 1526", "Ottoman Empire historical map"],
+        generic=["Ottoman Empire historical map"])
+
+    def submit(asset, *_args, **_kwargs):
+        future = Future()
+        if asset.asset_id == "specific":
+            future.set_exception(MediaError("specific image unavailable"))
+        else:
+            local_path = tmp_path / "contextual.jpg"
+            local_path.write_bytes(b"image bytes" * 2000)
+            downloaded = MediaAsset.from_dict(asset.to_dict())
+            downloaded.local_path = str(local_path)
+            future.set_result(DownloadedMedia(downloaded, "download"))
+        return future
+
+    monkeypatch.setattr(
+        media_candidate_acquisition.media_acquisition, "submit_download", submit)
+    monkeypatch.setattr(
+        media_candidate_acquisition.media_acquisition,
+        "downloaded_dimensions_valid", lambda _asset: True)
+    monkeypatch.setattr("curio.stages.visuals.render_fallback_plan",
+                        lambda *_args: None)
+
+    result, _ = visual._search_scene_with_shortcircuit(
+        chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en"),
+        1, None, str(tmp_path))
+
+    assert result[0]["asset"]["asset_id"] == "contextual"
+    assert provider.queries == [
+        "Battle of Mohacs 1526", "Ottoman Empire historical map"]
+    query_rows = result[0]["visual_decision"]["queries"]
+    assert [row["status"] for row in query_rows] == ["consulted", "consulted"]
+    candidates = result[0]["visual_decision"]["candidates"]
+    assert next(row for row in candidates if row["title"].startswith("Battle"))[
+        "decision"] == "rejected"
+    assert next(row for row in candidates
+                if row["title"].startswith("Ottoman Empire"))["decision"] == "selected"
+
+
+def test_generic_search_fills_remaining_asset_slots_in_rank_order(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from curio.stages import media_candidate_acquisition
+    from curio.stages.media_acquisition import DownloadedMedia
+
+    chapter = _chapter("Ottoman Empire", "Battle of Mohacs", "Mohacs",
+                       "Battle of Mohacs 1526")
+    specific = MediaAsset(
+        "fixture", "specific", title="Battle of Mohacs 1526 painting",
+        download_url="https://fixture.test/specific.jpg", width=1600, height=1200)
+    contextual = MediaAsset(
+        "fixture", "contextual", title=(
+            "Ottoman Empire Battle of Mohacs 1526 historical map"),
+        download_url="https://fixture.test/contextual.jpg", width=1600, height=1200)
+
+    class Provider:
+        name = "fixture"
+
+        def search(self, query, *_args, **_kwargs):
+            return [specific] if query == "Battle of Mohacs 1526" else [contextual]
+
+    patch_search_plan(
+        monkeypatch, visual,
+        ["Battle of Mohacs 1526", "Ottoman Empire historical map"],
+        generic=["Ottoman Empire historical map"])
+
+    def submit(asset, *_args, **_kwargs):
+        future = Future()
+        local_path = tmp_path / f"{asset.asset_id}.jpg"
+        local_path.write_bytes(b"image bytes" * 2000)
+        downloaded = MediaAsset.from_dict(asset.to_dict())
+        downloaded.local_path = str(local_path)
+        future.set_result(DownloadedMedia(downloaded, "download"))
+        return future
+
+    monkeypatch.setattr(
+        media_candidate_acquisition.media_acquisition, "submit_download", submit)
+    monkeypatch.setattr(
+        media_candidate_acquisition.media_acquisition,
+        "downloaded_dimensions_valid", lambda _asset: True)
+
+    result, _ = visual._search_scene_with_shortcircuit(
+        chapter, [Provider()], SimpleNamespace(cache_dir=str(tmp_path), language="en"),
+        2, None, str(tmp_path))
+
+    assert [item["asset"]["asset_id"] for item in result[0]["assets"]] == [
+        "specific", "contextual"]
+    assert [item["order"] for item in result[0]["assets"]] == [0, 1]
+
+
 @pytest.mark.parametrize("topic,event,entity,representation,distractor", [
     ("Julius Caesar", "Crossing of the Rubicon", "Julius Caesar",
      "Julius Caesar crossing the Rubicon", "Julius Caesar salad product"),

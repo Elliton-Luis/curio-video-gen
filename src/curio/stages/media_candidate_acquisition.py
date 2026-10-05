@@ -110,7 +110,8 @@ class CandidateAcquisitionBatch:
 
 def acquire_ranked_candidates(
         scene_id: int, ranked: list[RankedSelectionCandidate], max_images: int,
-        cache_dir: str, metrics=None, asset_uses: dict | None = None
+        cache_dir: str, metrics=None, asset_uses: dict | None = None,
+        selected_order_start: int = 0,
         ) -> CandidateAcquisitionBatch:
     """Try fresh ranked candidates until enough usable, unique assets exist."""
     if any(not isinstance(item, RankedSelectionCandidate) for item in ranked):
@@ -119,6 +120,10 @@ def acquire_ranked_candidates(
         raise ValueError("candidate acquisition requires a positive scene id")
     if isinstance(max_images, bool) or not isinstance(max_images, int) or max_images <= 0:
         raise ValueError("candidate acquisition requires a positive image limit")
+    if (isinstance(selected_order_start, bool)
+            or not isinstance(selected_order_start, int)
+            or selected_order_start < 0):
+        raise ValueError("candidate acquisition order offset must be non-negative")
 
     outcomes: list[CandidateAcquisitionOutcome] = []
     warnings: list[str] = []
@@ -241,7 +246,7 @@ def acquire_ranked_candidates(
         outcomes.append(CandidateAcquisitionOutcome(
             candidate=candidate, asset=selected_asset, disposition="selected",
             origin=acquisition, content_identity=content_key,
-            selected_order=selected_count,
+            selected_order=selected_order_start + selected_count,
             reuse_reason=reuse_reason))
         selected_count += 1
         if metrics:

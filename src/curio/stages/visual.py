@@ -183,8 +183,9 @@ def _search_scene_with_shortcircuit(
 
     from . import scoring
     min_score = scoring.threshold()
-    # Colete e pontue específicos antes de buscar fotos genéricas do gênero.
-    # Generic queries só rodam quando nenhuma foto específica passa o gate.
+    # Colete e pontue específicos antes das queries genéricas. A busca genérica
+    # também pode ser necessária se o melhor candidato específico falhar ao
+    # adquirir bytes ou passar pela validação técnica pós-download.
     specific_queries = [q for q in queries if q.lower() not in generics]
     generic_queries = [q for q in queries if q.lower() in generics]
     # A strong metadata score is not a successful asset: download can still
@@ -213,10 +214,12 @@ def _search_scene_with_shortcircuit(
                           _selection_asset_key(entry.asset.to_dict()), 0)]
     deferred_specific = [entry for entry in specific_ranked
                          if entry not in fresh_specific]
+    generic_collected = False
     if fresh_specific:
         ranked_candidates, low = specific_ranked, low_specific
     else:
         collection = collector.collect(generic_queries, phase_budget)
+        generic_collected = True
         candidates = list(collection.candidates)
         score_started = time.monotonic()
         generic_result = evaluate_generic(
@@ -236,55 +239,65 @@ def _search_scene_with_shortcircuit(
         ranked_candidates.extend(deferred_specific)
     collection = collector.snapshot()
     rejected = list(describe_technical_rejections(collection.rejected, ch))
-    if scoring.clip_enabled(cfg) and ranked_candidates:
+    def apply_clip(candidates_to_rank):
+        if not scoring.clip_enabled(cfg) or not candidates_to_rank:
+            return candidates_to_rank
         status = scoring.clip_status(cfg) or ""
-        if "habilitada (" in status:
-            shortlist_size = max(1, min(max_images * 2, 10))
-            clip_applied = False
-            for index in range(min(shortlist_size, len(ranked_candidates))):
-                entry = ranked_candidates[index]
-                try:
-                    downloaded = media_acquisition.download_media(
-                        MediaAsset.from_dict(entry.asset.to_dict()),
-                        cfg.cache_dir, metrics)
-                    asset = downloaded.asset
-                    if not media_acquisition.downloaded_dimensions_valid(asset):
-                        continue
-                    asset_snapshot = MediaAssetSnapshot.from_media_asset(asset)
-                    entry = entry.with_prepared_asset(asset_snapshot)
-                    clip_score = scoring.clip_score_image(asset.local_path, ch, cfg)
-                except (MediaError, TypeError, OSError):
-                    clip_score = None
-                if clip_score is None:
-                    ranked_candidates[index] = entry
+        if "habilitada (" not in status:
+            return candidates_to_rank
+        shortlist_size = max(1, min(max_images * 2, 10))
+        clip_applied = False
+        for index in range(min(shortlist_size, len(candidates_to_rank))):
+            entry = candidates_to_rank[index]
+            try:
+                downloaded = media_acquisition.download_media(
+                    MediaAsset.from_dict(entry.asset.to_dict()),
+                    cfg.cache_dir, metrics)
+                asset = downloaded.asset
+                if not media_acquisition.downloaded_dimensions_valid(asset):
                     continue
-                clip_applied = True
-                ranked_candidates[index] = entry.with_clip_score(
-                    clip_score, asset_snapshot)
-            ranked_candidates.sort(key=lambda item: (
-                -item.score,
-                -item.evaluation.evidence.get("scene_relevance", 0),
-                item.order))
-            if metrics and clip_applied:
-                metrics.media_layers_used["clip"] = metrics.media_layers_used.get("clip", 0) + 1
-                metrics.media_layer_device = scoring.clip_device(cfg)
-    for entry in low:
-        # Descartado por NOTA, não por filtro: é o caso que mais importa
-        # registrar, porque a imagem passou em todos os testes e ainda
-        # assim não é do assunto (a usina que "casou" com "térmico").
-        rejected.append({
-            "title": entry["asset"].get("title", ""),
-            "query": entry["query"],
-            "reason": (entry.get("rejection_reason")
-                       or entry.get("score_detail", {}).get("semantic_rejection")
-                       or f"nota {entry['score']:.0f} abaixo do mínimo {min_score:.0f}"),
-            "provider": entry["asset"].get("provider", ""),
-            "score": entry["score"],
-            "score_detail": entry.get("score_detail", {}),
-        })
-        if metrics:
-            metrics.media_record_asset_rejected()
-            metrics.media_record_funnel("score_rejected")
+                asset_snapshot = MediaAssetSnapshot.from_media_asset(asset)
+                entry = entry.with_prepared_asset(asset_snapshot)
+                clip_score = scoring.clip_score_image(asset.local_path, ch, cfg)
+            except (MediaError, TypeError, OSError):
+                clip_score = None
+            if clip_score is None:
+                candidates_to_rank[index] = entry
+                continue
+            clip_applied = True
+            candidates_to_rank[index] = entry.with_clip_score(
+                clip_score, asset_snapshot)
+        candidates_to_rank.sort(key=lambda item: (
+            -item.score,
+            -item.evaluation.evidence.get("scene_relevance", 0),
+            item.order))
+        if metrics and clip_applied:
+            metrics.media_layers_used["clip"] = metrics.media_layers_used.get("clip", 0) + 1
+            metrics.media_layer_device = scoring.clip_device(cfg)
+        return candidates_to_rank
+
+    ranked_candidates = apply_clip(ranked_candidates)
+
+    def append_low_rejections(entries):
+        for entry in entries:
+            # Score rejection differs from hard candidate gates and keeps its
+            # evidence so an editor can see why an eligible result lost.
+            reason = (entry.get("rejection_reason")
+                      or entry.get("score_detail", {}).get("semantic_rejection")
+                      or f"nota {entry['score']:.0f} abaixo do mínimo {min_score:.0f}")
+            rejected.append({
+                "title": entry["asset"].get("title", ""),
+                "query": entry["query"],
+                "reason": reason,
+                "provider": entry["asset"].get("provider", ""),
+                "score": entry["score"],
+                "score_detail": entry.get("score_detail", {}),
+            })
+            if metrics:
+                metrics.media_record_asset_rejected()
+                metrics.media_record_funnel("score_rejected")
+
+    append_low_rejections(low)
     selection_pool = prepare_selection_pool(
         ranked_candidates, asset_uses, _selection_asset_key)
     ranked = list(selection_pool.fresh)
@@ -312,6 +325,63 @@ def _search_scene_with_shortcircuit(
     rejected.extend(outcome.to_rejection_row()
                     for outcome in acquisition_batch.rejected)
     warnings.extend(acquisition_batch.warnings)
+
+    # Generic/context representations are the next search tier, not an excuse
+    # to stop after a score-only candidate that could not be acquired.
+    if len(picked) < max_images and not generic_collected and generic_queries:
+        collection = collector.collect(generic_queries, phase_budget)
+        generic_candidates = [candidate for candidate in collection.candidates
+                              if candidate.search_query.generic]
+        score_started = time.monotonic()
+        generic_result = evaluate_generic(
+            generic_candidates, ch, min_score)
+        if metrics:
+            metrics.media_selection_time += time.monotonic() - score_started
+        generic_ranked = [RankedSelectionCandidate.from_evaluation(item)
+                          for item in generic_result.accepted]
+        generic_ranked = apply_clip(generic_ranked)
+        generic_low = [item.to_selection_entry()
+                       for item in generic_result.rejected]
+        generic_entries = [item.to_selection_entry()
+                           for item in generic_result.accepted]
+        evaluated_entries.extend([*generic_entries, *generic_low])
+        append_low_rejections(generic_low)
+
+        previous_rejection_ids = {row.get("identity") for row in rejected}
+        collection = collector.snapshot()
+        additional_technical_rejections = describe_technical_rejections(
+            collection.rejected, ch)
+        rejected.extend(row for row in additional_technical_rejections
+                        if row.get("identity") not in previous_rejection_ids)
+        candidates = list(collection.candidates)
+
+        generic_pool = prepare_selection_pool(
+            generic_ranked, asset_uses, _selection_asset_key)
+        generic_fresh = list(generic_pool.fresh)
+        reused_ranked.extend(generic_pool.reused)
+        if metrics:
+            metrics.media_record_selection(len(generic_candidates), len(generic_fresh))
+            metrics.media_record_funnel("above_threshold", len(generic_fresh))
+        for row in additional_technical_rejections:
+            if row.get("identity") not in previous_rejection_ids and metrics:
+                metrics.media_record_rejection(row["reason"])
+        for row in generic_low:
+            if metrics:
+                metrics.media_record_rejection(
+                    row.get("rejection_reason")
+                    or row.get("score_detail", {}).get("semantic_rejection")
+                    or "score threshold")
+
+        if generic_fresh:
+            generic_batch = acquire_ranked_candidates(
+                ch.id, generic_fresh, max_images - len(picked), cfg.cache_dir,
+                metrics, asset_uses, selected_order_start=len(picked))
+            picked.extend(outcome.to_selected_asset()
+                          for outcome in generic_batch.selected)
+            rejected.extend(outcome.to_rejection_row()
+                            for outcome in generic_batch.rejected)
+            warnings.extend(generic_batch.warnings)
+            ranked.extend(generic_fresh)
 
     strategy_used = "image"
     if not picked:
