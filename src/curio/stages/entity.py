@@ -42,6 +42,11 @@ _AMBIGUOUS_HINT = re.compile(
     r"rei|rainha|imperador|papa|filme|personagem|livro|álbum|album|"
     r"bairro|estado)\b")
 
+# Short mixed letter/number labels (M87, H1N1, B52, ...) often name more
+# than one unrelated thing. Their surface form alone cannot ground a source.
+_COMPACT_IDENTIFIER = re.compile(
+    r"(?i)^(?=[a-z0-9-]{2,10}$)(?=.*[a-z])(?=.*\d)[a-z0-9-]+$")
+
 def _norm_phrase(phrase: str) -> str:
     """Normaliza uma frase para comparação: sem acento, sem pontuação, espaços
     colapsados. 'São Bento de Núrsia' e 'sao bento de nursia' precisam casar."""
@@ -285,6 +290,57 @@ def topic_terms_of(idea: str, language: str = "pt-BR") -> list[str]:
     return ranked[:4]
 
 
+def _identifier_context(idea: str, identifier: str) -> list[str]:
+    """Preserve explicit descriptors after a compact identifier as evidence.
+
+    This only uses words already in the request. Lowercase descriptive
+    phrases and following proper-name phrases remain separate alternatives;
+    no expansion, translation, or external knowledge is invented.
+    """
+    match = re.search(rf"(?i)(?<!\w){re.escape(identifier)}(?!\w)", idea or "")
+    if not match:
+        return []
+    words = re.findall(r"[A-Za-zÀ-ÿ][\wÀ-ÿ'-]*", idea[match.end():])
+    if not words:
+        return []
+
+    phrases: list[str] = []
+    group: list[str] = []
+    group_is_title = words[0][:1].isupper()
+    for word in words:
+        is_title = word[:1].isupper()
+        if group and is_title != group_is_title:
+            phrases.append(" ".join(group))
+            group = []
+        group.append(word)
+        group_is_title = is_title
+    if group:
+        phrases.append(" ".join(group))
+
+    stop = {"and", "or", "of", "the", "a", "an", "de", "da", "do",
+            "das", "dos", "e", "em", "no", "na", "nos", "nas"}
+    clean: list[str] = []
+    for phrase in phrases:
+        parts = phrase.split()
+        while parts and parts[0].casefold() in stop:
+            parts.pop(0)
+        while parts and parts[-1].casefold() in stop:
+            parts.pop()
+        value = " ".join(parts).strip()
+        if value and value.casefold() not in {item.casefold() for item in clean}:
+            clean.append(value)
+    return clean[:4]
+
+
+def _compact_identifier_target(idea: str, identifier: str) -> TargetEntity:
+    context = _identifier_context(idea, identifier)
+    contextual_queries = ([f"{identifier} {context[0]}"] if context else [])
+    return TargetEntity(
+        name=identifier, aliases=[], discriminants=context,
+        search_queries=[identifier, *contextual_queries], forbidden=[],
+        ambiguous=True, is_entity=True, source="heuristic")
+
+
 def resolve_entity_heuristic(idea: str, language: str = "pt-BR") -> TargetEntity:
     """Sem LLM: extrai o nome próprio mais provável e o toma como alvo.
 
@@ -302,6 +358,8 @@ def resolve_entity_heuristic(idea: str, language: str = "pt-BR") -> TargetEntity
     lead = re.split(r"[:?!\n]", (idea or "").strip(), maxsplit=1)[0].strip()
     lead_words = re.findall(r"[A-Za-zÀ-ÿ][\wÀ-ÿ'-]*", lead)
     first_word = textnorm.fold(lead_words[0]) if lead_words else ""
+    if lead_words and _COMPACT_IDENTIFIER.fullmatch(lead_words[0]):
+        return _compact_identifier_target(idea, lead_words[0])
     remaining = [word for word in lead_words[1:]
                  if textnorm.fold(word) not in _CONECTORES]
     if (len(lead_words) >= 2 and first_word not in _COMUN_INICIAIS
@@ -319,6 +377,8 @@ def resolve_entity_heuristic(idea: str, language: str = "pt-BR") -> TargetEntity
     if alvo:
         nome = alvo
         curto = len(_norm_phrase(nome).split()) <= 2
+        if _COMPACT_IDENTIFIER.fullmatch(nome):
+            return _compact_identifier_target(idea, nome)
         return TargetEntity(
             name=nome, aliases=[], discriminants=[],
             search_queries=[nome, f"{nome} história"], forbidden=[],
@@ -386,14 +446,27 @@ def resolve_entity(idea: str, cfg=None, language: str = "pt-BR",
                     seen.add(s.lower())
                     out.append(s)
             return out[:lim]
+        is_entity = bool(data.get("is_entity", True))
+        discriminants = _lst("discriminants", 6)
+        compact_identifier = bool(is_entity and _COMPACT_IDENTIFIER.fullmatch(nome))
+        if compact_identifier:
+            # A model-supplied term could itself match a namesake. For compact
+            # IDs, only context stated by the request is admissible evidence.
+            discriminants = _identifier_context(idea, nome)
+        search_queries = _lst("search_queries", 4)
+        if compact_identifier and discriminants:
+            contextual_query = f"{nome} {discriminants[0]}"
+            if contextual_query.casefold() not in {
+                    query.casefold() for query in search_queries}:
+                search_queries = [contextual_query, *search_queries][:4]
         alvo = TargetEntity(
             name=nome,
             aliases=_lst("aliases", 4),
-            discriminants=_lst("discriminants", 6),
-            search_queries=_lst("search_queries", 4),
+            discriminants=discriminants,
+            search_queries=search_queries,
             forbidden=_lst("forbidden", 5),
-            ambiguous=bool(data.get("ambiguous", False)),
-            is_entity=bool(data.get("is_entity", True)),
+            ambiguous=bool(data.get("ambiguous", False)) or compact_identifier,
+            is_entity=is_entity,
             topic_terms=_lst("search_queries", 4),
             source="llm")
         if metrics is not None:
@@ -432,6 +505,31 @@ def _head_noun(phrase: str) -> str:
     limpo = re.sub(r"[^\w\s]", " ", str(phrase or ""))
     palavras = [p for p in limpo.split() if p]
     return palavras[-1] if palavras else ""
+
+
+def _source_expands_identifier(source, identifier: str) -> bool:
+    """Accept a compact ID when the source itself explicitly defines it.
+
+    ``Messier 87 (M87; ...)`` establishes the alias in the source lead. A
+    title like ``Zastava M87`` or ``Capacete M87`` does not.
+    """
+    title = _norm_phrase(str(getattr(source, "title", "") or ""))
+    snippet = str(getattr(source, "snippet", "") or "")[:500]
+    if not title or not snippet:
+        return False
+    code = re.escape(identifier)
+    for match in re.finditer(r"\(([^()]*)\)", snippet):
+        contents = match.group(1).strip()
+        alias = re.match(rf"(?i){code}(?!\w)(.*)$", contents)
+        if not alias:
+            continue
+        remainder = alias.group(1)
+        if remainder and remainder[0].isalnum():
+            continue
+        lead = _norm_phrase(snippet[:match.start()].strip())
+        if lead == title or lead.endswith(" " + title):
+            return True
+    return False
 
 
 def source_verdict(source, target: TargetEntity) -> tuple[str, str]:
@@ -492,6 +590,9 @@ def source_verdict(source, target: TargetEntity) -> tuple[str, str]:
 
     if not target.name:
         return REASON_OK, ""
+    compact_identifier = bool(_COMPACT_IDENTIFIER.fullmatch(target.name))
+    explicit_expansion = (compact_identifier
+                          and _source_expands_identifier(source, target.name))
     proibidos = target.matched_forbidden(texto)
     if proibidos:
         return REASON_FORBIDDEN, ", ".join(proibidos)
@@ -499,8 +600,11 @@ def source_verdict(source, target: TargetEntity) -> tuple[str, str]:
         return REASON_ENTITY, ""
     if target.discriminants:
         achados = target.matched_discriminants(texto)
-        if not achados:
+        if not achados and not explicit_expansion:
             return REASON_DISCRIMINANT, ""
+    elif compact_identifier and not explicit_expansion:
+        return (REASON_DISCRIMINANT,
+                "identificador compacto sem contexto confirmador")
     return REASON_OK, ""
 
 

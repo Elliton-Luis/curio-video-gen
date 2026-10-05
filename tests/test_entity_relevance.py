@@ -142,6 +142,117 @@ def test_resolucao_heuristica_preserva_conectores_em_nomes_ingleses():
         assert target.search_queries[0] == expected
 
 
+def test_codigo_compacto_preserva_contexto_e_rejeita_homonimos():
+    """Um identificador curto não identifica sozinho seu referente."""
+    target = E.resolve_entity_heuristic(
+        "M87 black hole Event Horizon Telescope", "en-US")
+    assert target.name == "M87"
+    assert target.ambiguous is True
+    assert "black hole" in target.discriminants
+
+    capacete = ResearchSource(
+        "Capacete M87", "https://example.test/helmet",
+        "O M87 é um capacete de combate sul-africano.")
+    rifle = ResearchSource(
+        "Zastava M87", "https://example.test/rifle",
+        "A Zastava M87 é uma metralhadora pesada.")
+    galaxia = ResearchSource(
+        "Messier 87", "https://example.test/messier-87",
+        "Messier 87 (M87) is a galaxy with a supermassive black hole.")
+    alias_explicit = ResearchSource(
+        "Messier 87", "https://example.test/messier-87-pt",
+        "Messier 87 (M87; também chamada de Virgo A ou NGC 4486) é uma "
+        "galáxia elíptica supergigante localizada na constelação de Virgem.")
+
+    assert E.source_verdict(capacete, target)[0] == E.REASON_DISCRIMINANT
+    assert E.source_verdict(rifle, target)[0] == E.REASON_DISCRIMINANT
+    assert E.source_verdict(galaxia, target)[0] == E.REASON_OK
+    assert E.source_verdict(alias_explicit, target)[0] == E.REASON_OK
+
+
+@pytest.mark.parametrize("idea,identifier,context", [
+    ("H1N1 influenza virus", "H1N1", "influenza virus"),
+    ("B52 bomber aircraft", "B52", "bomber aircraft"),
+])
+def test_contexto_de_identificadores_compactos_e_geral(idea, identifier,
+                                                        context):
+    target = E.resolve_entity_heuristic(idea, "en-US")
+    assert target.name == identifier
+    assert target.ambiguous is True
+    assert context in target.discriminants
+
+
+def test_codigo_compacto_sem_contexto_nao_fundamenta_por_nome_so():
+    target = E.resolve_entity_heuristic("M87", "en-US")
+    fonte = ResearchSource(
+        "M87", "https://example.test/m87", "O M87 é um objeto.")
+    assert target.ambiguous is True
+    assert E.source_verdict(fonte, target)[0] == E.REASON_DISCRIMINANT
+
+
+def test_resolver_llm_e_local_compartilham_contexto_de_codigo_compacto(monkeypatch):
+    from types import SimpleNamespace
+    from curio.stages import nvidia
+
+    monkeypatch.setattr(nvidia, "any_llm_available", lambda: True)
+    monkeypatch.setattr(nvidia, "complete_json", lambda *a, **k: (
+        {"target": "M87", "aliases": [], "discriminants": ["military"],
+         "search_queries": ["M87"], "forbidden": [], "ambiguous": False,
+         "is_entity": True}, "test:model"))
+    monkeypatch.setattr("curio.runlog.event", lambda *a, **k: True)
+    cfg = SimpleNamespace(
+        nvidia_model="model", nvidia_base_url="https://example.test",
+        nvidia_timeout=1, openrouter_model="", openrouter_base_url="",
+        llm_overrides=lambda: {})
+
+    local = E.resolve_entity_heuristic(
+        "M87 black hole Event Horizon Telescope", "en-US")
+    llm = E.resolve_entity(
+        "M87 black hole Event Horizon Telescope", cfg, "en-US")
+
+    assert llm.name == local.name
+    assert llm.discriminants == local.discriminants
+    assert "military" not in llm.discriminants
+    assert llm.ambiguous is local.ambiguous is True
+    assert llm.search_queries[0] == "M87 black hole"
+
+
+def test_research_topic_rejeita_resultados_homonimos_de_codigo_compacto(monkeypatch):
+    import curio.stages.research as research
+
+    target = E.resolve_entity_heuristic(
+        "M87 black hole Event Horizon Telescope", "en-US")
+    hits = [{"title": title} for title in
+            ("Capacete M87", "Zastava M87", "Messier 87")]
+    sources = {
+        "Capacete M87": ResearchSource(
+            "Capacete M87", "https://example.test/helmet",
+            "O M87 é um capacete de combate sul-africano."),
+        "Zastava M87": ResearchSource(
+            "Zastava M87", "https://example.test/rifle",
+            "A Zastava M87 é uma metralhadora pesada."),
+        "Messier 87": ResearchSource(
+            "Messier 87", "https://example.test/messier-87",
+            "Messier 87 (M87) is a galaxy with a supermassive black hole."),
+    }
+    monkeypatch.setattr(E, "resolve_entity", lambda *a, **k: target)
+    monkeypatch.setattr(research, "_search_query_batch",
+                        lambda batch, *a, **k: [hits for _ in batch])
+    monkeypatch.setattr(research, "wikipedia_extract",
+                        lambda title, *a, **k: sources[title])
+    monkeypatch.setattr(research, "duckduckgo_abstract", lambda *a, **k: None)
+    monkeypatch.setattr(research, "_complete_research", lambda *a, **k: None)
+
+    result = research.research_topic(
+        "M87 black hole Event Horizon Telescope", "en-US", max_sources=3)
+
+    assert [source.title for source in result.sources] == ["Messier 87"]
+    assert {source.title for source, _, _ in result.rejected} == {
+        "Capacete M87", "Zastava M87"}
+    assert all(reason == E.REASON_DISCRIMINANT
+               for _, reason, _ in result.rejected)
+
+
 # --- a ambiguidade legítima: dois "Alexandre" --------------------------
 
 def test_ambiguidade_legitima_aceita_o_certo_e_barra_o_outro():
