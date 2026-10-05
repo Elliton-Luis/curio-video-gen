@@ -113,6 +113,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `50ba36d` | Compara assets selecionados com IDs consumidos pela timeline e mantém ausente como unknown (F13). |
 | `7bc5c23` | Preserva por cena a proveniência dos assets de segmento, paths ausentes e fallbacks (F14). |
 | `94119e3` | Distingue inputs submetidos a nova codificação de segmentos reutilizados do cache (F14). |
+| `8daa29f` | Usa `segment_asset_ids` para identificar assets associados ao segmento sem afirmar decodificação (F14). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.

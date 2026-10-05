@@ -1,7 +1,8 @@
 # F14 — proveniência dos assets do segmento visual
 
-**Commits:** `7bc5c23 refactor: record visual assets passed to renderer` and
-`94119e3 refactor: distinguish reused render segments`  
+**Commits:** `7bc5c23 refactor: record visual assets passed to renderer`,
+`94119e3 refactor: distinguish reused render segments`, and
+`8daa29f refactor: name segment asset identities precisely`
 **Estado:** concluída e validada.  
 **Escopo:** timeline visual ou plano primário → filtros de caminho → segmento
 visual silencioso.

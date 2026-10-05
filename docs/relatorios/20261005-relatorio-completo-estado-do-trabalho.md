@@ -6,15 +6,14 @@
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-**Estado do worktree no momento deste registro:** F14 possui dois commits
-(`7bc5c23`, `94119e3`) e uma renomeação de campo ainda não commitada para
-`segment_asset_ids`. Os arquivos dessa renomeação são
-`src/curio/media/render_usage.py`, `src/curio/pipeline_render.py` e
-`tests/test_pipeline_render_contracts.py`. A documentação F14 também está
-alterada/criada no worktree. A renomeação foi coberta pela suíte focada e pela
-suíte completa descritas abaixo; não foi criado commit para ela neste registro.
+**Estado do worktree no momento deste registro:** a renomeação de
+`passed_asset_ids` para `segment_asset_ids` foi commitada em `8daa29f`. Ela
+altera `src/curio/media/render_usage.py`, `src/curio/pipeline_render.py` e
+`tests/test_pipeline_render_contracts.py`. Os testes focados passaram (62); a
+suíte completa passou com 1009 testes após a mudança. Este relatório registra
+o fechamento documental dessa alteração.
 
-> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`) e G86–G92
+> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G92
 > (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
@@ -145,6 +144,7 @@ hashes e diffs.
 | `50ba36d` | Compara assets selecionados com a timeline e preserva reconciliação unknown no backfill (F13). |
 | `7bc5c23` | Registra paths dos assets associados aos segmentos e fallback por cena (F14). |
 | `94119e3` | Marca segmento visual reutilizado do cache, sem afirmar nova codificação (F14). |
+| `8daa29f` | Nomeia identidades dos assets associados ao segmento sem afirmar que foram decodificados pelo FFmpeg (F14). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -339,14 +339,13 @@ descritos acima: providers externos podem estar indisponíveis, busca pode
 esgotar candidatos utilizáveis e o coordenador `visual.py` ainda mantém parte
 da orquestração editorial, fallback e efeitos de observabilidade.
 
-O trabalho local em andamento quando a implementação foi interrompida era F14,
-uma extensão de proveniência no caminho do render, não uma tentativa de corrigir
-queries, providers, ranking ou seleção de imagens. A mudança renomeia
-`passed_asset_ids` para `segment_asset_ids` porque o contrato prova que um
-arquivo foi associado ao segmento, mas não que o FFmpeg decodificou cada input
-ou que seus pixels aparecem no MP4. Esse delta de três arquivos de código
-permanece fora dos commits listados. Nenhum trabalho de implementação foi
-continuado ao preparar esta atualização documental.
+O trabalho em andamento quando a implementação foi interrompida era F14, uma
+extensão de proveniência no caminho do render, não uma tentativa de corrigir
+queries, providers, ranking ou seleção de imagens. O commit `8daa29f` renomeou
+`passed_asset_ids` para `segment_asset_ids`: o contrato prova que um arquivo foi
+associado ao segmento, mas não que o FFmpeg decodificou cada input ou que seus
+pixels aparecem no MP4. Esse delta ficou limitado a
+`render_usage.py`, `pipeline_render.py` e `test_pipeline_render_contracts.py`.
 
 ## Estado das fases do plano arquitetural
 
@@ -639,7 +638,7 @@ testes completos em 192,03 s** passaram; compileall e diff check passaram. A
 métrica confirma planejamento visual, não a presença dos pixels no vídeo final.
 Ver [relatório F13](20261005-selection-render-reconciliation.md).
 
-## F14 — proveniência dos assets de segmento (`7bc5c23`)
+## F14 — proveniência dos assets de segmento (`7bc5c23`, `94119e3`, `8daa29f`)
 
 `VisualRenderUsage` carrega o resultado silencioso e `VisualRenderSceneUsage`
 lista IDs solicitados, assets associados ao segmento, paths ausentes, omitidos,
