@@ -6,6 +6,7 @@ import os
 
 from . import ffmpeg as ff
 from .stages.scene_contract import SemanticScene
+from .stages.media_selection import SelectionDecision
 
 MANUAL_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
@@ -81,6 +82,18 @@ def manual_media_scenes(semantic_scenes: list[SemanticScene],
                  "source_url": "", "download_url": "", "download_fallback_url": "",
                  "width": width, "height": height, "size_bytes": os.path.getsize(local),
                  "kind": "image", "local_path": local, "used_in": f"cena {scene.id}"}
+        reused = donor != scene.id
+        selection = SelectionDecision(
+            scene_id=scene.id,
+            status="reused" if reused else "real",
+            asset_id=asset["asset_id"], provider="manual", query="manual",
+            query_source="manual", representation=stem,
+            fallback_level="manual",
+            reuse_reason=(f"manual file already assigned to scene {donor}"
+                          if reused else ""),
+            reason=("user supplied manual image" if not reused else
+                    f"user supplied image reused from scene {donor}"),
+        )
         scenes.append({"chapter_id": scene.id, "asset": asset,
                        "assets": [{"asset": asset, "query": "manual",
                                     "relevance": 100, "order": 0}],
@@ -99,8 +112,9 @@ def manual_media_scenes(semantic_scenes: list[SemanticScene],
                            "selected": {"title": asset["title"], "provider": "manual",
                                         "reason": "asset supplied by user"},
                            "fallback": "manual",
+                           "selection": selection.to_dict(),
                        },
-                       "reused_from": None if donor == scene.id else donor})
+                       "reused_from": donor if reused else None})
     return scenes
 
 

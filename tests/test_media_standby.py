@@ -10,6 +10,7 @@ from curio.pipeline_media import (
     manual_media_scenes,
     manual_media_dir,
 )
+from curio.media.selection_result import MediaStageResult
 from curio.queue import QueueItemStatus, VideoQueue, retry_failed
 from curio.stages.scenes import Chapter
 
@@ -60,6 +61,14 @@ def test_manual_mapeia_fotos_em_ordem_e_reusa(tmp_path):
     assert scenes[0]["reused_from"] is None
     assert scenes[2]["reused_from"] == 1
     assert all(s["asset"]["provider"] == "manual" for s in scenes)
+    decisions = [s["visual_decision"]["selection"] for s in scenes]
+    assert [decision["status"] for decision in decisions] == [
+        "real", "real", "reused"]
+    assert decisions[2]["reuse_reason"] == "manual file already assigned to scene 1"
+    assert decisions[2]["reason"] == "user supplied image reused from scene 1"
+    typed = MediaStageResult.from_rows(scenes, "manual")
+    assert [scene.decision.status for scene in typed.scenes] == [
+        "real", "real", "reused"]
 
 
 def test_manual_media_rejects_chapter_instead_of_reading_semantics_from_it(tmp_path):

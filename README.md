@@ -262,6 +262,8 @@ O relatório desta migração de contratos está em
 LLM, reparos estruturais e fallback local produzem esse contrato diretamente;
 `Chapter` é uma projeção explícita para persistência compatível e consumidores
 de timeline/render.
+Seleções de imagens manuais também registram `SelectionDecision`, incluindo
+quando um arquivo precisou ser reutilizado em rodízio.
 O VisualPlanner não lê narração: representações locais são criadas no estágio
 de planejamento local de cenas, materializadas no contrato e então consumidas
 por VisualPlan/SearchPlan.

@@ -1002,3 +1002,18 @@ de persistência.
 
 16 testes focados de cache, pipeline e isolamento passaram. Suíte integral:
 **925 testes em 176,77 s**; compileall e diff check passaram.
+
+## G31: seleção manual produz decisão explícita
+
+O produtor de mídia manual atribuía arquivos em rodízio e gravava `reused_from`,
+mas não emitia `visual_decision.selection`. Isso deixava as seleções manuais fora
+do contrato que já descreve resultados de providers, cache e revisão, e métricas
+precisavam inferir status pelo campo auxiliar.
+
+Agora cada arquivo manual gera `SelectionDecision`: primeira atribuição é `real`,
+rodízio é `reused`, com donor, query/proveniência manual e motivo explícito. A
+auditoria narrativa existente permanece para compatibilidade. A regressão valida
+as rows pelo `MediaStageResult`, além dos campos persistidos.
+
+20 testes focados de standby, artifacts e pipeline visual passaram. Suíte integral:
+**925 testes em 175,85 s**; compileall e diff check passaram.
