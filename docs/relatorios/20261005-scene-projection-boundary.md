@@ -30,3 +30,24 @@ real do enrichment.
 Validação G43: testes focados de estágio, integração, enrichment e contrato: 27
 passaram em 36,65 s. Suíte integral: **903 passaram em 183,70 s**;
 `compileall` e `git diff --check` passaram.
+
+## Continuação G44 — stage de render final
+
+A seleção de áudio final, assinatura das transições, decisão de cache do MP4,
+construção silenciosa, SFX e render final foram agrupados em
+`pipeline_render.run_render_stage`. A entrada exige cenas/spans e o plano de
+mídia já resolvidos; `RenderStageResult` retorna as saídas que metadata e
+métricas consomem. O coordenador não consulta mais os detalhes internos do
+retorno de `audio.selection.resolve_audio`.
+
+Validação focada de render, cache, TTS e pipeline: **33 passaram em 124,46 s**.
+A suíte integral e checks finais serão anotados após a rodada completa.
+
+Validação G44: contratos/política de render: 10 passaram; integração de render,
+cache, TTS e pipeline: 33 passaram. Suíte integral: **903 passaram em 179,78 s**;
+`compileall` e `git diff --check` passaram.
+
+A regressão final valida que render rejeita cenas/spans desalinhados antes de
+qualquer leitura de cache ou efeito colateral. Focados: **34 passaram em
+118,97 s**. Suíte integral após essa validação: **904 passaram em 185,86 s**;
+`compileall` e `git diff --check` passaram.

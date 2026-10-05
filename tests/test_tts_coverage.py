@@ -260,7 +260,7 @@ def test_pipeline_recusa_cache_parcial_e_ressintetiza(tmp_path, monkeypatch):
                          voice="v", speed=200, words=full_words)
 
     monkeypatch.setattr(tts_stage, "synthesize", fake_synth)
-    monkeypatch.setattr(pipe.ff, "probe_duration", lambda p: 8.64)
+    monkeypatch.setattr("curio.ffmpeg.probe_duration", lambda p: 8.64)
     monkeypatch.setattr(subs_stage, "write_subtitles",
                         lambda *a, **k: 10)
     monkeypatch.setattr(render_stage, "burn_final",
@@ -290,7 +290,7 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
         raise AssertionError("synthesize não deveria ser chamado")
 
     monkeypatch.setattr(tts_stage, "synthesize", boom)
-    monkeypatch.setattr(pipe.ff, "probe_duration", lambda p: 30.0)
+    monkeypatch.setattr("curio.ffmpeg.probe_duration", lambda p: 30.0)
     monkeypatch.setattr(subs_stage, "write_subtitles",
                         lambda *a, **k: 10)
     monkeypatch.setattr(render_stage, "burn_final",

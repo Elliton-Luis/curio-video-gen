@@ -11,15 +11,11 @@ em `assets/manual/` e roda o generate de novo para continuar.
 from __future__ import annotations
 
 import json
-import hashlib
 import os
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from . import ffmpeg as ff
-from .audio import selection as audio_selection
-from .audio.library import audio_seed
 from .audio import composition as audio_composition
 from .config import CurioConfig
 from . import pipeline_render as pipeline_render_stage
@@ -41,7 +37,6 @@ from .slug import slugify_with_timestamp
 from .slug import unique_slug
 from . import project_paths
 from . import project_artifacts
-from .stages import render as render_stage
 from .stages import editorial as editorial_stage
 from .stages import scoring as scoring_stage
 from .stages import sources as sources_stage
@@ -331,88 +326,26 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     visual_timeline = timeline_result.entries
 
     # [6/6] Montagem dinâmica + final
-    t0 = time.monotonic()
     emit(6, "Montando vídeo")
-    durations = [max(0.5, span.end - span.start) for span in timeline_spans]
-    total = round(audio_duration + 0.8, 2)
-    sfx_path = None
-    try:
-        previous_meta = project_artifacts.read_json(paths.metadata_json)
-    except (OSError, ValueError, json.JSONDecodeError):
-        previous_meta = {}
-    previous_audio = previous_meta.get("audio") or {}
-    visual_plan_signature = hashlib.sha256(
-        json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
     transition_mode = audio_composition.transition_mode(cfg)
-    transition_plan = pipeline_render_stage.plan_transitions(
-        tuple(semantic_scenes), timeline_spans, genre_key, transition_mode,
-        {"insertions": insert_budget,
-         "insert_style": cfg.visual_insert_style,
-         "insert_gain_db": cfg.visual_insert_gain_db,
-         "visual_sfx": cfg.visual_sfx})
-    legacy_audio_cache = not cfg.audio_enabled and not previous_audio
-    transition_dirty = (
-        previous_meta.get("visual_transition_signature") != transition_plan.signature
-        and not (legacy_audio_cache and transition_mode == "none"))
-    transition_dirty = transition_dirty or (
-        any(t.get("backgrounds") for t in visual_timeline) and
-        previous_meta.get("visual_plan_signature") != visual_plan_signature)
-    events = audio_composition.sfx_events(visual_timeline)
-    audio_plan = audio_selection.resolve_audio(
-        cfg, genre_key,
-        audio_seed(slug, video_title or idea, script_text),
-        video_title or idea, script_text, events, previous_audio)
-    warnings.extend(audio_plan["warnings"])
-    new_audio_meta = audio_plan["metadata"]
-    credits.extend(new_audio_meta.get("credits", []))
-    audio_cache_matches = (
-        previous_audio.get("signature") == new_audio_meta.get("signature")
-        or legacy_audio_cache)
-    if pipeline_render_stage.final_cache_is_current(
-            output_exists=os.path.isfile(paths.final_mp4), force=force,
-            subtitles_changed=subs_changed,
-            transition_dirty=transition_dirty,
-            narration_reused=bool(tts_info.get("reused")),
-            audio_cache_matches=audio_cache_matches):
-        video_duration = ff.probe_duration(paths.final_mp4)
-        render_info = {"backend": "cache", "encoder": "cache",
-                       "duration": video_duration, "path": paths.final_mp4}
-        sfx_path = (previous_meta.get("artifacts") or {}).get("sfx")
-    else:
-        silent = paths.silent_mp4
-        if force or transition_dirty or not os.path.isfile(silent):
-            if visual_timeline:
-                pipeline_render_stage.build_silent_visual(
-                                     tuple(semantic_scenes), timeline_spans,
-                                     visual_timeline, idea, paths,
-                                     cfg, silent,
-                                     transitions=transition_plan.boundary_durations,
-                                     kinds=transition_plan.kinds)
-            else:
-                pipeline_render_stage.build_silent(
-                              tuple(semantic_scenes), timeline_spans,
-                              media_render_plan, idea, paths,
-                              cfg, silent,
-                              transitions=transition_plan.boundary_durations,
-                              kinds=transition_plan.kinds)
-        narration_wav = paths.narration_wav
-        sfx_path = (audio_composition.sfx_track(visual_timeline, total, paths)
-                    if visual_timeline and cfg.visual_sfx else None)
-        if sfx_path:
-            narration_wav = audio_composition.narration_with_sfx(paths.narration_wav, sfx_path,
-                                                total, paths)
-        music_asset = audio_plan.get("music_asset")
-        music_path = str(music_asset.get("path")) if music_asset else None
-        final_fade = audio_composition.final_audio_fade(genre_key, transition_mode)
-        render_info = render_stage.burn_final(
-            silent, paths.subs_ass, narration_wav, paths.final_mp4,
-            cfg, total, title=video_title,
-            title_fontfile=pipeline_render_stage.title_fontfile(cfg, genre_key),
-            music_path=music_path, music_gain_db=cfg.music_gain_db,
-            music_ducking=cfg.music_ducking, final_fade=final_fade)
-        video_duration = render_info["duration"]
-        audio_composition.mark_audio_used(cfg, audio_plan)
-    stage_times["render"] = round(time.monotonic() - t0, 2)
+    render_result = pipeline_render_stage.run_render_stage(
+        tuple(semantic_scenes), timeline_spans, visual_timeline,
+        media_render_plan, idea, slug, video_title, script_text, paths, cfg,
+        genre_key, audio_duration, tts_info, subs_changed, force,
+        transition_mode,
+        visual_config={"insertions": insert_budget,
+                       "insert_style": cfg.visual_insert_style,
+                       "insert_gain_db": cfg.visual_insert_gain_db,
+                       "visual_sfx": cfg.visual_sfx})
+    render_info = render_result.render_info
+    video_duration = render_result.duration
+    sfx_path = render_result.sfx_path
+    new_audio_meta = render_result.audio_metadata
+    warnings.extend(render_result.warnings)
+    credits.extend(render_result.credits)
+    stage_times["render"] = render_result.elapsed
+    transition_plan = render_result.transition_plan
+    visual_plan_signature = render_result.visual_plan_signature
     run_event("result", f"Render: {render_info['backend']} / "
               f"{render_info['encoder']}; {video_duration:.1f}s",
               operation="render", backend=render_info["backend"],
@@ -460,8 +393,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         "audio": new_audio_meta,
         "visual_transition_signature": transition_plan.signature,
         "visual_plan_signature": visual_plan_signature,
-        "visual_transitions": transition_plan.to_dict(
-            audio_composition.final_audio_fade(genre_key, transition_mode)),
+        "visual_transitions": render_result.transition_metadata,
         "sources": {
             "claims": len(sources.claims),
             "media": len(sources.media),
@@ -496,8 +428,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             **({"visual_timeline": paths.visual_json}
                if max_images > 1 else {}),
             **({"sfx": sfx_path} if sfx_path else {}),
-            **({"music": audio_plan["music_asset"]["path"]}
-               if audio_plan.get("music_asset") else {}),
+            **({"music": render_result.music_path}
+               if render_result.music_path else {}),
             "subtitles": paths.subs_srt,
             "subtitles_ass": paths.subs_ass,
             "silent": paths.silent_mp4,

@@ -331,3 +331,146 @@ def _validate_render_inputs(semantic_scenes, timeline_spans) -> None:
     if (not scene_ids or len(scene_ids) != len(set(scene_ids))
             or scene_ids != span_ids):
         raise ValueError("render scenes and spans are misaligned")
+
+
+@dataclass(frozen=True)
+class RenderStageResult:
+    render_info: dict
+    duration: float
+    audio_metadata: dict
+    music_path: str | None
+    sfx_path: str | None
+    transition_plan: RenderTransitionPlan
+    transition_metadata: dict
+    visual_plan_signature: str
+    warnings: tuple[str, ...]
+    credits: tuple[str, ...]
+    elapsed: float
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.render_info, dict)
+                or not isinstance(self.audio_metadata, dict)):
+            raise TypeError("render stage requires render and audio metadata objects")
+        if not isinstance(self.transition_plan, RenderTransitionPlan):
+            raise TypeError("render stage requires a RenderTransitionPlan")
+        if not isinstance(self.transition_metadata, dict):
+            raise TypeError("render transition metadata must be an object")
+        if any(not isinstance(item, str) for item in (*self.warnings, *self.credits)):
+            raise TypeError("render warnings and credits must be text")
+        if (not self.visual_plan_signature or not isfinite(self.duration)
+                or not isfinite(self.elapsed) or self.duration < 0 or self.elapsed < 0):
+            raise ValueError("render stage result is incomplete")
+
+
+def run_render_stage(semantic_scenes: tuple[SemanticScene, ...],
+                     timeline_spans: tuple[TimelineSpan, ...],
+                     visual_timeline: list[dict], media_plan: SceneRenderPlan,
+                     idea: str, slug: str, title: str, script_text: str,
+                     paths, cfg: CurioConfig, genre: str,
+                     audio_duration: float,
+                     tts_info: dict, subtitles_changed: bool, force: bool,
+                     transition_mode: str, *,
+                     visual_config: dict) -> RenderStageResult:
+    """Resolve final audio and render/cache the final artifact from explicit inputs.
+
+    The coordinator supplies completed scene, media, timeline and TTS outputs;
+    this stage owns render-specific cache and transition decisions.
+    """
+    import time
+    from . import ffmpeg as ff
+    from .audio import composition as audio_composition
+    from .audio import selection as audio_selection
+    from .audio.library import audio_seed
+
+    _validate_render_inputs(semantic_scenes, timeline_spans)
+    if not isinstance(visual_timeline, list) or any(
+            not isinstance(entry, dict) for entry in visual_timeline):
+        raise TypeError("render visual timeline must be a list of objects")
+    if not isfinite(audio_duration) or audio_duration <= 0:
+        raise ValueError("render audio duration must be positive and finite")
+    if not isinstance(tts_info, dict):
+        raise TypeError("render TTS result must be an object")
+    if not isinstance(media_plan, SceneRenderPlan):
+        raise TypeError("render stage requires a SceneRenderPlan")
+    media_plan.for_scenes(semantic_scenes)
+    started = time.monotonic()
+    total = round(audio_duration + 0.8, 2)
+    try:
+        with open(paths.metadata_json, encoding="utf-8") as metadata_file:
+            previous_meta = json.load(metadata_file)
+    except (OSError, ValueError):
+        previous_meta = {}
+    previous_audio = previous_meta.get("audio") or {}
+    visual_signature = hashlib.sha256(
+        json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
+    transition_plan = plan_transitions(
+        semantic_scenes, timeline_spans, genre, transition_mode, visual_config)
+    transition_dirty = (
+        previous_meta.get("visual_transition_signature") != transition_plan.signature
+        and not (not cfg.audio_enabled and not previous_audio and transition_mode == "none"))
+    transition_dirty = transition_dirty or (
+        any(entry.get("backgrounds") for entry in visual_timeline)
+        and previous_meta.get("visual_plan_signature") != visual_signature)
+    events = audio_composition.sfx_events(visual_timeline)
+    audio_plan = audio_selection.resolve_audio(
+        cfg, genre, audio_seed(slug, title or idea, script_text),
+        title or idea, script_text, events, previous_audio)
+    warnings = list(audio_plan["warnings"])
+    audio_metadata = audio_plan["metadata"]
+    music_asset = audio_plan.get("music_asset")
+    music_path = str(music_asset.get("path")) if music_asset else None
+    credits = list(audio_metadata.get("credits", []))
+    audio_cache_matches = (
+        previous_audio.get("signature") == audio_metadata.get("signature")
+        or (not cfg.audio_enabled and not previous_audio))
+    if final_cache_is_current(
+            output_exists=os.path.isfile(paths.final_mp4), force=force,
+            subtitles_changed=subtitles_changed,
+            transition_dirty=transition_dirty,
+            narration_reused=bool(tts_info.get("reused")),
+            audio_cache_matches=audio_cache_matches):
+        duration = ff.probe_duration(paths.final_mp4)
+        render_info = {"backend": "cache", "encoder": "cache",
+                       "duration": duration, "path": paths.final_mp4}
+        sfx_path = (previous_meta.get("artifacts") or {}).get("sfx")
+    else:
+        silent = paths.silent_mp4
+        if force or transition_dirty or not os.path.isfile(silent):
+            if visual_timeline:
+                build_silent_visual(
+                    semantic_scenes, timeline_spans, visual_timeline, idea,
+                    paths, cfg, silent,
+                    transitions=transition_plan.boundary_durations,
+                    kinds=transition_plan.kinds)
+            else:
+                build_silent(
+                    semantic_scenes, timeline_spans, media_plan, idea,
+                    paths, cfg, silent,
+                    transitions=transition_plan.boundary_durations,
+                    kinds=transition_plan.kinds)
+        narration_wav = paths.narration_wav
+        sfx_path = (audio_composition.sfx_track(
+            visual_timeline, total, paths)
+            if visual_timeline and cfg.visual_sfx else None)
+        if sfx_path:
+            narration_wav = audio_composition.narration_with_sfx(
+                paths.narration_wav, sfx_path, total, paths)
+        final_fade = audio_composition.final_audio_fade(genre, transition_mode)
+        render_info = render_stage.burn_final(
+            silent, paths.subs_ass, narration_wav, paths.final_mp4,
+            cfg, total, title=title,
+            title_fontfile=title_fontfile(cfg, genre),
+            music_path=music_path, music_gain_db=cfg.music_gain_db,
+            music_ducking=cfg.music_ducking, final_fade=final_fade)
+        duration = render_info["duration"]
+        audio_composition.mark_audio_used(cfg, audio_plan)
+    return RenderStageResult(
+        render_info=render_info, duration=duration,
+        audio_metadata=audio_metadata, music_path=music_path,
+        sfx_path=sfx_path,
+        transition_plan=transition_plan,
+        transition_metadata=transition_plan.to_dict(
+            audio_composition.final_audio_fade(genre, transition_mode)),
+        visual_plan_signature=visual_signature,
+        warnings=tuple(warnings), credits=tuple(credits),
+        elapsed=round(time.monotonic() - started, 2))
