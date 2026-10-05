@@ -208,7 +208,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G78 está em
+O relatório completo do estado registrado até G79 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -218,6 +218,9 @@ O tempo de mídia subiu para 129 s, com 20 retries e 4 timeouts do Wikimedia.
 `consumption.media.shortlist_assets_unique` conta candidatos encaminhados para
 download; `real_scene_assets_unique` segue a seleção final e coincide com
 `visual_report.unique_assets`. `selected_unique` permanece alias compatível.
+G79 separa assunto de título em `from-script` por `--topic`; a causa, execução
+real e limitações estão em
+[docs/relatorios/20261005-topic-title-separation-and-real-runs.md](docs/relatorios/20261005-topic-title-separation-and-real-runs.md).
 O manifesto de roteiro schema 2 também assina inputs de roteiro e título, incluindo contexto de pesquisa, políticas e rotas: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e

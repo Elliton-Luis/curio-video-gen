@@ -1,7 +1,7 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural no repositório até G78.
+**Escopo:** estado da refatoração arquitetural no repositório até G79.
 **Estado:** trabalho incompleto. Este documento registra evidências disponíveis
 e não certifica a conclusão da refatoração. O worktree estava limpo após o
 commit documental G78 (`885bf72`).
@@ -11,12 +11,12 @@ commit documental G78 (`885bf72`).
 O projeto já tinha módulos separados por etapa, mas ainda havia contratos
 internos representados por mappings mutáveis e dados semanticamente duplicados.
 As migrações recentes vêm mantendo valores tipados por mais tempo entre
-planejamento, busca, avaliação, seleção, aquisição e persistência. G75–G78
+planejamento, busca, avaliação, seleção, aquisição e persistência. G75–G79
 extraíram aquisição técnica, unificaram uma tentativa técnica compartilhada,
-corrigiram a continuação da busca contextual após falhas de aquisição e
-melhoraram a auditoria de queries adiadas. Cada fase foi commitada e validada
-incrementalmente. As pendências de ownership global, simplificação e validação
-real permanecem.
+corrigiram a continuação da busca contextual após falhas de aquisição,
+melhoraram a auditoria de queries adiadas e separaram tópico de título em
+`from-script`. Cada fase foi commitada e validada incrementalmente. As pendências
+de ownership global, simplificação e validação real permanecem.
 
 ## Arquitetura antes das migrações recentes
 
@@ -101,6 +101,7 @@ hashes e diffs.
 | `11a7fff` | Documenta a busca contextual após falha de aquisição. |
 | `f7eabb0` | Audita queries contextuais adiadas e diferencia adiamento, consulta e orçamento esgotado (G78). |
 | `885bf72` | Documenta a auditoria G78. |
+| `58f0aea` | Separa tópico e título editorial no fluxo `from-script` (G79). |
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
 render, metadata e cenas estão enumeradas no relatório de estado e no histórico
@@ -179,6 +180,16 @@ orçamento. Ainda há uma limitação documentada: a razão detalhada cobre as
 queries contextuais adiadas; queries específicas são sempre iniciadas pelo
 fluxo atual.
 
+### G79: tópico e título de roteiro pronto
+
+Uma geração real revelou que `run_script_pipeline()` passava o mesmo texto
+como assunto de pesquisa e título editorial. G79 adicionou `--topic` para
+separar esse assunto do `--title`; o pipeline usa o tópico em pesquisa e cenas,
+e preserva o título informado como `TitleArtifact(provided)`. Sem `--topic`, o
+título continua servindo como assunto para compatibilidade. A migração cobre
+somente `from-script`; AI/TUI/queue ainda compartilham `idea` como string.
+Validação real e limitações estão no relatório dedicado G79.
+
 ## Testes e validações atuais registradas
 
 G70: 937 testes passaram e 1 teste foi desmarcado devido a HTTP 429 externo;
@@ -188,7 +199,8 @@ focados. G73: 940 passaram, 1 desmarcado, em 178,02 s; 99 focados. G74: 100
 focados passaram; na suíte ampla, 941 passaram e 1 foi desmarcado após HTTP
 429 da API real da Wikipédia, em 172,28 s. G75 teve 102 focados e suíte ampla
 com 943 passando/1 desmarcado; G76 teve 103 focados e 944/1; G77 teve 90
-focados e 946/1; G78 teve 53 focados e 948/1. Em G75–G78 também passaram
+focados e 946/1; G78 teve 53 focados e 948/1; G79 teve 36 focados e 953/1 na
+suíte ampla. Em G75–G79 também passaram
 `python -m compileall -q src tests` e `git diff --check`.
 
 Esses números refletem execuções separadas por fase, não uma única execução
@@ -225,6 +237,9 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 - **Auditoria de query:** G78 distingue tier contextual adiada da consulta
   efetiva; reasons equivalentes para queries específicas não executadas não
   fazem parte do comportamento atual porque elas são iniciadas pelo fluxo.
+- **Fonte de tópico:** G79 elimina a ambiguidade título/assunto somente em
+  `from-script`. AI, TUI e queue continuam usando a mesma string `idea` para
+  pesquisa, contexto e outras decisões do pipeline.
 
 ## Estado das fases do plano arquitetural
 
@@ -234,14 +249,14 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | A — modelo semântico | A4a–A4v concluídas no escopo registrado. | Ownership restante de alias/contexto e compatibilidade externa controlada. |
 | B — VisualPlan | B1–B4 concluídas no escopo registrado. | Consolidar políticas de gênero e ganchos sintéticos. |
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
-| D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G78. | Unificar transições de fallback e simplificar o coordenador. |
+| D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G79. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5, G7–G78 commitadas. | Simplificar coordenador e limpar caminhos antigos após migração comprovada. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5, G7–G79 commitadas. | Separar tópico nos modos AI/TUI/queue; simplificar coordenador e limpar caminhos antigos após migração comprovada. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório atualizado até G78. Não representam
+Os status são os registrados na auditoria e no relatório atualizado até G79. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -263,8 +278,9 @@ Depois, G77 corrigiu a parada prematura quando a busca específica retorna
 candidato elegível que falha durante aquisição: a tier contextual planejada
 continua antes dos fallbacks posteriores. G78 tornou visível quando essa tier
 foi adiada. Os gates, a política de reuso, os providers existentes e a ausência
-de chamadas pagas/LLM por cena foram preservados. Há regressões unitárias e
-validação ampla por fase, mas ainda não há validação real pós-G78.
+de chamadas pagas/LLM por cena foram preservados. G79 também separou tópico de
+título em `from-script`; o relatório dedicado registra replays reais e
+limitações. O replay determinístico G77 após falha de aquisição continua pendente.
 
 ## Incompleto para considerar a refatoração encerrada
 
@@ -272,9 +288,9 @@ validação ampla por fase, mas ainda não há validação real pós-G78.
   canônico para métricas/estado e simplificação dos coordenadores.
 - Resolver e testar os falsos positivos semânticos históricos sem reduzir
   thresholds nem esconder falhas de provider.
-- Executar geração real histórica após G77/G78 e com providers saudáveis,
-  reportando queries, providers, resultados, rejeições, winners, únicos,
-  reusos, sintéticos e esgotamento da busca por cena.
+- Repetir geração real histórica com providers saudáveis e executar replay
+  determinístico que exercite G77 após falha técnica, reportando a auditoria
+  por query, candidatos, decisões e fallback de cada cena.
 - Validar rerender, cache, falha de LLM/provider e pelo menos dois domínios
   reais, com inspeção visual dos assets vencedores.
 - Rodar suíte, compile/check e profile final sobre a revisão final efetivamente
@@ -282,7 +298,7 @@ validação ampla por fase, mas ainda não há validação real pós-G78.
 
 ## Referências de relatórios
 
-- [`Relatório de arquitetura e estado da migração até G78`](20261005-relatorio-arquitetura-estado-atual.md)
+- [`Relatório de arquitetura e estado da migração até G79`](20261005-relatorio-arquitetura-estado-atual.md)
 - [`Auditoria do pipeline e dos contratos`](../analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 - [`Resultados de execuções reais e limitações`](20261004-validacao-arquitetural-execucoes-reais.md)
 - [`G74 — resultados tipados de aquisição`](20261005-candidate-acquisition-outcomes.md)
@@ -290,4 +306,5 @@ validação ampla por fase, mas ainda não há validação real pós-G78.
 - [`G76 — tentativa técnica compartilhada`](20261005-shared-technical-acquisition-attempt.md)
 - [`G77 — busca contextual após falha de aquisição`](20261005-generic-search-after-acquisition-failure.md)
 - [`G78 — auditoria de queries adiadas`](20261005-deferred-query-audit-state.md)
+- [`G79 — tópico/título e validação real pós-G78`](20261005-topic-title-separation-and-real-runs.md)
 - [`Inventário de relatórios do projeto`](../README.md)
