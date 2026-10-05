@@ -630,9 +630,11 @@ tipo de visual, a imagem escolhida com nota, provedor e licença, e **os
 motivos das principais rejeições**. É o que permite revisar um vídeo em
 ~1 minuto e corrigir o tema em vez de adivinhar.
 
-`swap` troca a imagem de uma cena; `rerender` refaz o vídeo e as legendas
-a partir do que mudou — **sem** re-sintetizar a narração, sem re-pesquisar
-e sem chamar o LLM.
+`swap` delega a escolha à política de seleção: reordena os candidatos locais,
+sincroniza `SelectionDecision` com o asset primário e marca reuso se a imagem já
+foi atribuída a outra cena. O CLI só verifica o arquivo local e persiste o
+resultado. `rerender` refaz o vídeo e as legendas a partir do que mudou — **sem**
+re-sintetizar a narração, sem re-pesquisar e sem chamar o LLM.
 
 ## Configuração
 

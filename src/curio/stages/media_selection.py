@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from math import isfinite
 from dataclasses import dataclass
 
@@ -101,6 +102,106 @@ class SelectionDecision:
             reuse_reason=str(value.get("reuse_reason", "")),
             reason=str(value.get("reason", "")),
         )
+
+
+@dataclass(frozen=True)
+class ManualSwapResult:
+    media_rows: list[dict]
+    scene_id: int
+    asset: dict
+    previous_asset_id: str
+    reused_from: int | None
+
+
+def apply_manual_swap(media_rows: list[dict], scene_id: int,
+                      pick: int) -> ManualSwapResult:
+    """Apply a reviewer's choice and keep persisted selection provenance aligned."""
+    if not isinstance(media_rows, list) or any(
+            not isinstance(row, dict) for row in media_rows):
+        raise TypeError("manual swap requires persisted media scene rows")
+    if isinstance(scene_id, bool) or not isinstance(scene_id, int) or scene_id <= 0:
+        raise ValueError("manual swap scene id must be positive")
+    if isinstance(pick, bool) or not isinstance(pick, int) or pick < 0:
+        raise ValueError("manual swap pick must be non-negative")
+    ids = [row.get("chapter_id") for row in media_rows]
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
+           for value in ids) or len(ids) != len(set(ids)):
+        raise ValueError("manual swap media scene ids must be unique positive integers")
+    if ids.count(scene_id) != 1:
+        raise LookupError(f"Cena {scene_id} não existe.")
+    rows = deepcopy(media_rows)
+    target = next(row for row in rows if row.get("chapter_id") == scene_id)
+    entries = target.get("assets", [])
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        raise TypeError("manual swap scene assets must be a list")
+    if not entries:
+        raise ValueError(f"Cena {scene_id} não tem imagens escolhidas para trocar.")
+    if pick >= len(entries):
+        raise IndexError(f"--pick fora da faixa: a cena tem {len(entries)} imagem(ns) "
+                         f"(0..{len(entries) - 1}).")
+    entry = entries[pick]
+    if not isinstance(entry, dict):
+        raise TypeError("manual swap entry must be an object")
+    asset = entry.get("asset")
+    if not isinstance(asset, dict):
+        raise ValueError("A imagem escolhida não tem metadados válidos.")
+    asset_id = asset.get("asset_id")
+    provider = asset.get("provider")
+    if not isinstance(asset_id, str) or not asset_id or \
+            not isinstance(provider, str) or not provider:
+        raise ValueError("A imagem escolhida não tem identidade de asset válida.")
+
+    previous = target.get("asset") or {}
+    previous_id = (previous.get("asset_id", "")
+                   if isinstance(previous, dict) else "")
+    from ..media.identity import asset_identity
+    selected_identity = asset_identity(asset)
+    donor = next((row for row in rows
+                  if row.get("chapter_id") != scene_id
+                  and isinstance(row.get("asset"), dict)
+                  and selected_identity
+                  and asset_identity(row["asset"]) == selected_identity), None)
+    reused_from = donor.get("chapter_id") if donor else None
+    updated_entry = deepcopy(entry)
+    updated_entry["order"] = 0
+    updated_entry.pop("reuse_reason", None)
+    if reused_from:
+        updated_entry["reuse_reason"] = "manually reused by reviewer"
+    target["assets"] = [updated_entry] + [
+        dict(deepcopy(other), order=index + 1)
+        for index, other in enumerate(entries) if index != pick]
+    target["asset"] = deepcopy(asset)
+    if previous_id and previous_id != asset_id:
+        target["swapped_from"] = previous_id
+    if reused_from:
+        target["reused_from"] = reused_from
+    else:
+        target.pop("reused_from", None)
+
+    status = ("synthetic" if provider == "synth" else
+              "reused" if reused_from else "real")
+    score = updated_entry.get("score")
+    if score is not None:
+        score = float(score)
+    decision = SelectionDecision(
+        scene_id=scene_id, status=status, asset_id=asset_id, provider=provider,
+        query=str(updated_entry.get("query", "") or ""),
+        query_source=str(updated_entry.get("query_source", "") or ""),
+        representation=str(updated_entry.get("representation", "") or ""),
+        score=score, fallback_level="manual_review",
+        reuse_reason=("manually reused by reviewer" if reused_from else ""),
+        reason=("reviewer explicitly selected this visual" if not reused_from
+                else "reviewer explicitly selected an asset already assigned to another scene"))
+    audit = target.get("visual_decision") or {}
+    if not isinstance(audit, dict):
+        raise TypeError("manual swap visual decision must be an object")
+    audit = deepcopy(audit)
+    audit["selection"] = decision.to_dict()
+    target["visual_decision"] = audit
+    return ManualSwapResult(rows, scene_id, deepcopy(asset), previous_id,
+                            reused_from)
 
 
 def prepare_selection_pool(ranked: list[dict], asset_uses: dict | None,

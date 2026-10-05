@@ -375,7 +375,7 @@ def cmd_swap(args, cfg: CurioConfig) -> int:
     rede nem re-sintetiza áudio — que é o ponto: revisar um vídeo não pode
     custar uma nova geração de voz.
     """
-    from .stages import visual as visual_stage
+    from .stages import media_selection
     found = _lookup_paths(cfg, args.slug)
     if found is None:
         return 1
@@ -385,37 +385,18 @@ def cmd_swap(args, cfg: CurioConfig) -> int:
               file=sys.stderr)
         return 1
     media = project_artifacts.read_json(paths.media_json)
-    target = next((s for s in media if s.get("chapter_id") == args.scene), None)
-    if target is None:
-        print(f"Cena {args.scene} não existe no projeto.", file=sys.stderr)
+    try:
+        swap = media_selection.apply_manual_swap(media, args.scene, args.pick)
+    except (LookupError, IndexError, TypeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
         return 1
-    entries = target.get("assets") or []
-    if not entries:
-        print(f"Cena {args.scene} não tem imagens escolhidas para trocar.",
-              file=sys.stderr)
-        return 1
-    if not 0 <= args.pick < len(entries):
-        print(f"--pick fora da faixa: a cena tem {len(entries)} imagem(ns) "
-              f"(0..{len(entries) - 1}).", file=sys.stderr)
-        return 1
-    entry = entries[args.pick]
-    asset = entry.get("asset") or {}
+    asset = swap.asset
     if not asset.get("local_path") or not os.path.isfile(asset["local_path"]):
         print("A imagem escolhida não está em disco — refaça a etapa de mídia.",
               file=sys.stderr)
         return 1
-    # Reordena: a escolhida vai para order 0 e é a única visível da cena.
-    previous_id = ((target.get("asset") or {}).get("asset_id") or "")
-    others = [e for i, e in enumerate(entries) if i != args.pick]
-    novo = dict(entry)
-    novo["order"] = 0
-    target["assets"] = [novo] + [dict(e, order=i + 1)
-                                 for i, e in enumerate(others)]
-    target["asset"] = asset
-    if previous_id and previous_id != asset.get("asset_id"):
-        target["swapped_from"] = previous_id
     with open(paths.media_json, "w", encoding="utf-8") as fh:
-        json.dump(media, fh, ensure_ascii=False, indent=1)
+        json.dump(swap.media_rows, fh, ensure_ascii=False, indent=1)
     print(f"Cena {args.scene}: agora usa "
           f"'{asset.get('title', '')[:70]}' ({asset.get('provider', '?')}).")
     print(f"Rode `video-gen rerender --slug {args.slug}` para aplicar.")

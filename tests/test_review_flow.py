@@ -245,6 +245,8 @@ def test_cli_review_gera_a_folha_e_o_dry_run(tmp_path, capsys):
 # --- swap --------------------------------------------------------------
 
 def test_swap_troca_a_imagem_sem_tocar_no_resto(tmp_path):
+    from curio.media.selection_result import MediaStageResult
+
     cfg, slug, paths, chapters, media, root = _mk(tmp_path)
     antes = json.load(open(paths.media_json, encoding="utf-8"))
     rc = run(cfg.out_dir, "swap", "--slug", slug, "--scene", "1", "--pick", "1")
@@ -253,10 +255,33 @@ def test_swap_troca_a_imagem_sem_tocar_no_resto(tmp_path):
     cena = depois[0]
     assert cena["assets"][0]["asset"]["asset_id"] == "a1"
     assert cena["assets"][0]["order"] == 0
+    decision = cena["visual_decision"]["selection"]
+    assert decision["asset_id"] == cena["asset"]["asset_id"] == "a1"
+    assert decision["status"] == "real"
+    assert decision["fallback_level"] == "manual_review"
+    parsed = MediaStageResult.from_rows(depois, "manual-review")
+    assert parsed.scenes[0].decision.asset_id == parsed.scenes[0].asset.asset_id
     # as outras cenas não foram tocadas
     assert depois[1:] == antes[1:]
     # e a troca ficou registrada
     assert cena.get("swapped_from") == "a0"
+
+
+def test_manual_swap_marks_cross_scene_reuse_in_selection_decision(tmp_path):
+    from curio.stages.media_selection import apply_manual_swap
+
+    cfg, slug, paths, chapters, media, root = _mk(tmp_path)
+    chosen = media[0]["assets"][1]["asset"]
+    media[1]["asset"] = chosen
+    media[1]["assets"][0]["asset"] = chosen
+
+    result = apply_manual_swap(media, scene_id=1, pick=1)
+
+    selection = result.media_rows[0]["visual_decision"]["selection"]
+    assert result.reused_from == 2
+    assert selection["status"] == "reused"
+    assert selection["reuse_reason"] == "manually reused by reviewer"
+    assert selection["reason"].startswith("reviewer explicitly selected")
 
 
 def test_swap_rejeita_pick_fora_da_faixa(tmp_path):

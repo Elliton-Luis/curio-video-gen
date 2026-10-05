@@ -947,3 +947,22 @@ de status histórico malformado, 17 testes diretos de métricas/timeline passara
 Suíte integral final: **923 testes em 196,37 s**; compileall e diff check passaram.
 Testes antigos foram migrados ao adaptador nomeado em vez de manter a API dict
 interna.
+
+## G28: swap manual mantém seleção e auditoria coerentes
+
+`cmd_swap` alterava `asset` e `assets[0]`, mas deixava `visual_decision.selection`
+com a identidade/status do asset anterior. Isso causava divergência na proveniência
+e fazia os consumidores tipados rejeitarem o resultado pós-swap. Além disso, o CLI
+tomava a decisão de classificar mídia repetida sem registrar reuse.
+
+`stages.media_selection.apply_manual_swap` agora possui a política: valida cena e
+índice, reordena cópia dos candidatos, atualiza `swapped_from` e cria uma
+`SelectionDecision` explícita com `fallback_level=manual_review`. Se identidade
+de conteúdo já aparece como asset primário em outra cena, registra donor,
+`status=reused` e motivo; caso contrário marca real ou sintético. O CLI mantém só
+a validação de arquivo local, mensagens e persistência. Seleção e decisão ficam
+consistentes para review, métricas e rerender.
+
+36 testes focados passaram; uma regressão também reabre a seleção via
+`MediaStageResult` e confirma identidade pós-swap. Suíte integral: **924 testes em
+176,16 s**; compileall e diff check passaram.
