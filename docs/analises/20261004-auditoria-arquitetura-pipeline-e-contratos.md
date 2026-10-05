@@ -504,3 +504,7 @@ O novo `run_render_stage` possuía entrada com muitos argumentos posicionais, fr
 ## G46 — projeção assistida de metadata no owner
 
 `_run_pipeline` ainda montava o schema final de geração assistida, lendo campos de pesquisa, título, TTS, timeline, render e áudio e ligando-os diretamente ao JSON público. G46 moveu essa projeção para `pipeline_metadata.build_assisted_run_metadata`, que consome `ResearchStageResult`, `ScriptStageResult`, `SceneStageResult`, `AudioStageResult`, `VisualTimelineResult` e `RenderStageResult`, além dos valores de execução. O coordenador persiste fontes e encaminha os resultados; o formato externo permanece igual. A suíte específica de metadata/pipeline confirmou campos e artefatos após a migração.
+
+## G47 — transição para standby sob owner de mídia
+
+Quando nenhuma seleção tinha asset, `_run_pipeline` criava instruções para mídia manual, salvava sources/relatório e escrevia o metadata `standby-no-media`. G47 moveu esses efeitos para `pipeline_media.prepare_media_standby`, que exige `MediaStageResult` com zero assets e contagem de cenas positiva, persiste os mesmos artefatos e devolve `MediaStandby`; o coordenador apenas emite o status e propaga a exceção. O schema parcial e os caminhos/arquivos seguem compatíveis.

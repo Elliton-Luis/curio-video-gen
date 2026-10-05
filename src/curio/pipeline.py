@@ -260,25 +260,12 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     # Sem nenhuma imagem o vídeo NÃO é produzido: standby até fotos manuais.
     if media_result.selected_asset_count == 0:
-        pipeline_media_stage.write_manual_readme(manual_dir, slug, len(semantic_scenes))
-        sources.save(paths.sources_json)
-        sources_stage.write_report(paths.sources_report, sources,
-                                   research=research_sources, grounding=grounding)
-        project_artifacts.write_json(paths.metadata_json, {
-            "slug": slug,
-            "idea": idea,
-            "status": "standby-no-media",
-            "narration": "standby",
-            "media_resolution_source": media_result.source,
-            "manual_dir": manual_dir,
-            "n_scenes": len(semantic_scenes),
-            "stage_times": dict(stage_times),
-            "warnings": list(warnings),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "execution_log": current_log_path(),
-        })
+        standby = pipeline_media_stage.prepare_media_standby(
+            idea, slug, paths, len(semantic_scenes), media_result, stage_times,
+            warnings, sources, research_sources, grounding,
+            project_artifacts.write_json)
         emit(3, "Buscando mídia", "STANDBY")
-        raise pipeline_media_stage.MediaStandby(slug, manual_dir, len(semantic_scenes))
+        raise standby
 
     if narration == "human":
         return pipeline_human_prep.prepare_human_project(

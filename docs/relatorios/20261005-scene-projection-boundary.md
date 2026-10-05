@@ -80,3 +80,16 @@ A suíte completa será repetida antes do commit.
 
 Validação integral após G46: **904 passaram em 174,16 s**; `compileall` e
 `git diff --check` passaram.
+
+## Continuação G47 — estado standby pertence à etapa de mídia
+
+A ramificação sem asset não persiste mais estado dentro do coordenador.
+`pipeline_media.prepare_media_standby` valida seleção vazia, escreve instruções
+para arquivos manuais, persiste sources/relatório e metadata compatível, e
+retorna `MediaStandby` para o coordenador propagar.
+
+Focados de standby, sources e mídia: **11 passaram em 1,84 s**. A suíte
+integral será executada antes do commit.
+
+Validação integral após G47: **904 passaram em 176,06 s**; `compileall` e
+`git diff --check` passaram.

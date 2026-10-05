@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 from . import ffmpeg as ff
 from .stages.scene_contract import SemanticScene
+from .media.selection_result import MediaStageResult
+from .runlog import current_log_path
 from .stages.media_selection import SelectionDecision
 
 MANUAL_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
@@ -127,3 +130,35 @@ def count_assets(media_scenes: list[dict]) -> int:
                  for entry in scene.get("assets") or []):
             count += 1
     return count
+
+
+def prepare_media_standby(idea: str, slug: str, paths, n_scenes: int,
+                         media_result: MediaStageResult, stage_times: dict,
+                         warnings: list[str], sources, research_sources,
+                         grounding: dict, write_json) -> MediaStandby:
+    """Persist the explicit no-media state and prepare the manual-media path."""
+    if not isinstance(media_result, MediaStageResult):
+        raise TypeError("standby requires a MediaStageResult")
+    if media_result.selected_asset_count != 0:
+        raise ValueError("media standby requires zero selected assets")
+    if isinstance(n_scenes, bool) or not isinstance(n_scenes, int) or n_scenes <= 0:
+        raise ValueError("media standby requires a positive scene count")
+    manual_dir = manual_media_dir(paths)
+    write_manual_readme(manual_dir, slug, n_scenes)
+    from .pipeline_media_sources import persist_source_artifacts
+    persist_source_artifacts(
+        sources, paths, research=research_sources, grounding=grounding)
+    write_json(paths.metadata_json, {
+        "slug": slug,
+        "idea": idea,
+        "status": "standby-no-media",
+        "narration": "standby",
+        "media_resolution_source": media_result.source,
+        "manual_dir": manual_dir,
+        "n_scenes": n_scenes,
+        "stage_times": dict(stage_times),
+        "warnings": list(warnings),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "execution_log": current_log_path(),
+    })
+    return MediaStandby(slug, manual_dir, n_scenes)

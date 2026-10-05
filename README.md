@@ -187,6 +187,8 @@ O planejamento visual e suas métricas recebem `SemanticScene[]` e
 formatos externos; `stages/scenes.py` mantém apenas reexport legado.
 Aquisição por provider e mídia manual recebem somente `SemanticScene`; reuse
 consulta a mesma intenção tipada, sem adaptadores de Chapter.
+A seleção vazia é tratada por `pipeline_media.prepare_media_standby`, que
+persiste estado/instruções manuais antes de propagar `MediaStandby`.
 O metadata recebe semântica e timing tipados e só materializa `chapters` ao
 serializar o schema existente.
 `pipeline_metadata.build_assisted_run_metadata` projeta resultados tipados de
