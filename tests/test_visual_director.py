@@ -6,7 +6,7 @@ import pytest
 
 from curio.config import CurioConfig
 from curio.media.providers import MediaAsset
-from curio.stages import media_acquisition, scenes, scoring, visual
+from curio.stages import media_acquisition, media_search, scenes, scoring, visual
 from curio.stages.visual_context import attach_video_context
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -369,7 +369,7 @@ def test_scene_funnel_rejects_topic_only_distractor_and_records_reason(
 
     monkeypatch.setattr(media_acquisition, "download_asset", download)
     monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
-    monkeypatch.setattr(visual, "SEARCH_TIMEOUT", 2)
+    monkeypatch.setattr(media_search, "SEARCH_TIMEOUT", 2)
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
     metric = RunMetrics("session", "topic", "narration")
     result, _ = visual._search_scene_with_shortcircuit(

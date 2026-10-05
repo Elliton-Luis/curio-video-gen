@@ -1,5 +1,5 @@
 from curio.metrics import RunMetrics
-from curio.stages.visual import _submit_search
+from curio.stages.media_search import submit_search
 from curio.stages.scene_contract import TimelineSpan
 
 
@@ -26,7 +26,7 @@ def test_provider_search_timing_measures_one_adapter_call():
             metrics.media_search(self.name)
             return []
 
-    assert _submit_search(Provider(), "query", metrics).result(timeout=2) == []
+    assert submit_search(Provider(), "query", metrics).result(timeout=2) == []
     record = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
 
     assert record["requests_per_provider"] == {"fixture": 1}

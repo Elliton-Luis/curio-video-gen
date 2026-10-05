@@ -127,12 +127,15 @@ download e validação técnica.
 `stages/media_acquisition.py` é dono do cache/download de bytes, origem da
 aquisição e validação de dimensões reais; ele recebe `MediaAsset` e não conhece
 intenção ou seleção editorial. `visual.py` continua coordenando busca e seleção.
+`stages/media_search.py` executa queries e entrega `ProviderSearchResult(query, provider, assets, error, cache_hit)`
+tipado em ordem de prioridade; erros e timeouts permanecem visíveis para a
+auditoria, e o módulo não conhece cena, relevância nem fallback editorial.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
 integral histórica daquele relatório tem 909 testes aprovados. As migrações
 incrementais atuais estão no relatório abaixo; a suíte mais recente passou com
-934 testes após a extração G36 (suíte completa em 178,55 s).
+938 testes após G37 (suíte completa em 183,84 s).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

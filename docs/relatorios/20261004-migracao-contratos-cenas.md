@@ -195,7 +195,6 @@ Focados de pesquisa/pipeline/TTS/TUI: **50 passaram em 151,64 s**; a suíte
 completa passou com **857 testes em 202,95 s**. `compileall` e
 `git diff --check` passaram.
 
-
 ## F4: nomes de métricas distinguem seleção real e uso em timeline
 
 As execuções reais mostraram que `visual_report.unique_assets` mede IDs reais
@@ -1117,3 +1116,21 @@ aquisição; os aliases temporários foram removidos. A regressão contratual co
 proveniência de cache e arquivo inexistente. Focados: **90 testes passaram em
 1,49 s**. Suíte integral: **934 testes em 178,55 s**; `compileall` e
 `git diff --check` passaram.
+
+## G37: execução de queries separada da decisão visual
+
+O loop de cena ainda iniciava futures de providers, resolvia cache de resultado,
+esperava na ordem prioritária, aplicava timeout e tratava erro HTTP junto com a
+deduplicação e os gates semânticos. A execução de consulta foi extraída para
+`stages/media_search.py`. `search_providers` retorna uma sequência preguiçosa de
+`ProviderSearchResult(query, provider, assets, error, cache_hit)` na ordem recebida;
+requests correm concorrentemente e futures pendentes são cancelados se o
+consumidor parar ao atingir o orçamento. Cache, timing, timeout e desativação de
+provider por rate limit ficam nesse owner técnico. A etapa visual continua
+decidindo quais resultados examinar, deduplicar, rejeitar e pontuar.
+
+Os testes de timeout e contexto do runlog, timing de adapter e cache foram
+migrados para `media_search`; novos unitários cobrem resposta normalizada,
+ordem, hit de cache e erro como dado. Focados: **33 passaram em 0,47 s**.
+Suíte integral: **938 testes em 183,84 s**; compileall e `git diff --check`
+passaram.

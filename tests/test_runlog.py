@@ -98,7 +98,7 @@ def test_tui_event_view_stays_short(capsys):
 
 
 def test_media_provider_thread_keeps_run_log_context(tmp_path):
-    from curio.stages.visual import _search_with_timeout
+    from curio.stages.media_search import search_with_timeout
 
     class Provider:
         name = "fixture"
@@ -109,14 +109,14 @@ def test_media_provider_thread_keeps_run_log_context(tmp_path):
 
     path = tmp_path / "thread.jsonl"
     with RunLog(path, "thread"):
-        _search_with_timeout(Provider(), "query", 2)
+        search_with_timeout(Provider(), "query", 2)
     assert any(row["event"] == "retry" for row in _records(path))
 
 
 def test_media_search_timeout_returns_without_waiting_for_worker():
     import threading
     import time
-    from curio.stages.visual import _search_with_timeout
+    from curio.stages.media_search import search_with_timeout
     from curio.media.providers import MediaError
 
     release = threading.Event()
@@ -130,7 +130,7 @@ def test_media_search_timeout_returns_without_waiting_for_worker():
 
     started = time.monotonic()
     try:
-        _search_with_timeout(SlowProvider(), "query", 0.02)
+        search_with_timeout(SlowProvider(), "query", 0.02)
         assert False, "timed-out provider returned before release"
     except MediaError as exc:
         assert "busca timeout" in str(exc)

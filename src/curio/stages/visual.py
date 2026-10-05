@@ -25,7 +25,6 @@ quando seu manifesto corresponde aos inputs semânticos e à política atual.
 from __future__ import annotations
 
 import concurrent.futures
-import contextvars
 from collections.abc import Mapping
 import os
 import sys
@@ -53,12 +52,9 @@ from .visual_audit import candidate_audit_rows
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 from . import media_acquisition
+from . import media_search
 
-# Limites de concorrência para busca/baixa de mídia (configuráveis via env)
-MAX_CONCURRENT_SEARCHES = int(os.environ.get("CURIO_MAX_CONCURRENT_SEARCHES", "3"))
-SEARCH_TIMEOUT = float(os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
-_SEARCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
-    max_workers=max(1, MAX_CONCURRENT_SEARCHES), thread_name_prefix="curio-search")
+# SearchPlan ordering and provider policy are decided before transport.
 
 # Hierarquia de provedores (ordem de prioridade). Do mais específico para
 # o mais genérico: primeiro os bancos de foto com chave, depois os acervos
@@ -74,41 +70,6 @@ CANDIDATE_MULTIPLIER = 4
 MAX_SCENE_CANDIDATES = 20
 # Rejeições que a folha de contato guarda por cena (o resto é ruído).
 REJECTED_KEPT = 8
-
-
-def _submit_search(provider_obj, query: str, metrics=None):
-    """Submit one provider search, preserving run-log context in worker."""
-    context = contextvars.copy_context()
-
-    def timed_search():
-        started = time.monotonic()
-        try:
-            return provider_obj.search(query, 5, metrics)
-        finally:
-            if metrics:
-                metrics.media_provider_search(
-                    provider_obj.name, time.monotonic() - started)
-
-    return _SEARCH_EXECUTOR.submit(context.run, timed_search)
-
-
-def _search_with_timeout(provider_obj, query: str, timeout: float,
-                         metrics=None) -> list[MediaAsset]:
-    """Bound wait without executor context-manager's blocking shutdown.
-
-    Old `with ThreadPoolExecutor` waited for worker exit while leaving the
-    context, so timeout never returned at timeout. Provider HTTP calls have
-    their own finite network timeout; cancel stops queued work and caller
-    returns immediately. A running urllib call ends on its socket timeout.
-    """
-    future = _submit_search(provider_obj, query, metrics)
-    try:
-        return future.result(timeout=timeout)
-    except concurrent.futures.TimeoutError as exc:
-        future.cancel()
-        if metrics:
-            metrics.media_record_timeout()
-        raise MediaError(f"{provider_obj.name}: busca timeout ({timeout}s)") from exc
 
 
 # O gate de metadados é `media_rules.asset_gate_reason`: era a terceira
@@ -283,7 +244,6 @@ def _search_scene_with_shortcircuit(
             query_key = query.casefold()
             identities_before = len(seen_ids)
             duplicates_before = duplicate_candidates
-            rejected_before = len(rejected)
             shared = (shared_search_cache.setdefault(query_key, {})
                       if shared_search_cache is not None else {})
             active = [prov for prov in providers
@@ -300,69 +260,39 @@ def _search_scene_with_shortcircuit(
                 query_audit[query]["unavailable"] = True
             if metrics and active:
                 metrics.media_queries_count += 1
-            tasks = []
-            for prov in active:
-                if prov.name in shared:
-                    tasks.append((prov, None,
-                                  [MediaAsset.from_dict(item)
-                                   for item in shared[prov.name]]))
-                else:
-                    tasks.append((prov, _submit_search(prov, query, metrics), None))
-            deadline = time.monotonic() + SEARCH_TIMEOUT
-            # Wait in provider-priority order, even though requests run at
-            # once. Candidate order and tie-breaks remain deterministic.
-            for prov, future, cached_results in tasks:
-                if (len(candidates) >= MAX_SCENE_CANDIDATES
-                        or len(candidates) - candidates_before_query >= limit):
-                    for _later_provider, later, _cached in tasks:
-                        if later is not None:
-                            later.cancel()
-                    break
-                if cached_results is not None:
-                    results = cached_results
-                    if metrics:
-                        metrics.media_record_funnel("shared_search_hits")
-                else:
-                    try:
-                        remaining = max(0.0, deadline - time.monotonic())
-                        results = future.result(timeout=remaining)
-                    except concurrent.futures.TimeoutError:
-                        future.cancel()
-                        query_audit[query]["errors_by_provider"][prov.name] = "timeout"
-                        if metrics:
-                            metrics.media_record_timeout()
+            response_stream = media_search.search_providers(
+                query, active,
+                shared_results=(shared if shared_search_cache is not None else None),
+                metrics=metrics, timeout=media_search.SEARCH_TIMEOUT)
+            try:
+                responses = iter(response_stream)
+                for response in responses:
+                    if response.query != query:
+                        raise ValueError("provider response query does not match request")
+                    provider_name = response.provider
+                    if response.error:
+                        query_audit[query]["errors_by_provider"][provider_name] = (
+                            response.error)
                         continue
-                    except MediaError as exc:
-                        query_audit[query]["errors_by_provider"][prov.name] = str(exc)
-                        if (any(code in str(exc) for code in ("429", "401", "403"))
-                                or "Too Many Requests" in str(exc)):
-                            prov._disabled = True
+                    prov_results = response.assets
+                    query_audit[query]["results"] += len(prov_results)
+                    query_audit[query]["by_provider"][provider_name] = (
+                        query_audit[query]["by_provider"].get(provider_name, 0)
+                        + len(prov_results))
+                    for result_index, cand in enumerate(prov_results):
+                        if (len(candidates) >= MAX_SCENE_CANDIDATES
+                                or len(candidates) - candidates_before_query >= limit):
                             if metrics:
-                                metrics.media_record_timeout()
-                            from ..runlog import event as run_event
-                            logged = run_event(
-                                "fallback", f"{prov.name}: provider desativado; {exc}",
-                                operation="media_search", provider=prov.name,
-                                error=str(exc))
-                            if not logged:
-                                print(f"AVISO: {prov.name} desativado nesta execução ({exc})",
-                                      file=sys.stderr)
-                        continue
-                    if shared_search_cache is not None:
-                        shared[prov.name] = [result.to_dict() for result in results]
-                    if metrics:
-                        metrics.media_record_results(prov.name, len(results))
-                        metrics.media_record_funnel("normalized_returned", len(results))
-                query_audit[query]["results"] += len(results)
-                query_audit[query]["by_provider"][prov.name] = (
-                    query_audit[query]["by_provider"].get(prov.name, 0) + len(results))
-                for result_index, cand in enumerate(results):
-                    if len(candidates) >= limit:
-                        if metrics:
-                            metrics.media_record_funnel(
-                                "budget_unexamined", len(results) - result_index)
+                                metrics.media_record_funnel(
+                                    "budget_unexamined",
+                                    len(prov_results) - result_index)
+                            break
+                        _consider(cand, query)
+                    if (len(candidates) >= MAX_SCENE_CANDIDATES
+                            or len(candidates) - candidates_before_query >= limit):
                         break
-                    _consider(cand, query)
+            finally:
+                response_stream.close()
             if (len(seen_ids) == identities_before
                     and duplicate_candidates > duplicates_before):
                 abandoned_duplicate_queries.add(query)
