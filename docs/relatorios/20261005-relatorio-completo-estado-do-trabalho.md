@@ -1,12 +1,20 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G92 e métricas até F13.
-**Estado:** trabalho incompleto. G80–G92 e F4–F13 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G92 e métricas até F14.
+**Estado:** trabalho incompleto. G80–G92 e F4–F14 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F13 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`) e G86–G92
+**Estado do worktree no momento deste registro:** F14 possui dois commits
+(`7bc5c23`, `94119e3`) e uma renomeação de campo ainda não commitada para
+`segment_asset_ids`. Os arquivos dessa renomeação são
+`src/curio/media/render_usage.py`, `src/curio/pipeline_render.py` e
+`tests/test_pipeline_render_contracts.py`. A documentação F14 também está
+alterada/criada no worktree. A renomeação foi coberta pela suíte focada e pela
+suíte completa descritas abaixo; não foi criado commit para ela neste registro.
+
+> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`) e G86–G92
 > (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
@@ -135,6 +143,8 @@ hashes e diffs.
 | `4ee2506` | Separa expiração real de busca de bloqueio de provider por rate limit/acesso negado (F11). |
 | `9d86d4e` | Distingue cache de bytes e cache de resultados de busca no schema de métricas (F12). |
 | `50ba36d` | Compara assets selecionados com a timeline e preserva reconciliação unknown no backfill (F13). |
+| `7bc5c23` | Registra paths dos assets associados aos segmentos e fallback por cena (F14). |
+| `94119e3` | Marca segmento visual reutilizado do cache, sem afirmar nova codificação (F14). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -299,12 +309,14 @@ F6 fecha o acumulador mutável comum. F9 unifica a projeção dos totais de sele
 entre `consumption.media` e `visual_report`; os três nomes históricos permanecem
 aliases explícitos. F10 separa retries de busca e download sem alterar os
 campos agregados; F11 evita contar bloqueio de provider como timeout. A fase de
-métricas continua parcial: definições canônicas globais para requests/timing,
-backfill de contadores históricos,
-timers adicionais, profile por suboperação e confirmação dos frames após render
-seguem pendentes. F13 compara seleção com a timeline planejada; ver
+F13 compara seleção com a timeline planejada; F14 observa os assets que passam
+os filtros de caminho no renderer. A fase de métricas continua parcial:
+definições canônicas globais para requests/timing, backfill de contadores
+históricos, timers adicionais, profile por suboperação e confirmação dos frames
+após render seguem pendentes. Ver
 [relatório F9](20261005-selection-metrics-single-projection.md) e
-[relatório F13](20261005-selection-render-reconciliation.md).
+[relatório F13](20261005-selection-render-reconciliation.md),
+[relatório F14](20261005-renderer-input-asset-usage.md).
 
 ## Trabalho de mídia: escopo e ponto exato
 
@@ -327,10 +339,14 @@ descritos acima: providers externos podem estar indisponíveis, busca pode
 esgotar candidatos utilizáveis e o coordenador `visual.py` ainda mantém parte
 da orquestração editorial, fallback e efeitos de observabilidade.
 
-No instante da parada não havia patch local de mídia em andamento. A mudança
-local corrente era F6, sobre a fonte canônica e imutável dos tempos de etapa.
-Portanto não se deve interpretar o diff local como tentativa de corrigir uma
-query, provider, ranking ou seleção de imagem.
+O trabalho local em andamento quando a implementação foi interrompida era F14,
+uma extensão de proveniência no caminho do render, não uma tentativa de corrigir
+queries, providers, ranking ou seleção de imagens. A mudança renomeia
+`passed_asset_ids` para `segment_asset_ids` porque o contrato prova que um
+arquivo foi associado ao segmento, mas não que o FFmpeg decodificou cada input
+ou que seus pixels aparecem no MP4. Esse delta de três arquivos de código
+permanece fora dos commits listados. Nenhum trabalho de implementação foi
+continuado ao preparar esta atualização documental.
 
 ## Estado das fases do plano arquitetural
 
@@ -342,12 +358,12 @@ query, provider, ranking ou seleção de imagem.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F13 parciais. | Requests, lifecycle timers, profile por suboperação e conciliação dos frames após FFmpeg permanecem incompletos. |
+| F — métricas/estado | F1–F14 parciais. | Requests, lifecycle timers, profile por suboperação e validação dos frames após FFmpeg permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G92 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallback e métricas; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G92/F13. Não representam
+Os status são os registrados na auditoria e neste relatório até G92/F14. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -623,6 +639,21 @@ testes completos em 192,03 s** passaram; compileall e diff check passaram. A
 métrica confirma planejamento visual, não a presença dos pixels no vídeo final.
 Ver [relatório F13](20261005-selection-render-reconciliation.md).
 
+## F14 — proveniência dos assets de segmento (`7bc5c23`)
+
+`VisualRenderUsage` carrega o resultado silencioso e `VisualRenderSceneUsage`
+lista IDs solicitados, assets associados ao segmento, paths ausentes, omitidos,
+fallback por cena e se o segmento foi reutilizado do cache, tanto no render por
+timeline quanto no plano primário legado.
+O contrato segue `RenderStageResult` até métricas; rerender/finalize e geração
+humana registram a mesma estrutura. 62 focados e **1009 completos em 192,11 s**
+passaram; compileall e diff check passaram.
+
+Somente as 20 métricas mais recentes foram inspecionadas: todas são de
+`teste-integracao`/`proj-review`, sem queries nem requests a providers. Elas não
+servem de baseline de aquisição para H. Os detalhes e limite (não comprova
+decodificação/frame) estão no [relatório F14](20261005-renderer-input-asset-usage.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -679,4 +710,5 @@ passaram. Não houve geração real. Consulte
 - [`F11 — timeout e falhas de provider`](20261005-media-timeout-error-separation.md)
 - [`F12 — unidades explícitas de cache`](20261005-media-cache-metric-units.md)
 - [`F13 — reconciliação seleção e timeline`](20261005-selection-render-reconciliation.md)
+- [`F14 — assets dos segmentos visuais`](20261005-renderer-input-asset-usage.md)
 - [`Inventário de relatórios do projeto`](../README.md)
