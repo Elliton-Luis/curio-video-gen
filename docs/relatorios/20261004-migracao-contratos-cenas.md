@@ -795,4 +795,4 @@ não altera decisões editoriais.
 Teste reproduz shortlist com duas identidades e uma seleção real final. 23
 testes de métricas/funnel/uso passaram; suíte integral: **901 testes em
 188,67 s**; compileall e diff check passaram. Alteração segue no commit de
-documentação/código da fase G21.
+código em `3c163fa`.

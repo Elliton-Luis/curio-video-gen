@@ -118,7 +118,7 @@ malformado falha no limite do estágio sem side effects.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
-integral tem 900 testes aprovados. Geração local de ciência após a correção
+integral mais recente tem 901 testes aprovados. Geração local de ciência após a correção
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.
