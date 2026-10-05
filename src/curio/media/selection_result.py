@@ -157,6 +157,50 @@ class SceneMediaSelection:
         """Return the original project row without schema expansion."""
         return deepcopy(self._row)
 
+    def with_reuse_audit(self, reuse: list[dict]) -> "SceneMediaSelection":
+        """Update reuse audit through the contract's persisted-row boundary."""
+        if any(not isinstance(item, dict) for item in reuse):
+            raise TypeError("reuse audit entries must be objects")
+        row = self.to_dict()
+        row["reuse"] = deepcopy(reuse)
+        return SceneMediaSelection.from_dict(row)
+
+    def with_cross_scene_reuse(
+            self, asset: SelectedAsset, donor_scene_id: int,
+            decision: SelectionDecision, topic_relevance: float,
+            scene_relevance: float) -> "SceneMediaSelection":
+        """Return a validated selection updated with a qualified donor asset."""
+        if not isinstance(asset, SelectedAsset):
+            raise TypeError("reused selection requires a SelectedAsset")
+        if not isinstance(decision, SelectionDecision):
+            raise TypeError("reused selection requires a SelectionDecision")
+        if (isinstance(donor_scene_id, bool) or not isinstance(donor_scene_id, int)
+                or donor_scene_id <= 0 or donor_scene_id == self.scene_id):
+            raise ValueError("reuse donor must be another positive scene id")
+        if decision.scene_id != self.scene_id or decision.status != "reused":
+            raise ValueError("reuse decision must describe this scene as reused")
+        if (decision.asset_id != asset.asset.asset_id
+                or decision.provider != asset.asset.provider):
+            raise ValueError("reuse decision must identify the reused asset")
+
+        row = self.to_dict()
+        row["assets"] = [asset.to_dict()]
+        row["asset"] = asset.asset.to_dict()
+        row["reused_from"] = donor_scene_id
+        audit = row.get("visual_decision")
+        if isinstance(audit, dict):
+            audit["fallback"] = "validated_reuse"
+            audit["selection"] = decision.to_dict()
+            audit["selected"] = {
+                "title": asset.asset.title,
+                "provider": asset.asset.provider,
+                "topic_relevance": topic_relevance,
+                "scene_relevance": scene_relevance,
+                "reason": ("validated topic and scene evidence from scene "
+                           f"{donor_scene_id}"),
+            }
+        return SceneMediaSelection.from_dict(row)
+
 
 @dataclass(frozen=True)
 class MediaStageResult:

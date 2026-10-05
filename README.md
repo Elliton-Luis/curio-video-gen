@@ -174,6 +174,8 @@ G58 moveu reuso cross-scene e anotação de assets repetidos do coordenador para
 `media_selection.py`, sem alterar critérios nem formato persistido.
 G59 faz a etapa visual devolver `MediaStageResult` validado; pipeline e
 políticas de reuso consomem esse contrato tipado sem uma conversão intermediária.
+G60 transfere atualizações de reuso e projeção compatível para o contrato
+`SceneMediaSelection`, que revalida a seleção alterada.
 O relatório arquitetural com commits, contratos, estado das fases, validações e
 pendências está em [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6

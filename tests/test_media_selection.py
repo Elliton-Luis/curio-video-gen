@@ -148,6 +148,31 @@ def test_cross_scene_reuse_updates_the_selection_contract():
         "validated_reuse")
 
 
+def test_scene_selection_contract_owns_and_validates_reuse_projection():
+    from curio.media.selection_result import MediaStageResult, SelectedAsset
+    from tests.media_test_support import with_selection
+
+    empty = with_selection({"chapter_id": 2, "asset": None, "assets": []})
+    target = MediaStageResult.from_rows([empty], "fixture").scenes[0]
+    reused_row = {"asset": {"provider": "fixture", "asset_id": "asset-1"},
+                  "order": 0, "reuse_reason": "validated_cross_scene_reuse"}
+    reused_asset = SelectedAsset.from_dict(reused_row, 0)
+    decision = make_selection_decision(2, [reused_row], "validated_reuse")
+
+    updated = target.with_cross_scene_reuse(
+        reused_asset, 1, decision, topic_relevance=100,
+        scene_relevance=75)
+
+    assert updated.asset.asset_id == "asset-1"
+    assert updated.decision.status == "reused"
+    assert updated.reused_from == 1
+    assert updated.to_dict()["visual_decision"]["fallback"] == "validated_reuse"
+    with pytest.raises(ValueError, match="another positive scene"):
+        target.with_cross_scene_reuse(
+            reused_asset, 2, decision, topic_relevance=100,
+            scene_relevance=75)
+
+
 def test_media_stage_result_uses_typed_scene_selection_and_roundtrips_project_row():
     from curio.media.providers import MediaAsset
     from curio.media.selection_result import (MediaStageResult,

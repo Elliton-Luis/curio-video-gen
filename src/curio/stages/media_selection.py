@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import TYPE_CHECKING
 
@@ -321,7 +321,7 @@ def make_selection_decision(scene_id: int, picked: list[dict],
 
 def annotate_reuse(result: MediaStageResult) -> MediaStageResult:
     """Return a validated selection result with repeated identities annotated."""
-    from ..media.selection_result import MediaStageResult, SceneMediaSelection
+    from ..media.selection_result import MediaStageResult
     from ..media.identity import asset_identity
 
     if not isinstance(result, MediaStageResult):
@@ -329,7 +329,6 @@ def annotate_reuse(result: MediaStageResult) -> MediaStageResult:
     first_scene: dict[str, int] = {}
     updated_scenes = []
     for scene in result.scenes:
-        row = scene.to_dict()
         reuse = []
         for entry in scene.assets:
             asset = entry.asset
@@ -347,8 +346,7 @@ def annotate_reuse(result: MediaStageResult) -> MediaStageResult:
                 })
             else:
                 first_scene[identity] = scene.scene_id
-        row["reuse"] = reuse
-        updated_scenes.append(SceneMediaSelection.from_dict(row))
+        updated_scenes.append(scene.with_reuse_audit(reuse))
     return MediaStageResult(tuple(updated_scenes), result.source, result.warnings)
 
 
@@ -356,7 +354,7 @@ def resolve_cross_scene_reuse(
         result: MediaStageResult,
         semantic_scenes: list[SemanticScene]) -> MediaStageResult:
     """Fill empty scenes only from a semantically qualified selected asset."""
-    from ..media.selection_result import MediaStageResult, SceneMediaSelection
+    from ..media.selection_result import MediaStageResult, SelectedAsset
 
     if not isinstance(result, MediaStageResult):
         raise TypeError("cross-scene reuse requires a MediaStageResult")
@@ -400,28 +398,16 @@ def resolve_cross_scene_reuse(
         reuse_reason = "validated_cross_scene_reuse"
         reused_entry = dict(donor_entry, order=0,
                             reuse_reason=reuse_reason)
-        row = scene_row.to_dict()
-        row["assets"] = [reused_entry]
-        row["asset"] = reused_entry["asset"]
-        row["reused_from"] = donor_row.scene_id
-        if isinstance(row.get("visual_decision"), dict):
-            reused_asset = reused_entry.get("asset") or {}
-            decision = make_selection_decision(
-                scene_id, [reused_entry], "validated_reuse").to_dict()
-            decision["reason"] = (
-                f"validated topic and scene evidence; reused from scene "
-                f"{donor_row.scene_id} after fresh and synthetic choices")
-            row["visual_decision"]["fallback"] = "validated_reuse"
-            row["visual_decision"]["selection"] = decision
-            row["visual_decision"]["selected"] = {
-                "title": reused_asset.get("title", ""),
-                "provider": reused_asset.get("provider", ""),
-                "topic_relevance": selected.topic_relevance,
-                "scene_relevance": selected.scene_relevance,
-                "reason": ("validated topic and scene evidence from scene "
-                           f"{donor_row.scene_id}"),
-            }
-        updated_scenes.append(SceneMediaSelection.from_dict(row))
+        reused_asset = SelectedAsset.from_dict(reused_entry, 0)
+        decision = make_selection_decision(
+            scene_id, [reused_entry], "validated_reuse")
+        decision = replace(
+            decision,
+            reason=("validated topic and scene evidence; reused from scene "
+                    f"{donor_row.scene_id} after fresh and synthetic choices"))
+        updated_scenes.append(scene_row.with_cross_scene_reuse(
+            reused_asset, donor_row.scene_id, decision,
+            selected.topic_relevance, selected.scene_relevance))
         print(f"AVISO: cena {scene_id} reusa imagem(ns) da cena "
               f"{donor_row.scene_id} (sem mídia própria).", file=sys.stderr)
     return MediaStageResult(tuple(updated_scenes), result.source, result.warnings)

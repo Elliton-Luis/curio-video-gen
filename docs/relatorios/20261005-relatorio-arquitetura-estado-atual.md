@@ -77,6 +77,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `9f4e627` | Moveu a resolução e anotação de reuso cross-scene para `media_selection.py` (G58). |
 | `05dc295` | Registrou no relatório de estado o commit G58. |
 | `e652f64` | Fez `fetch_media_multi` retornar `MediaStageResult` e moveu a projeção de rows para a fronteira de persistência (G59). |
+| *(G60 desta entrega)* | Moveu atualizações de reuse e sua projeção compatível para métodos do contrato `SceneMediaSelection`. |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -104,7 +105,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G59
+## Arquivos alterados nas fases G57–G60
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -116,17 +117,21 @@ Implementação G58: `src/curio/stages/visual.py` e
 Implementação G59: `src/curio/stages/visual.py`,
 `src/curio/stages/media_selection.py` e `src/curio/pipeline_visual.py`.
 
+Implementação G60: `src/curio/media/selection_result.py` e
+`src/curio/stages/media_selection.py`.
+
 Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 `test_visual_model.py`, `test_visual_context.py`, `test_visual_director.py`,
 `test_visual_asset_usage.py`, `test_visual_topic_anchor.py` e
 `test_black_hole.py` (G57); `tests/test_media_diag.py` e
 `tests/test_media_selection.py` (G58); `tests/test_media_diag.py`,
 `tests/test_media_selection.py`, `tests/test_pipeline_integration.py`,
-`tests/test_pipeline_visual.py` e `tests/test_standby_flow.py` (G59).
+`tests/test_pipeline_visual.py` e `tests/test_standby_flow.py` (G59);
+`tests/test_media_selection.py` (G60).
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G59.
+relatório e os relatórios G57–G60.
 
 ## Estado das fases
 
@@ -139,7 +144,7 @@ relatório e os relatórios G57–G59.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G59 registradas; parcial. | `visual.py` ainda coordena busca/aquisição; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G60 registradas; parcial. | `visual.py` ainda coordena busca/aquisição; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -153,7 +158,9 @@ G57: **249 testes focados passaram**; suíte integral: **913 passaram em
 passaram em 210,52 s**. G59: testes focados de integração, **91 passaram**;
 com a regressão direta de produtor tipado, conjunto de contrato/produtor,
 **39 passaram**; suíte integral: **914 passaram em 189,20 s**. Em todas as
-fases, `python -m compileall -q src tests` e `git diff --check` passaram. Uma
+fases, `python -m compileall -q src tests` e `git diff --check` passaram.
+G60: **46 testes focados passaram**; suíte integral: **915 passaram em
+187,94 s**. Uma
 execução integral de G57 anterior à correção dos testes foi interrompida em
 640 passados e não é usada como prova.
 
@@ -192,5 +199,5 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G59 passam os gates registrados, mas auditoria integral, ownership único de
+G57–G60 passam os gates registrados, mas auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
