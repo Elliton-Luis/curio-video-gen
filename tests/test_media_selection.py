@@ -165,6 +165,47 @@ def test_acquisition_tries_ranked_candidates_and_deduplicates_downloaded_content
     assert batch.rejected[0].content_identity == "sha256:same-content"
 
 
+def test_fresh_and_reuse_paths_share_download_and_dimension_attempt(monkeypatch,
+                                                                    tmp_path):
+    from concurrent.futures import Future
+    from curio.media.asset_snapshot import MediaAssetSnapshot
+    from curio.media.providers import MediaAsset, MediaError
+    from curio.stages import media_acquisition, media_candidate_acquisition
+    from curio.stages.media_contracts import Candidate, CandidateEvaluation
+    from curio.stages.visual_contracts import SearchQuery
+
+    candidate = RankedSelectionCandidate.from_evaluation(CandidateEvaluation(
+        Candidate(MediaAsset("fixture", "asset", title="Test asset",
+                             download_url="https://example.test/asset.jpg"),
+                  SearchQuery("test asset", "scene_representation"),
+                  "fixture:asset"), 80, {}, True))
+
+    def failed_download(*_args):
+        future = Future()
+        future.set_exception(MediaError("offline"))
+        return future
+
+    monkeypatch.setattr(media_acquisition, "submit_download", failed_download)
+    failed = media_candidate_acquisition._acquire_and_validate(
+        candidate, str(tmp_path))
+    assert failed.disposition == "download_failed"
+    assert failed.origin is None
+    assert "offline" in failed.error
+
+    local_path = tmp_path / "cached.jpg"
+    local_path.write_bytes(b"cached image")
+    cached_candidate = candidate.with_prepared_asset(MediaAssetSnapshot.from_media_asset(
+        MediaAsset("fixture", "asset", title="Test asset",
+                   local_path=str(local_path))))
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid",
+                        lambda _asset: True)
+    ready = media_candidate_acquisition._acquire_and_validate(
+        cached_candidate, str(tmp_path))
+    assert ready.disposition == "ready"
+    assert ready.origin == "cache"
+    assert ready.asset.local_path == str(local_path)
+
+
 def test_asset_usage_links_provider_identity_to_downloaded_content_hash():
     usage = {}
     searched = {"asset_id": "same-id", "provider": "wikimedia",

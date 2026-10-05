@@ -11,6 +11,7 @@ import concurrent.futures
 import os
 import sys
 from dataclasses import dataclass
+from typing import Literal
 
 from ..media.asset_snapshot import MediaAssetSnapshot
 from ..media.identity import asset_identity
@@ -19,6 +20,65 @@ from . import media_acquisition
 from .media_acquisition_contracts import CandidateAcquisitionOutcome
 from .media_selection import RankedSelectionCandidate, record_asset_usage
 from .visual_beats import asset_key
+
+
+@dataclass(frozen=True)
+class TechnicalAcquisitionAttempt:
+    """Technical download/dimension result shared by fresh and reuse paths."""
+
+    asset: MediaAssetSnapshot
+    disposition: Literal["ready", "download_failed", "invalid_dimensions"]
+    origin: Literal["cache", "download"] | None = None
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.asset, MediaAssetSnapshot):
+            raise TypeError("technical acquisition requires an asset snapshot")
+        if self.disposition not in {
+                "ready", "download_failed", "invalid_dimensions"}:
+            raise ValueError("unknown technical acquisition disposition")
+        if self.origin not in {None, "cache", "download"}:
+            raise ValueError("unknown technical acquisition origin")
+        if not isinstance(self.error, str):
+            raise TypeError("technical acquisition error must be text")
+        if self.disposition == "ready":
+            if self.origin not in {"cache", "download"} or self.error:
+                raise ValueError("ready acquisition requires origin and no error")
+        elif self.disposition == "download_failed":
+            if self.origin is not None or not self.error.strip():
+                raise ValueError("download failure requires an error and no origin")
+        elif self.origin not in {"cache", "download"} or not self.error.strip():
+            raise ValueError("invalid dimensions requires origin and reason")
+
+
+def _acquire_and_validate(
+        candidate: RankedSelectionCandidate, cache_dir: str, metrics=None,
+        future: concurrent.futures.Future | None = None
+        ) -> TechnicalAcquisitionAttempt:
+    """Share byte acquisition and dimension validation across selection paths."""
+    asset = MediaAsset.from_dict(candidate.asset.to_dict())
+    if asset.local_path and os.path.isfile(asset.local_path):
+        origin = "cache"
+    else:
+        try:
+            if future is None:
+                future = media_acquisition.submit_download(
+                    asset, cache_dir, metrics)
+            downloaded = future.result(timeout=media_acquisition.DOWNLOAD_TIMEOUT)
+        except (MediaError, concurrent.futures.TimeoutError) as exc:
+            if future is not None:
+                future.cancel()
+            return TechnicalAcquisitionAttempt(
+                MediaAssetSnapshot.from_media_asset(asset), "download_failed",
+                error=str(exc))
+        asset, origin = downloaded.asset, downloaded.origin
+
+    if not media_acquisition.downloaded_dimensions_valid(asset):
+        return TechnicalAcquisitionAttempt(
+            MediaAssetSnapshot.from_media_asset(asset), "invalid_dimensions",
+            origin=origin, error="resolução/legibilidade após download")
+    return TechnicalAcquisitionAttempt(
+        MediaAssetSnapshot.from_media_asset(asset), "ready", origin=origin)
 
 
 @dataclass(frozen=True)
@@ -88,50 +148,41 @@ def acquire_ranked_candidates(
         if metrics:
             metrics.media_record_funnel("selected")
             metrics.media_shortlist_ids.add(asset_key(asset_data))
-        asset = MediaAsset.from_dict(asset_data)
-        local = asset.local_path
-        acquisition = "cache" if local and os.path.isfile(local) else "download"
-        if not (local and os.path.isfile(local)):
-            future = download_futures.pop(rank_index, None)
-            try:
-                if future is None:
-                    future = media_acquisition.submit_download(
-                        asset, cache_dir, metrics)
-                downloaded = future.result(
-                    timeout=media_acquisition.DOWNLOAD_TIMEOUT)
-                asset, acquisition = downloaded.asset, downloaded.origin
-                fill_download_window()
-            except (MediaError, concurrent.futures.TimeoutError) as exc:
-                if future is not None:
-                    future.cancel()
-                fill_download_window()
-                outcome = CandidateAcquisitionOutcome(
-                    candidate=candidate,
-                    asset=MediaAssetSnapshot.from_media_asset(asset),
-                    disposition="download_failed", rejection_stage="download",
-                    reason=f"download failed: {exc}")
-                outcomes.append(outcome)
-                message = f"cena {scene_id}: download falhou ({exc})"
-                warnings.append(message)
-                from ..runlog import event as run_event
-                logged = run_event("warning", message, operation="media_download",
-                                   scene=scene_id, provider=asset.provider,
-                                   error=str(exc))
-                if not logged:
-                    print(f"AVISO: {message}", file=sys.stderr)
-                if metrics:
-                    metrics.media_record_funnel("download_failed")
-                continue
-        if not media_acquisition.downloaded_dimensions_valid(asset):
+        had_local_asset = bool(asset_data.get("local_path")
+                               and os.path.isfile(asset_data["local_path"]))
+        future = (None if had_local_asset
+                  else download_futures.pop(rank_index, None))
+        attempt = _acquire_and_validate(candidate, cache_dir, metrics, future)
+        if not had_local_asset:
+            fill_download_window()
+        asset = MediaAsset.from_dict(attempt.asset.to_dict())
+        if attempt.disposition == "download_failed":
+            outcome = CandidateAcquisitionOutcome(
+                candidate=candidate, asset=attempt.asset,
+                disposition="download_failed", rejection_stage="download",
+                reason=f"download failed: {attempt.error}")
+            outcomes.append(outcome)
+            message = f"cena {scene_id}: download falhou ({attempt.error})"
+            warnings.append(message)
+            from ..runlog import event as run_event
+            logged = run_event("warning", message, operation="media_download",
+                               scene=scene_id, provider=asset.provider,
+                               error=attempt.error)
+            if not logged:
+                print(f"AVISO: {message}", file=sys.stderr)
+            if metrics:
+                metrics.media_record_funnel("download_failed")
+            continue
+        acquisition = attempt.origin
+        if attempt.disposition == "invalid_dimensions":
             message = (f"cena {scene_id}: '{asset.title[:50]}' rejeitado após "
                        f"download (resolução insuficiente ou ilegível)")
             warnings.append(message)
             outcomes.append(CandidateAcquisitionOutcome(
-                candidate=candidate,
-                asset=MediaAssetSnapshot.from_media_asset(asset),
-                disposition="invalid_dimensions", origin=acquisition,
+                candidate=candidate, asset=attempt.asset,
+                disposition="invalid_dimensions", origin=attempt.origin,
                 rejection_stage="dimensions",
-                reason="resolução/legibilidade após download"))
+                reason=attempt.error))
             if metrics:
                 metrics.media_record_asset_rejected()
                 metrics.media_record_rejection("resolução/legibilidade após download")
@@ -206,19 +257,10 @@ def acquire_reuse_fallback(
     if any(not isinstance(item, RankedSelectionCandidate) for item in candidates):
         raise TypeError("reuse acquisition requires ranked candidates")
     for candidate in sorted(candidates, key=lambda item: -item.score):
-        asset = MediaAsset.from_dict(candidate.asset.to_dict())
-        try:
-            if not (asset.local_path and os.path.isfile(asset.local_path)):
-                downloaded = media_acquisition.submit_download(
-                    asset, cache_dir, metrics).result(
-                        timeout=media_acquisition.DOWNLOAD_TIMEOUT)
-                asset, origin = downloaded.asset, downloaded.origin
-            else:
-                origin = "cache"
-        except (MediaError, concurrent.futures.TimeoutError):
+        attempt = _acquire_and_validate(candidate, cache_dir, metrics)
+        if attempt.disposition != "ready":
             continue
-        if not media_acquisition.downloaded_dimensions_valid(asset):
-            continue
+        asset = MediaAsset.from_dict(attempt.asset.to_dict())
         asset.used_in = f"cena {scene_id}"
         selected_asset = MediaAssetSnapshot.from_media_asset(asset)
         identity = asset_identity(selected_asset.to_dict())
@@ -228,6 +270,6 @@ def acquire_reuse_fallback(
             metrics.media_record_funnel("reused_fallback")
         return CandidateAcquisitionOutcome(
             candidate=candidate, asset=selected_asset, disposition="selected",
-            origin=origin, content_identity=identity, selected_order=0,
+            origin=attempt.origin, content_identity=identity, selected_order=0,
             reuse_reason="fresh_search_and_synthetic_exhausted")
     return None
