@@ -812,11 +812,6 @@ def _search_scene_with_shortcircuit(
             "metadata_support": detail.get("metadata_support", 0.0),
             "topic_evidence": detail.get("topic_evidence", {}),
             "scene_evidence": detail.get("scene_evidence", {}),
-            "provider": (entry.get("asset") or {}).get("provider", ""),
-            "creator": str((entry.get("asset") or {}).get("author", ""))[:120],
-            "source_url": str((entry.get("asset") or {}).get("source_url", ""))[:300],
-            "date_created": (entry.get("asset") or {}).get("date_created", ""),
-            "media_type": (entry.get("asset") or {}).get("media_type", "image"),
             "decision": ("selected" if was_selected else
                          "rejected" if (entry.get("rejection_reason")
                                         or detail.get("semantic_rejection")
