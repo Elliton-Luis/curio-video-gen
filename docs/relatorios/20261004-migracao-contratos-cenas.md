@@ -618,3 +618,28 @@ caiu para 1.123 linhas e `visual_timeline.py` está com 386. Aquisição ainda �
 um módulo grande, mas agora seu escopo exclui entrada de roteiro e geometria
 temporal; a próxima análise deve mapear subresponsabilidades internas de
 aquisição sem mover gates ou fallback por tamanho.
+
+## G13: late reuse precisa atualizar a decisão tipada
+
+`fetch_media_multi` já tenta o reuso por cena depois de buscas e fallback
+sintético. Uma segunda passagem, `_resolve_reuse_multi`, pode preencher cenas
+sem visual usando um asset de outra cena, inclusive quando só uma cena futura
+tem um candidato adequado. Essa passagem alterava `asset`/`assets`, mas deixava
+`visual_decision.selection` como `status="none"`; o boundary `MediaStageResult`
+rejeitava a contradição (`empty selection decision has a selected asset`). A
+passagem também copiava o conjunto inteiro do doador embora só um asset tivesse
+evidência para a cena destino.
+
+O late fallback agora copia somente o candidato validado e emite uma
+`SelectionDecision` com status `reused`, identidade do mesmo asset, motivo e
+nível `validated_reuse`. O fallback cross-scene permanece porque cobre donors
+que só são encontrados em cenas posteriores; a validação semântica continua
+obrigatória e não houve alteração de thresholds.
+
+A regressão reproduz a saída contraditória e exige que `MediaStageResult` aceite
+o resultado coerente, conte as cenas reais e registre donor/asset/status. 40
+focados passaram; a suíte integral passou com **893 testes em 197,53 s**;
+compileall e diff check passaram. Após limpeza de estilo, o teste novo também
+passou sozinho. Código em `0c83ee8`. A política de reuse ainda tem dois
+caminhos (seleção sequencial e late cross-scene); centralizar os dois sem
+perder a descoberta de donors posteriores continua sendo dívida arquitetural.

@@ -56,6 +56,9 @@ em 195,33 s.
 O builder de beats, inserções, backgrounds e SFX foi movido de `visual.py`
 para `visual_timeline.py`; o rebuild não importa mais aquisição de mídia. A
 suíte após essa mudança passou com 892 testes em 178,13 s.
+O fallback de reuso entre cenas agora mantém `asset` e `SelectionDecision`
+coerentes e carrega somente o candidato validado para a cena. A regressão
+passou junto aos 893 testes da suíte (197,53 s).
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
