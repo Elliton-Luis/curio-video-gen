@@ -40,6 +40,7 @@ from .runlog import (RunLog, current_log_path, event as run_event,
 from .slug import slugify_with_timestamp
 from .slug import unique_slug
 from . import project_paths
+from . import project_artifacts
 from .stages import render as render_stage
 from .stages import research as research_stage
 from .stages import editorial as editorial_stage
@@ -57,26 +58,6 @@ from .stages.scene_contract import SemanticScene, TimelineSpan
 STAGES_AI = ["roteiro", "cenas", "mídia", "narração", "legendas", "montagem"]
 STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
                 "teleprompter"]
-
-
-def _read(path: str) -> str:
-    with open(path, encoding="utf-8") as fh:
-        return fh.read()
-
-
-def _read_json(path: str):
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _write_json(path: str, data) -> None:
-    # Diretório defensivo: nada apaga output/, mas limpeza externa
-    # concorrente não deve derrubar o run com FileNotFoundError.
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, ensure_ascii=False, indent=1)
 
 
 def _title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
@@ -259,7 +240,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                                    force)
     if not cfg.audio_enabled and cfg.music_mode == "auto":
         try:
-            previous_project = _read_json(paths.metadata_json)
+            previous_project = project_artifacts.read_json(paths.metadata_json)
         except (OSError, ValueError, json.JSONDecodeError):
             previous_project = {}
         if previous_project.get("audio"):
@@ -275,7 +256,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # contexto/estado para roteiro, cenas e metadados seguintes.
     research_output = pipeline_research_stage.run_research_stage(
         idea, cfg, paths, metrics, genre_key, warnings, sources, emit,
-        _write_json)
+        project_artifacts.write_json)
     research = research_output.result
     research_sources = research.sources
     research_target = research.target
@@ -313,7 +294,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         scene_directive=editorial_stage.scene_directive(perfil), topic=idea,
         target=research_target, research_sources=research_sources,
         research_timeout=cfg.research_timeout, etymology=scene_etymology,
-        metrics=metrics, warnings=warnings, write_json=_write_json)
+        metrics=metrics, warnings=warnings, write_json=project_artifacts.write_json)
     semantic_scenes = list(scene_result.semantic_scenes)
     timeline_spans = scene_result.timeline_spans
     scenes_source = scene_result.source
@@ -328,7 +309,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     emit(3, "Buscando mídia")
     media_result = pipeline_visual_stage.resolve_media(
         semantic_scenes, cfg, paths, max_images, genre_key, metrics,
-        force_after_script, _write_json)
+        force_after_script, project_artifacts.write_json)
     media_scenes = media_result.scenes
     warnings.extend(media_result.warnings)
     provenance = pipeline_media_sources_stage.record_selected_media(
@@ -345,7 +326,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         sources.save(paths.sources_json)
         sources_stage.write_report(paths.sources_report, sources,
                                    research=research_sources, grounding=grounding)
-        _write_json(paths.metadata_json, {
+        project_artifacts.write_json(paths.metadata_json, {
             "slug": slug,
             "idea": idea,
             "status": "standby-no-media",
@@ -386,7 +367,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     audio_result = pipeline_audio_stage.run_audio_stages(
         script_text, tuple(semantic_scenes), timeline_spans,
         paths, cfg, audio_force, metrics, emit,
-        _write_json, pacing=pacing, caption_style=cap_style)
+        project_artifacts.write_json, pacing=pacing, caption_style=cap_style)
     timeline_spans = audio_result.timeline_spans
     words = audio_result.words
     audio_duration = audio_result.audio_duration
@@ -401,7 +382,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         tuple(semantic_scenes), timeline_spans, media_scenes,
         paths, slug, overlap_cap, cfg.visual_sfx,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
-        max_images > 1, metrics, _write_json)
+        max_images > 1, metrics, project_artifacts.write_json)
     visual_timeline = timeline_result.entries
 
     # [6/6] Montagem dinâmica + final
@@ -411,7 +392,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     total = round(audio_duration + 0.8, 2)
     sfx_path = None
     try:
-        previous_meta = _read_json(paths.metadata_json)
+        previous_meta = project_artifacts.read_json(paths.metadata_json)
     except (OSError, ValueError, json.JSONDecodeError):
         previous_meta = {}
     previous_audio = previous_meta.get("audio") or {}
@@ -603,7 +584,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                   operation="pipeline_warning", count=len(warnings) - 8)
     return pipeline_metadata_stage.persist_run_metadata(
         metadata, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
-        _write_json, finalize_started, started)
+        project_artifacts.write_json, finalize_started, started)
 
 
 def run_script_pipeline(script_text: str, cfg: CurioConfig,
@@ -664,18 +645,18 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig,
         cursor += duration
     timeline_spans = tuple(timeline_spans)
     estimated_total = round(cursor, 2)
-    _write_json(paths.timeline_json, [Chapter.from_semantic_scene(
+    project_artifacts.write_json(paths.timeline_json, [Chapter.from_semantic_scene(
         scene, timing=span).to_dict()
         for scene, span in zip(semantic_scenes, timeline_spans)])
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
         semantic_scenes, timeline_spans, media_scenes,
         paths, slug, overlap_cap, cfg.visual_sfx,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
-        max_images > 1, metrics, _write_json)
+        max_images > 1, metrics, project_artifacts.write_json)
     visual_timeline = timeline_result.entries
     audio_events = audio_composition.sfx_events(visual_timeline)
     try:
-        previous_meta = _read_json(paths.metadata_json)
+        previous_meta = project_artifacts.read_json(paths.metadata_json)
     except (OSError, ValueError, json.JSONDecodeError):
         previous_meta = {}
     audio_plan = audio_selection.resolve_audio(
@@ -782,7 +763,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig,
     })
     return pipeline_metadata_stage.persist_run_metadata(
         metadata, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
-        _write_json, finalize_started, started)
+        project_artifacts.write_json, finalize_started, started)
 
 
 def _probe_streams(path: str) -> list[dict]:
@@ -837,14 +818,14 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         raise ValueError(f"arquivo sem trilha de áudio: {audio_src}")
 
     saved_timeline = [Chapter.from_dict(row)
-                      for row in _read_json(paths.timeline_json)]
+                      for row in project_artifacts.read_json(paths.timeline_json)]
     semantic_scenes = tuple(chapter.semantic_scene("rerender")
                             for chapter in saved_timeline)
     timeline_spans = tuple(chapter.timeline_span() for chapter in saved_timeline)
     del saved_timeline
-    media_scenes = _read_json(paths.media_json)
+    media_scenes = project_artifacts.read_json(paths.media_json)
     try:
-        meta = _read_json(paths.metadata_json)
+        meta = project_artifacts.read_json(paths.metadata_json)
         idea = meta.get("input", slug)
     except (json.JSONDecodeError, FileNotFoundError):
         meta = {}
@@ -898,9 +879,9 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         words = transcribe_stage.transcribe(paths.human_wav,
                                             cfg.whisper_model, metrics=metrics,
                                             language=whisper_lang)
-        _write_json(paths.transcription_json, words)
+        project_artifacts.write_json(paths.transcription_json, words)
     else:
-        words = _read_json(paths.transcription_json)
+        words = project_artifacts.read_json(paths.transcription_json)
     run_event("provider" if metrics.whisper_calls else "cache",
               f"Transcrição: {'faster-whisper/' + cfg.whisper_model if metrics.whisper_calls else 'cache'}; "
               f"{len(words)} palavra(s)", operation="transcription",
@@ -929,7 +910,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     visual_timeline = None
     if os.path.isfile(paths.visual_json):
         try:
-            visual_timeline = _read_json(paths.visual_json)
+            visual_timeline = project_artifacts.read_json(paths.visual_json)
         except json.JSONDecodeError:
             visual_timeline = None
     if abs(diff) <= 0.3:
@@ -945,12 +926,12 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                 last.start, round(last.end + diff, 3))
             timeline_spans = (*timeline_spans[:-1], final_span)
             render_spans = timeline_spans
-            _write_json(paths.timeline_json, [
+            project_artifacts.write_json(paths.timeline_json, [
                 Chapter.from_semantic_scene(scene, timing=span).to_dict()
                 for scene, span in zip(semantic_scenes, timeline_spans)])
             visual_timeline = visual_timeline_stage.retime_visual_timeline(
                 visual_timeline, timeline_spans)
-            _write_json(paths.visual_json, visual_timeline)
+            project_artifacts.write_json(paths.visual_json, visual_timeline)
             pipeline_render_stage.build_silent_visual(
                                  semantic_scenes, timeline_spans,
                                  visual_timeline, idea, paths,
@@ -985,7 +966,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     human_wav = paths.human_wav
     sfx_path = None
     events = audio_composition.sfx_events(visual_timeline or [])
-    script_text = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
+    script_text = project_artifacts.read_text(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
     video_title = (meta.get("video_title") or "").strip()
     audio_plan = audio_selection.resolve_audio(
         cfg, project_genre, audio_seed(slug, video_title or idea, script_text),
@@ -1017,7 +998,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     emit("Merge final", "OK")
 
     try:
-        meta = _read_json(paths.metadata_json)
+        meta = project_artifacts.read_json(paths.metadata_json)
     except (json.JSONDecodeError, FileNotFoundError):
         meta = {}
     meta.update({
@@ -1056,4 +1037,4 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
     stage_times = {"finalize": round(time.monotonic() - started, 2)}
     return pipeline_metadata_stage.persist_run_metadata(
         meta, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
-        _write_json, started, started)
+        project_artifacts.write_json, started, started)

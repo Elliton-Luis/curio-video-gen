@@ -12,6 +12,7 @@ from .media.artifacts import (media_selection_signature,
 from .media.providers import get_providers
 from .pipeline_media import manual_media_dir, manual_media_scenes
 from .runlog import event as run_event
+from . import project_artifacts
 from .stages import scoring as scoring_stage
 from .stages import visual as visual_stage
 from .stages.media_selection import SelectionDecision
@@ -174,7 +175,7 @@ def _record_selection(scenes: list[dict], source: str, warnings: list[str],
 def _read_current_cache(scenes: list[SemanticScene], paths, signature: str,
                         max_images: int) -> list[dict] | None:
     try:
-        saved = _read_json(paths.media_json)
+        saved = project_artifacts.read_json(paths.media_json)
         expected_ids = [scene.id for scene in scenes]
         if ([scene["chapter_id"] for scene in saved] != expected_ids
                 or not selection_cache_is_current(
@@ -218,11 +219,6 @@ def _write_selection(paths, scenes: list[dict], signature: str,
         write_manifest(paths.media_manifest_json, scenes, signature)
     elif source == "provider" and os.path.isfile(paths.media_manifest_json):
         os.unlink(paths.media_manifest_json)
-
-
-def _read_json(path: str):
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
 
 
         fh.write("\n")

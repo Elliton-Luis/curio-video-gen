@@ -19,7 +19,8 @@ from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import RunMetrics, backfill_from_metadata
 from .audio import composition as audio_composition
-from .pipeline import (_read, _read_json, _write_json, finalize_project,
+from . import project_artifacts
+from .pipeline import (finalize_project,
                          run_pipeline,
                          run_script_pipeline)
 from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
@@ -341,14 +342,14 @@ def cmd_review(args, cfg: CurioConfig) -> int:
         print(f"Projeto '{slug}' incompleto ({paths.chapters_json} ausente).",
               file=sys.stderr)
         return 1
-    chapters = [Chapter.from_dict(d) for d in _read_json(paths.chapters_json)]
+    chapters = [Chapter.from_dict(d) for d in project_artifacts.read_json(paths.chapters_json)]
     semantic_scenes = tuple(chapter.semantic_scene("review_project")
                             for chapter in chapters)
-    media = _read_json(paths.media_json) if os.path.isfile(paths.media_json) else []
+    media = project_artifacts.read_json(paths.media_json) if os.path.isfile(paths.media_json) else []
     # O gênero vive no metadata.json, escrito na geração. Um projeto
     # antigo não tem a chave: aí não há gênero para mostrar, e a revisão
     # sai igual à de antes.
-    _meta = _read_json(paths.metadata_json) if os.path.isfile(
+    _meta = project_artifacts.read_json(paths.metadata_json) if os.path.isfile(
         paths.metadata_json) else {}
     genre = str(_meta.get("genre") or "")
     if args.dry_run:
@@ -381,7 +382,7 @@ def cmd_swap(args, cfg: CurioConfig) -> int:
         print(f"Projeto '{args.slug}' sem media.json — rode o generate antes.",
               file=sys.stderr)
         return 1
-    media = _read_json(paths.media_json)
+    media = project_artifacts.read_json(paths.media_json)
     target = next((s for s in media if s.get("chapter_id") == args.scene), None)
     if target is None:
         print(f"Cena {args.scene} não existe no projeto.", file=sys.stderr)
@@ -443,13 +444,13 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
               file=sys.stderr)
         return 1
 
-    chapters = [Chapter.from_dict(d) for d in _read_json(paths.timeline_json)]
+    chapters = [Chapter.from_dict(d) for d in project_artifacts.read_json(paths.timeline_json)]
     semantic_scenes = tuple(chapter.semantic_scene("rerender")
                             for chapter in chapters)
     timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
-    media = _read_json(paths.media_json)
+    media = project_artifacts.read_json(paths.media_json)
     try:
-        old_meta = _read_json(paths.metadata_json)
+        old_meta = project_artifacts.read_json(paths.metadata_json)
     except (OSError, ValueError, json.JSONDecodeError):
         old_meta = {}
     previous_audio = old_meta.get("audio") or {}
@@ -469,14 +470,14 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     visual_timeline = None
     if os.path.isfile(paths.visual_json):
         try:
-            visual_timeline = _read_json(paths.visual_json)
+            visual_timeline = project_artifacts.read_json(paths.visual_json)
         except json.JSONDecodeError:
             visual_timeline = None
     if visual_timeline is not None:
         # Replaneja só a geometria: as imagens podem ter mudado de ordem.
         visual_timeline = visual_timeline_stage.rebuild_visual_timeline(
             semantic_scenes, timeline_spans, media, cfg)
-        _write_json(paths.visual_json, visual_timeline)
+        project_artifacts.write_json(paths.visual_json, visual_timeline)
 
     transition_mode = audio_composition.transition_mode(cfg)
     transitions = pipeline_render_stage.genre_transitions(
@@ -494,8 +495,8 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
 
     total = round(audio_duration + 0.8, 2)
     title = (old_meta.get("video_title") or
-             (_read(paths.title_txt).strip() if os.path.isfile(paths.title_txt) else ""))
-    script_text = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
+             (project_artifacts.read_text(paths.title_txt).strip() if os.path.isfile(paths.title_txt) else ""))
+    script_text = project_artifacts.read_text(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
     events = audio_composition.sfx_events(visual_timeline or [])
     audio_plan = resolve_audio(
         cfg, project_genre, audio_seed(args.slug, title, script_text),
@@ -545,7 +546,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         old_meta["artifacts"]["music"] = music_asset["path"]
     old_meta["metrics_file"] = metrics.save(
         old_meta, {"render": old_meta["processing_time_seconds"]}, cfg.metrics_dir)
-    _write_json(paths.metadata_json, old_meta)
+    project_artifacts.write_json(paths.metadata_json, old_meta)
     print(f"Refeito: {info['path']} ({info['duration']}s, {info['encoder']})")
     print("Narração, roteiro e legendas vieram do cache — não foram refeitos.")
     return 0
