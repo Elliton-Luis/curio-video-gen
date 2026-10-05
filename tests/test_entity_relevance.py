@@ -131,6 +131,17 @@ def test_tema_com_nome_composto_acha_o_nome_certo():
         assert esperado in blocos, f"{ideia!r} -> {blocos}"
 
 
+def test_resolucao_heuristica_preserva_conectores_em_nomes_ingleses():
+    for idea, expected in (
+        ("Battle of Mohacs 1526", "Battle of Mohacs"),
+        ("The Battle of the Bulge", "Battle of the Bulge"),
+    ):
+        target = E.resolve_entity_heuristic(idea, "en-US")
+        assert target.name == expected
+        assert target.is_entity is True
+        assert target.search_queries[0] == expected
+
+
 # --- a ambiguidade legítima: dois "Alexandre" --------------------------
 
 def test_ambiguidade_legitima_aceita_o_certo_e_barra_o_outro():

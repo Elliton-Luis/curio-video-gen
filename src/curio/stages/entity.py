@@ -187,10 +187,7 @@ class TargetEntity:
 
 # --- heurística sem LLM ------------------------------------------------
 
-_CAP = re.compile(r"\b(?:de|da|do|dos|das|o|a|e)\b", re.I)
-
-
-_CONECTORES = {"de", "da", "do", "das", "dos", "e"}
+_CONECTORES = {"de", "da", "do", "das", "dos", "e", "of", "the", "and"}
 
 
 def _capitalized_spans(idea: str) -> list[str]:
@@ -217,19 +214,28 @@ def _capitalized_spans(idea: str) -> list[str]:
                 blocos.append(bloco)
         atual.clear()
 
-    for i, palavra in enumerate(texto.split()):
+    palavras = texto.split()
+    for i, palavra in enumerate(palavras):
         limpa = re.sub(r"[^\wÀ-ÿ]", "", palavra)
         if not limpa:
             _fechar()
             continue
         capitalizada = limpa[0].isupper()
         if not capitalizada:
-            # Conector entre duas capitalizadas ("São Bento de Núrsia")
-            # continua o bloco; qualquer outra palavra o fecha.
-            if (atual and limpa.lower() in _CONECTORES and i + 1 < len(
-                    texto.split())
+            # Preserve conectores dentro de nomes compostos em português e
+            # inglês, inclusive cadeias como "Battle of the Bulge".
+            next_capitalized = i + 1
+            while next_capitalized < len(palavras):
+                next_word = re.sub(r"[^\wÀ-ÿ]", "",
+                                   palavras[next_capitalized])
+                if next_word.lower() not in _CONECTORES:
+                    break
+                next_capitalized += 1
+            if (atual and limpa.lower() in _CONECTORES
+                    and next_capitalized < len(palavras)
                     and re.sub(r"[^\wÀ-ÿ]", "",
-                               texto.split()[i + 1])[:1].isupper()):
+                               palavras[next_capitalized])[:1].isupper()):
+                atual.append(limpa)
                 continue
             _fechar()
             continue
