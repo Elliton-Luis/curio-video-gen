@@ -175,3 +175,5 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-pos-g54-validacao.md` — suíte pós-G54, rerenders atuais de história/ciência e inspeção visual sem alegar nova aquisição.
 - `relatorios/20261005-selection-decision-invariants.md` — G55: estado, provider, fallback e justificativa de reuso coerentes.
 - `relatorios/20261005-visual-plan-single-source.md` — G56: `representations` é a única fonte de queries no `VisualPlan`; o JSON persistido segue compatível.
+- `relatorios/20261005-semantic-scene-single-source.md` — G57: uma fonte runtime para queries visuais, com serialização e projeção legadas derivadas.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural completo, commits, contratos, fases, validações e pendências até G57.

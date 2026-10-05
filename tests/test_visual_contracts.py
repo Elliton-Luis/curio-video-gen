@@ -72,7 +72,8 @@ def test_legacy_recovery_is_explicit_and_semantic_projection_is_passive():
     scene = Chapter(1, "The black hole bends light.", 3)
     semantic = scene.semantic_scene()
     assert not semantic.representations
-    assert not semantic.visual_queries
+    assert not hasattr(semantic, "visual_queries")
+    assert semantic.to_dict()["visual_queries"] == []
 
     assert recover_legacy_chapters([scene])
     semantic = scene.semantic_scene()
@@ -90,7 +91,7 @@ def test_llm_scene_without_representation_is_never_locally_repaired():
     assert not recover_legacy_chapters([scene])
     semantic = scene.semantic_scene()
     assert not semantic.representations
-    assert not semantic.visual_queries
+    assert not hasattr(semantic, "visual_queries")
 
 
 def test_visual_planner_does_not_reinterpret_narration():

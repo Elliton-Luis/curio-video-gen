@@ -221,7 +221,6 @@ def _local_semantic_scenes(script: str,
             id=len(scenes) + 1,
             narration=narration,
             source="local",
-            visual_queries=tuple(rep.query for rep in reps),
             # Topic-level queries are added by enrichment once the canonical
             # video topic is known; local phrases remain scene-specific.
             global_visual_queries=(),
@@ -417,8 +416,6 @@ def _repair_scene_count(scenes: list[SemanticScene], expected: int) -> bool:
             event=left.event or right.event,
             primary_entity=left.primary_entity or right.primary_entity,
             representations=tuple(list(merged.values())[:8]),
-            visual_queries=tuple(rep.query for rep in
-                                 list(merged.values())[:8]),
             global_visual_queries=_combine(
                 left.global_visual_queries, right.global_visual_queries))
         scenes.pop(index + 1)
@@ -636,7 +633,6 @@ def _plan_semantic_rows(script: str, cfg: CurioConfig,
                 place=str(raw.get("place", "") or "").strip(),
                 period=str(raw.get("period", "") or "").strip(),
                 representations=normalized_representations,
-                visual_queries=tuple(visual_queries),
                 global_visual_queries=tuple(visual_queries),
                 text_role=_coerce_text_role(raw.get("text_role")),
                 text_language=str(raw.get("text_language", "") or "").strip().lower(),

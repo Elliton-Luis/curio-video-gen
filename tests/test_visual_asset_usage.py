@@ -174,7 +174,7 @@ def test_missing_science_context_uses_verified_topic_and_english_alias(monkeypat
     ch = fill_missing_context((ch,), TargetEntity("buraco negro", is_entity=False),
                               "science", [source])[0]
     assert ch.subject == "buraco negro" and "Black hole" in ch.subject_aliases
-    assert ch.visual_queries[0] == "Black hole"
+    assert ch.representations[0].query == "Black hole"
     assert ch.narration == "Nem a luz escapa de um buraco negro."
 
 

@@ -181,7 +181,8 @@ def test_payload_novo_e_lido_inteiro(llm):
     assert ch.visual_type == "mechanism"
     assert ch.subject == "thermal receipt paper"
     assert not hasattr(ch, "duration_estimate")
-    assert ch.visual_queries == ("thermal paper receipt", "receipt paper roll")
+    assert tuple(rep.query for rep in ch.representations) == (
+        "thermal paper receipt", "receipt paper roll")
     assert ch.visual_entities == ("receipt", "paper roll")
     assert ch.context == ("cash register",)
     assert ch.forbidden == ("power plant", "wallpaper")
@@ -194,7 +195,7 @@ def test_payload_antigo_da_ia_ainda_da_cena_util(llm):
         "visual_search_terms": "water glass"}]},
         script="Como o papel de recibo muda de cor?")
     assert ch.visual_type == "mechanism"
-    assert ch.visual_queries == ("water", "glass")
+    assert tuple(rep.query for rep in ch.representations) == ("water", "glass")
     assert ch.forbidden == ()
 
 

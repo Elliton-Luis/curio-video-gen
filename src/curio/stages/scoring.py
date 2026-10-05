@@ -65,8 +65,6 @@ def _scene_terms(ch) -> tuple[dict[str, float], dict[str, float]]:
     if not core:
         representations = getattr(ch, "representations", []) or []
         terms = [getattr(rep, "query", "") for rep in representations]
-        if not terms:
-            terms = list(getattr(ch, "visual_queries", []) or [])
         for term in terms:
             _add(core, term, 2.0)
     for term in list(getattr(ch, "visual_entities", []) or []):
@@ -177,10 +175,6 @@ def semantic_relevance(asset: dict, ch) -> dict:
     topic_evidence = evidence_for(topic_phrases)
     topic_matches = list(topic_evidence)
     scene_phrases = [getattr(ch, "visual_intent_structured", "")]
-    if _is_deterministic_scene(ch):
-        # Local query phrases are the only scene plan when the LLM is down.
-        # Match complete phrases only; one-token homonyms remain non-evidence.
-        scene_phrases.extend(getattr(ch, "visual_queries", []) or [])
     # Legacy plans without an explicit visual representation use the event
     # name as scene evidence. Structured plans keep event/topic relation
     # separate from evidence of what the candidate actually depicts.
@@ -196,8 +190,8 @@ def semantic_relevance(asset: dict, ch) -> dict:
     for key in ("representations", "visual_entities"):
         values = getattr(ch, key, []) or []
         if key == "representations":
-            scene_phrases.extend(
-                str(item.get("query", "")) for item in values if isinstance(item, Mapping))
+            scene_phrases.extend(str(getattr(item, "query", ""))
+                                 for item in values)
         else:
             scene_phrases.extend(values)
     scene_evidence = evidence_for(scene_phrases)
@@ -395,8 +389,7 @@ def generic_score(asset: dict, query: str) -> dict:
     assunto da cena. Mesmo mínimo das específicas; sem veto de aliases.
     """
     from types import SimpleNamespace
-    pseudo = SimpleNamespace(subject=query, visual_queries=[],
-                             visual_entities=[], context=[])
+    pseudo = SimpleNamespace(subject=query, visual_entities=[], context=[])
     return base_score(asset, pseudo)
 
 

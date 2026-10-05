@@ -225,13 +225,12 @@ class SemanticScene:
     text_role: str = ""
     text_language: str = ""
     representations: tuple[VisualRepresentation, ...] = ()
-    visual_queries: tuple[str, ...] = ()
     global_visual_queries: tuple[str, ...] = ()
     representation_rejections: tuple[dict, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("subject_aliases", "visual_entities", "visual_steps", "context", "forbidden",
-                     "visual_queries", "global_visual_queries"):
+                     "global_visual_queries"):
             value = getattr(self, name)
             if isinstance(value, str):
                 value = (value,) if value.strip() else ()
@@ -245,15 +244,7 @@ class SemanticScene:
                for rep in self.representations):
             raise TypeError("semantic scene representations must be normalized")
         representations = tuple(self.representations)
-        representation_queries = tuple(rep.query for rep in representations)
-        if self.visual_queries and not representations:
-            raise ValueError(
-                "semantic scene visual_queries require representations")
-        if self.visual_queries and self.visual_queries != representation_queries:
-            raise ValueError(
-                "semantic scene visual_queries must mirror representations")
         object.__setattr__(self, "representations", representations)
-        object.__setattr__(self, "visual_queries", representation_queries)
         object.__setattr__(self, "representation_rejections", tuple(
             dict(item) for item in self.representation_rejections
             if isinstance(item, Mapping)))
@@ -339,7 +330,6 @@ class SemanticScene:
             text_role=str(value.get("text_role", "") or ""),
             text_language=str(value.get("text_language", "") or ""),
             representations=representations,
-            visual_queries=representation_queries,
             global_visual_queries=tuple(value.get("global_visual_queries", ())),
             representation_rejections=tuple(
                 value.get("representation_rejections", ())),
@@ -378,7 +368,7 @@ class SemanticScene:
             "place": self.place, "period": self.period,
             "text_role": self.text_role, "text_language": self.text_language,
             "representations": [rep.to_dict() for rep in self.representations],
-            "visual_queries": list(self.visual_queries),
+            "visual_queries": [rep.query for rep in self.representations],
             "global_visual_queries": list(self.global_visual_queries),
             "representation_rejections": list(self.representation_rejections),
         }

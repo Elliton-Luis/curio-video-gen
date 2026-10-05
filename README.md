@@ -168,6 +168,10 @@ G55 valida consistência entre estado final, provider, fallback e justificativa
 de reuso em `SelectionDecision`.
 G56 remove o mirror redundante de queries de `VisualPlan`; a auditoria salva
 continua expondo `scene_queries` derivadas das representações.
+G57 removeu o mirror runtime também de `SemanticScene`; o campo JSON e a
+projeção externa `Chapter.visual_queries` seguem derivados para compatibilidade.
+O relatório arquitetural com commits, contratos, estado das fases, validações e
+pendências está em [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

@@ -152,7 +152,6 @@ class Chapter:
             place=self.place, period=self.period, text_role=self.text_role,
             text_language=self.text_language,
             representations=representations,
-            visual_queries=tuple(rep.query for rep in representations),
             global_visual_queries=tuple(self.global_visual_queries),
             representation_rejections=tuple(self.representation_rejections),
         )
@@ -182,7 +181,7 @@ class Chapter:
             primary_entity=scene.primary_entity, event=scene.event,
             place=scene.place, period=scene.period,
             representations=list(scene.representations),
-            visual_queries=list(scene.visual_queries),
+            visual_queries=[rep.query for rep in scene.representations],
             global_visual_queries=list(scene.global_visual_queries),
             representation_rejections=list(scene.representation_rejections),
             text_role=scene.text_role, text_language=scene.text_language)
@@ -250,4 +249,3 @@ class Chapter:
             start=float(d.get("start", 0.0)),
             end=float(d.get("end", 0.0)),
         )
-

@@ -114,7 +114,7 @@ def test_semantic_scene_excludes_timeline_and_preserves_meaning_provenance():
     assert chapter.video_context.topic != "changed downstream"
 
 
-def test_representation_is_canonical_and_query_field_is_compatibility_mirror():
+def test_legacy_query_projects_to_canonical_representation():
     query_only = Chapter(id=1, narration="A cena mostra Marte.",
                          duration_estimate=4, visual_queries=["Mars surface"])
     representation_only = Chapter(
@@ -124,11 +124,15 @@ def test_representation_is_canonical_and_query_field_is_compatibility_mirror():
     projected_query = query_only.semantic_scene()
     projected_representation = representation_only.semantic_scene()
 
-    assert projected_query.visual_queries == ("Mars surface",)
+    assert tuple(rep.query for rep in projected_query.representations) == (
+        "Mars surface",)
     assert projected_query.representations[0].source == "declared_scene_query"
-    assert projected_representation.visual_queries == ("Mars surface",)
+    assert tuple(rep.query for rep in projected_representation.representations) == (
+        "Mars surface",)
     assert [rep.query for rep in projected_representation.representations] == [
         "Mars surface"]
+    assert not hasattr(projected_query, "visual_queries")
+    assert projected_query.to_dict()["visual_queries"] == ["Mars surface"]
 
 
 def test_semantic_projection_round_trips_into_timeline_chapter():
@@ -183,25 +187,12 @@ def test_semantic_scene_json_roundtrip_does_not_require_chapter_projection():
     loaded = SemanticScene.from_dict(scene.to_dict())
 
     assert loaded.to_dict() == scene.to_dict()
+    assert not hasattr(loaded, "visual_queries")
     with pytest.raises(ValueError, match="must be an integer"):
         SemanticScene.from_dict({"id": "2", "narration": "A scene."})
     with pytest.raises(ValueError, match="must be a list"):
         SemanticScene.from_dict({"id": 2, "narration": "A scene.",
                                  "representations": "loose keyword"})
-
-
-def test_semantic_scene_rejects_query_without_canonical_representation():
-    with pytest.raises(ValueError, match="require representations"):
-        SemanticScene(id=1, narration="A scene.",
-                      visual_queries=("loose keyword",))
-
-
-def test_semantic_scene_rejects_query_mirror_that_disagrees_with_representations():
-    representation = VisualRepresentation("Battle of Mohács", kind="event")
-    with pytest.raises(ValueError, match="must mirror representations"):
-        SemanticScene(id=1, narration="A scene.",
-                      representations=(representation,),
-                      visual_queries=("Ottoman Empire",))
 
 
 def test_semantic_scene_cache_boundary_adapts_query_only_legacy_record():

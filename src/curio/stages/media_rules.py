@@ -118,7 +118,8 @@ def _is_space_scene(ch) -> bool:
     return textnorm.is_space_topic(" ".join([
         str(getattr(ch, "narration", "") or ""),
         str(getattr(ch, "subject", "") or ""),
-        " ".join(list(getattr(ch, "visual_queries", []) or [])),
+        " ".join(rep.query for rep in
+                 (getattr(ch, "representations", []) or [])),
         " ".join(list(getattr(ch, "visual_entities", []) or [])),
         " ".join(list(getattr(ch, "context", []) or [])),
     ]))

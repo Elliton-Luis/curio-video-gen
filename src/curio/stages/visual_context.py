@@ -153,7 +153,7 @@ def _generic_person_subject(ch, names, genre: str) -> bool:
     return True
 
 
-def _with_visual_queries(scene: SemanticScene, queries, *, source: str,
+def _with_representations(scene: SemanticScene, queries, *, source: str,
                          kind: str) -> SemanticScene:
     existing = {rep.query.casefold(): rep for rep in scene.representations}
     representations = []
@@ -170,8 +170,11 @@ def _with_visual_queries(scene: SemanticScene, queries, *, source: str,
         if key not in seen:
             representations.append(representation)
             seen.add(key)
-    return replace(scene, representations=tuple(representations),
-                   visual_queries=tuple(rep.query for rep in representations))
+    return replace(scene, representations=tuple(representations))
+
+
+def _representation_queries(scene: SemanticScene) -> tuple[str, ...]:
+    return tuple(rep.query for rep in scene.representations)
 
 
 def fill_missing_context(scenes, target, genre: str = "", sources=(),
@@ -187,7 +190,7 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
             _subject_matches_entity(source.title, names) for source in sources):
         return scenes  # Only anchor to an entity confirmed by research.
     empty = [scene for scene in scenes
-             if not scene.subject and not scene.visual_queries]
+             if not scene.subject and not scene.representations]
     bare = [scene for scene in scenes if scene not in empty and
             (not scene.subject_aliases or (
                 _subject_matches_entity(scene.subject, names)
@@ -235,7 +238,7 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
              "evidence": alias.evidence, "verified": alias.verified}
             for alias in aliases]
         updates = {"video_context": VideoContext.from_value(context)}
-        if not scene.subject and not scene.visual_queries:
+        if not scene.subject and not scene.representations:
             subject = names[0]
             aliases = names
             # Um local precisa constar literalmente na cena, não ser adivinhado.
@@ -264,12 +267,11 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
             if subject == names[0]:
                 queries = [f"{english_subject or subject} {medium}".strip(), subject,
                            *([english] if english else [])]
-            scene = _with_visual_queries(
+            scene = _with_representations(
                 scene, list(dict.fromkeys(queries))[:5], source="entity_context",
                 kind="person" if "portrait" in medium.casefold() else "entity")
-            updates["visual_queries"] = scene.visual_queries
             updates["representations"] = scene.representations
-            updates["global_visual_queries"] = scene.visual_queries
+            updates["global_visual_queries"] = _representation_queries(scene)
             updates["forbidden"] = tuple(dict.fromkeys(
                 [*scene.forbidden, *target.forbidden]))
         else:
@@ -279,15 +281,15 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
                 *scene.subject_aliases, *(name for name in names
                      if len(_identity_tokens(name)) >= 2 or name == scene.subject)]))
             anchored = f"{english_subject or names[0]} {medium}".strip()
-            existing = {q.lower() for q in scene.visual_queries}
+            scene_queries = _representation_queries(scene)
+            existing = {q.lower() for q in scene_queries}
             if anchored.lower() not in existing:
-                scene = _with_visual_queries(
-                    scene, [anchored, *scene.visual_queries][:5],
+                scene = _with_representations(
+                    scene, [anchored, *scene_queries][:5],
                     source="verified_entity_context",
                     kind="person" if "portrait" in medium.casefold() else "entity")
-                updates["visual_queries"] = scene.visual_queries
                 updates["representations"] = scene.representations
-                updates["global_visual_queries"] = scene.visual_queries
+                updates["global_visual_queries"] = _representation_queries(scene)
             updates["forbidden"] = tuple(dict.fromkeys(
                 [*scene.forbidden, *target.forbidden]))
         replacements[scene.id] = replace(scene, **updates)

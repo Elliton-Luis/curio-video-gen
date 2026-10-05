@@ -17,6 +17,10 @@ def _fill(chapter, target, genre="", sources=()):
     return enriched[0], enriched[0] != scene
 
 
+def _queries(scene):
+    return tuple(rep.query for rep in scene.representations)
+
+
 def test_local_context_uses_authoritative_alias_and_rejects_namesake(monkeypatch):
     monkeypatch.setattr("curio.stages.research._get_json", lambda *a, **k: {
         "query": {"pages": {"1": {"langlinks": [{"lang": "en", "*": "Thomas Aquinas"}]}}}})
@@ -27,7 +31,7 @@ def test_local_context_uses_authoritative_alias_and_rejects_namesake(monkeypatch
     ch, changed = _fill(ch, target, "people", [ResearchSource(
         "Tomás de Aquino", "https://pt.wikipedia.org/wiki/Tomás_de_Aquino")])
     assert changed and ch.narration == narration
-    assert "Saint Thomas Aquinas painting" == ch.visual_queries[0]
+    assert "Saint Thomas Aquinas painting" == _queries(ch)[0]
     assert "Thomas Aquinas" in ch.subject_aliases
     assert any(alias.value == "Thomas Aquinas" and alias.verified
                and alias.source == "wikipedia_langlink"
@@ -46,7 +50,7 @@ def test_explicit_location_scores_without_diluted_narration():
     ch, changed = _fill(ch, target, "people")
     assert changed
     assert ch.subject == "Fossanova"
-    assert ch.visual_queries == ("Fossanova",)
+    assert _queries(ch) == ("Fossanova",)
     assert scoring.base_score({"title": "Fossanova Abbey"}, ch)["score"] == 75
     assert scoring.base_score({"title": "Mairie d'Anos"}, ch)["score"] == 0
 
@@ -63,8 +67,8 @@ def test_llm_scene_with_entity_subject_keeps_queries_and_gains_aliases(monkeypat
     assert changed
     assert ch.narration == narration
     assert ch.subject == subject
-    assert ch.visual_queries[0] == "Saint Thomas Aquinas painting"
-    assert "medieval scholar portrait" in ch.visual_queries
+    assert _queries(ch)[0] == "Saint Thomas Aquinas painting"
+    assert "medieval scholar portrait" in _queries(ch)
     assert scoring.base_score(
         {"title": "File:Saint Thomas Aquinas (Crivelli, 15th-century).jpg"},
         ch)["score"] >= 34
@@ -92,7 +96,7 @@ def test_llm_scene_in_english_matches_entity_after_language_alias(monkeypatch):
         [ResearchSource("Tomás de Aquino", "https://pt.wikipedia.org/wiki/Tomás_de_Aquino")])
     assert changed
     assert ch.subject == "Thomas Aquinas"
-    assert ch.visual_queries[0] == "Saint Thomas Aquinas painting"
+    assert _queries(ch)[0] == "Saint Thomas Aquinas painting"
     assert scoring.base_score(
         {"title": "File:Saint Thomas Aquinas (Crivelli, 15th-century).jpg"},
         ch)["score"] >= 34
@@ -108,7 +112,7 @@ def test_generic_person_subject_anchors_to_entity_without_other_names(monkeypatc
         [ResearchSource("Tomás de Aquino", "https://pt.wikipedia.org/wiki/Tomás_de_Aquino")])
     assert changed
     assert ch.subject == "man"
-    assert ch.visual_queries[0] == "Saint Thomas Aquinas painting"
+    assert _queries(ch)[0] == "Saint Thomas Aquinas painting"
     assert scoring.base_score(
         {"title": "soldier, british, general, war, military, man"}, ch)["score"] < 34
     assert scoring.base_score(

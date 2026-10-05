@@ -59,7 +59,6 @@ def _topic_terms(scene: SemanticScene) -> set[str]:
     # aliases/context during render.
     semantic_terms = [
         *(rep.query for rep in scene.representations),
-        *scene.visual_queries,
     ]
     for query in semantic_terms:
         if not str(query or "").strip():

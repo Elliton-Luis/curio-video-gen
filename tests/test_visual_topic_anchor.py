@@ -19,7 +19,7 @@ def test_local_revolution_scenes_share_translated_video_anchor():
     script = ("A França era governada por um rei absoluto. "
               "O povo cansado de privilégios decidiu agir.")
     plan = build_local_semantic_scenes(script, 2)
-    assert any(scene.visual_queries for scene in plan.semantic_scenes)
+    assert any(scene.representations for scene in plan.semantic_scenes)
     assert all(not scene.global_visual_queries for scene in plan.semantic_scenes)
     target = TargetEntity("Revolução Francesa", is_entity=True)
     enriched = enrich_scenes(

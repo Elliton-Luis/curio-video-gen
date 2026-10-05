@@ -215,8 +215,9 @@ def test_provider_metadata_is_audited_but_creator_cannot_prove_scene():
 def test_original_language_representation_accepts_correct_archive_title():
     chapter = _chapter("French Revolution", "Storming of the Bastille",
                        "Bastille", "Storming of the Bastille 1789")
-    chapter.representations.append({"query": "Prise de la Bastille",
-                                    "kind": "event_alias", "level": 2})
+    chapter.representations.append(scenes.VisualRepresentation(
+        "Prise de la Bastille", kind="event_alias", level=2,
+        source="test_fixture"))
     info = scoring.base_score(
         {"title": "File:Prise de la Bastille clean.jpg"}, chapter)
     assert info["topic_relevance"] == 100
@@ -227,8 +228,9 @@ def test_original_language_representation_accepts_correct_archive_title():
 def test_topic_description_alone_does_not_claim_exact_scene_depiction():
     chapter = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
                        "Mercury planet surface map")
-    chapter.representations.append({"query": "Mercury planet MESSENGER",
-                                    "kind": "mission_artifact", "level": 2})
+    chapter.representations.append(scenes.VisualRepresentation(
+        "Mercury planet MESSENGER", kind="mission_artifact", level=2,
+        source="test_fixture"))
     candidate = {"title": "KSC-04pd1531", "description":
                  "MESSENGER (Mercury Surface, Space Environment) mission",
                  "media_type": "image"}
@@ -241,8 +243,9 @@ def test_topic_description_alone_does_not_claim_exact_scene_depiction():
 def test_specific_mapping_ranks_above_mission_poster_fallback():
     chapter = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
                        "Mercury planet surface map")
-    chapter.representations.append({"query": "Mercury planet MESSENGER",
-                                    "kind": "mission_artifact", "level": 2})
+    chapter.representations.append(scenes.VisualRepresentation(
+        "Mercury planet MESSENGER", kind="mission_artifact", level=2,
+        source="test_fixture"))
     mapping = scoring.semantic_relevance({
         "title": "Mapping Potassium (Mercury, MESSENGER)",
         "description": "The instrument measured elemental composition of Mercury surface materials.",
@@ -341,7 +344,7 @@ def test_planner_near_match_repairs_source_spans_then_repairs_excess_count(monke
     assert " ".join(ch.narration for ch in chapters) == script
     assert chapters[0].video_context["topic"] == "French Revolution"
     assert chapters[0].representations
-    assert chapters[0].visual_queries
+    assert not hasattr(chapters[0], "visual_queries")
 
 
 def test_scene_funnel_rejects_topic_only_distractor_and_records_reason(
@@ -415,8 +418,9 @@ def test_post_download_resolution_failure_is_audited_and_falls_back_safely(
         tmp_path, monkeypatch):
     ch = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
                   "Mercury planet surface map")
-    ch.representations.append({"query": "Mercury planet MESSENGER",
-                               "kind": "mission_artifact", "level": 2})
+    ch.representations.append(scenes.VisualRepresentation(
+        "Mercury planet MESSENGER", kind="mission_artifact", level=2,
+        source="test_fixture"))
     assets = [
         MediaAsset("nasa", "poster", title="KSC-04pd1531",
                    description="MESSENGER (Mercury Surface, Space Environment) mission",
