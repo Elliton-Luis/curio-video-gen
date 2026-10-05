@@ -782,7 +782,10 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     estilo = ""
     if typo is not None:
         estilo = str(getattr(typo.profile, "key", "") or "")
-    key = _key(subject, steps, language, estilo)
+    # Narration is rendered in the footer, so it is part of the visual bytes
+    # and must participate in the cache identity. Omitting it reused the first
+    # scene's caption for later scenes with the same topic and empty steps.
+    key = _key(subject, steps, narration, language, estilo)
     out = _out(cache_dir, "diagram", key)
     if os.path.isfile(out) and os.path.getsize(out) > MIN_PNG_BYTES:
         return _asset(out, f"Diagrama — {subject or 'cena'}", "diagram", scene_id)

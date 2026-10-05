@@ -1134,3 +1134,21 @@ migrados para `media_search`; novos unitários cobrem resposta normalizada,
 ordem, hit de cache e erro como dado. Focados: **33 passaram em 0,47 s**.
 Suíte integral: **938 testes em 183,84 s**; compileall e `git diff --check`
 passaram.
+
+## G38: identidade de cache inclui todo conteúdo renderizado
+
+O replay da fase anterior mostrou um único PNG sintético atribuído a quatro
+cenas. `render_diagram` desenha a narração no rodapé, mas a chave do cache
+considerava somente assunto, passos, idioma e estilo; o primeiro rodapé era
+reutilizado nas cenas seguintes. A chave agora inclui narração porque ela altera
+os bytes exibidos. A regressão confirma IDs distintos para narrações distintas
+e reaproveitamento determinístico quando todos os inputs visuais são iguais.
+
+Replay real científico depois da mudança: 4 cenas, 8/8 queries executadas por
+cena, NASA/Met/AIC consultados, 4 candidatos NASA rejeitados por resolução e
+Met/AIC indisponíveis. Resultado: 0 assets reais, 4 sintéticos com 4 IDs únicos,
+0 reusos; busca marcada `provider_errors`. Mídia: 11,99 s; render silencioso:
+8,21 s; teleprompter: 3,71 s. Inspeção visual confirmou rodapés distintos e
+legíveis, mas o mesmo layout/assunto global genérico. Portanto G38 corrige
+identidade/corrupção do cache; o contrato semântico de fallback ainda está
+aberto. Teste focado de estratégia/diagrama e modelo: **102 passaram em 4,21 s**. Suíte integral: **939 testes em 174,69 s**; compileall e `git diff --check` passaram.

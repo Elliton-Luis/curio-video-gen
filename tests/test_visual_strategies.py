@@ -134,6 +134,22 @@ def test_mesma_cena_gera_o_mesmo_arquivo(tmp_path):
     assert a1.asset_id == a2.asset_id
 
 
+def test_diagram_cache_identity_includes_rendered_narration(tmp_path):
+    first = visuals.render_diagram(
+        "M87 black hole", [], "The supermassive black hole is at the center.",
+        str(tmp_path))
+    second = visuals.render_diagram(
+        "M87 black hole", [], "Gravity bends light around the event horizon.",
+        str(tmp_path))
+    same = visuals.render_diagram(
+        "M87 black hole", [], "The supermassive black hole is at the center.",
+        str(tmp_path))
+
+    assert first.asset_id != second.asset_id
+    assert first.local_path != second.local_path
+    assert first.asset_id == same.asset_id
+
+
 def test_cache_reaproveita_o_png(tmp_path):
     ch = _ch("mechanism", entities=["a", "b"])
     a1 = visuals.visual_for_scene(ch, str(tmp_path))

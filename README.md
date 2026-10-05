@@ -130,15 +130,16 @@ intenção ou seleção editorial. `visual.py` continua coordenando busca e sele
 `stages/media_search.py` executa queries e entrega `ProviderSearchResult(query, provider, assets, error, cache_hit)`
 tipado em ordem de prioridade; erros e timeouts permanecem visíveis para a
 auditoria, e o módulo não conhece cena, relevância nem fallback editorial.
-Limitação ainda aberta: o plano de fallback sintético não consome as
-representações locais da cena, o que pode colidir chaves do diagrama entre
-cenas; a próxima fase precisa definir esse contrato antes de mudar o renderer.
+O cache de diagramas inclui todos os textos que o renderer desenha, inclusive
+a narração exibida no rodapé. Ainda falta um contrato próprio de fallback que
+faça a composição visual consumir representações locais aprovadas; assim,
+diagramas distintos podem continuar com assunto global genérico.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
 integral histórica daquele relatório tem 909 testes aprovados. As migrações
 incrementais atuais estão no relatório abaixo; a suíte mais recente passou com
-938 testes após G37 (suíte completa em 183,84 s).
+939 testes após G38 (suíte completa em 174,69 s).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

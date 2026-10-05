@@ -429,3 +429,23 @@ explícito; mídia usou providers reais configurados e render foi executado. Nã
 valida integração de pesquisa/research. A suíte integral conjunta de G34/G35
 passou com **932 testes em 181,98 s**; compileall e `git diff --check` também
 passaram.
+
+## Replay pós-G38: identidade completa do cache sintético
+
+Projeto `arch-real-black-hole-cachefix-20261005`: repetição do mesmo script e
+dos mesmos providers públicos, com apenas a chave de cache do diagrama corrigida.
+As 4 cenas executaram 8/8 queries cada e consultaram NASA, Met e AIC. NASA
+retornou um candidato por cena, todos reprovados por resolução após download;
+Met/AIC retornaram HTTP 410/500. Resultado: 0 assets reais, 4 cenas sintéticas,
+4 IDs/PNGs sintéticos únicos e 0 reusos. Cada SearchPlan continuou completo;
+`search_exhaustion_reason=provider_errors` impede afirmar que o espaço de busca
+foi esgotado. Etapa de mídia: 11,99 s; render silencioso: 8,21 s;
+teleprompter: 3,71 s; duração total: 24,00 s.
+
+Comparação direta com `arch-real-black-hole-search-exhaust-20261005`: antes,
+1 PNG/ID sintético servia às 4 cenas; depois, 4 PNGs/IDs correspondem às 4
+narrações exibidas. Inspecionei dois arquivos: os rodapés são diferentes e
+legíveis; o cabeçalho e o diagrama continuam mostrando o tópico global igual.
+Assim a colisão de cache foi corrigida, mas diversidade semântica do fallback
+continua incompleta. Pesquisa externa foi stubada com aviso explícito; roteiro,
+mídia e render seguiram no pipeline, então este replay não valida pesquisa.
