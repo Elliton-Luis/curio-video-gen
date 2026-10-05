@@ -643,3 +643,14 @@ compileall e diff check passaram. Após limpeza de estilo, o teste novo também
 passou sozinho. Código em `0c83ee8`. A política de reuse ainda tem dois
 caminhos (seleção sequencial e late cross-scene); centralizar os dois sem
 perder a descoberta de donors posteriores continua sendo dívida arquitetural.
+
+## G14: o audit trail de candidatos não deve repetir campos
+
+Uma varredura AST detectou cinco chaves repetidas no dicionário de candidato
+de `visual.py`: provider, creator, source_url, date_created e media_type. Os
+valores eram idênticos e o Python ocultava a duplicação ao manter só o último;
+isso dificultava revisar o schema da auditoria.
+
+Removi as entradas repetidas. 55 testes de waterfall, funnel e diretor passaram;
+compileall e diff check passaram. Uma checagem AST específica confirmou que
+`visual.py` não possui mais chaves literais repetidas. Código em `71058e2`.

@@ -59,6 +59,9 @@ suíte após essa mudança passou com 892 testes em 178,13 s.
 O fallback de reuso entre cenas agora mantém `asset` e `SelectionDecision`
 coerentes e carrega somente o candidato validado para a cena. A regressão
 passou junto aos 893 testes da suíte (197,53 s).
+A auditoria de candidatos também deixou de repetir cinco chaves idênticas no
+schema; waterfall/funnel/diretor passaram com 55 testes e a checagem AST
+confirmou que `visual.py` não tem chaves literais duplicadas.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
