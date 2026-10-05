@@ -57,12 +57,12 @@ def test_pipeline_persists_supplied_script_verbatim_and_skips_script_generation(
         pass
 
     monkeypatch.setattr(
-        pipeline.research_stage, "research_topic",
+        pipeline.pipeline_research_stage.research_stage, "research_topic",
         lambda *_args, **_kwargs: ResearchResult(None, []))
-    monkeypatch.setattr(pipeline.research_stage, "format_for_prompt",
+    monkeypatch.setattr(pipeline.pipeline_research_stage.research_stage, "format_for_prompt",
                         lambda *_args, **_kwargs: "")
     monkeypatch.setattr(
-        pipeline.research_stage, "verify_grounding",
+        pipeline.pipeline_research_stage.research_stage, "verify_grounding",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(StopAfterScript()))
     monkeypatch.setattr(
         pipeline.pipeline_script_stage.script_stage, "generate_script",

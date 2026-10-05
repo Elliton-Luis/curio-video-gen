@@ -9,6 +9,15 @@ from .runlog import current_log_path
 from .stages.scenes import Chapter
 
 
+def typography_report(cfg, genre_key: str = "") -> dict:
+    """Describe resolved typography roles for persisted project metadata."""
+    if not genre_key:
+        return {}
+    from .stages import typography as typography_stage
+    return typography_stage.for_genre(
+        genre_key, (cfg.typography or {}).get(genre_key)).report()
+
+
 def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
                         script_source: str, semantic_scenes, timeline_spans,
                         scenes_source: str, media_scenes, warnings,

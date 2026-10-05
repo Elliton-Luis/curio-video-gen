@@ -641,11 +641,11 @@ def test_round_trip_preserva_o_papel():
 
 def test_projeto_antigo_sem_genero_continua_com_a_fonte_de_exibicao():
     from curio.config import CurioConfig
-    from curio.pipeline import _title_fontfile
+    from curio.pipeline_render import title_fontfile
     cfg = CurioConfig()
     meta = {"title": "x", "duration_actual": 10}
-    assert _title_fontfile(cfg, str(meta.get("genre") or "")) == \
-        _title_fontfile(cfg, "")
+    assert title_fontfile(cfg, str(meta.get("genre") or "")) == \
+        title_fontfile(cfg, "")
 
 
 def test_relogio_da_typografia_para_o_metadata():
@@ -672,8 +672,8 @@ def test_import_de_python_311_nao_quebra():
 def test_metadata_guarda_a_tipografia_resolvida():
     """Sem isto, a única forma de saber a fonte do vídeo é rerenderizar."""
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
-    r = _typography_report(CurioConfig(), "people")
+    from curio.pipeline_metadata import typography_report
+    r = typography_report(CurioConfig(), "people")
     assert r["key"] == "people"
     assert r["roles"]["quote"]["italic"] is True
     assert r["roles"]["quote"]["requested"] == "Minion Pro Italic"
@@ -682,10 +682,10 @@ def test_metadata_guarda_a_tipografia_resolvida():
 
 def test_metadata_registra_o_fallback_que_respondeu():
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
+    from curio.pipeline_metadata import typography_report
     T.clear_cache()
     try:
-        papel = _typography_report(CurioConfig(), "people")["roles"]["quote"]
+        papel = typography_report(CurioConfig(), "people")["roles"]["quote"]
         if papel["fallback"]:
             assert papel["family"] != "Minion Pro Italic"
             assert papel["family"]          # respondeu alguma coisa
@@ -700,9 +700,9 @@ def test_metadata_diz_a_fonte_real_da_legenda():
     não reportar: é uma informação errada com cara de autoritativa.
     """
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
+    from curio.pipeline_metadata import typography_report
     from curio.stages.subs import ensure_display_font
-    papel = _typography_report(CurioConfig(), "people")["roles"]["caption"]
+    papel = typography_report(CurioConfig(), "people")["roles"]["caption"]
     assert papel["family"] == ensure_display_font()[0]
     assert papel["legibility"] is True
     assert papel["italic"] is False
@@ -711,14 +711,14 @@ def test_metadata_diz_a_fonte_real_da_legenda():
 def test_metadata_vazio_sem_genero():
     """Treze papéis com o mesmo valor em todo projeto antigo é ruído."""
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
-    assert _typography_report(CurioConfig(), "") == {}
+    from curio.pipeline_metadata import typography_report
+    assert typography_report(CurioConfig(), "") == {}
 
 
 def test_metadata_do_genero_desconhecido_nao_quebra():
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
-    r = _typography_report(CurioConfig(), "inexistente")
+    from curio.pipeline_metadata import typography_report
+    r = typography_report(CurioConfig(), "inexistente")
     assert r["key"] == ""
 
 
@@ -875,10 +875,10 @@ def test_folha_prefere_o_que_esta_gravado_no_metadata(tmp_path):
     esconder isso.
     """
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
+    from curio.pipeline_metadata import typography_report
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
-    gravado = _typography_report(CurioConfig(), "people")
+    gravado = typography_report(CurioConfig(), "people")
     gravado["roles"]["quote"]["family"] = "Cormorant Garamond"
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
@@ -907,14 +907,14 @@ def test_folha_sem_genero_nao_mostra_tipografia(tmp_path):
 
 def test_dry_run_mostra_a_tipografia():
     from curio.config import CurioConfig
-    from curio.pipeline import _typography_report
+    from curio.pipeline_metadata import typography_report
     from curio.stages import review as R
     from curio.stages.scenes import Chapter
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     texto = R.dry_run_text(scenes, [], genre="people",
-                           typography=_typography_report(CurioConfig(),
+                           typography=typography_report(CurioConfig(),
                                                         "people"))
     assert "Tipografia:" in texto
     assert "itálico" in texto

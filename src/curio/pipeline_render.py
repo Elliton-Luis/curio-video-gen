@@ -12,6 +12,19 @@ from .stages import render as render_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
 
 
+def title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
+    """Resolve the burned-title font, falling back to the display font."""
+    from .stages import subs as subs_stage
+    from .stages import typography as typo_stage
+    if not genre_key:
+        return subs_stage.ensure_display_font(cfg.cache_dir)[2]
+    resolved = typo_stage.resolve(typo_stage.ROLE_TITLE, genre_key,
+                                  (cfg.typography or {}).get(genre_key))
+    if resolved.path:
+        return resolved.path
+    return subs_stage.ensure_display_font(cfg.cache_dir)[2]
+
+
 def _segment_identity(assets: list, cfg: CurioConfig, variant: int) -> str:
     """Invalidate segment cache when assets, file contents or presentation change."""
     files = []

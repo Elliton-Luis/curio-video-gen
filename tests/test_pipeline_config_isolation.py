@@ -1,6 +1,7 @@
 import json
 
 from curio import pipeline
+from curio import pipeline_finalize
 from curio.audio import composition as audio_composition
 from curio.config import CurioConfig
 
@@ -45,7 +46,7 @@ def test_finalize_policy_does_not_mutate_interface_config(tmp_path, monkeypatch)
         run_config.music_mode = "none"
         return {"status": "finalized"}
 
-    monkeypatch.setattr(pipeline, "_finalize_project", fake_finalize)
+    monkeypatch.setattr(pipeline_finalize, "run_finalize", fake_finalize)
     result = pipeline.finalize_project("history/video", "unused.wav", config)
 
     assert result == {"status": "finalized"}

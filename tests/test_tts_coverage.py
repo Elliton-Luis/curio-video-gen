@@ -10,6 +10,9 @@ import os
 import pytest
 
 from curio.stages import tts as tts_stage
+from curio.stages import subs as subs_stage
+from curio.stages import render as render_stage
+from curio.stages import research as research_stage
 from curio.stages.tts import (
     TTSError,
     TTSResult,
@@ -244,7 +247,7 @@ def test_pipeline_recusa_cache_parcial_e_ressintetiza(tmp_path, monkeypatch):
     cfg = CurioConfig(audio_enabled=False)
     cfg.out_dir = out_dir
     cfg.metrics_dir = str(tmp_path / "metrics")
-    monkeypatch.setattr(pipe.research_stage, "research_topic",
+    monkeypatch.setattr(research_stage, "research_topic",
                         lambda *a, **k: _fake_sources())
 
     full_words = [{"text": f"w{i}", "start": i * 0.3, "end": (i + 1) * 0.3}
@@ -258,9 +261,9 @@ def test_pipeline_recusa_cache_parcial_e_ressintetiza(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tts_stage, "synthesize", fake_synth)
     monkeypatch.setattr(pipe.ff, "probe_duration", lambda p: 8.64)
-    monkeypatch.setattr(pipe.subs_stage, "write_subtitles",
+    monkeypatch.setattr(subs_stage, "write_subtitles",
                         lambda *a, **k: 10)
-    monkeypatch.setattr(pipe.render_stage, "burn_final",
+    monkeypatch.setattr(render_stage, "burn_final",
                         lambda *a, **k: {"duration": 108.0,
                                          "backend": "test", "encoder": "test"})
     meta = pipe.run_pipeline("ideia teste", cfg, slug=slug, max_images=1)
@@ -280,7 +283,7 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
     cfg = CurioConfig(audio_enabled=False)
     cfg.out_dir = out_dir
     cfg.metrics_dir = str(tmp_path / "metrics")
-    monkeypatch.setattr(pipe.research_stage, "research_topic",
+    monkeypatch.setattr(research_stage, "research_topic",
                         lambda *a, **k: _fake_sources())
 
     def boom(*a, **k):
@@ -288,9 +291,9 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tts_stage, "synthesize", boom)
     monkeypatch.setattr(pipe.ff, "probe_duration", lambda p: 30.0)
-    monkeypatch.setattr(pipe.subs_stage, "write_subtitles",
+    monkeypatch.setattr(subs_stage, "write_subtitles",
                         lambda *a, **k: 10)
-    monkeypatch.setattr(pipe.render_stage, "burn_final",
+    monkeypatch.setattr(render_stage, "burn_final",
                         lambda *a, **k: {"duration": 30.0,
                                          "backend": "test", "encoder": "test"})
     meta = pipe.run_pipeline("ideia teste", cfg, slug=slug, max_images=1)
