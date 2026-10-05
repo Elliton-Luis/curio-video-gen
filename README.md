@@ -16,6 +16,10 @@ resultados de cena validam a coerência de asset/decision antes de seguir para
 timeline, fontes e render; rows persistidos ainda mantêm o schema de projeto.
 `run_pipeline` e `finalize_project` isolam a configuração mutável por execução,
 para preferências de áudio lidas do projeto não alterarem o estado da TUI/queue.
+No gate de 2026-10-04, a suíte completa passou com 888 testes após migrar a
+asserção de metadata para o módulo que agora é dono da projeção; `compileall`
+e `git diff --check` também passaram. Esse resultado não encerra as fases
+arquiteturais ainda parciais descritas na auditoria.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

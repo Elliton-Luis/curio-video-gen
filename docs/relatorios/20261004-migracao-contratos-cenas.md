@@ -409,3 +409,17 @@ públicas `run_pipeline` e `finalize_project` agora fazem uma cópia profunda no
 limite da execução antes de qualquer política local; configurações/arquivos do
 projeto continuam sendo lidos e salvos da mesma forma. Testes unitários e
 integração passaram (**10 em 37,12 s**).
+
+## G6: teste de metadata acompanha o módulo responsável
+
+Após mover a projeção base para `pipeline_metadata.py`, a suíte completa
+apontou uma regressão no próprio teste: ele verificava por busca textual que
+`pipeline.py` continha `provider_downloads` e `metrics.media_download_report()`.
+Essas strings agora pertencem ao módulo dono da projeção. Migrei a inspeção
+para `pipeline_metadata.py`; a asserção continua verificando a persistência do
+relatório sem prender o teste ao coordenador antigo. O teste isolado passou.
+
+Gate após a migração: `pytest -q` — **888 passed em 174,45 s**;
+`python -m compileall -q src/curio` e `git diff --check` passaram. Este gate
+fecha somente as fases registradas até G6; não declara concluídas a arquitetura,
+as métricas ou a validação real final descritas na auditoria.
