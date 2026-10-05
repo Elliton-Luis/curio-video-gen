@@ -26,7 +26,6 @@ from .stages.scene_projection import Chapter
 
 @dataclass(frozen=True)
 class SceneStageResult:
-    semantic_scenes: tuple[SemanticScene, ...]
     timeline_spans: tuple[TimelineSpan, ...]
     source: str
     enrichment: SceneEnrichmentResult
@@ -34,7 +33,11 @@ class SceneStageResult:
     elapsed: float
 
     def __post_init__(self) -> None:
-        scene_ids = tuple(scene.id for scene in self.semantic_scenes)
+        if not isinstance(self.enrichment, SceneEnrichmentResult):
+            raise TypeError("scene stage requires a SceneEnrichmentResult")
+        if any(not isinstance(span, TimelineSpan) for span in self.timeline_spans):
+            raise TypeError("scene stage requires TimelineSpan values")
+        scene_ids = tuple(scene.id for scene in self.enrichment.semantic_scenes)
         if not scene_ids or len(scene_ids) != len(set(scene_ids)):
             raise ValueError("scene stage must return unique semantic scenes")
         if tuple(span.scene_id for span in self.timeline_spans) != scene_ids:
@@ -191,7 +194,6 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     run_event(scene_event, f"Cenas: {source}; {len(chapters)} cena(s)",
               operation="scenes", source=source, scenes=len(chapters))
     return SceneStageResult(
-        semantic_scenes=semantic_scenes,
         timeline_spans=tuple(timeline_spans),
         source=source, enrichment=enriched,
         invalidate_media=enriched.changed or recovered_legacy,

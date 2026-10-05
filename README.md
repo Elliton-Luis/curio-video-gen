@@ -219,9 +219,9 @@ verificados e contexto etimológico têm transformações puras; `Chapter` só �
 projetado no final para manter timeline/render e `chapters.json` compatíveis.
 `scenes.build_semantic_scenes` e `build_local_semantic_scenes` retornam
 `ScenePlanResult` com cenas semânticas e tempos separados. `pipeline_scenes.py`
-coordena planner/cache/enrichment e retorna
-`SceneStageResult` com origem, cenas semânticas, Chapters de compatibilidade e
-invalidação de mídia explícita. LLM e fallback local convergem para `SemanticScene`
+coordena planner/cache/enrichment e retorna `SceneStageResult`, que carrega o
+resultado enriquecido como batch canônico, spans alinhados, origem e invalidação
+de mídia explícita; não mantém uma segunda cópia das cenas. LLM e fallback local convergem para `SemanticScene`
 antes de enrichment; `TimelineSpan` carrega somente duração e limites temporais,
 e a projeção `SemanticScene + TimelineSpan → Chapter` atende consumidores de
 timeline/render. A projeção `Chapter → SemanticScene` não cria

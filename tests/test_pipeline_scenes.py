@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 
 from curio.pipeline_scenes import run_scene_stage
+from curio.stages.scene_enrichment import SceneEnrichmentResult
 from curio.stages.scene_contract import (ScenePlanResult, SemanticScene,
                                          TimelineSpan)
 from curio.stages.scene_plan_artifact import (ScenePlanManifest,
@@ -28,9 +29,7 @@ def test_legacy_cache_recovery_is_persisted_and_invalidates_media(tmp_path, monk
 
     def keep_enriched_scenes(scenes, **kwargs):
         nonlocal chapter
-        return SimpleNamespace(
-            semantic_scenes=tuple(scenes),
-            changed=False, source="cache", applied=[])
+        return SceneEnrichmentResult(tuple(scenes), "cache", ())
 
     monkeypatch.setattr("curio.pipeline_scenes.enrich_scenes",
                         keep_enriched_scenes)
@@ -48,7 +47,7 @@ def test_legacy_cache_recovery_is_persisted_and_invalidates_media(tmp_path, monk
     saved = json.loads(cache.read_text(encoding="utf-8"))[0]
     assert result.source == "cache"
     assert result.invalidate_media is True
-    assert result.semantic_scenes[0].planning_mode == "deterministic"
+    assert result.enrichment.semantic_scenes[0].planning_mode == "deterministic"
     assert saved["representations"][0]["source"] == "legacy_local_recovery"
     assert json.loads(semantic_cache.read_text(encoding="utf-8"))["schema_version"] == 1
     assert (tmp_path / "scene-plan-manifest.json").is_file()
@@ -74,8 +73,7 @@ def test_semantic_plan_cache_is_canonical_over_legacy_chapters(tmp_path, monkeyp
         (semantic_scene,), (TimelineSpan(1, 4),), "local"))), encoding="utf-8")
 
     def enrich(scenes, **kwargs):
-        return SimpleNamespace(semantic_scenes=tuple(scenes),
-                               changed=False, source="cache", applied=[])
+        return SceneEnrichmentResult(tuple(scenes), "cache", ())
 
     monkeypatch.setattr("curio.pipeline_scenes.enrich_scenes", enrich)
     result = run_scene_stage(
@@ -89,7 +87,7 @@ def test_semantic_plan_cache_is_canonical_over_legacy_chapters(tmp_path, monkeyp
         warnings=[], write_json=_write_json)
 
     assert result.source == "cache"
-    assert result.semantic_scenes[0].narration == "The black hole bends light."
+    assert result.enrichment.semantic_scenes[0].narration == "The black hole bends light."
     assert json.loads(cache.read_text(encoding="utf-8"))[0]["narration"] == \
         "The black hole bends light."
 
@@ -120,8 +118,7 @@ def test_scene_plan_cache_is_rebuilt_when_inputs_change(tmp_path, monkeypatch):
         return ScenePlanResult((scene,), (TimelineSpan(1, 4),), "local")
 
     def enrich(scenes, **kwargs):
-        return SimpleNamespace(semantic_scenes=tuple(scenes), changed=False,
-                               source="planner", applied=[])
+        return SceneEnrichmentResult(tuple(scenes), "planner", ())
 
     monkeypatch.setattr("curio.pipeline_scenes.scenes_stage.build_semantic_scenes",
                         build)

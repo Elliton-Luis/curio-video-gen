@@ -239,10 +239,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         target=research_target, research_sources=research_sources,
         research_timeout=cfg.research_timeout, etymology=scene_etymology,
         metrics=metrics, warnings=warnings, write_json=project_artifacts.write_json)
-    semantic_scenes = list(scene_result.semantic_scenes)
+    enrichment = scene_result.enrichment
+    semantic_scenes = list(enrichment.semantic_scenes)
     timeline_spans = scene_result.timeline_spans
     scenes_source = scene_result.source
-    enrichment = scene_result.enrichment
     force_after_script = force_after_script or scene_result.invalidate_media
     stage_times["scenes"] = scene_result.elapsed
     emit(2, "Interpretando cenas", "OK")

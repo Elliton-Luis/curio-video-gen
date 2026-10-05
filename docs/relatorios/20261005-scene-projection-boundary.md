@@ -18,3 +18,15 @@ em 36,68 s após mover a conversão semântica. Suíte integral: **903 passaram
 em 178,20 s**. `compileall`,
 `git diff --check` e verificação do reexport de compatibilidade passaram; não
 restam imports internos de `Chapter` pelo caminho `stages.scenes`.
+
+## Continuação G43 — saída enriquecida sem duplicação
+
+`SceneStageResult` duplicava as cenas já contidas em `SceneEnrichmentResult`.
+Removi a cópia: o pipeline consome um único batch enriquecido para mídia e
+metadata, e o estágio valida o alinhamento entre esse batch e os spans. O
+contrato rejeita tipos de saída incompatíveis; fixtures agora usam o resultado
+real do enrichment.
+
+Validação G43: testes focados de estágio, integração, enrichment e contrato: 27
+passaram em 36,65 s. Suíte integral: **903 passaram em 183,70 s**;
+`compileall` e `git diff --check` passaram.
