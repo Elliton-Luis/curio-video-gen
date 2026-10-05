@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G83.
+**Escopo:** auditoria documentada e migrações incrementais até G84.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -101,6 +101,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `aa25487` | Faz o seletor por cena devolver `SceneMediaSelection`; `fetch_media_multi` agrega contratos tipados sem reidratar rows (G81). |
 | `1b00689` | Constrói `SceneMediaSelection` de `SelectedAsset` e `VisualDecision` tipados; contrato centraliza a projeção (G82). |
 | `31f6acf` | Rejeita campos não textuais em `PipelineInput` em vez de coercionar objetos para `str` (G83). |
+| `bc131b9` | Move a camada opcional CLIP e o reranqueamento da shortlist para `candidate_evaluation.py` (G84). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -254,7 +255,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G83 commitadas; parcial. | G82 centraliza a projeção de novas seleções; `visual.py` ainda compõe busca, tiers, fallback e auditoria. Rows aninhadas de auditoria/candidatos e adapters de leitura/reuso permanecem. Coordenadores das demais etapas precisam convergir/remover adapters após prova de ausência de consumidores. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G84 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; `visual.py` ainda compõe busca, tiers, fallback e auditoria. Rows aninhadas de auditoria/candidatos e adapters de leitura/reuso permanecem. Coordenadores das demais etapas precisam convergir/remover adapters após prova de ausência de consumidores. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -359,6 +360,12 @@ G83: contrato de entrada/TUI/configuração/logs: **25 testes focados passaram**
 suíte completa: **965 passaram** em **192,60 s**. `compileall` e
 `git diff --check` passaram. Nenhuma busca ou aquisição foi alterada. Ver
 [relatório G83](20261005-pipeline-input-strict-types.md).
+
+G84: CLIP, seleção visual e avaliação: **104 testes focados passaram** em
+**0,69 s**; suíte completa: **965 passaram** em **195,46 s**. `compileall` e
+`git diff --check` passaram. Sem geração real; a fase moveu ownership e
+preservou busca e política. Ver
+[relatório G84](20261005-clip-layer-candidate-evaluation.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -899,3 +906,12 @@ aninhadas seguem mappings; veja os limites no
 verbatim do roteiro. 25 testes focados e 965 testes completos passaram;
 compileall e diff check passaram. Ver
 [relatório G83](20261005-pipeline-input-strict-types.md).
+
+## G84 — camada CLIP na avaliação de candidatos (`bc131b9`)
+
+`apply_clip_layer()` move a preparação de shortlist CLIP, avaliação, atualização
+da evidência e reranqueamento de dentro de `visual.py` para
+`candidate_evaluation.py`. O download técnico continua delegado a
+`media_acquisition`; não foram alterados gates, score base ou política
+editorial. 104 focados e 965 testes completos passaram; ver
+[relatório G84](20261005-clip-layer-candidate-evaluation.md).

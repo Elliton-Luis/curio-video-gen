@@ -208,7 +208,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G83 está em
+O relatório completo do estado registrado até G84 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -236,6 +236,10 @@ Suíte completa: 962 testes. Ver
 G83 faz `PipelineInput` rejeitar valores que não sejam texto, sem coerção
 silenciosa. Suíte completa: 965 testes. Ver
 [relatório G83](docs/relatorios/20261005-pipeline-input-strict-types.md).
+G84 move o rerank opcional de CLIP para `candidate_evaluation.py`, mantendo
+download técnico delegado à aquisição e sem mudar gates. Suíte completa:
+965 testes. Ver
+[relatório G84](docs/relatorios/20261005-clip-layer-candidate-evaluation.md).
 O manifesto de roteiro schema 2 também assina inputs de roteiro e título, incluindo contexto de pesquisa, políticas e rotas: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e
