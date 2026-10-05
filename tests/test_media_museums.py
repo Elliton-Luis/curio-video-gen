@@ -8,7 +8,9 @@ from curio.config import CurioConfig
 from curio.media import providers as P
 from curio.metrics import RunMetrics
 from curio.stages import scoring, visual
+from curio.stages.media_provider_policy import ordered_providers
 from curio.stages.scenes import Chapter
+from curio.stages.visual_planning import build_visual_plan
 from tests.test_support.search_plan import patch_search_plan
 
 
@@ -133,11 +135,11 @@ def test_historical_art_prioritizes_museums_then_wikimedia(monkeypatch):
     cfg.media_providers = "pixabay,met,aic,wikimedia,unsplash"
     art = Chapter(1, "Júlio César chegou ao poder.", 8,
                   visual_type="historical_art", subject="Júlio César")
-    names = [p.name for p in visual._provider_priority_order(cfg, art)]
+    names = [p.name for p in ordered_providers(cfg, build_visual_plan(art))]
     assert names[:4] == ["met", "aic", "wikimedia", "unsplash"] or \
         names[:3] == ["met", "aic", "wikimedia"]
     plain = Chapter(1, "O céu é azul.", 8, visual_type="literal")
-    assert [p.name for p in visual._provider_priority_order(cfg, plain)] == \
+    assert [p.name for p in ordered_providers(cfg, build_visual_plan(plain))] == \
         ["pixabay", "wikimedia", "met", "aic", "unsplash"]
 
 

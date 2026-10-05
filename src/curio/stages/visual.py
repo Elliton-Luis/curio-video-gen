@@ -35,7 +35,7 @@ import time
 
 from .. import ffmpeg as ff
 from ..config import CurioConfig
-from ..media import download_asset, get_providers
+from ..media import download_asset
 from ..media.providers import (
     MediaAsset,
     MediaError,
@@ -53,6 +53,7 @@ from .media_selection import (ReuseCandidate, make_selection_decision,
                               prepare_selection_pool,
                               select_reuse_candidate)
 from .visual_audit import candidate_audit_rows
+from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
@@ -71,9 +72,6 @@ _DOWNLOAD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 # foge do assunto, então só entra quando nada mais serviu, e com orçamento
 # próprio de 15 requisições (a cota demo dele é 50/hora e um vídeo estoura
 # isso em duas cenas).
-PROVIDER_PRIORITY = ("pixabay", "pexels", "nasa",
-                     "wikimedia", "openverse", "met", "aic", "unsplash")
-
 # Resultados de busca só vivem na memória da execução, nunca entre vídeos.
 # Quantos candidatos se coleta por consulta antes de escolher. O lineup
 # antigo aceitava 1 asset do primeiro provedor; recolher uma dúzia e
@@ -185,40 +183,6 @@ def _downloaded_dims_ok(asset: MediaAsset) -> bool:
         return False  # ilegível: o render quebraria depois
     asset.width, asset.height = w, h
     return min(w, h) >= min_dimension()
-
-
-def _provider_priority_order(cfg: CurioConfig, ch=None,
-                            genre: str = "", providers=None) -> list[MediaProvider]:
-    """Provedores na ordem de prioridade para ESTA cena.
-
-    Para `historical_art` os museus e acervos sobem: uma foto de banco
-    moderno é pior que nenhuma imagem para um santo do século XIII, e o
-    Met/AIC/Wikimedia guardam pintura, fresco, escultura e objeto antigo em
-    domínio público sem chave. A ordem global continua valendo para os
-    demais tipos - a escada é por cena, não uma preferência permanente.
-    """
-    all_providers = list(providers) if providers is not None else get_providers(cfg)
-    order = list(PROVIDER_PRIORITY)
-    from . import editorial
-    adapter = editorial.get(genre or getattr(cfg, "genre", ""))
-    adapter_priority = list(adapter.media_provider_priority) if adapter else []
-    plan = (ch if isinstance(ch, VisualPlan) else
-            build_visual_plan(ch.semantic_scene()
-                              if hasattr(ch, "semantic_scene") else ch))
-    visual_type = plan.visual_type
-    historical_scene = plan.historical_scene
-    space_topic = plan.space_topic
-    if historical_scene:
-        adapter_priority = ["met", "aic", "wikimedia", "openverse"]
-        order = adapter_priority + [p for p in order if p not in adapter_priority]
-    if space_topic or visual_type == "mechanism":
-        order = ["nasa", "wikimedia", "openverse", "pixabay", "pexels",
-                 "met", "aic", "unsplash"]
-    if adapter_priority:
-        art_first = [p for p in adapter_priority if p in order]
-        order = art_first + [p for p in order if p not in art_first]
-    priority_map = {name: i for i, name in enumerate(order)}
-    return sorted(all_providers, key=lambda p: priority_map.get(p.name, 999))
 
 
 def _selection_asset_key(asset: dict) -> str:
@@ -371,7 +335,7 @@ def _search_scene_with_shortcircuit(
             active = [prov for prov in providers
                       if not getattr(prov, "_disabled", False)]
             scene_order = [p.name for p in
-                           _provider_priority_order(cfg, visual_plan, genre, providers)]
+                           ordered_providers(cfg, visual_plan, genre, providers)]
             rank = {name: index for index, name in enumerate(scene_order)}
             active.sort(key=lambda p: rank.get(p.name, len(rank)))
             providers_consulted.update(prov.name for prov in active)
@@ -945,7 +909,9 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     providers = []
     seen_names: set[str] = set()
     for scene in semantic_scenes:
-        for prov in _provider_priority_order(cfg, scene, genre):
+        scene_plan = build_visual_plan(scene.semantic_scene()
+                                       if hasattr(scene, "semantic_scene") else scene)
+        for prov in ordered_providers(cfg, scene_plan, genre):
             if prov.name not in seen_names:
                 seen_names.add(prov.name)
                 providers.append(prov)

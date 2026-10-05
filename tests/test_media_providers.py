@@ -236,7 +236,7 @@ def test_unsplash_esgotado_nao_derruba_o_provedor(monkeypatch):
 
 def test_unsplash_e_ultimo_na_ordem_de_prioridade():
     """Foto bonita que foge do assunto é o último recurso, não o primeiro."""
-    from curio.stages.visual import PROVIDER_PRIORITY
+    from curio.stages.media_provider_policy import PROVIDER_PRIORITY
     assert PROVIDER_PRIORITY[-1] == "unsplash"
     # e os acervos abertos, que são os mais específicos, vêm antes dele
     for aberto in ("wikimedia", "openverse", "nasa"):
