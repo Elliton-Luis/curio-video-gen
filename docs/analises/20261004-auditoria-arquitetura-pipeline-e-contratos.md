@@ -452,9 +452,14 @@ G38 corrigiu essa identidade incompleta: agora o texto visível participa da
 chave. O replay seguinte produziu 4 IDs/PNGs sintéticos em 4 cenas, ainda com
 layout/assunto global iguais e rodapés diferentes.
 
-Isso deixa aberta a responsabilidade entre política de fallback e construção
-do visual: produzir bytes diferentes não garante variação semântica. A próxima
-fase deve fechar um plano de fallback por cena, usando apenas elementos já
-aprovados no contrato visual, e decidir quais formas podem representar relações
-sem inferir causalidade. Até essa migração, diagramas sintéticos podem manter
-assunto global genérico mesmo quando os arquivos são únicos.
+G39 fecha essa responsabilidade com `VisualFallbackPlan`, produzido a partir
+do `VisualPlan` e consumido pelo renderer. O assunto mostra sua proveniência;
+representações aprovadas específicas precedem o tópico global. A cena carrega
+`visual_steps` como campo explícito, e apenas essa sequência ordenada permite
+diagrama. Entidades/contexto deixaram de ser convertidos em passos por
+conveniência. A rota especial de diagrama de tira de teste foi retirada da
+aquisição; cenas tipográficas e o fallback geral passam pelo mesmo contrato.
+O plano é gravado na auditoria. A primeira rodada integral teve 3 expectativas
+antigas de estratégia/diagrama, atualizadas para o novo contrato. Depois de
+endurecer as validações do contrato, a rodada final passou com **942 testes em
+179,13 s**.

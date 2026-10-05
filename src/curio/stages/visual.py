@@ -134,10 +134,16 @@ def _search_scene_with_shortcircuit(
     # certo por construção.
     if vtype == "typographic":
         from . import visuals
-        synth = visuals.visual_for_scene(ch, cfg.cache_dir,
-                                         getattr(cfg, "language", "pt-BR"),
-                                         visual_state, genre)
+        from .visual_fallback_planning import build_visual_fallback_plan
+        fallback_plan = build_visual_fallback_plan(
+            visual_plan, ch.narration, genre, visual_state)
+        synth = visuals.render_fallback_plan(
+            fallback_plan, cfg.cache_dir,
+            getattr(cfg, "language", "pt-BR"), genre)
         if synth is not None:
+            if visual_state:
+                visual_state.record(fallback_plan.subject,
+                                    fallback_plan.form or fallback_plan.strategy)
             if metrics:
                 metrics.media_record_visual_type(vtype)
                 metrics.media_record_fallback("card")
@@ -154,10 +160,11 @@ def _search_scene_with_shortcircuit(
                 "reused_from": None,
                 "rejected": [],
                 "visual_type": vtype,
-                "strategy": "card",
+                "strategy": fallback_plan.strategy,
                 "visual_decision": {
                     "topic": visual_plan.topic,
                     "visual_plan": visual_plan.to_dict(),
+                    "fallback_plan": fallback_plan.to_dict(),
                     "search_plan": search_plan.to_dict(),
                     "queries": [],
                     "providers_consulted": [],
@@ -530,11 +537,6 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_funnel("used_real")
 
-    if not picked and visual_plan.mechanistic:
-        synth = _synth_diagram_for_scene(ch, queries, cfg, metrics, genre)
-        if synth is not None:
-            picked.append(synth)
-            seen_ids.add(synth["asset"]["asset_id"])
     strategy_used = "image"
     if not picked:
         # Nenhuma fotografia serviu. A cena NÃO fica vazia e NÃO recebe
@@ -542,17 +544,21 @@ def _search_scene_with_shortcircuit(
         # é a cena certa mostrada do jeito certo, e a métrica registra
         # como estratégia, não como falha.
         from . import visuals
-        synth = visuals.visual_for_scene(ch, cfg.cache_dir,
-                                         getattr(cfg, "language", "pt-BR"),
-                                         visual_state, genre)
+        from .visual_fallback_planning import build_visual_fallback_plan
+        fallback_plan = build_visual_fallback_plan(
+            visual_plan, ch.narration, genre, visual_state)
+        synth = visuals.render_fallback_plan(
+            fallback_plan, cfg.cache_dir,
+            getattr(cfg, "language", "pt-BR"), genre)
         if synth is not None:
+            if visual_state:
+                visual_state.record(fallback_plan.subject,
+                                    fallback_plan.form or fallback_plan.strategy)
             picked.append({"asset": synth.to_dict(),
                            "query": queries[0] if queries else "",
                             "relevance": 0, "order": 0,
                             "score": 0.0, "strategy": "synth"})
-            strategy_used = ("diagram"
-                             if synth.title.startswith("Diagrama")
-                             else synth.title.split(" — ")[0].lower())
+            strategy_used = fallback_plan.strategy
             if metrics:
                 metrics.media_record_fallback(strategy_used)
                 metrics.media_synth_diagrams += 1
@@ -635,6 +641,8 @@ def _search_scene_with_shortcircuit(
     decision = {
         "topic": video_context.get("topic", ""),
         "visual_plan": visual_plan.to_dict(),
+        "fallback_plan": (fallback_plan.to_dict()
+                          if synthetic and "fallback_plan" in locals() else None),
         "search_plan": search_plan.to_dict(),
         "visual_intent": (getattr(ch, "visual_intent_structured", "")
                            or getattr(ch, "visual_intent", "")),
@@ -729,39 +737,6 @@ def _search_scene_with_shortcircuit(
         "visual_type": str(getattr(ch, "visual_type", "") or "literal"),
         "strategy": strategy_used,
     }], warnings
-
-
-def _synth_diagram_for_scene(ch, queries: list[str], cfg: CurioConfig,
-                             metrics, genre: str = "") -> dict | None:
-    """Gera diagrama de tira de teste p/ cena de mecanismo (offline).
-
-    Retorna a entrada `picked` pronta ou None (PIL ausente/falha).
-
-    O gênero entra porque a tira é desenhada por PIL com texto, e texto
-    sem papel tipográfico sai na sans pesada de sempre — que é
-    exatamente o que este projeto deixou de fazer.
-    """
-    try:
-        from . import diagram as diagram_stage
-    except ImportError as exc:
-        print(f"AVISO: diagrama sintético indisponível ({exc}).",
-              file=sys.stderr)
-        return None
-    try:
-        terms = " ".join(queries[:2]) or ch.narration[:60]
-        from . import typography as typo_stage
-        asset = diagram_stage.render_strip_diagram(
-            terms, cfg.cache_dir,
-            language=getattr(cfg, "language", "pt-BR"),
-            typo=typo_stage.for_genre(genre))
-    except Exception as exc:  # noqa: BLE001 — fallback honesto abaixo
-        print(f"AVISO: diagrama sintético falhou ({exc}).", file=sys.stderr)
-        return None
-    if metrics:
-        metrics.media_record_synth()
-    asset.used_in = f"cena {ch.id}"
-    return {"asset": asset.to_dict(), "query": terms,
-            "relevance": 50, "order": 0}
 
 
 def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,

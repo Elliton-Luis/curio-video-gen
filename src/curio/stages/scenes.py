@@ -239,8 +239,9 @@ class Chapter:
     visual_intent: str = ""
     planning_mode: str = "unknown"
     # --- vocabulário visual (retrocompatível: tudo opcional) ------------
-    # `visual_type` decide a ESTRATÉGIA (foto, arte, diagrama, cartão);
-    # `visual_entities`/`context` dão o que procurar; `forbidden` é a
+    # `visual_type` informa o tipo de cena; `visual_steps` declara uma
+    # sequência que pode virar diagrama. `visual_entities`/`context` dão
+    # conceitos, nunca passos ordenados. `forbidden` é a
     # lista de falsos positivos observados para o tema (ex.: "térmico"
     # puxando usina termelétrica). Tudo com default para que um
     # chapters.json antigo continue carregando sem erro.
@@ -248,6 +249,7 @@ class Chapter:
     subject: str = ""
     subject_aliases: list[str] = field(default_factory=list)
     visual_entities: list[str] = field(default_factory=list)
+    visual_steps: list[str] = field(default_factory=list)
     context: list[str] = field(default_factory=list)
     forbidden: list[str] = field(default_factory=list)
     # Shared video context and explicit director output. Optional for old
@@ -368,6 +370,7 @@ class Chapter:
             planning_mode=scene.planning_mode, visual_type=scene.visual_type,
             subject=scene.subject, subject_aliases=list(scene.subject_aliases),
             visual_entities=list(scene.visual_entities), context=list(scene.context),
+            visual_steps=list(scene.visual_steps),
             forbidden=list(scene.forbidden), video_context=scene.video_context,
             visual_intent=scene.visual_intent,
             visual_intent_structured=scene.visual_intent_structured,
@@ -418,6 +421,7 @@ class Chapter:
             subject=str(d.get("subject", "") or ""),
             subject_aliases=[str(q) for q in d.get("subject_aliases", [])],
             visual_entities=[str(q) for q in d.get("visual_entities", [])],
+            visual_steps=[str(q) for q in d.get("visual_steps", [])],
             context=[str(q) for q in d.get("context", [])],
             forbidden=[str(q) for q in d.get("forbidden", [])],
             video_context=VideoContext.from_value(d.get("video_context", {})),

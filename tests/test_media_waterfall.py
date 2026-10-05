@@ -357,7 +357,7 @@ def test_cena_sem_foto_boa_troca_de_estrategia(tmp_path):
     assert asset is not None, "cena ficou sem visual"
     assert asset["provider"] == "synth"
     assert os.path.getsize(asset["local_path"]) > 10000
-    assert scenes[0]["strategy"] in ("card", "diagram")
+    assert scenes[0]["strategy"] in ("card", "form", "diagram")
     # não é degradation silenciosa: a troca fica registrada
     assert warns == [] or any("visual por código" in w for w in warns)
 

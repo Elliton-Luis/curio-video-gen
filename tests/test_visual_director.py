@@ -130,7 +130,8 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
     monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda *_: True)
     synth = MediaAsset(provider="synth", asset_id="local", title="Local visual",
                        local_path="", width=1200, height=900)
-    monkeypatch.setattr("curio.stages.visuals.visual_for_scene", lambda *args: synth)
+    monkeypatch.setattr("curio.stages.visuals.render_fallback_plan",
+                        lambda *args: synth)
     from curio.media.identity import asset_identity
     uses = {asset_identity(asset.to_dict()): 1}
     result, _ = visual._search_scene_with_shortcircuit(
@@ -138,7 +139,8 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
         asset_uses=uses)
     assert result[0]["asset"]["provider"] == "synth"
 
-    monkeypatch.setattr("curio.stages.visuals.visual_for_scene", lambda *args: None)
+    monkeypatch.setattr("curio.stages.visuals.render_fallback_plan",
+                        lambda *args: None)
     result, _ = visual._search_scene_with_shortcircuit(
         chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
         asset_uses=uses)

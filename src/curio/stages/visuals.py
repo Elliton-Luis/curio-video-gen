@@ -23,6 +23,8 @@ import hashlib
 import os
 import re
 
+from .visual_contracts import VisualFallbackPlan
+
 W, H = 1200, 1600
 
 # Piso de tamanho para considerar um PNG "pronto". Não é 10 KB: um
@@ -296,6 +298,9 @@ def _date_range(ch) -> str:
     480" em vez de "c. 480 - 547". Declarado é mais confiável para
     desenhar; a narração é o plano B.
     """
+    explicit_period = str(getattr(ch, "period", "") or "").strip()
+    if explicit_period:
+        return explicit_period
     declarados = [str(x) for x in (
         list(getattr(ch, "context", []) or [])
         + list(getattr(ch, "visual_entities", []) or []))]
@@ -499,7 +504,8 @@ def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR",
         _draw_contrast(d, par[0] if par else sujeito, par[1] if par else "",
                        narration, english, typo, papel_assunto)
     elif form == FORM_QUOTE:
-        _draw_quote(d, _quote_line(narration) or sujeito, english, typo,
+        quote = str(getattr(ch, "quote_text", "") or "").strip()
+        _draw_quote(d, quote or _quote_line(narration) or sujeito, english, typo,
                     _role(ch, "quote"))
     elif form == FORM_DATED:
         _draw_dated(d, sujeito or _person_name(ch), _date_range(ch), english,
@@ -931,3 +937,17 @@ def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR",
                 state.record(str(getattr(ch, "subject", "") or ""), strategy)
             return asset
     return None
+
+
+def render_fallback_plan(plan: VisualFallbackPlan, cache_dir: str,
+                         language: str = "pt-BR", genre: str = ""):
+    """Render an already resolved fallback instruction without scene inference."""
+    from . import typography as typo_stage
+    typo = typo_stage.for_genre(genre)
+    if plan.strategy == "diagram":
+        return render_diagram(plan.subject, list(plan.steps), plan.narration,
+                              cache_dir, language, plan.scene_id, typo)
+    if plan.strategy == "form":
+        return render_form(plan, plan.form, cache_dir, language, typo)
+    return render_card(plan.subject, [], plan.narration, cache_dir, language,
+                       plan.scene_id, ch=plan, typo=typo)

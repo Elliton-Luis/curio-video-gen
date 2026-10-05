@@ -49,6 +49,7 @@ def build_visual_plan(scene) -> VisualPlan:
     return VisualPlan(
         scene_id=int(getattr(scene, "id", 0) or 0),
         visual_type=visual_type,
+        text_role=str(getattr(scene, "text_role", "") or ""),
         visual_intent=str(getattr(scene, "visual_intent", "") or ""),
         visual_intent_structured=str(getattr(scene, "visual_intent_structured", "") or ""),
         topic=context.topic,
@@ -61,6 +62,7 @@ def build_visual_plan(scene) -> VisualPlan:
         subject=subject,
         subject_aliases=subject_aliases,
         visual_entities=visual_entities,
+        ordered_steps=tuple(_strings(getattr(scene, "visual_steps", []))),
         context=scene_context,
         forbidden=tuple(_strings(getattr(scene, "forbidden", []))),
         event=str(getattr(scene, "event", "") or ""),

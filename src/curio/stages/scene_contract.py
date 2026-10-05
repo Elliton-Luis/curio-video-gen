@@ -213,6 +213,7 @@ class SemanticScene:
     subject: str = ""
     subject_aliases: tuple[str, ...] = ()
     visual_entities: tuple[str, ...] = ()
+    visual_steps: tuple[str, ...] = ()
     context: tuple[str, ...] = ()
     forbidden: tuple[str, ...] = ()
     video_context: VideoContext = field(default_factory=VideoContext)
@@ -230,7 +231,7 @@ class SemanticScene:
     representation_rejections: tuple[dict, ...] = ()
 
     def __post_init__(self) -> None:
-        for name in ("subject_aliases", "visual_entities", "context", "forbidden",
+        for name in ("subject_aliases", "visual_entities", "visual_steps", "context", "forbidden",
                      "visual_queries", "global_visual_queries"):
             value = getattr(self, name)
             if isinstance(value, str):
@@ -276,6 +277,7 @@ class SemanticScene:
             visual_type=str(chapter.visual_type), subject=str(chapter.subject),
             subject_aliases=tuple(chapter.subject_aliases),
             visual_entities=tuple(chapter.visual_entities),
+            visual_steps=tuple(chapter.visual_steps),
             context=tuple(chapter.context), forbidden=tuple(chapter.forbidden),
             video_context=context,
             visual_intent=str(chapter.visual_intent),
@@ -309,14 +311,14 @@ class SemanticScene:
             field_value = value.get(field_name, "")
             if not isinstance(field_value, str):
                 raise ValueError(f"semantic scene {field_name} must be text")
-        list_fields = ("subject_aliases", "visual_entities", "context", "forbidden",
+        list_fields = ("subject_aliases", "visual_entities", "visual_steps", "context", "forbidden",
                        "representations", "visual_queries", "global_visual_queries",
                        "representation_rejections")
         for field_name in list_fields:
             field_value = value.get(field_name, [])
             if not isinstance(field_value, (list, tuple)):
                 raise ValueError(f"semantic scene {field_name} must be a list")
-        for field_name in ("subject_aliases", "visual_entities", "context",
+        for field_name in ("subject_aliases", "visual_entities", "visual_steps", "context",
                            "forbidden", "visual_queries", "global_visual_queries"):
             if any(not isinstance(item, str) for item in value.get(field_name, [])):
                 raise ValueError(f"semantic scene {field_name} entries must be text")
@@ -337,6 +339,7 @@ class SemanticScene:
             subject=str(value.get("subject", "") or ""),
             subject_aliases=tuple(value.get("subject_aliases", ())),
             visual_entities=tuple(value.get("visual_entities", ())),
+            visual_steps=tuple(value.get("visual_steps", ())),
             context=tuple(value.get("context", ())),
             forbidden=tuple(value.get("forbidden", ())),
             video_context=VideoContext.from_value(value.get("video_context", {})),
@@ -380,6 +383,7 @@ class SemanticScene:
             "visual_type": self.visual_type, "subject": self.subject,
             "subject_aliases": list(self.subject_aliases),
             "visual_entities": list(self.visual_entities),
+            "visual_steps": list(self.visual_steps),
             "context": list(self.context), "forbidden": list(self.forbidden),
             "video_context": self.video_context.to_dict(),
             "visual_intent": self.visual_intent,

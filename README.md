@@ -130,16 +130,18 @@ intenção ou seleção editorial. `visual.py` continua coordenando busca e sele
 `stages/media_search.py` executa queries e entrega `ProviderSearchResult(query, provider, assets, error, cache_hit)`
 tipado em ordem de prioridade; erros e timeouts permanecem visíveis para a
 auditoria, e o módulo não conhece cena, relevância nem fallback editorial.
-O cache de diagramas inclui todos os textos que o renderer desenha, inclusive
-a narração exibida no rodapé. Ainda falta um contrato próprio de fallback que
-faça a composição visual consumir representações locais aprovadas; assim,
-diagramas distintos podem continuar com assunto global genérico.
+O fallback local agora usa `VisualFallbackPlan`: a política seleciona estratégia,
+forma e representação aprovada antes do desenho; o renderer apenas consome o
+plano. `visual_steps` é o único campo que autoriza diagrama, preservando ordem
+declarada; entidades e contexto não são reinterpretados como causalidade.
+O plano e sua origem ficam na auditoria por cena.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
 integral histórica daquele relatório tem 909 testes aprovados. As migrações
-incrementais atuais estão no relatório abaixo; a suíte mais recente passou com
-939 testes após G38 (suíte completa em 174,69 s).
+incrementais atuais estão no relatório abaixo; G38 passou com 939 testes em
+174,69 s. G39 migrou a composição sintética para um plano explícito por cena;
+seu relatório registra a validação atual.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

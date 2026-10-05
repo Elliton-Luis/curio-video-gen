@@ -214,12 +214,8 @@ def test_asset_com_dimensoes_desconhecidas_passa():
 
 # --- o resultado visível: cena fica vazia, não errada -----------------
 
-def test_cena_sem_foto_boa_recebe_diagrama(tmp_path, monkeypatch):
-    """Fluxo completo com um acervo igual ao do vídeo original.
-
-    O resultado NÃO é "cena vazia" nem "usina na tela": é um diagrama
-    do mecanismo. A cena mostra o que precisa mostrar do outro jeito.
-    """
+def test_cena_sem_foto_boa_nao_inventa_etapas_de_diagrama(tmp_path, monkeypatch):
+    """Sem etapas ordenadas declaradas, mecanismo não vira diagrama inventado."""
     from tests.test_media_waterfall import _FakeProv  # noqa: E402
     acervo = [_asset("w1", "power plant cooling towers steam"),
               _asset("w2", "mountain river wallpaper 4k hd"),
@@ -234,7 +230,8 @@ def test_cena_sem_foto_boa_recebe_diagrama(tmp_path, monkeypatch):
     asset = scenes[0]["asset"]
     assert asset is not None, "a cena ficou sem visual nenhum"
     assert asset["provider"] == "synth", "entrou imagem de banco irrelevante"
-    assert "Diagrama" in asset["title"]
+    assert "thermal receipt paper" in asset["title"].lower()
+    assert scenes[0]["visual_decision"]["fallback_plan"]["steps"] == []
     assert os.path.getsize(asset["local_path"]) > 10000
     # as 4 rejeições continuam registradas, com motivo
     assert scenes[0]["rejected"], "o motivo da rejeição não foi registrado"
@@ -242,7 +239,7 @@ def test_cena_sem_foto_boa_recebe_diagrama(tmp_path, monkeypatch):
     assert "termo bloqueado" in motivos
     # e as métricas contam a estratégia, sem chamar isso de falha
     assert m.media_visual_types.get("mechanism") == 1
-    assert m.media_fallbacks.get("diagram") == 1
+    assert m.media_fallbacks.get("form") == 1
     assert m.media_rejections
 
 
@@ -302,7 +299,7 @@ def test_cena_tipografica_nao_busca_foto(tmp_path, monkeypatch):
     asset = scenes[0]["asset"]
     assert asset["provider"] == "synth"
     assert "Card" in asset["title"]
-    assert scenes[0]["strategy"] == "card"
+    assert scenes[0]["strategy"] == "form"
     assert not warns
     assert m.media_visual_types.get("typographic") == 1
     assert m.media_fallbacks.get("card") == 1

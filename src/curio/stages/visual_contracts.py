@@ -17,6 +17,7 @@ class VisualPlan:
 
     scene_id: int
     visual_type: str
+    text_role: str
     visual_intent: str
     visual_intent_structured: str
     topic: str
@@ -28,6 +29,7 @@ class VisualPlan:
     subject: str
     subject_aliases: tuple[str, ...]
     visual_entities: tuple[str, ...]
+    ordered_steps: tuple[str, ...]
     context: tuple[str, ...]
     forbidden: tuple[str, ...]
     event: str
@@ -43,6 +45,7 @@ class VisualPlan:
         return {
             "scene_id": self.scene_id,
             "visual_type": self.visual_type,
+            "text_role": self.text_role,
             "intent": self.visual_intent,
             "structured_intent": self.visual_intent_structured,
             "topic": self.topic,
@@ -56,6 +59,7 @@ class VisualPlan:
             "subject": self.subject,
             "subject_aliases": list(self.subject_aliases),
             "visual_entities": list(self.visual_entities),
+            "ordered_steps": list(self.ordered_steps),
             "context": list(self.context),
             "forbidden": list(self.forbidden),
             "event": self.event,
@@ -66,6 +70,83 @@ class VisualPlan:
             "mechanistic": self.mechanistic,
             "scientific_context": self.scientific_context,
             "historical_scene": self.historical_scene,
+        }
+
+
+@dataclass(frozen=True)
+class VisualFallbackPlan:
+    """Resolved synthetic visual instruction consumed by the local renderer."""
+
+    scene_id: int
+    strategy: str
+    form: str
+    subject: str
+    subject_source: str
+    visual_type: str
+    text_role: str
+    narration: str
+    quote_text: str
+    period: str
+    event: str
+    place: str
+    visual_entities: tuple[str, ...]
+    context: tuple[str, ...]
+    steps: tuple[str, ...]
+    reason: str
+
+    def __post_init__(self) -> None:
+        strategies = {"card", "form", "diagram"}
+        forms = {"spotlight", "definition", "enumeration", "contrast",
+                 "quote", "dated"}
+        subject_sources = {
+            "scene_event", "scene_subject", "scene_visual_entity",
+            "approved_representation", "scene_context", "scene_place",
+            "video_topic", "scene_identity_fallback",
+        }
+        if self.strategy not in {"card", "form", "diagram"}:
+            raise ValueError(f"unsupported visual fallback strategy: {self.strategy}")
+        if self.strategy == "form" and self.form not in forms:
+            raise ValueError("form fallback requires a supported form")
+        if self.strategy != "form" and self.form:
+            raise ValueError("only form fallback may select a form")
+        if self.strategy == "diagram" and len(self.steps) < 2:
+            raise ValueError("diagram fallback requires at least two declared steps")
+        if self.scene_id <= 0:
+            raise ValueError("visual fallback scene_id must be positive")
+        if not self.subject.strip():
+            raise ValueError("visual fallback requires a display subject")
+        if self.subject_source not in subject_sources:
+            raise ValueError("visual fallback requires a known subject source")
+        if not self.text_role.strip():
+            raise ValueError("visual fallback requires a text role")
+        for name in ("visual_entities", "context", "steps"):
+            value = getattr(self, name)
+            if not isinstance(value, tuple) or any(
+                    not isinstance(item, str) or not item.strip() for item in value):
+                raise ValueError(f"visual fallback {name} must be a tuple of text")
+
+    @property
+    def id(self) -> int:
+        """Renderer compatibility name for scene identity."""
+        return self.scene_id
+
+    def to_dict(self) -> dict:
+        return {
+            "scene_id": self.scene_id,
+            "strategy": self.strategy,
+            "form": self.form,
+            "subject": self.subject,
+            "subject_source": self.subject_source,
+            "visual_type": self.visual_type,
+            "text_role": self.text_role,
+            "quote_text": self.quote_text,
+            "period": self.period,
+            "event": self.event,
+            "place": self.place,
+            "visual_entities": list(self.visual_entities),
+            "context": list(self.context),
+            "steps": list(self.steps),
+            "reason": self.reason,
         }
 
 
