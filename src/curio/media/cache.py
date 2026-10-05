@@ -37,7 +37,7 @@ def _fetch(url: str, provider: str = "", metrics=None) -> bytes:
                 break
         if attempt < RETRIES - 1:
             if metrics is not None:
-                metrics.media_record_retry(provider)
+                metrics.media_record_retry(provider, operation="download")
             from ..runlog import event as run_event
             run_event("retry", f"Download {provider or 'mídia'}: tentativa "
                       f"{attempt + 1}/{RETRIES}; {type(last).__name__}",

@@ -58,6 +58,9 @@ class RunMetrics:
         self.media_provider_search_calls: dict[str, int] = {}
         self.media_provider_search_durations: dict[str, list[float]] = {}
         self.media_retries_by_provider: dict[str, int] = {}
+        self.media_retries_by_operation = {"search": 0, "download": 0,
+                                           "unknown": 0}
+        self.media_retries_by_provider_operation: dict[str, dict[str, int]] = {}
         self.media_time_per_request: dict[str, list[float]] = {}
         self.media_results_received: dict[str, int] = {}
         # Diagnóstico POR PROVEDOR do download. A pergunta que a execução
@@ -157,12 +160,18 @@ class RunMetrics:
             self.media_provider_search_durations.setdefault(provider, []).append(
                 round(max(0.0, elapsed_seconds), 4))
 
-    def media_record_retry(self, provider: str) -> None:
+    def media_record_retry(self, provider: str, operation: str = "unknown") -> None:
         with self._lock:
             self.media_retries += 1
             key = provider or "unknown"
             self.media_retries_by_provider[key] = (
                 self.media_retries_by_provider.get(key, 0) + 1)
+            operation_key = (operation if operation in {"search", "download"}
+                             else "unknown")
+            self.media_retries_by_operation[operation_key] += 1
+            by_operation = self.media_retries_by_provider_operation.setdefault(
+                key, {"search": 0, "download": 0, "unknown": 0})
+            by_operation[operation_key] += 1
 
     def media_download(self, bytes_: int, cached: bool) -> None:
         with self._lock:
@@ -621,6 +630,10 @@ class RunMetrics:
                     "timeouts": self.media_timeouts,
                     "retries": self.media_retries,
                     "retries_by_provider": dict(self.media_retries_by_provider),
+                    "retries_by_operation": dict(self.media_retries_by_operation),
+                    "retries_by_provider_operation": {
+                        provider: dict(counts) for provider, counts in
+                        self.media_retries_by_provider_operation.items()},
                     "synthetic_assets": self.media_synthetic_assets,
                     # Public metrics key kept for older consumers.
                     "synth_diagrams": self.media_synthetic_assets,

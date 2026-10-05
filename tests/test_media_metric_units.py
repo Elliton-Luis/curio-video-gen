@@ -37,9 +37,20 @@ def test_search_counters_are_distinct_logical_calls_requests_and_retries():
     assert metrics.media_searches is metrics.media_requests_per_provider
     assert metrics.media_searches == {"wikimedia": 1}
 
-    metrics.media_record_retry("wikimedia")
-    assert metrics.media_retries == 1
-    assert metrics.media_retries_by_provider == {"wikimedia": 1}
+    metrics.media_record_retry("wikimedia", operation="search")
+    metrics.media_record_retry("wikimedia", operation="download")
+    assert metrics.media_retries == 2
+    assert metrics.media_retries_by_provider == {"wikimedia": 2}
+    assert metrics.media_retries_by_operation == {
+        "search": 1, "download": 1, "unknown": 0}
+    assert metrics.media_retries_by_provider_operation == {
+        "wikimedia": {"search": 1, "download": 1, "unknown": 0}}
+
+    media = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+    assert media["retries"] == 2
+    assert media["retries_by_operation"] == metrics.media_retries_by_operation
+    assert media["retries_by_provider_operation"] == (
+        metrics.media_retries_by_provider_operation)
 
 
 def test_provider_search_timing_measures_one_adapter_call():
