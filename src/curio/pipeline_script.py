@@ -35,7 +35,7 @@ class ScriptStageResult:
 
 def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
                      research_target, research_sources, genre_directive,
-                     force, provided_script=None) -> ScriptStageResult:
+                     force, provided_script=None, provided_title=None) -> ScriptStageResult:
     """Produce validated narration/title artifacts and verify grounding."""
     started = time.monotonic()
     script_mode = provided_script is not None
@@ -164,7 +164,15 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
         or previous_manifest.title_origin == "edited"))
     title_protected = bool(previous_manifest and previous_manifest.title_origin
                            in {"provided", "legacy"})
-    if title_edited:
+    if provided_title is not None:
+        title_text = str(provided_title).strip()
+        if not title_text:
+            raise ValueError("título fornecido não pode ser vazio")
+        title = script_stage.TitleArtifact(title_text, "provided")
+        _write(paths.title_txt, title.text)
+        title_origin = title.source
+        title_script_hash = None
+    elif title_edited:
         title = script_stage.TitleArtifact(cached_title, "edited")
         title_origin = "edited"
         title_script_hash = None

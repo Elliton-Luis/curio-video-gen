@@ -177,6 +177,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     try:
         meta = run_script_pipeline(
             script_text, cfg, title=getattr(args, "title", None),
+            topic=getattr(args, "topic", None),
             slug=args.slug, force=args.force, narration=narration,
             on_progress=_progress, on_event=_run_event)
     except KeyboardInterrupt:
@@ -914,6 +915,8 @@ def build_parser() -> argparse.ArgumentParser:
     fs.add_argument("--slug", default=None, help="nome do diretório de saída")
     fs.add_argument("--title", default=None, help="título do vídeo "
                                                   "(padrão: 1ª linha do roteiro)")
+    fs.add_argument("--topic", default=None,
+                    help="assunto para pesquisa e contexto visual; por padrão usa o título")
     fs.add_argument("--force", action="store_true", help="refazer todas as etapas")
     fs.add_argument("--duration", default=None,
                     help="meta de duração (não corta): auto (padrão), 30, 45, "

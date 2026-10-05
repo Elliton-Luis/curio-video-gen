@@ -68,7 +68,8 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                  on_progress=None, provided_script: str | None = None,
                  max_images: int = 1,
                  visual_overlap: float | None = None,
-                 genre: str | None = None, on_event=None) -> dict:
+                 genre: str | None = None, on_event=None,
+                 display_title: str | None = None) -> dict:
     # Per-project audio requests and finalize policy may adjust scalars; never
     # let those adjustments leak into a TUI/queue caller's shared config.
     cfg = deepcopy(cfg)
@@ -85,7 +86,7 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                 idea, cfg, slug=run_slug, force=force, narration=narration,
                 on_progress=on_progress, provided_script=provided_script,
                 max_images=max_images, visual_overlap=visual_overlap,
-                genre=genre)
+                genre=genre, display_title=display_title)
         except BaseException as exc:
             if isinstance(exc, pipeline_media_stage.MediaStandby):
                 runlog.event("run_standby", "Execução em standby",
@@ -111,7 +112,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                   on_progress=None, provided_script: str | None = None,
                   max_images: int = 1,
                   visual_overlap: float | None = None,
-                  genre: str | None = None) -> dict:
+                  genre: str | None = None,
+                  display_title: str | None = None) -> dict:
     started = time.monotonic()
     stage_times: dict[str, float] = {}
     warnings: list[str] = []
@@ -209,7 +211,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         idea, cfg, paths, metrics, research_prompt=research_pack,
         research_target=research_target, research_sources=research_sources,
         genre_directive=genre_directive, force=force,
-        provided_script=provided_script)
+        provided_script=provided_script, provided_title=display_title)
     script_artifact, title_artifact = script_result.script, script_result.title
     script_text, script_source = script_artifact.text, script_artifact.source
     video_title, title_source = title_artifact.text, title_artifact.source
@@ -371,7 +373,8 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
                         title: str | None = None, slug: str | None = None,
                         force: bool = False, narration: str = "ai",
                         max_images: int | None = None,
-                        on_progress=None, on_event=None) -> dict:
+                        on_progress=None, on_event=None,
+                        topic: str | None = None) -> dict:
     """Modo roteiro-pronto: organiza mídia sobre um roteiro já existente.
 
     O texto é usado verbatim como narração/legenda — nunca gerado nem
@@ -382,17 +385,21 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
     text = script_text or ""
     if not text.strip():
         raise ValueError("roteiro vazio — nada para produzir")
+    provided_title = title.strip() if title and title.strip() else None
     if title is None:
         first_line = next((ln.strip() for ln in text.splitlines()
                            if ln.strip()), text[:90])
         title = first_line[:90]
+    research_topic = (topic or title).strip()
+    if not research_topic:
+        raise ValueError("tópico vazio — informe o assunto do roteiro")
     slug = slug or slugify_with_timestamp(title)
     if max_images is None:
         max_images = cfg.visual_max_images
-    return run_pipeline(title, cfg, slug=slug, force=force,
+    return run_pipeline(research_topic, cfg, slug=slug, force=force,
                         narration=narration, on_progress=on_progress,
                         provided_script=text, max_images=max_images,
-                        on_event=on_event)
+                        on_event=on_event, display_title=provided_title)
 
 
 

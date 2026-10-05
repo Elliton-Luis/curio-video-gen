@@ -38,6 +38,31 @@ def test_changed_provided_script_explicitly_invalidates_downstream_audio(
     assert result.script.text == "Uma narração nova."
 
 
+def test_explicit_display_title_is_persisted_without_regeneration(
+        tmp_path, monkeypatch):
+    cfg = CurioConfig()
+    paths = video_paths(str(tmp_path), "separated-inputs")
+    os.makedirs(os.path.dirname(paths.script_txt), exist_ok=True)
+    monkeypatch.setattr(
+        "curio.stages.research.verify_grounding",
+        lambda *_args, **_kwargs: {"unverified": [], "checked": 0})
+    monkeypatch.setattr(
+        "curio.stages.script.generate_title",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("explicit title should be preserved")))
+
+    result = run_script_stage(
+        "black holes", cfg, paths, None, research_prompt="",
+        research_target=None, research_sources=[], genre_directive=None,
+        force=False, provided_script="A provided narration.",
+        provided_title="Black holes — field notes")
+
+    assert result.title == TitleArtifact("Black holes — field notes", "provided")
+    assert read_manifest(paths.script_manifest_json).title_origin == "provided"
+    with open(paths.title_txt, encoding="utf-8") as stream:
+        assert stream.read() == "Black holes — field notes"
+
+
 def test_cache_autocorrection_invalidates_scene_and_audio_inputs(
         tmp_path, monkeypatch):
     cfg = CurioConfig()
