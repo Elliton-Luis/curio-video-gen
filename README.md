@@ -144,10 +144,14 @@ O resolver de entidade também preserva contexto de identificadores compactos
 como `M87`, `H1N1` e `B52`, e o gate exige contexto do pedido ou alias canônico
 declarado pela fonte; assim, o código sozinho não fundamenta uma fonte
 homônima. G96 corrigiu a aceitação de “Capacete M87” e “Zastava M87” e passou
-com 1020 testes na suíte completa. A geração real pós-correção rejeitou esses
-homônimos, mas revelou que imagens genéricas de buraco negro podem passar com
-score máximo sem evidência específica da cena. O problema visual segue aberto;
+com 1020 testes na suíte completa. G97 confirmou e corrigiu a promoção de
+representações locais à âncora global e impediu que representações de
+enrichment provem o que a cena retrata; a suíte completa passou com 1021
+testes. A geração real pós-G97 teve 1/4 cenas com mídia real, porque o coletor
+atingiu o limite de candidatos tecnicamente elegíveis antes de consultar
+representações seguintes. O problema de cobertura segue aberto;
 veja o [relatório G96](docs/relatorios/20261005-compact-identifier-source-gate.md)
+e o [relatório G97](docs/relatorios/20261005-topic-anchor-scene-evidence.md)
 e o [relatório consolidado](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md).
 O `SearchPlanner` prioriza representações de cena sobre contexto amplo, evita
 repetir meio/tópico nas consultas e só inclui fallback de mapa em contexto

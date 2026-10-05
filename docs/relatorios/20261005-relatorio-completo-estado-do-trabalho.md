@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G96 e métricas até F15, incluindo a validação real M87 pós-G96.
-**Estado:** trabalho incompleto. G80–G96 e F4–F15 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G97 e métricas até F15, incluindo a geração real M87 pós-G97.
+**Estado:** trabalho incompleto. G80–G97 e F4–F15 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -44,17 +44,26 @@ o fechamento documental dessa alteração.
 > distinta de ancoragem temática e perda de intenção por cena na seleção visual.
 > Detalhes e limites em [G96](20261005-compact-identifier-source-gate.md).
 
+> **Atualização G97:** a causa do falso match de tópico foi confirmada em
+> `fill_missing_context()` e `semantic_relevance()`. `1fd98d4` mantém âncora
+> global independente das representações contextuais e não conta
+> `entity_context` como prova da cena. A suíte completa passou com 1021 testes.
+> A execução real M87 ficou em 1/4 cenas com mídia real e expôs a parada do
+> coletor antes do scoring e representações locais incompletas; ver
+> [G97](20261005-topic-anchor-scene-evidence.md).
+
 ## Estado exato do trabalho retomado
 
-Último commit de implementação: `0cdf81a` (G96). O commit documental anterior
-é `ef29a7c`; F15 continua sendo `b9e6ff1`, seguido pelos registros
+Último commit de implementação: `1fd98d4` (G97). G96 é `0cdf81a`; F15
+continua sendo `b9e6ff1`, seguido pelos registros
 `8420ab4`, `c519528`, I1 e I2. G96 sucede G95 `3978670`, G94 `60703ae`, G93
 `38b892e` e a proveniência até render `8daa29f`.
 
-O projeto está executável. A validação integral mais recente, já com G96, é
-**1020 testes aprovados em 200,73 s**. Os testes focados de pesquisa passaram
-com **44 testes**, e `compileall` e `git diff --check` passaram. Os 1014 testes
-em 182,23 s são o resultado histórico de F15, não o resultado atual.
+O projeto está executável. A validação integral mais recente, já com G97, é
+**1021 testes aprovados em 185,79 s**. Os testes focados de contexto, scoring,
+enriquecimento e query concepts passaram com **70 testes**; `compileall` e
+`git diff --check` passaram. Os números anteriores são resultados de fases
+históricas, não da revisão atual.
 
 ### O que estava sendo investigado na etapa de mídia
 
@@ -104,22 +113,26 @@ afirmação sobre 2019 permanece sem grounding e não foi resolvida por G96.
 
 ### Estado das fases e pendências
 
-Concluído e commitado: G80–G96, F4–F15 e fases anteriores detalhadas neste
+Concluído e commitado: G80–G97, F4–F15 e fases anteriores detalhadas neste
 documento. Mais recentemente, G93 corrigiu a precedência global inadequada de
 providers entre cenas; G94 fez a busca consumir os mesmos planos canônicos da
 cena; G95 corrigiu a seleção heurística de entidade inglesa que reduzia
 `Battle of Mohacs 1526` a `Battle`; F15 centralizou a contagem das requests
 de API que antes eram omitidas por Met/AIC; G96 preservou contexto e exige
-prova de identidade para identificadores compactos.
+prova de identidade para identificadores compactos; G97 separou âncora global
+de representação local e removeu representações de enrichment da evidência da
+cena.
 
-Em aberto no momento da parada: validar em geração real a decomposição de
-requests por operação e provider após F15. Essa validação ocorreu nesta
-execução documental; a geração pós-G96 também foi executada e está detalhada
-na seção G96. A falha de qualidade visual encontrada nessa execução permanece
-sem correção.
+Em aberto: concluir a aquisição M87 pós-G97. O teste real executou só 4 de 8
+queries planejadas por cena em razão de `scene_candidate_budget`; por isso a
+busca não provou esgotamento semântico. O coletor limita os candidatos que
+passam pelo gate técnico antes da avaliação de relevância. A fase seguinte é
+G98, para que candidatos semanticamente rejeitados não consumam toda a
+exploração da cena. A decomposição F15 já foi confirmada em execução real.
 
-Não concluído: corrigir a ancoragem global permissiva e a perda de conceitos
-visuais específicos por cena observadas na geração M87 pós-G96; reexaminar o
+Não concluído: corrigir a parada antecipada do coletor; preservar conceitos
+visuais específicos por cena (disco de acreção, jato, lente gravitacional) e
+alias canônico com provenance; reexaminar o
 grounding da afirmação de 2019; extração do coordenador editorial ainda concentrado em
 `visual.py`; ownership global de estado/cache/metadata; simplificação dos
 caminhos compatíveis internos restantes; profile comparável de performance;
@@ -144,6 +157,12 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
   M87” e “Zastava M87”). G96 corrige o gate: na nova execução, três fontes astronômicas foram aceitas
   e 51 rejeitadas, sem esses falsos positivos. A afirmação sobre 2019 continua
   sem grounding.
+- G97 fechou o vazamento que deixava representação local virar âncora global
+  e entidade contextual virar evidência local. A geração pós-G97 reduziu a
+  cobertura real para 1/4: 2 assets Wikimedia quase iguais foram selecionados
+  apenas na cena 1 e as cenas 2–4 ficaram sintéticas. Isso é uma regressão de
+  cobertura observada, não prova de inexistência de acervo. O coletor deixou
+  queries de representações seguintes sem executar por `scene_candidate_budget`.
 - O vídeo histórico G95 ainda terminou com uma cena sintética (3/4 mídia real),
   embora tenha melhorado do baseline anterior. Não se demonstrou esgotamento
   suficiente de mídia específica em todos os casos.
@@ -164,6 +183,7 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
 | Batalha de Mohács, F15 | 4 | 4 | 4 | 0 | 0 | 31 queries lógicas; mídia 81,98 s; total 148,89 s |
 | M87, I2 pós-F15 | 4 | 4 | 4 por ID/hash | 0 | 0 | 30 queries lógicas; mídia 38,33 s; total 76,00 s |
 | M87, G96 pós-correção de entidade | 4 | 4 | 12 por ID/hash | 0 | 0 | 16 queries lógicas; mídia 22,28 s; total 80,21 s |
+| M87, G97 separação de âncora/evidência | 4 | 1 | 2 IDs/hash (quase iguais) | 0 | 3 | 16 queries executadas; mídia 19,07 s; total 70,75 s |
 
 Os detalhes por cena, fontes, seleção e inspeção visual de Mohács constam em
 [`20261005-english-entity-connectors-and-real-runs.md`](20261005-english-entity-connectors-and-real-runs.md).
@@ -171,6 +191,9 @@ M87 pós-F15, incluindo requests por provider/operação e as regressões
 visuais/factuais, está em [I2](20261005-ciencia-real-pos-f15.md). O replay
 pós-G96, a proveniência de cada seleção e a inspeção visual estão em
 [G96](20261005-compact-identifier-source-gate.md).
+O estado pós-G97, incluindo a auditoria query por query, rejeições, providers,
+vencedores e imagens inspecionadas está em
+[G97](20261005-topic-anchor-scene-evidence.md).
 Essas medições são execuções pontuais; não constituem profile pareado nem
 validação final da arquitetura. No caso M87, a composição quase duplicada
 mostra o limite de contar apenas identidade binária.
@@ -532,9 +555,9 @@ seus pixels aparecem no MP4. F15 não altera essa limitação do renderer.
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F15 parciais. | Contagem de requests foi confirmada em geração e sondagem; lifecycle timers, profile de performance e validação dos frames após FFmpeg permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G96 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G97 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; coletor encerra por candidatos técnicos antes do scoring; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
-| I — validação/limpeza | Parcial. | Há Mohács e M87 reais pós-F15, fallback local sem LLM, rerender real sem nova busca e geração M87 pós-G96. Faltam falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior; M87 pós-G96 mostrou imagens genéricas e âncora contextual fraca. |
+| I — validação/limpeza | Parcial. | Há Mohács e M87 reais pós-F15, fallback local sem LLM, rerender real sem nova busca e gerações M87 pós-G96/G97. Faltam falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior; G97 mostrou 3 cenas sintéticas e quase duplicatas na única cena real. |
 
 Os status são os registrados na auditoria e neste relatório até G96/F15. Não representam
 aceite final dos objetivos amplos.
@@ -881,6 +904,39 @@ correspondência temática a partir de evidência apenas local. Esses achados s�
 observações da execução, não uma causa raiz já confirmada. Ver o [relatório
 G96](20261005-compact-identifier-source-gate.md) para auditoria por cena,
 queries, evidências, providers, vencedores e limites da inspeção.
+
+## G97 — âncora global separada da evidência de cena (`1fd98d4`)
+
+A execução M87 pós-G96 confirmou que `fill_missing_context()` sobrescrevia a
+âncora global emitida por `anchor_local_topic()` com todas as representações
+da cena. Como `topic_anchor_matches()` aceita qualquer termo do campo, um
+candidato relacionado apenas a `black hole` podia passar como imagem de M87.
+Além disso, `semantic_relevance()` contava representações de origem
+`entity_context`/`verified_entity_context` como prova do que a cena mostra.
+
+G97 remove as duas atribuições que promoviam representações a âncoras globais
+e filtra âncoras inseridas pelo enrichment ao construir evidência local. Os
+testes cobrem uma cena M87 determinística, imagem genérica sem o tópico e
+homônimo “M87 Kevlar helmet”. Isso corrige a proveniência dos sinais usados
+pelos gates, sem mudar thresholds.
+
+Validação: 70 testes focados; suíte completa **1021 passou em 185,79 s**;
+compileall e diff check passaram. A geração real pós-G97, sem LLM, teve 4
+cenas, 1 cena com mídia real, 2 assets reais únicos no mesmo trecho (quase
+duplicados), 0 reusos e 3 cenas sintéticas. Foram executadas 16 queries lógicas
+(4 por cena), 80 candidatos entraram na auditoria, 68 falharam a âncora e 8
+foram rejeitados pelo gate técnico. A mídia levou 19,07 s e a execução 70,75 s.
+Met retornou HTTP 410, AIC HTTP 500 e Pexels estava sem chave.
+
+O ponto incompleto foi provado pelas próprias queries: a representação seguinte
+(`event horizon`, `galaxy` ou termos contextuais) foi marcada
+`not_consulted_budget_exhausted` antes de ser pesquisada, pois o coletor atinge
+20 candidatos que passam o gate técnico antes de scoring semântico. G97,
+portanto, corrige a permissividade da âncora, mas **não conclui a aquisição**.
+G98 precisa permitir a continuação da busca após rejeições semânticas sem
+retirar o limite de custo; G99 deve preservar os conceitos concretos omitidos
+pelo planejador determinístico. Auditoria detalhada e inspeção visual:
+[G97](20261005-topic-anchor-scene-evidence.md).
 
 ## F9 — projeção única das métricas de seleção (`ed34825`)
 

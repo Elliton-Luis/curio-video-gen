@@ -8,6 +8,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 ## Relatórios (o que foi feito e como)
 
 - `relatorios/20261005-compact-identifier-source-gate.md` — G96: causa e correção da aceitação de homônimos M87, validação real pós-correção, proveniência por cena e falha visual ainda aberta (1020 testes).
+- `relatorios/20261005-topic-anchor-scene-evidence.md` — G97: separa âncora global e evidência da cena; suíte completa 1021, mas replay real teve 3 cenas sintéticas e identificou o limite prematuro do coletor.
 - `relatorios/20261005-english-entity-connectors-and-real-runs.md` — G95: corrige entidade inglesa genérica e registra os replays reais, falhas editoriais restantes e discrepância de métricas; suíte completa: 1012 testes.
 - `relatorios/20261005-canonical-scene-search-plans.md` — G94: busca consome os VisualPlan/SearchPlan canônicos da cena; suíte completa: 1011 testes.
 - `relatorios/20261005-provider-priority-per-scene.md` — G93: aplica a prioridade de providers por cena, preservando a política do VisualPlan; suíte completa: 1010 testes.
@@ -24,7 +25,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-visual-decision-audit-owner.md` — G88: `visual_audit.py` valida contratos tipados e monta a decisão visual; suíte completa: 994 testes.
 - `relatorios/20261005-relatorio-parada-e-estado-do-trabalho.md` — snapshot histórico da primeira parada (HEAD `bc011bb`, G88 local); substituído pelo relatório consolidado atualizado abaixo.
 - `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — inventário arquitetural e estado consolidado até G95/F14; consulte o relatório completo abaixo para o estado G96/F15/I2.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório consolidado até G96/F15 e geração real pós-G96: arquitetura antes/depois, fases, commits, contratos, testes, regressões, validações reais e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório consolidado até G97/F15 e geração real pós-G97: arquitetura antes/depois, fases, commits, contratos, testes, regressões, validações reais e pendências.
 - `relatorios/20261005-provider-request-metric-boundary.md` — F15: conta todas as tentativas de API Met/AIC/NASA/Unsplash, incluindo falhas e metadata; detalhe por operação; suíte completa: 1014 testes.
 - `relatorios/20261005-rerender-runtime-no-search.md` — I1: rerender de projeto científico real preserva hashes da seleção e registra zero requests/queries; verify 8/8.
 - `relatorios/20261005-ciencia-real-pos-f15.md` — I2: geração M87 pós-F15 com 4 assets únicos e breakdown real search/metadata; registra quase duplicatas visuais e fontes homônimas.
