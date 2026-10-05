@@ -165,3 +165,4 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
   testes de fumaça, `batch`, …).
 
 - `relatorios/20261005-scene-projection-boundary.md` — separa o modelo de compatibilidade `Chapter` do planner de cenas.
+- `relatorios/20261005-pos-g48-validacao-arquitetural.md` — suíte, rerenders atuais e auditoria visual de projetos históricos e científicos após G48.

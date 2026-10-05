@@ -512,3 +512,7 @@ Quando nenhuma seleção tinha asset, `_run_pipeline` criava instruções para m
 ## G48 — regras de cena compartilhadas sem importar o planner
 
 A fronteira nova de G42 ainda tinha dependência conceitual: `Chapter.from_dict` chamava helpers privados em `scenes.py`, e `visual_context.py` importava o classificador do planner. A classificação determinística de tipo visual agora vive em `scene_visual_type.py`; normalização/rejeição de representações vive em `scene_representations.py`. Planner, enrichment e projeção consomem esses owners compartilhados. `scenes.py` mantém somente o reexport do classificador para compatibilidade de import antigo. A regra e sua proveniência não foram alteradas.
+
+## Validação pós-G48 e estado corrente
+
+`docs/relatorios/20261005-pos-g48-validacao-arquitetural.md` registra suíte (904), rerenders atuais de história e ciência e inspeção dos pixels vencedores. Os rerenders respeitaram cache e não buscaram mídia nem rodaram TTS. A seleção continuou sem reuso, mas a cena histórica de Mohács recebeu duas fotos atuais do Parlamento Húngaro; a terceira cena científica recebeu campo profundo Hubble sem evidência visual de lente gravitacional. Precisão editorial segue aberta apesar de identidade/diversidade corretas. A tentativa de rerender do projeto otomano humano foi bloqueada pela ausência esperada de `narration.wav`; a validação foi feita no projeto Mohács que já continha áudio.

@@ -286,7 +286,8 @@ mesma tabela de tempos no metadata e no arquivo de métricas, e mantém
 de cada modo.
 A auditoria e a evidência de execução real desta migração estão em
 [`docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`](docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
-e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md).
+e [`docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`](docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md)
+e [`docs/relatorios/20261005-pos-g48-validacao-arquitetural.md`](docs/relatorios/20261005-pos-g48-validacao-arquitetural.md).
 As execuções pós-migração incluem uma amostra científica e outra histórica,
 rerender/cache e inspeção visual. Elas confirmam contratos e ausência de reuso,
 mas também registram um falso positivo grave (Parlamento de Budapeste para
