@@ -348,3 +348,84 @@ narração e legendas do cache, sem busca.
 `git diff --check` passaram. A cobertura histórica continuou sintética e
 incompleta; a evidência real não permite declarar qualidade universal nem
 disponibilidade estável dos acervos.
+# Validação adicional pós-refatoração (2026-10-05)
+
+## Diagnóstico histórico antes do ajuste de queries
+
+A tentativa via CLI `architecture-ottoman-20261005` foi interrompida após mais
+de cinco minutos na pesquisa porque cada consulta à Wikipedia recebia HTTP 429
+e entrava em retry; `CURIO_CONTACT` não está definido no ambiente. Nenhum
+artefato de cena/mídia foi produzido nessa tentativa.
+
+Para testar a aquisição sem inventar identidade no User-Agent nem usar LLM ou
+serviço pago, rodei `arch-real-ottoman-20261005` com roteiro fornecido, pesquisa
+stubada para zero fontes (marcada fraca) e providers públicos Met+AIC. O planner
+local produziu 3 cenas. Todas terminaram sintéticas, com 8 queries por cena
+(24 queries lógicas); Met respondeu HTTP 410 e AIC HTTP 500 em todas as
+consultas. Não houve candidatos elegíveis nem rejeitados por relevância. A
+etapa de mídia levou 13,82 s; render silencioso, 11,41 s; teleprompter, 5,31 s.
+Logo, esse vídeo valida fallback/render e explicitação de falha do provider,
+mas não valida cobertura de mídia real.
+
+A inspeção de `media.json` encontrou ainda uma falha interna independente dos
+providers: as 8 consultas começavam por uma âncora ampla do império; quatro
+repetiam a palavra `painting` ou o tópico, e o teto excluía a data e variantes
+da batalha. Essa evidência motivou G34, que prioriza eventos/entidades e evita
+sufixos redundantes. O resultado pré-ajuste está em
+`/tmp/curio-architecture-validation/history/arch-real-ottoman-20261005`.
+
+## Replay depois da correção do SearchPlan
+
+`arch-real-ottoman-after-search-plan-20261005`: 3 cenas, 8 queries planejadas e
+executadas por cena (24 lógicas/48 chamadas Met+AIC), zero candidatos porque
+Met retornou 410 e AIC 500 em todas as consultas; 3 cartões sintéticos únicos,
+sem reuso. As consultas agora começam por evento e cobrem tipo visual/data sem
+repetir contexto. Mídia: 13,23 s; render silencioso: 11,50 s; teleprompter:
+5,34 s.
+
+`arch-real-black-hole-searchfix-20261005`: 4 cenas, 8 queries planejadas em
+cada. Antes do G35, apenas uma por cena foi executada porque NASA retornou um
+candidato contextual; após download ele falhou por resolução. Os quatro
+candidatos NASA foram rejeitados tecnicamente, Met/AIC retornaram 410/500 e
+quatro cenas receberam o mesmo diagrama sintético `M87* black hole` (um ID
+único, repetido quatro vezes, sem reuso representado na métrica de assets
+reais). O SearchPlan não contém `historical map` nem tópico duplicado. Mídia:
+2,80 s; TTS local espeak-ng: 0,14 s; render: 12,70 s.
+
+Inspecionei visualmente o cartão otomano: legível e coerente com o tema, mas
+genérico para Mohács. O diagrama científico é legível, mas não representa a
+diferença entre as quatro cenas e foi repetido. Esses resultados demonstram que
+as decisões agora ficam auditáveis, mas não provam cobertura visual adequada:
+providers indisponíveis, NASA abaixo do requisito técnico e fallback sintético
+repetido continuam limitações concretas.
+
+O rerender de `arch-real-black-hole-20261005` terminou em 3,6 s com VA-API; usou
+narração, roteiro e legendas existentes e não registrou eventos de aquisição.
+O projeto histórico em `human-pending` não pôde usar o comando `rerender`, pois
+não tinha `narration.wav`; a falha foi explícita e não buscou mídia.
+
+## Replay depois de G35: busca continua após rejeição técnica
+
+Projeto `arch-real-black-hole-search-exhaust-20261005`, gerado depois da
+remoção do curto-circuito por score. Foram 4 cenas e 8/8 queries executadas em
+cada cena. NASA, Met e AIC foram consultados: NASA entregou 1 candidato por
+cena, todos rejeitados depois do download por resolução insuficiente; Met
+retornou HTTP 410 e AIC HTTP 500. O status foi `provider_errors`, portanto as
+quatro seleções sintéticas não representam prova de que o acervo esteja
+esgotado. Resultado: 0 assets reais, 0 assets reais únicos, 0 reusos e 4 cenas
+sintéticas; 32 queries de cena planejadas/executadas, além de chamadas por
+provider registradas na trilha de aquisição. Mídia levou 11,68 s, render
+silencioso 8,23 s e teleprompter 3,72 s.
+
+As 8 consultas incluíram representações como `galaxy`, `event horizon` e `black
+hole`, variações visuais e contexto do tópico. O artefato persistido lista
+queries individuais, candidatos NASA rejeitados, providers consultados e o
+motivo técnico. A busca percorreu toda a árvore apesar do primeiro score alto.
+Inspeção visual do diagrama sintético confirmou que ele é legível, mas igual
+nas quatro cenas; repetição do fallback sintético segue como defeito separado.
+
+Esta execução usa roteiro fornecido e stuba somente pesquisa externa, com aviso
+explícito; mídia usou providers reais configurados e render foi executado. Não
+valida integração de pesquisa/research. A suíte integral conjunta de G34/G35
+passou com **932 testes em 181,98 s**; compileall e `git diff --check` também
+passaram.

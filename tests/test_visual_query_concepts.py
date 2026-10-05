@@ -156,6 +156,56 @@ def test_search_continues_after_topic_only_candidate(tmp_path, monkeypatch):
     assert "narration" not in audit["visual_plan"]
 
 
+def test_search_does_not_stop_before_download_and_dimension_validation(
+        tmp_path, monkeypatch):
+    from curio.media.providers import MediaAsset
+
+    first = MediaAsset("wikimedia", "low-res", title="Battle of Mohacs painting",
+                       download_url="https://cdn.test/low.jpg", width=1600,
+                       height=1200, license="CC BY 4.0")
+    alternative = MediaAsset(
+        "wikimedia", "valid", title="Battle of Mohacs 1526 engraving",
+        download_url="https://cdn.test/valid.jpg", width=1600,
+        height=1200, license="CC BY 4.0")
+
+    class Provider:
+        name = "wikimedia"
+
+        def __init__(self):
+            self.calls = []
+
+        def search(self, query, *_args, **_kwargs):
+            self.calls.append(query)
+            return [first] if query == "Battle of Mohacs painting" else [alternative]
+
+    provider = Provider()
+    image = tmp_path / "asset.jpg"
+    image.write_bytes(b"x" * 20000)
+    monkeypatch.setattr(visual, "download_asset",
+                        lambda asset, *_a, **_kw: _attach(asset, image))
+    monkeypatch.setattr(visual, "_downloaded_dims_ok",
+                        lambda asset: asset.asset_id != "low-res")
+    patch_search_plan(monkeypatch, visual,
+                      ["Battle of Mohacs painting", "Battle of Mohacs 1526"])
+    chapter = Chapter(
+        id=14, narration="The Battle of Mohacs changed the region.",
+        duration_estimate=6, subject="Battle of Mohacs",
+        event="Battle of Mohacs", primary_entity="Battle of Mohacs",
+        visual_entities=["Battle of Mohacs"],
+        representations=[{"query": "Battle of Mohacs", "kind": "event",
+                          "level": 1}],
+        video_context={"topic": "Ottoman Empire"})
+
+    rows, _ = visual._search_scene_with_shortcircuit(
+        chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
+        1, None, str(tmp_path))
+
+    assert provider.calls == ["Battle of Mohacs painting", "Battle of Mohacs 1526"]
+    assert rows[0]["asset"]["asset_id"] == "valid"
+    assert rows[0]["visual_decision"]["selection"]["query"] == (
+        "Battle of Mohacs 1526")
+
+
 def test_provider_failures_never_claim_search_exhausted(tmp_path, monkeypatch):
     from curio.media.providers import MediaError
 

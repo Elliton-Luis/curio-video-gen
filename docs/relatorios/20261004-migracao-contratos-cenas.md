@@ -1050,3 +1050,53 @@ infere status para “consertar” dados.
 de integração que simulavam providers sem produzir a decisão contratual; após
 migrá-los para decisões explícitas, **929 testes passaram em 197,39 s**.
 `compileall` e `git diff --check` passaram.
+
+## G34: consultas específicas precedem contexto amplo
+
+Na execução real de aquisição otomana (`arch-real-ottoman-20261005`), a inspeção
+da trilha mostrou que uma representação contextual de nível 0 — `Ottoman Empire
+painting` — ocupava o início do limite de oito consultas. Ela gerava ainda
+`painting painting` e repetia o tópico no fim. As variações do evento e da data
+ficavam fora do limite. A causa está na ordenação por nível bruto e na montagem
+de sufixos sem verificar se o meio/contexto já estava na representação.
+
+O planner agora prioriza representações de evento, pessoa, monumento, artefato,
+exército e objeto antes de âncoras amplas de império/mapa/contexto. Variantes
+visuais só são acrescentadas quando o conceito ainda não contém o meio; tópico
+ou alias são adicionados uma vez. O teto continua igual e nenhuma gate ou score
+foi alterado.
+
+48 testes de query planning, contexto e waterfall passaram. Um replay posterior
+com M87 confirmou ausência de `historical map` e tópico repetido; NASA trouxe um
+candidato que falhou na validação de resolução, enquanto Met/AIC falharam na
+API.
+
+## G35: score forte só encerra após aquisição validada
+
+O atalho `fresh_match_proven` interrompia a árvore de queries quando um
+candidato recebia score forte antes do download. A etapa seguinte podia rejeitar
+esse arquivo por resolução e cair em sintético sem testar as representações
+restantes. No replay M87, NASA retornou “Spitzer Captures Messier 87” com score
+95,25, mas o download revelou resolução insuficiente; as outras 7 consultas
+ficaram sem execução.
+
+Removi esse atalho. A aquisição agora coleta pela árvore específica limitada
+pelo teto global de candidatos e segue com o ranking até obter asset baixado e
+tecnicamente válido. Candidate score, gates e thresholds permanecem intactos.
+Uma regressão coloca o candidato de melhor score primeiro, força a rejeição por
+dimensão e comprova que o segundo evento é consultado e vence.
+
+30 testes focados de busca e waterfall passaram. Com G34/G35 juntos, a suíte
+integral passou: **932 testes em 181,98 s**. `compileall` e `git diff --check`
+também passaram.
+
+Replay pós-G35: `arch-real-black-hole-search-exhaust-20261005`, 4 cenas, 8/8
+queries planejadas executadas em cada cena e NASA/Met/AIC consultados. NASA
+retornou um candidato por cena; os quatro falharam após download por resolução
+insuficiente. Met/AIC continuaram indisponíveis (HTTP 410/500), deixando a
+busca explicitamente incompleta (`provider_errors`). Resultado: 0 imagens reais,
+4 cards sintéticos, 0 reusos; mídia 11,68 s, render silencioso 8,23 s e
+teleprompter 3,72 s. Isso comprova que score alto já não interrompe a árvore
+antes dos gates técnicos, mas não comprova exaustão de mídia porque dois
+providers falharam. Os quatro cards usam o mesmo diagrama sintético cacheado;
+essa repetição visual permanece uma limitação distinta da seleção de mídia real.

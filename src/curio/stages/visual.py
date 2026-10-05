@@ -343,8 +343,7 @@ def _search_scene_with_shortcircuit(
     from . import scoring
     min_score = scoring.threshold()
 
-    def collect(query_list: list[str], limit: int,
-                stop_when_proven: bool = False) -> None:
+    def collect(query_list: list[str], limit: int) -> None:
         for query_index, query in enumerate(query_list):
             if len(candidates) >= MAX_SCENE_CANDIDATES:
                 for pending in query_list[query_index:]:
@@ -439,40 +438,15 @@ def _search_scene_with_shortcircuit(
                 abandoned_duplicate_queries.add(query)
                 if metrics:
                     metrics.media_duplicate_queries += 1
-            if stop_when_proven:
-                # A contextual result already selected elsewhere is not
-                # evidence that this scene has an adequate fresh result.
-                fresh = [entry for entry in candidates
-                         if not asset_uses or not asset_uses.get(
-                             _selection_asset_key(entry["asset"]), 0)]
-                score_started = time.monotonic()
-                checked = [item.to_selection_entry() for item in evaluate_specific(
-                    [entry for entry in fresh if not entry["generic"]],
-                    ch, min_score).accepted]
-                if metrics:
-                    metrics.media_selection_time += time.monotonic() - score_started
-                if any(entry.get("score", 0) >= min_score
-                       and entry.get("score_detail", {}).get("topic_relevance") == 100
-                       and entry.get("score_detail", {}).get("scene_relevance", 0) >= 70
-                       for entry in checked):
-                    for pending in query_list[query_index + 1:]:
-                        unexecuted_queries.setdefault(pending, "fresh_match_proven")
-                    break
-
     # Colete e pontue específicos antes de buscar fotos genéricas do gênero.
     # Generic queries só rodam quando nenhuma foto específica passa o gate.
     specific_queries = [q for q in queries if q.lower() not in generics]
     generic_queries = [q for q in queries if q.lower() in generics]
-    # Bound each query, then keep exploring later representations unless a
-    # strong fresh result proves sufficient. The scene-wide cap prevents an
-    # oversized provider response from multiplying downloads without bound.
+    # A strong metadata score is not a successful asset: download can still
+    # fail or reveal unusable dimensions. Explore the bounded query tree before
+    # selecting, then download ranked candidates until one passes acquisition.
     phase_budget = max(1, max_images * CANDIDATE_MULTIPLIER)
-    # Before the first visual there cannot be cross-scene reuse. Later scenes
-    # must finish the bounded specific-query tree: a provider ID/URL can look
-    # new while its bytes duplicate an already selected asset, which is only
-    # discovered after download and SHA-256 identity resolution.
-    collect(specific_queries, phase_budget,
-            stop_when_proven=not bool(asset_uses))
+    collect(specific_queries, phase_budget)
     score_started = time.monotonic()
     specific_result = evaluate_specific(
         [entry for entry in candidates if not entry["generic"]], ch, min_score)
@@ -833,8 +807,6 @@ def _search_scene_with_shortcircuit(
                          if str(alias).casefold() in query.casefold()],
                      "status": ("not_consulted_budget_exhausted"
                                 if unexecuted_queries.get(query) == "scene_candidate_budget" else
-                                "not_consulted_after_fresh_match"
-                                if unexecuted_queries.get(query) == "fresh_match_proven" else
                                 "abandoned_duplicates"
                                 if query in abandoned_duplicate_queries else
                                 "consulted" if query_providers.get(query)
