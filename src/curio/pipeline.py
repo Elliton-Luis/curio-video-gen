@@ -328,15 +328,19 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # [6/6] Montagem dinâmica + final
     emit(6, "Montando vídeo")
     transition_mode = audio_composition.transition_mode(cfg)
-    render_result = pipeline_render_stage.run_render_stage(
-        tuple(semantic_scenes), timeline_spans, visual_timeline,
-        media_render_plan, idea, slug, video_title, script_text, paths, cfg,
-        genre_key, audio_duration, tts_info, subs_changed, force,
-        transition_mode,
+    render_request = pipeline_render_stage.RenderStageInput(
+        semantic_scenes=tuple(semantic_scenes),
+        timeline_spans=timeline_spans, visual_timeline=visual_timeline,
+        media_plan=media_render_plan, idea=idea, slug=slug,
+        title=video_title, script_text=script_text, paths=paths, cfg=cfg,
+        genre=genre_key, audio_duration=audio_duration, tts_info=tts_info,
+        subtitles_changed=subs_changed, force=force,
+        transition_mode=transition_mode,
         visual_config={"insertions": insert_budget,
                        "insert_style": cfg.visual_insert_style,
                        "insert_gain_db": cfg.visual_insert_gain_db,
                        "visual_sfx": cfg.visual_sfx})
+    render_result = pipeline_render_stage.run_render_stage(render_request)
     render_info = render_result.render_info
     video_duration = render_result.duration
     sfx_path = render_result.sfx_path

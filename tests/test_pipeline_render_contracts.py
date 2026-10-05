@@ -2,6 +2,7 @@ import pytest
 
 from curio.media.selection_result import MediaStageResult
 from curio.pipeline_render import (
+    RenderStageInput,
     RenderTransitionPlan,
     SceneRenderInput,
     SceneRenderPlan,
@@ -75,14 +76,17 @@ def test_persisted_render_adapter_rejects_invalid_scene_rows(rows, error):
         SceneRenderPlan.from_persisted_rows(rows)
 
 
-def test_render_stage_rejects_misaligned_inputs_before_side_effects(tmp_path):
-    from types import SimpleNamespace
-    from curio.pipeline_render import run_render_stage
+def test_render_stage_input_rejects_misaligned_contracts():
+    from curio.config import CurioConfig
 
     scenes = (SemanticScene(1, "Opening."),)
     plan = SceneRenderPlan((SceneRenderInput(1, None),))
     with pytest.raises(ValueError, match="render scenes and spans are misaligned"):
-        run_render_stage(
-            scenes, (TimelineSpan(2, 4, 0, 4),), [], plan, "idea", "slug",
-            "title", "script", SimpleNamespace(), SimpleNamespace(), "history",
-            4, {}, False, False, "none", visual_config={})
+        RenderStageInput(
+            semantic_scenes=scenes,
+            timeline_spans=(TimelineSpan(2, 4, 0, 4),),
+            visual_timeline=[], media_plan=plan, idea="idea", slug="slug",
+            title="title", script_text="script", paths=object(),
+            cfg=CurioConfig(), genre="history", audio_duration=4,
+            tts_info={}, subtitles_changed=False, force=False,
+            transition_mode="none", visual_config={})

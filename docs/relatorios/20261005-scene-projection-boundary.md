@@ -51,3 +51,18 @@ A regressão final valida que render rejeita cenas/spans desalinhados antes de
 qualquer leitura de cache ou efeito colateral. Focados: **34 passaram em
 118,97 s**. Suíte integral após essa validação: **904 passaram em 185,86 s**;
 `compileall` e `git diff --check` passaram.
+
+## Continuação G45 — contrato de entrada do render
+
+`run_render_stage` agora recebe `RenderStageInput`, construído com campos
+nomeados. O contrato valida cenas/spans, correspondência do plano de mídia,
+timeline visual, duração e tipos dos demais campos antes de acessar cache ou
+renderizar. O pipeline coordena o pedido e consome `RenderStageResult`.
+
+Focados de contratos/política: **11 passaram**. Integração de render e suíte
+integral após esta mudança serão registradas na validação correspondente.
+
+Validação G45: contrato/política: 11 passaram; pipeline, TTS, render e cache:
+34 passaram em 119,48 s. `compileall` e `git diff --check` passaram. A suíte
+integral permanece em 904 testes verdes após G44; a validação integral final
+será repetida após a série estrutural.

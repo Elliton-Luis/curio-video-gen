@@ -334,6 +334,47 @@ def _validate_render_inputs(semantic_scenes, timeline_spans) -> None:
 
 
 @dataclass(frozen=True)
+class RenderStageInput:
+    semantic_scenes: tuple[SemanticScene, ...]
+    timeline_spans: tuple[TimelineSpan, ...]
+    visual_timeline: list[dict]
+    media_plan: SceneRenderPlan
+    idea: str
+    slug: str
+    title: str
+    script_text: str
+    paths: object
+    cfg: CurioConfig
+    genre: str
+    audio_duration: float
+    tts_info: dict
+    subtitles_changed: bool
+    force: bool
+    transition_mode: str
+    visual_config: dict
+
+    def __post_init__(self) -> None:
+        _validate_render_inputs(self.semantic_scenes, self.timeline_spans)
+        if not isinstance(self.media_plan, SceneRenderPlan):
+            raise TypeError("render input requires a SceneRenderPlan")
+        self.media_plan.for_scenes(self.semantic_scenes)
+        if (not isinstance(self.visual_timeline, list)
+                or any(not isinstance(entry, dict) for entry in self.visual_timeline)):
+            raise TypeError("render visual timeline must be a list of objects")
+        if not isfinite(self.audio_duration) or self.audio_duration <= 0:
+            raise ValueError("render audio duration must be positive and finite")
+        if not isinstance(self.tts_info, dict):
+            raise TypeError("render TTS result must be an object")
+        if not isinstance(self.visual_config, dict):
+            raise TypeError("render visual configuration must be an object")
+        for name in ("idea", "slug", "title", "script_text", "genre", "transition_mode"):
+            if not isinstance(getattr(self, name), str):
+                raise TypeError(f"render {name} must be text")
+        if not isinstance(self.subtitles_changed, bool) or not isinstance(self.force, bool):
+            raise TypeError("render invalidation flags must be booleans")
+
+
+@dataclass(frozen=True)
 class RenderStageResult:
     render_info: dict
     duration: float
@@ -362,15 +403,7 @@ class RenderStageResult:
             raise ValueError("render stage result is incomplete")
 
 
-def run_render_stage(semantic_scenes: tuple[SemanticScene, ...],
-                     timeline_spans: tuple[TimelineSpan, ...],
-                     visual_timeline: list[dict], media_plan: SceneRenderPlan,
-                     idea: str, slug: str, title: str, script_text: str,
-                     paths, cfg: CurioConfig, genre: str,
-                     audio_duration: float,
-                     tts_info: dict, subtitles_changed: bool, force: bool,
-                     transition_mode: str, *,
-                     visual_config: dict) -> RenderStageResult:
+def run_render_stage(request: RenderStageInput) -> RenderStageResult:
     """Resolve final audio and render/cache the final artifact from explicit inputs.
 
     The coordinator supplies completed scene, media, timeline and TTS outputs;
@@ -382,17 +415,18 @@ def run_render_stage(semantic_scenes: tuple[SemanticScene, ...],
     from .audio import selection as audio_selection
     from .audio.library import audio_seed
 
-    _validate_render_inputs(semantic_scenes, timeline_spans)
-    if not isinstance(visual_timeline, list) or any(
-            not isinstance(entry, dict) for entry in visual_timeline):
-        raise TypeError("render visual timeline must be a list of objects")
-    if not isfinite(audio_duration) or audio_duration <= 0:
-        raise ValueError("render audio duration must be positive and finite")
-    if not isinstance(tts_info, dict):
-        raise TypeError("render TTS result must be an object")
-    if not isinstance(media_plan, SceneRenderPlan):
-        raise TypeError("render stage requires a SceneRenderPlan")
-    media_plan.for_scenes(semantic_scenes)
+    if not isinstance(request, RenderStageInput):
+        raise TypeError("render stage requires a RenderStageInput")
+    semantic_scenes = request.semantic_scenes
+    timeline_spans = request.timeline_spans
+    visual_timeline = request.visual_timeline
+    media_plan = request.media_plan
+    idea, slug, title = request.idea, request.slug, request.title
+    script_text, paths, cfg = request.script_text, request.paths, request.cfg
+    genre, audio_duration = request.genre, request.audio_duration
+    tts_info = request.tts_info
+    subtitles_changed, force = request.subtitles_changed, request.force
+    transition_mode, visual_config = request.transition_mode, request.visual_config
     started = time.monotonic()
     total = round(audio_duration + 0.8, 2)
     try:

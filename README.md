@@ -296,7 +296,8 @@ quando um arquivo precisou ser reutilizado em rodízio.
 As durações, tipos e assinatura de transições são produzidos juntos em um
 `RenderTransitionPlan`, compartilhado por geração, preparação humana e finalize.
 Geração também delega composição final, seleção de áudio e decisão de cache a
-`pipeline_render.run_render_stage`, que retorna `RenderStageResult` validado.
+`pipeline_render.run_render_stage`: o coordenador monta um `RenderStageInput`
+validado por campos nomeados e consome `RenderStageResult`.
 Cada cena no resultado de mídia precisa carregar uma `SelectionDecision`,
 inclusive cartões sintéticos e cenas sem asset.
 O VisualPlanner não lê narração: representações locais são criadas no estágio

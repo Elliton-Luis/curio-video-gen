@@ -496,3 +496,7 @@ Contrato preservado: leitura/escrita de `chapters.json`, round-trip semântico/t
 ## G44 — composição de render final fora do coordenador
 
 `_run_pipeline` ainda resolvia áudio musical/SFX, calculava assinaturas/transições, decidia reutilização do MP4, montava o vídeo silencioso e queimava a versão final. Essas decisões formam uma transição de execução coesa, mas estavam acopladas ao fluxo inteiro. G44 moveu essa responsabilidade para `pipeline_render.run_render_stage`, com entrada de cenas/spans, plano de mídia, timeline visual e parâmetros explícitos; `RenderStageResult` devolve duração, backend, audio metadata, transição, assinaturas, avisos e créditos. O coordenador mantém a composição entre stages e a persistência de metadata. O primeiro teste revelou uma dependência da metadata ao dicionário interno antigo de seleção de áudio; o stage agora projeta o caminho de música explicitamente e as integrações focadas passaram.
+
+## G45 — pedido de render explícito
+
+O novo `run_render_stage` possuía entrada com muitos argumentos posicionais, frágil a trocas e sem validar todos os invariantes na construção. G45 introduz `RenderStageInput`: verifica batch semântico/span, correspondência com `SceneRenderPlan`, formato da timeline/configuração visual, duração finita positiva e tipos das flags/metadata textuais. O coordenador monta o pedido por nomes e o executor consome somente o contrato validado. Regressão garante erro antes de efeitos quando IDs de cenas e spans divergem.
