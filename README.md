@@ -181,6 +181,8 @@ sua projeção pela ordem de `SearchPlan`.
 G62 (`a51c06d`) move travessia de providers, dedupe e gates técnicos para
 `SceneCandidateCollector`; ranking, seleção e fallback continuam em seus
 owners.
+G63 (`73f6e6c`) valida `visual_decision` por `VisualDecision`, centraliza
+updates de seleção e mantém a projeção JSON compatível.
 O relatório arquitetural completo — com estado antes/depois, commits,
 contratos, fases, testes, regressões, etapa de mídia e pendências — está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
