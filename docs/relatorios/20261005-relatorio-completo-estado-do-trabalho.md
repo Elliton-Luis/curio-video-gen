@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G95 e métricas até F15.
-**Estado:** trabalho incompleto. G80–G95 e F4–F15 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G96 e métricas até F15, incluindo a validação real M87 pós-G96.
+**Estado:** trabalho incompleto. G80–G96 e F4–F15 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -13,8 +13,8 @@ altera `src/curio/media/render_usage.py`, `src/curio/pipeline_render.py` e
 suíte completa passou com 1009 testes após a mudança. Este relatório registra
 o fechamento documental dessa alteração.
 
-> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G95
-> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`, `38b892e`, `60703ae`, `3978670`) foram
+> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G96
+> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`, `38b892e`, `60703ae`, `3978670`, `0cdf81a`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -36,29 +36,25 @@ o fechamento documental dessa alteração.
 > A inspeção encontrou duas imagens quase duplicadas e fontes factuais
 > homônimas irrelevantes; ver [I2](20261005-ciencia-real-pos-f15.md).
 
-> **Estado consolidado após I2:** este é o relatório de referência atualizado
-> até o commit `b8eeab0` (`docs: record post-F15 science acquisition`). O
-> worktree estava limpo antes desta atualização documental. Após I2, iniciou-se
-> uma investigação somente de leitura sobre fontes factuais homônimas de M87
-> (“Capacete M87” e “Zastava M87”). Foram localizados os módulos envolvidos na
-> pesquisa (`research.py`, `research_sources.py`, `entity.py` e
-> `pipeline_research.py`), mas a causa exata não foi confirmada. Nenhum código
-> foi alterado nem teste executado para essa investigação.
+> **Estado consolidado após I2/G96:** a investigação das fontes homônimas
+> confirmou que o alvo heurístico `M87` perdeu o contexto e que o gate usava
+> correspondência por substring sem discriminante. G96 corrige esse caminho
+> em `entity.py`; a suíte completa passou com 1020 testes. A geração real
+> pós-G96 confirmou que as fontes homônimas não voltaram, mas expôs uma falha
+> distinta de ancoragem temática e perda de intenção por cena na seleção visual.
+> Detalhes e limites em [G96](20261005-compact-identifier-source-gate.md).
 
 ## Estado exato do trabalho retomado
 
-O último commit documental antes desta atualização é `b8eeab0`. O último
-commit de implementação é `b9e6ff1` (`fix: count provider API
-request attempts`), fase F15; os registros documentais posteriores são
-`8420ab4`, `c519528`, I1 e I2. O último commit de
-implementação sucede G95 `3978670`, G94 `60703ae`, G93 `38b892e` e a
-proveniência até render `8daa29f`.
+Último commit de implementação: `0cdf81a` (G96). O commit documental anterior
+é `ef29a7c`; F15 continua sendo `b9e6ff1`, seguido pelos registros
+`8420ab4`, `c519528`, I1 e I2. G96 sucede G95 `3978670`, G94 `60703ae`, G93
+`38b892e` e a proveniência até render `8daa29f`.
 
-O projeto está executável e as migrações já commitadas passaram suas suítes
-conforme registradas por fase. O resultado integral mais recente documentado é
-**1014 testes aprovados em 182,23 s**, mais `compileall` e `git diff --check`,
-após F15. I1 não altera código: rerender real e `verify` passaram como
-validação runtime separada, sem nova suíte.
+O projeto está executável. A validação integral mais recente, já com G96, é
+**1020 testes aprovados em 200,73 s**. Os testes focados de pesquisa passaram
+com **44 testes**, e `compileall` e `git diff --check` passaram. Os 1014 testes
+em 182,23 s são o resultado histórico de F15, não o resultado atual.
 
 ### O que estava sendo investigado na etapa de mídia
 
@@ -95,29 +91,36 @@ Requests auxiliares NASA e requests Unsplash também usam a mesma fronteira.
 O detalhamento segue descrito em
 [`20261005-provider-request-metric-boundary.md`](20261005-provider-request-metric-boundary.md).
 
-Depois de I2, a investigação de fontes homônimas pretendia rastrear a
-recuperação e aceitação de fontes factuais para explicar por que títulos com
-“M87” bastaram para aceitar páginas sobre capacete e rifle, além de uma
-afirmação de 2019 sem grounding. A análise ainda não chegou à função causal:
-foram identificados os módulos a ler, mas não houve confirmação da causa,
-alteração de código ou teste. Essa pendência pertence à pesquisa factual e não
-foi corrigida pela F15, que trata exclusivamente da contagem de requests HTTP
-de mídia.
+Após I2, a investigação rastreou a rejeição/aceitação até `resolve_entity_heuristic`
+e `source_verdict` em `stages/entity.py`. O resolver extraía apenas `M87`,
+descartava “black hole / Event Horizon Telescope” e não o marcava ambíguo; o
+gate procurava esse token como substring do título e do trecho, sem contexto.
+G96 move o reconhecimento do identificador compacto antes da classificação de
+tópico livre, preserva discriminantes já expressos pelo usuário e exige esses
+termos ou uma declaração canônica explícita de alias na fonte. Os trechos
+arquivados agora classificam `Messier 87 (M87; ...)` como correto e rejeitam
+`Capacete M87` e `Zastava M87`. Ainda falta uma geração real após a mudança; a
+afirmação sobre 2019 permanece sem grounding e não foi resolvida por G96.
 
 ### Estado das fases e pendências
 
-Concluído e commitado: G80–G95, F4–F15 e fases anteriores detalhadas neste
+Concluído e commitado: G80–G96, F4–F15 e fases anteriores detalhadas neste
 documento. Mais recentemente, G93 corrigiu a precedência global inadequada de
 providers entre cenas; G94 fez a busca consumir os mesmos planos canônicos da
 cena; G95 corrigiu a seleção heurística de entidade inglesa que reduzia
 `Battle of Mohacs 1526` a `Battle`; F15 centralizou a contagem das requests
-de API que antes eram omitidas por Met/AIC.
+de API que antes eram omitidas por Met/AIC; G96 preservou contexto e exige
+prova de identidade para identificadores compactos.
 
 Em aberto no momento da parada: validar em geração real a decomposição de
-requests por operação e provider após F15. A investigação e correção do defeito
-Met/AIC já estão concluídas e commitadas.
+requests por operação e provider após F15. Essa validação ocorreu nesta
+execução documental; a geração pós-G96 também foi executada e está detalhada
+na seção G96. A falha de qualidade visual encontrada nessa execução permanece
+sem correção.
 
-Não concluído: extração do coordenador editorial ainda concentrado em
+Não concluído: corrigir a ancoragem global permissiva e a perda de conceitos
+visuais específicos por cena observadas na geração M87 pós-G96; reexaminar o
+grounding da afirmação de 2019; extração do coordenador editorial ainda concentrado em
 `visual.py`; ownership global de estado/cache/metadata; simplificação dos
 caminhos compatíveis internos restantes; profile comparável de performance;
 execuções reais finais em pelo menos dois domínios após as últimas mudanças;
@@ -137,9 +140,10 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
   imagens têm composição quase igual; deduplicação binária não detecta
   duplicidade perceptual/editorial. A repetição visual foi reproduzida na
   aquisição pós-F15: as cenas 1 e 2 são composições quase idênticas.
-- A pesquisa factual pós-F15 de M87 aceitou fontes homônimas irrelevantes
-  (“Capacete M87” e “Zastava M87”) e deixou sem grounding uma afirmação sobre
-  2019. É uma regressão no retrieval/qualificação de fontes ainda sem correção.
+- A geração original pós-F15 aceitou fontes homônimas irrelevantes (“Capacete
+  M87” e “Zastava M87”). G96 corrige o gate: na nova execução, três fontes astronômicas foram aceitas
+  e 51 rejeitadas, sem esses falsos positivos. A afirmação sobre 2019 continua
+  sem grounding.
 - O vídeo histórico G95 ainda terminou com uma cena sintética (3/4 mídia real),
   embora tenha melhorado do baseline anterior. Não se demonstrou esgotamento
   suficiente de mídia específica em todos os casos.
@@ -159,11 +163,14 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
 | M87, sem LLM | 3 | 3 | 3 por ID/hash | 0 | 0 | 18 queries lógicas; 27,68 s |
 | Batalha de Mohács, F15 | 4 | 4 | 4 | 0 | 0 | 31 queries lógicas; mídia 81,98 s; total 148,89 s |
 | M87, I2 pós-F15 | 4 | 4 | 4 por ID/hash | 0 | 0 | 30 queries lógicas; mídia 38,33 s; total 76,00 s |
+| M87, G96 pós-correção de entidade | 4 | 4 | 12 por ID/hash | 0 | 0 | 16 queries lógicas; mídia 22,28 s; total 80,21 s |
 
 Os detalhes por cena, fontes, seleção e inspeção visual de Mohács constam em
 [`20261005-english-entity-connectors-and-real-runs.md`](20261005-english-entity-connectors-and-real-runs.md).
 M87 pós-F15, incluindo requests por provider/operação e as regressões
-visuais/factuais, está em [I2](20261005-ciencia-real-pos-f15.md).
+visuais/factuais, está em [I2](20261005-ciencia-real-pos-f15.md). O replay
+pós-G96, a proveniência de cada seleção e a inspeção visual estão em
+[G96](20261005-compact-identifier-source-gate.md).
 Essas medições são execuções pontuais; não constituem profile pareado nem
 validação final da arquitetura. No caso M87, a composição quase duplicada
 mostra o limite de contar apenas identidade binária.
@@ -525,11 +532,11 @@ seus pixels aparecem no MP4. F15 não altera essa limitação do renderer.
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F15 parciais. | Contagem de requests foi confirmada em geração e sondagem; lifecycle timers, profile de performance e validação dos frames após FFmpeg permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G95 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G96 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
-| I — validação/limpeza | Parcial. | Há Mohács e M87 reais pós-F15, fallback local sem LLM e rerender real sem nova busca. Faltam falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior; M87 mostrou quase duplicatas e fontes homônimas. |
+| I — validação/limpeza | Parcial. | Há Mohács e M87 reais pós-F15, fallback local sem LLM, rerender real sem nova busca e geração M87 pós-G96. Faltam falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior; M87 pós-G96 mostrou imagens genéricas e âncora contextual fraca. |
 
-Os status são os registrados na auditoria e neste relatório até G95/F15. Não representam
+Os status são os registrados na auditoria e neste relatório até G96/F15. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -827,6 +834,54 @@ precisa de fase própria. O replay não certifica aquisição histórica resolvi
 s**; compileall e diff check aprovados. Ver
 [relatório G95](20261005-english-entity-connectors-and-real-runs.md).
 
+## G96 — identidade contextual de identificadores compactos (`0cdf81a`)
+
+A geração M87 pós-F15 persistiu `M87` como entidade heurística sem
+discriminantes; `source_verdict()` procurava esse texto por substring em
+título e trecho e aceitou `Capacete M87` e `Zastava M87`. O resolver também
+classificava um código inicial como tópico genérico se as palavras seguintes
+fossem todas minúsculas. G96 move o reconhecimento de códigos compactos antes
+desse ramo, conserva contexto textual do pedido e exige evidência contextual
+ou declaração canônica explícita de alias na própria fonte. No caso arquivado,
+`Messier 87 (M87; ...)` continua aceito e as páginas de capacete/rifle são
+rejeitadas. A mesma normalização se aplica às saídas de LLM e heurística; para
+códigos compactos, discriminantes inventados pelo modelo não substituem o
+contexto do pedido.
+
+Cobertura: M87, H1N1, B52, fontes com/sem contexto, caminho local, saída LLM
+com discriminante vazio/espúrio e coleta integrada. Testes focados: 44;
+suíte completa: **1020 em 200,73 s**, além de compileall e diff check.
+
+A geração real pós-G96 foi executada sem chaves LLM, com providers configurados
+e diretórios isolados. Foram 4 cenas, 4 com asset real, 12 assets selecionados
+únicos por ID/hash, 0 reusos e 0 sintéticos; 16 queries lógicas, 37 retornos
+normalizados, 88 candidatos avaliados, 52 duplicatas, 8 rejeições duras e 28
+rejeições de score. Foram selecionadas 12 imagens. Providers: NASA (5 requests,
+4 buscas + 1 metadata), Pixabay (4), Unsplash (4), Wikimedia (4), Met (16,
+HTTP 410) e AIC (16, HTTP 500). Pexels foi omitido sem chave. A etapa de mídia
+levou 22,28 s e a execução 80,21 s. Não houve retry ou timeout. Os 51 textos
+rejeitados na pesquisa incluem motivos de entidade/discriminante; nenhum foi o
+capacete ou rifle homônimos. A afirmação de 2019 permaneceu sem grounding.
+
+O resultado **não valida qualidade visual suficiente**: inspeção das 12
+seleções encontrou repetição de composição nas duas primeiras cenas e imagens
+genéricas de buraco negro em cenas sobre disco de acreção/jato e lente
+gravitacional. Nesses casos o scoring deu 100 apesar de evidência de tópico
+vazia; a evidência de cena foi promovida a correspondência de tópico. O plano
+local também entregou representações genéricas como `M87`, `black hole` e
+`galaxy`, perdendo conceitos narrados específicos. A execução revela problemas
+ainda sem patch: separação entre âncora global e representações locais na
+pontuação/enriquecimento, e preservação dos conceitos visuais por cena. A
+hipótese imediata a investigar era que `fill_missing_context()` em
+`visual_context.py` reescreve `global_visual_queries` com todas as
+representações ao acrescentar a âncora contextual; o caminho exato ainda não
+foi fechado por inspeção nesta etapa e nenhuma correção foi iniciada. Também
+precisa ser examinada a regra de `semantic_relevance()` que pode sintetizar
+correspondência temática a partir de evidência apenas local. Esses achados são
+observações da execução, não uma causa raiz já confirmada. Ver o [relatório
+G96](20261005-compact-identifier-source-gate.md) para auditoria por cena,
+queries, evidências, providers, vencedores e limites da inspeção.
+
 ## F9 — projeção única das métricas de seleção (`ed34825`)
 
 `consumption.media` agora projeta contagens de asset real, único, reutilizado,
@@ -937,6 +992,7 @@ passaram. Não houve geração real. Consulte
 - [`G93 — prioridade de providers por cena`](20261005-provider-priority-per-scene.md)
 - [`G94 — planos canônicos na busca por cena`](20261005-canonical-scene-search-plans.md)
 - [`G95 — conectores ingleses e execuções reais`](20261005-english-entity-connectors-and-real-runs.md)
+- [`G96 — identidade contextual de identificadores compactos`](20261005-compact-identifier-source-gate.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)

@@ -140,6 +140,15 @@ do enriquecimento semântico quando disponível.
 `pipeline_research` valida estrutura/tipos de fontes, rejeições, queries, fatos,
 gaps e etimologia antes de registrar ou persistir saída; retorno parcial ou
 malformado falha no limite do estágio sem side effects.
+O resolver de entidade também preserva contexto de identificadores compactos
+como `M87`, `H1N1` e `B52`, e o gate exige contexto do pedido ou alias canônico
+declarado pela fonte; assim, o código sozinho não fundamenta uma fonte
+homônima. G96 corrigiu a aceitação de “Capacete M87” e “Zastava M87” e passou
+com 1020 testes na suíte completa. A geração real pós-correção rejeitou esses
+homônimos, mas revelou que imagens genéricas de buraco negro podem passar com
+score máximo sem evidência específica da cena. O problema visual segue aberto;
+veja o [relatório G96](docs/relatorios/20261005-compact-identifier-source-gate.md)
+e o [relatório consolidado](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md).
 O `SearchPlanner` prioriza representações de cena sobre contexto amplo, evita
 repetir meio/tópico nas consultas e só inclui fallback de mapa em contexto
 histórico. Um candidato bem pontuado não encerra a busca antes de passar por
