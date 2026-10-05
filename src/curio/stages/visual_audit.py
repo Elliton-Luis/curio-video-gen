@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Mapping
+from math import isfinite
+from typing import TYPE_CHECKING
 
+from .scene_contract import SemanticScene
 from .visual_contracts import SearchPlan, SearchQuery, VisualPlan
+
+if TYPE_CHECKING:
+    from ..media.selection_result import SelectedAsset
+    from ..media.visual_decision import VisualDecision
+    from .media_selection import SelectionDecision, SelectionProvenance
+    from .scene_candidate_search import SceneCandidateCollection
+    from .visual_contracts import VisualFallbackPlan
 
 
 @dataclass
@@ -257,3 +267,104 @@ def candidate_audit_rows(
     } for item in rejected if not any(
         row["title"] == item.get("title") for row in rows))
     return rows[:40]
+
+
+def build_scene_visual_decision(*, selection: "SelectionDecision",
+                                selection_provenance: "SelectionProvenance",
+                                scene: SemanticScene, visual_plan: VisualPlan,
+                                search_plan: SearchPlan,
+                                collection: "SceneCandidateCollection",
+                                evaluated_entries: list[dict],
+                                rejected: list[dict],
+                                picked: tuple["SelectedAsset", ...],
+                                min_score: float,
+                                fallback_plan: "VisualFallbackPlan | None",
+                                strategy: str) -> "VisualDecision":
+    """Assemble the persisted decision from typed stage outputs and audit facts."""
+    from ..media.selection_result import SelectedAsset
+    from ..media.visual_decision import VisualDecision
+    from ..stages.media_selection import (SelectionDecision,
+                                          SelectionProvenance)
+    from ..stages.scene_candidate_search import SceneCandidateCollection
+    from ..stages.visual_contracts import VisualFallbackPlan
+
+    if not isinstance(selection, SelectionDecision):
+        raise TypeError("visual audit requires SelectionDecision")
+    if not isinstance(selection_provenance, SelectionProvenance):
+        raise TypeError("visual audit requires SelectionProvenance")
+    if not isinstance(scene, SemanticScene):
+        raise TypeError("visual audit requires SemanticScene")
+    if not isinstance(visual_plan, VisualPlan) or not isinstance(search_plan, SearchPlan):
+        raise TypeError("visual audit requires VisualPlan and SearchPlan")
+    if (scene.id != visual_plan.scene_id or scene.id != search_plan.scene_id
+            or scene.id != selection.scene_id):
+        raise ValueError("visual audit inputs must belong to the same scene")
+    if not isinstance(collection, SceneCandidateCollection):
+        raise TypeError("visual audit requires SceneCandidateCollection")
+    if set(collection.planned_queries) != {
+            query.query for query in search_plan.queries}:
+        raise ValueError("visual audit collection must match SearchPlan")
+    if (not isinstance(picked, tuple)
+            or any(not isinstance(item, SelectedAsset) for item in picked)):
+        raise TypeError("visual audit requires selected asset values")
+    if (not isinstance(evaluated_entries, list)
+            or any(not isinstance(item, dict) for item in evaluated_entries)
+            or not isinstance(rejected, list)
+            or any(not isinstance(item, dict) for item in rejected)):
+        raise TypeError("visual audit candidates and rejections must be rows")
+    if (isinstance(min_score, bool) or not isinstance(min_score, (int, float))
+            or not isfinite(min_score) or not 0 <= min_score <= 100):
+        raise ValueError("visual audit minimum score must be within 0..100")
+    if bool(picked) == (selection.status == "none"):
+        raise ValueError("visual audit selection state differs from picked assets")
+    if picked and (selection.asset_id != picked[0].asset.asset_id
+                   or selection.provider != picked[0].asset.provider):
+        raise ValueError("visual audit selected asset differs from SelectionDecision")
+    if (selection_provenance.fallback_level != selection.fallback_level
+            or not isinstance(strategy, str) or not strategy.strip()):
+        raise ValueError("visual audit selection provenance is inconsistent")
+    if fallback_plan is not None and not isinstance(fallback_plan, VisualFallbackPlan):
+        raise TypeError("visual audit fallback plan must be VisualFallbackPlan or null")
+    if fallback_plan is not None and fallback_plan.scene_id != scene.id:
+        raise ValueError("visual audit fallback plan belongs to another scene")
+
+    picked_rows = [entry.to_dict() for entry in picked]
+    candidates = candidate_audit_rows(
+        evaluated_entries, rejected, picked_rows, visual_plan, min_score)
+    first = picked[0] if picked else None
+    synthetic = bool(first and first.asset.provider == "synth")
+    selected = next((item for item in candidates
+                     if item["decision"] == "selected"), None)
+    if selected is None and synthetic:
+        selected = {
+            "title": first.asset.title,
+            "provider": first.asset.provider,
+            "reason": "No candidate passed semantic gates; rendered safe local visual",
+        }
+    entities = list(dict.fromkeys([
+        str(scene.primary_entity or ""), str(scene.event or ""),
+        *(str(item) for item in scene.visual_entities),
+        *(str(item) for item in scene.context),
+    ]))[:12]
+    return VisualDecision.create(
+        selection,
+        topic=visual_plan.topic,
+        visual_plan=visual_plan.to_dict(),
+        fallback_plan=(fallback_plan.to_dict() if synthetic else None),
+        search_plan=search_plan.to_dict(),
+        visual_intent=(scene.visual_intent_structured or scene.visual_intent),
+        entities=entities,
+        primary_entity=scene.primary_entity or scene.subject,
+        representations=[rep.to_dict() for rep in visual_plan.representations],
+        representations_discarded=list(scene.representation_rejections),
+        aliases=[alias.value for alias in visual_plan.aliases],
+        queries=search_query_audit_rows(
+            search_plan, collection.query_audit, rejected, visual_plan),
+        providers_consulted=list(collection.providers_consulted),
+        candidates=candidates,
+        selected=selected,
+        fallback=strategy if synthetic or not picked else "",
+        search_exhausted=selection_provenance.search_exhausted,
+        search_exhaustion_reason=selection_provenance.search_exhaustion_reason,
+        fallback_level=selection_provenance.fallback_level,
+    )

@@ -47,7 +47,7 @@ from .media_selection import (annotate_reuse, make_selection_decision,
                               next_selection_fallback,
                               describe_selection_provenance)
 from .media_selection import SelectionDecision
-from .visual_audit import candidate_audit_rows, search_query_audit_rows
+from .visual_audit import build_scene_visual_decision
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 from .scene_candidate_search import SceneCandidateCollector
@@ -425,47 +425,19 @@ def _search_scene_with_shortcircuit(
               selected=len(picked), downloaded=downloads,
               cache_hits=cache_hits, strategy=strategy_used)
 
-    first = picked[0].asset.to_dict() if picked else None
     scene_rejected = rejected[:REJECTED_KEPT]
-    picked_rows = [entry.to_dict() for entry in picked]
-    audit_candidates = candidate_audit_rows(
-        evaluated_entries, rejected, picked_rows, visual_plan, min_score)
     selection_provenance = describe_selection_provenance(
         tuple(picked), visual_plan, search_plan, collection.query_audit)
-    decision = {
-        "topic": visual_plan.topic,
-        "visual_plan": visual_plan.to_dict(),
-        "fallback_plan": (fallback_plan.to_dict()
-                          if synthetic and "fallback_plan" in locals() else None),
-        "search_plan": search_plan.to_dict(),
-        "visual_intent": (getattr(ch, "visual_intent_structured", "")
-                           or getattr(ch, "visual_intent", "")),
-        "entities": list(dict.fromkeys([str(getattr(ch, "primary_entity", "") or ""),
-            str(getattr(ch, "event", "") or ""),
-            *(getattr(ch, "visual_entities", []) or []),
-            *(getattr(ch, "context", []) or [])]))[:12],
-        "primary_entity": getattr(ch, "primary_entity", "") or getattr(ch, "subject", ""),
-        "representations": [rep.to_dict() for rep in visual_plan.representations],
-        "representations_discarded": getattr(ch, "representation_rejections", []) or [],
-        "aliases": [alias.value for alias in visual_plan.aliases],
-        "queries": search_query_audit_rows(
-            search_plan, collection.query_audit, rejected, visual_plan),
-        "providers_consulted": list(collection.providers_consulted),
-        "candidates": audit_candidates,
-        "selected": (next((item for item in audit_candidates
-                           if item["decision"] == "selected"), None)
-                     or ({"title": (first or {}).get("title", ""),
-                          "provider": (first or {}).get("provider", ""),
-                          "reason": "No candidate passed semantic gates; rendered safe local visual"}
-                         if first and (first or {}).get("provider") == "synth" else None)),
-        "fallback": strategy_used if synthetic or not picked else "",
-        "search_exhausted": selection_provenance.search_exhausted,
-        "search_exhaustion_reason": selection_provenance.search_exhaustion_reason,
-        "fallback_level": selection_provenance.fallback_level,
-    }
     selection = make_selection_decision(
-        ch.id, picked, decision["fallback_level"])
-    visual_decision = VisualDecision.create(selection, **decision)
+        ch.id, picked, selection_provenance.fallback_level)
+    visual_decision = build_scene_visual_decision(
+        selection=selection, selection_provenance=selection_provenance,
+        scene=ch, visual_plan=visual_plan, search_plan=search_plan,
+        collection=collection, evaluated_entries=evaluated_entries,
+        rejected=rejected, picked=tuple(picked), min_score=min_score,
+        fallback_plan=(fallback_plan
+                       if synthetic and "fallback_plan" in locals() else None),
+        strategy=strategy_used)
     return SceneMediaSelection.from_components(
         ch.id, tuple(picked), visual_decision,
         visual_type=str(getattr(ch, "visual_type", "") or "literal"),

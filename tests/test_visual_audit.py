@@ -51,6 +51,62 @@ def test_candidate_audit_projects_selected_reused_and_rejected_reasons():
     assert [row["title"] for row in rows].count("Portrait") == 1
 
 
+def test_scene_visual_decision_builder_owns_audit_projection():
+    from curio.media.selection_result import SelectedAsset
+    from curio.stages.media_selection import (
+        SelectionProvenance, make_selection_decision)
+    from curio.stages.scene_candidate_search import SceneCandidateCollection
+    from curio.stages.visual_audit import build_scene_visual_decision
+
+    chapter = Chapter.from_dict({
+        "id": 1,
+        "narration": "Os janízaros formavam a elite militar otomana.",
+        "primary_entity": "Janissaries",
+        "event": "Ottoman military history",
+        "visual_type": "historical_art",
+        "representations": [{
+            "query": "Ottoman Janissaries", "kind": "person_group", "level": 1}],
+        "video_context": {"topic": "Ottoman Empire"},
+    })
+    scene = chapter.semantic_scene()
+    visual_plan = build_visual_plan(scene)
+    query = SearchQuery("Ottoman Janissaries", "scene_representation",
+                        "Ottoman Janissaries", "person_group")
+    search_plan = SearchPlan(1, (query,))
+    audit = {query.query: SearchQueryAudit(providers=("wikimedia",),
+                                           results=1, eligible=1)}
+    collection = SceneCandidateCollection(
+        (), (), ("wikimedia",), audit, (query.query,))
+    picked = SelectedAsset.from_dict({
+        "asset": {"provider": "wikimedia", "asset_id": "janissary-1",
+                  "title": "Ottoman Janissaries",
+                  "source_url": "https://museum.test/janissary-1"},
+        "query": query.query, "score": 85, "relevance": 85,
+    }, 0)
+    selection = make_selection_decision(1, [picked], "specific")
+    provenance = SelectionProvenance(
+        False, "new_asset_selected", "specific")
+    evaluation = {
+        "query": query.query, "score": 85,
+        "asset": picked.asset.to_dict(),
+        "score_detail": {"topic_relevance": 90, "scene_relevance": 85},
+    }
+
+    decision = build_scene_visual_decision(
+        selection=selection, selection_provenance=provenance,
+        scene=scene, visual_plan=visual_plan, search_plan=search_plan,
+        collection=collection, evaluated_entries=[evaluation], rejected=[],
+        picked=(picked,), min_score=40, fallback_plan=None, strategy="image")
+    row = decision.to_dict()
+
+    assert row["selection"]["asset_id"] == "janissary-1"
+    assert row["topic"] == "Ottoman Empire"
+    assert row["providers_consulted"] == ["wikimedia"]
+    assert row["queries"][0]["query"] == query.query
+    assert row["candidates"][0]["decision"] == "selected"
+    assert row["search_exhaustion_reason"] == "new_asset_selected"
+
+
 def test_candidate_audit_marks_below_threshold_without_semantic_reason():
     rows = candidate_audit_rows(
         [{"query": "Ottoman map", "score": 12, "asset": {"title": "Map"}}],
