@@ -77,14 +77,11 @@ class NarrativeStyle:
 
 @dataclass(frozen=True)
 class VisualStyle:
-    """Direção visual da cena e medium preferido."""
+    """Direção visual, formas sintéticas e referências de acervo."""
     scene_direction: str = ""
     preferred_forms: tuple[str, ...] = ()
     media_hints: tuple[str, ...] = ()
     avoid: str = ""
-    # Escada de medium para a cena, do mais adequado ao menos. Vazio usa
-    # a escada padrão do `stages.visuals`.
-    ladder: tuple[str, ...] = ()
     # Termos que a cena deve declarar como proibidos, além dos da IA.
     forbidden: tuple[str, ...] = ()
     continuity: str = ""
@@ -201,7 +198,6 @@ ETYMOLOGY = GenreAdapter(
                      "handwriting", "lettering", "medieval text"),
         avoid="Não use a linguagem visual de uma biografia: aqui o objeto da "
               "cena é a PALAVRA.",
-        ladder=("typographic", "conceptual", "literal"),
         focus=("The subject is usually a WORD, not an object: prefer the word "
                "or its historical form as subject; put its real components "
                "and cultural setting in visual_entities and context."),
@@ -338,7 +334,6 @@ SCIENCE = GenreAdapter(
                      "anatomy diagram", "scientific model"),
         avoid="Não faça do vídeo uma sequência de fotos de laboratório sem "
               "função explicativa.",
-        ladder=("diagram", "literal", "conceptual"),
     ),
     caption="Destaque termos técnicos e medidas; corte de 6 em 6.",
     ending="Feche na implicação retomando a imagem do gancho já respondida "
@@ -533,7 +528,6 @@ def summary(profile: GenreAdapter | None) -> dict:
         "visual": {
             "preferred_forms": list(profile.visual.preferred_forms),
             "media_hints": list(profile.visual.media_hints),
-            "ladder": list(profile.visual.ladder),
             "continuity": profile.visual.continuity,
             "focus": profile.visual.focus,
             "generic_media_queries": list(profile.generic_media_queries),

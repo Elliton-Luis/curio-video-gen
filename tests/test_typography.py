@@ -9,12 +9,32 @@ mundo, e o que o renderizador faz com o papel que a cena declarou.
 import pathlib
 import subprocess
 import sys
+from dataclasses import replace
 
 import pytest
 
 from curio.stages import typography as T
 from curio.stages.scenes import Chapter, text_role_for
 from curio.stages import visuals as V
+from curio.stages.visual_planning import build_visual_plan
+from curio.stages.visual_fallback_planning import build_visual_fallback_plan
+
+
+def _resolved_form(chapter, form, genre):
+    scene = chapter.semantic_scene()
+    plan = build_visual_fallback_plan(
+        build_visual_plan(scene), scene.narration, genre)
+    role = plan.text_role
+    if form == V.FORM_QUOTE and not chapter.text_role and chapter.text_language != "la":
+        role = "quote"
+    sides = tuple(chapter.visual_entities[:2])
+    if form == V.FORM_CONTRAST and len(sides) < 2:
+        sides = ("left", "right")
+    return replace(
+        plan, strategy="form", form=form, text_role=role,
+        quote_text=chapter.narration if form == V.FORM_QUOTE else "",
+        contrast_sides=sides if form == V.FORM_CONTRAST else (),
+    )
 
 
 # --- perfis ------------------------------------------------------------
@@ -521,7 +541,7 @@ def test_forma_de_citacao_usa_o_papel_da_cena(tmp_path):
         ch = Chapter(id=1, narration='A Regra diz "Ora et labora".',
                      duration_estimate=10.0, visual_type="conceptual",
                      subject="Regra de São Bento", text_role="quote")
-        asset = V.render_form(ch, V.FORM_QUOTE, str(tmp_path), "pt-BR",
+        asset = V.render_form(_resolved_form(ch, V.FORM_QUOTE, "people"), str(tmp_path), "pt-BR",
                               T.for_genre("people"))
     finally:
         T.Typography.pil = real
@@ -544,7 +564,7 @@ def test_forma_de_citacao_sem_papel_cai_em_quote(tmp_path):
         ch = Chapter(id=1, narration="Uma frase marcante da cena.",
                      duration_estimate=10.0, visual_type="conceptual",
                      subject="assunto")
-        V.render_form(ch, V.FORM_QUOTE, str(tmp_path), "pt-BR",
+        V.render_form(_resolved_form(ch, V.FORM_QUOTE, "people"), str(tmp_path), "pt-BR",
                       T.for_genre("people"))
     finally:
         T.Typography.pil = real
@@ -564,7 +584,7 @@ def test_cena_declara_latim_e_o_render_usa_o_papel_latin(tmp_path):
         ch = Chapter(id=1, narration="Benedicta Deus in corde hominum.",
                      duration_estimate=10.0, visual_type="conceptual",
                      subject="Regra", text_language="la")
-        V.render_form(ch, V.FORM_QUOTE, str(tmp_path), "pt-BR",
+        V.render_form(_resolved_form(ch, V.FORM_QUOTE, "people"), str(tmp_path), "pt-BR",
                       T.for_genre("people"))
     finally:
         T.Typography.pil = real
@@ -580,9 +600,9 @@ def test_genero_entra_na_chave_do_cache(tmp_path):
     ch = Chapter(id=1, narration='A Regra diz "Ora et labora".',
                  duration_estimate=10.0, visual_type="conceptual",
                  subject="Regra")
-    a = V.render_form(ch, V.FORM_QUOTE, str(tmp_path), "pt-BR",
+    a = V.render_form(_resolved_form(ch, V.FORM_QUOTE, "people"), str(tmp_path), "pt-BR",
                       T.for_genre("people"))
-    b = V.render_form(ch, V.FORM_QUOTE, str(tmp_path), "pt-BR",
+    b = V.render_form(_resolved_form(ch, V.FORM_QUOTE, "science"), str(tmp_path), "pt-BR",
                       T.for_genre("science"))
     assert a.asset_id != b.asset_id
 
@@ -596,7 +616,7 @@ def test_sem_genero_o_visual_usa_a_fonte_de_exibicao(tmp_path):
     real = T._fc_cached
     T._fc_cached = lambda *a, **k: None   # nenhuma fonte existe
     try:
-        a = V.render_form(ch, V.FORM_QUOTE, str(tmp_path), "pt-BR",
+        a = V.render_form(_resolved_form(ch, V.FORM_QUOTE, "people"), str(tmp_path), "pt-BR",
                           T.for_genre(""))
     finally:
         T._fc_cached = real
@@ -735,7 +755,7 @@ def _papel_de(cena, forma, genre, tmp_path):
 
     T.Typography.pil = espiao
     try:
-        V.render_form(cena, forma, str(tmp_path), "pt-BR",
+        V.render_form(_resolved_form(cena, forma, genre), str(tmp_path), "pt-BR",
                       T.for_genre(genre))
     finally:
         T.Typography.pil = real
@@ -785,9 +805,9 @@ def test_papeis_que_o_perfil_NAO_distingue_continuam_iguais(tmp_path):
     termo = Chapter(id=2, narration="x", duration_estimate=12.0,
                     visual_type="historical_art", subject="salário",
                     text_role="term")
-    a = V.render_form(nome, V.FORM_SPOTLIGHT, str(tmp_path / "a"), "pt-BR",
+    a = V.render_form(_resolved_form(nome, V.FORM_SPOTLIGHT, "people"), str(tmp_path / "a"), "pt-BR",
                       T.for_genre("people"))
-    b = V.render_form(termo, V.FORM_SPOTLIGHT, str(tmp_path / "b"), "pt-BR",
+    b = V.render_form(_resolved_form(termo, V.FORM_SPOTLIGHT, "people"), str(tmp_path / "b"), "pt-BR",
                       T.for_genre("people"))
     assert a.asset_id != b.asset_id      # textos diferentes
     for papel in ("title", "term", "person"):
@@ -1089,11 +1109,8 @@ def _papel_do_cartao(tmp_path, genre, entities=("sal", "romano")):
 
     T.Typography.pil = espiao
     try:
-        ch = Chapter(id=1, narration="A palavra vem do latim salarium.",
-                     duration_estimate=7.5, visual_type="typographic",
-                     subject="salarium", visual_entities=list(entities))
         V.render_card("salarium", list(entities), "x", str(tmp_path),
-                      "pt-BR", 1, ch=ch, typo=T.for_genre(genre))
+                      "pt-BR", 1, typo=T.for_genre(genre), word_card=True)
     finally:
         T.Typography.pil = real
     return pedidos

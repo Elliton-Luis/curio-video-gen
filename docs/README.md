@@ -7,7 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-visual-fallback-contract.md` — `VisualFallbackPlan`, origem do assunto, etapas ordenadas explícitas para diagramas, rota especial removida, suíte integral: 942 testes.
+- `relatorios/20261005-visual-fallback-contract.md` — `VisualFallbackPlan`, renderer sem inferência e remoção da política visual duplicada; 902 testes integrais após migrar os testes para contratos.
 - `relatorios/20261003-122730_relatorio-falha-chain-llm-cenas.md` — elimina timeout ilimitado, respeita rate limit Groq e recupera cenas locais em ideia automática; suíte 780/780.
 - `relatorios/20261003-121500_relatorio-fallback-cenas-llm.md` — corrige espera NVIDIA sem timeout, limita 429 e preserva geração automática com fallback local; 779 testes passaram.
 - `relatorios/20261003-095825_relatorio-direcao-visual.md` — Fase 2 final: diretor/contexto estruturados, gates independentes, funis reais para cinco temas, falsos positivos antes/depois e suíte 775/775.

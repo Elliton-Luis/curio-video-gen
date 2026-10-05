@@ -41,11 +41,25 @@ contrato sem inventar etapas.
   reproduz a narração e o layout não afirma uma cadeia causal. Esta é uma
   validação de fallback isolada, não uma nova aquisição real com providers.
 
-## Pendências arquiteturais
+## Continuação G40
 
-Ainda há consumidores internos de `visual_for_scene`, `choose_form` e
-`strategies_for` nos testes de layout/estratégia. O caminho de produção de
-aquisição já usa `VisualFallbackPlan`; a remoção dessas APIs deve ocorrer numa
-fase própria depois de migrar os testes de comportamento para contratos e
-renderers. A validação real em múltiplos temas continua sendo necessária para
-fechar a migração arquitetural completa.
+Os seletores `visual_for_scene`, `choose_form`, `strategies_for`, o estado
+antigo e `VisualStyle.ladder` foram removidos após confirmar que não havia
+consumidor de produção. Testes migraram para decisões do `VisualFallbackPlan`
+ou renderizadores de baixo nível. `render_form` aceita somente um plano e
+deduz seu formato do próprio contrato. Datas, citações, lados de contraste
+e termos tipográficos não são extraídos da narração; eles chegam explícitos.
+
+Os testes focados de contratos, mídia, tipografia e gênero passaram: **257**.
+A suíte integral no estado final passou: **902 testes em 177,45 s**.
+`compileall`, `git diff --check` e busca por referências dos
+seletores removidos também passaram.
+
+A redução de 942 para 902 casos vem da substituição de testes que chamavam
+heurísticas internas sem uso em produção por testes dos contratos e dos
+renderers. Validação real em múltiplos temas continua necessária para fechar a
+migração arquitetural completa.
+
+Após G40, uma segunda inspeção M87 mostrou o título da representação aprovada
+`black hole event horizon`, mantendo a narração da cena e sem decidir no
+renderer. O replay visual foi local; não mediu providers nem aquisição real.

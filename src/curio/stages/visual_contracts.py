@@ -18,6 +18,7 @@ class VisualPlan:
     scene_id: int
     visual_type: str
     text_role: str
+    text_language: str
     visual_intent: str
     visual_intent_structured: str
     topic: str
@@ -46,6 +47,7 @@ class VisualPlan:
             "scene_id": self.scene_id,
             "visual_type": self.visual_type,
             "text_role": self.text_role,
+            "text_language": self.text_language,
             "intent": self.visual_intent,
             "structured_intent": self.visual_intent_structured,
             "topic": self.topic,
@@ -84,6 +86,7 @@ class VisualFallbackPlan:
     subject_source: str
     visual_type: str
     text_role: str
+    text_language: str
     narration: str
     quote_text: str
     period: str
@@ -92,6 +95,8 @@ class VisualFallbackPlan:
     visual_entities: tuple[str, ...]
     context: tuple[str, ...]
     steps: tuple[str, ...]
+    card_terms: tuple[str, ...]
+    contrast_sides: tuple[str, ...]
     reason: str
 
     def __post_init__(self) -> None:
@@ -111,6 +116,12 @@ class VisualFallbackPlan:
             raise ValueError("only form fallback may select a form")
         if self.strategy == "diagram" and len(self.steps) < 2:
             raise ValueError("diagram fallback requires at least two declared steps")
+        if self.strategy == "diagram" and self.form:
+            raise ValueError("diagram fallback cannot select a form")
+        if self.form == "quote" and not self.quote_text.strip():
+            raise ValueError("quote form requires explicit quote text")
+        if self.form == "contrast" and len(self.contrast_sides) != 2:
+            raise ValueError("contrast form requires two explicit sides")
         if self.scene_id <= 0:
             raise ValueError("visual fallback scene_id must be positive")
         if not self.subject.strip():
@@ -119,7 +130,8 @@ class VisualFallbackPlan:
             raise ValueError("visual fallback requires a known subject source")
         if not self.text_role.strip():
             raise ValueError("visual fallback requires a text role")
-        for name in ("visual_entities", "context", "steps"):
+        for name in ("visual_entities", "context", "steps", "card_terms",
+                     "contrast_sides"):
             value = getattr(self, name)
             if not isinstance(value, tuple) or any(
                     not isinstance(item, str) or not item.strip() for item in value):
@@ -139,6 +151,7 @@ class VisualFallbackPlan:
             "subject_source": self.subject_source,
             "visual_type": self.visual_type,
             "text_role": self.text_role,
+            "text_language": self.text_language,
             "quote_text": self.quote_text,
             "period": self.period,
             "event": self.event,
@@ -146,6 +159,8 @@ class VisualFallbackPlan:
             "visual_entities": list(self.visual_entities),
             "context": list(self.context),
             "steps": list(self.steps),
+            "card_terms": list(self.card_terms),
+            "contrast_sides": list(self.contrast_sides),
             "reason": self.reason,
         }
 

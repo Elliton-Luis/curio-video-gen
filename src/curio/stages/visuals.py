@@ -1,27 +1,9 @@
-"""Estratégia visual por cena: a cena NUNCA fica sem visual.
-
-O princípio que este módulo implementa: o requisito não é que a cena tenha
-uma fotografia, é que ela tenha **um visual final**. Quando a fotografia
-não é adequada ao conteúdo, trocar de medium é a resposta certa — não é
-falha, e não é motivo para nenhuma imagem genérica entrar.
-
-    literal         → foto relevante
-    historical_art  → arte de domínio público → diagrama → cartão
-    mechanism       → diagrama → cartão
-    typographic     → cartão (a ideia É uma palavra)
-    conceptual      → cartão conceitual → diagrama
-
-Tudo aqui é gerado por código com Pillow, que o projeto já usa: sem rede,
-sem licença de terceiros, sem dependência nova, e o PNG sai com o mesmo
-formato de `MediaAsset` que o renderizador já consome. É por isso que o
-renderizador não precisou ser tocado.
-"""
+"""Low-level Pillow renderers for explicit local visual fallback plans."""
 
 from __future__ import annotations
 
 import hashlib
 import os
-import re
 
 from .visual_contracts import VisualFallbackPlan
 
@@ -34,41 +16,10 @@ W, H = 1200, 1600
 # 4 KB ainda rejeita arquivo truncado ou escrita pela metade.
 MIN_PNG_BYTES = 4000
 
-# A escada por tipo. A ordem importa e muda com o tipo: para uma cena de
-# mecanismo, um diagrama vem ANTES de qualquer foto, porque foto de
-# laboratório não mostra o processo.
-LADDERS = {
-    "literal": ("image", "art", "card"),
-    # A spec não pede diagrama para histórico: sem arte de domínio público
-    # achada, o certo é uma composição/cartão coerente. Um diagrama de
-    # "fresco → monge → bird" não explica nada sobre São Francisco.
-    "historical_art": ("art", "image", "card", "diagram"),
-    "mechanism": ("diagram", "card"),
-    "typographic": ("card",),
-    "conceptual": ("card", "diagram"),
-}
-
 # Paleta: mesma identidade do resto do vídeo (fundo escuro do render) para
 # o cartão não parecer um slide colado no meio do vídeo.
 BG_TOP, BG_BOTTOM = (20, 24, 44), (34, 20, 62)
 INK, INK_SOFT, ACCENT, ACCENT_2 = (245, 246, 250), (168, 176, 198), (86, 182, 255), (255, 190, 92)
-
-
-def _role(ch, padrao: str) -> str:
-    """O papel tipográfico de um elemento desta cena.
-
-    O papel DECLARADO pela cena vence o papel que a forma sugere. A forma
-    de citação já sugere `quote`, então uma cena que declarou `latin`
-    entra em itálico serifado como latim — que é o mesmo desenho, mas com
-    o nome certo no metadata e no relatório. A forma só define o papel
-    quando a cena não disse nada, e é por isso que uma cena de capítulos
-    antigos (sem `text_role`) ainda sai em itálico.
-    """
-    try:
-        from .scenes import text_role_for
-        return text_role_for(ch) or padrao
-    except Exception:  # noqa: BLE001 — papel nunca é fatal para o render
-        return padrao
 
 
 def _key(*parts) -> str:
@@ -79,9 +30,7 @@ def _font(size: int, typo=None, role: str = ""):
     """A fonte deste PAPEL, na fonte da voz principal quando não há papel.
 
     `typo` é o handle de `stages/typography.py` e chega pelo gênero; sem
-    ele, o comportamento é exatamente o de antes: uma sans pesada para
-    tudo. É o que mantém `render_form(ch, form, cache_dir)` funcionando
-    igual em quem não usa o recurso.
+    ele, o renderer usa uma sans pesada.
 
     O corpo é escalado pelo perfil, porque a mesma frase em itálico
     serifado ocupa menos linha do que em sans pesada, e um cartão de
@@ -163,37 +112,6 @@ def _out(cache_dir: str, kind: str, key: str) -> str:
     return os.path.join(d, f"{kind}_{key}.png")
 
 
-# --- cartão tipográfico ------------------------------------------------
-
-def _card_chain(ch) -> list[str]:
-    """A cadeia do cartão: o que a cena decompõe o assunto em.
-
-    Vem das ENTIDADES da cena, não das consultas de busca. A diferença
-    importa: para "A palavra salário vem do latim salarium", as entidades
-    são `sal` e `romano` — a cadeia que o cartão deve mostrar — enquanto
-    as consultas são `salarium, roman salt`, que é o que foi digitado no
-    buscador e repetiria a palavra grande logo abaixo dela.
-
-    Qualquer termo igual ao assunto sai da cadeia: repetir "SALARIUM" em
-    corpo pequeno sob "SALARIUM" em corpo grande parece defeito, não
-    etimologia.
-    """
-    out: list[str] = []
-    visto = {str(getattr(ch, "subject", "") or "").strip().lower()}
-    for termo in list(getattr(ch, "visual_entities", []) or []):
-        s = str(termo).strip()
-        if s and s.lower() not in visto:
-            visto.add(s.lower())
-            out.append(s)
-    if not out:
-        for termo in list(getattr(ch, "context", []) or []):
-            s = str(termo).strip()
-            if s and s.lower() not in visto:
-                visto.add(s.lower())
-                out.append(s)
-    return out[:4]
-
-
 # --- formas de visual --------------------------------------------------
 # Um template só para tudo produz um vídeo em que seis cenas conceituais
 # são a mesma tela com palavras diferentes — foi o que aconteceu com o
@@ -214,257 +132,14 @@ FORM_DATED = "dated"           # nome + datas, para biografia de pessoa
 FORMS = (FORM_SPOTLIGHT, FORM_DEFINITION, FORM_ENUM, FORM_CONTRAST,
          FORM_QUOTE, FORM_DATED)
 
-# Um intervalo de datas tem forma própria, e uma só. O padrão aqui é o
-# que as fontes de biografia realmente escrevem: "c. 480 - 547",
-# "480 — 547", "séc. VI", "nascida em 480". Exigir a barra em vez de
-# qualquer um deles faria a forma disparar em menos cenas do que deveria,
-# e uma forma que quase nunca aparece é uma forma morta.
-_DATE_RANGE = re.compile(
-    r"(?:\bc\.?\s*)?\d{3,4}\s*(?:-{1,2}|–|—|ao?\s+|até)\s*"
-    r"(?:\d{3,4}|presente|atual)"
-    r"|\bc\.?\s*\d{3,4}\b"
-    r"|\bsec\.?\s*[ivxlc]+\b"
-    r"|\bséc\.?\s*[ivxlc]+\b",
-    re.IGNORECASE)
-
-# Um ano sozinho ("nasceu em 480") só conta em campo DECLARADO. Na
-# narração, um número de três ou quatro dígitos aparece em "em 480
-# cenas" e "durou 1500 anos"; aceitar bare year ali transformaria
-# qualquer frase quantificada em ficha de data. Em `context` e `visual_entities` o
-# ano solto é informação e não pode.
-_BARE_YEAR = re.compile(r"\b\d{3,4}\b")
-
-# Prefixos que, em português, indicam que o sujeito é uma pessoa e não um
-# conceito. "São Bento de Núrsia" é pessoa; "Sacro Império" não é.
-_PERSON_PREFIXES = ("são ", "santa ", "d. ", "dom ", "irmã ", "frei ",
-                    "papa ", "s.pb. ")
-
-# Instituições, guerras e eventos: duas palavras capitalizadas não
-# significa pessoa. "Império Romano" e "Guerra Civil" são os falsos
-# positivos que a regra das duas palavras capitalizadas produz, e eles
-# aparecem em vídeo de biografia o tempo todo, porque é o contexto do
-# personagem. Lista curta e declarada como heurística: o custo de errar
-# aqui é um cartão de nome-e-data para uma instituição, que continua sendo
-# um cartão legível — o custo de NÃO-listar é esse mesmo cartão para
-# "Concílio de Éfeso", que parece um bispo.
-_NON_PERSON_MARKERS = (
-    "império", "reino", "guerra", "cruzada", "concílio", "concilio",
-    "ordem ", "abadia", "universidade", "igreja ", "capela", "diocese",
-    "era ", "época", "epoca", "reforma", "tratado", "conciliação",
-    "empire", "kingdom", "war ", "crusade", "council", "order ", "era ",
-    "period", "reformation")
-
-
-def _looks_person(ch, genre: str = "") -> bool:
-    """O sujeito desta cena é uma pessoa?
-
-    O gênero estreita a heurística: em `people` o sujeito de uma cena com
-    datas normalmente É a pessoa, e vale arriscar; nos outros gêneros só
-    valem o prefixo e o papel declarado, porque "Império Romano" e
-    "Reino do Sol" são assunto legítimo e não são biografia.
-    """
-    papel = str(getattr(ch, "text_role", "") or "").strip().lower()
-    if papel == "person":
-        return True
-    bruto = str(getattr(ch, "subject", "") or "").strip()
-    # A capitalização é o sinal, então ela é lida no texto ORIGINAL.
-    # Testar isupper() na versão em minúsculas nunca casa — foi o que
-    # fez "Jerônimo de Estrídia" sair classificado como conceito.
-    sujeito = bruto.lower()
-    if not sujeito or len(sujeito) > 60:
-        return False
-    if sujeito.startswith(_PERSON_PREFIXES):
-        return True
-    if any(m in sujeito for m in _NON_PERSON_MARKERS):
-        return False
-    if str(genre or "").strip().lower() not in ("people", "history"):
-        return False
-    # Duas ou mais palavras capitalizadas, com partícula de nome no meio:
-    # "Jerônimo de Estrídia", "Eusebius Sophronius Hieronymus". Uma
-    # palavra isolada seria conceito ("Salário"), e não pessoa.
-    palavras = bruto.split()
-    particulas = ("de", "do", "da", "dos", "das", "van", "von", "di",
-                  "of", "the")
-    return len(palavras) >= 2 and all(
-        (p[:1].isupper() and p.lower() not in particulas)
-        or p.lower() in particulas for p in palavras)
-
-
-def _date_range(ch) -> str:
-    """A faixa de datas que a cena carrega, ou "" se não houver.
-
-    Procura primeiro no que a cena DECLAROU (contexto, entidades), porque
-    a narração é o texto que vai ser falado e costuma dizer "por volta de
-    480" em vez de "c. 480 - 547". Declarado é mais confiável para
-    desenhar; a narração é o plano B.
-    """
-    explicit_period = str(getattr(ch, "period", "") or "").strip()
-    if explicit_period:
-        return explicit_period
-    declarados = [str(x) for x in (
-        list(getattr(ch, "context", []) or [])
-        + list(getattr(ch, "visual_entities", []) or []))]
-    for texto in declarados:
-        achado = _DATE_RANGE.search(texto or "")
-        if achado:
-            return achado.group(0).strip()
-    for texto in declarados:
-        achado = _BARE_YEAR.search(texto or "")
-        if achado:
-            return achado.group(0).strip()
-    narracao = str(getattr(ch, "narration", "") or "")
-    achado = _DATE_RANGE.search(narracao)
-    return achado.group(0).strip() if achado else ""
-
-_FORM_FOR_TYPE = {
-    "typographic": FORM_DEFINITION,
-    "mechanism": FORM_ENUM,
-    "conceptual": FORM_DEFINITION,
-    "historical_art": FORM_SPOTLIGHT,
-    "literal": FORM_ENUM,
-}
-
-
-def _contrast_pair(ch) -> tuple[str, str] | None:
-    """Detecta "X e não Y"/"X versus Y" na cena: vira um visual de contraste.
-
-    Cenas como "Michel Temer não tem relação com São Bento" pedem
-    explicitamente uma negativa, e um cartão de definição mente sobre
-    elas: mostra as duas coisas como se fossem equivalentes.
-    """
-    subj = str(getattr(ch, "subject", "") or "")
-    ents = [str(e).strip() for e in (getattr(ch, "visual_entities", []) or [])
-            if str(e).strip()]
-    if len(ents) >= 2 and re.search(
-            r"\b(no|nao|não|not|without|versus|vs)\b",
-            (subj + " " + " ".join(ents)).lower()):
-        return ents[0], ents[1]
-    return None
-
-
-def _quote_line(narration: str) -> str:
-    """A frase mais marcante da cena, para um visual de citação.
-
-    Pega a primeira frase com tamanho de fala real e corta em um limite
-    de palavra. Sem isso, a forma `quote` não teria o que mostrar.
-    """
-    for sent in re.split(r"(?<=[.!?…])\s+", (narration or "").strip()):
-        sent = sent.strip()
-        if len(sent.split()) >= 4:
-            palavras = sent.split()
-            return " ".join(palavras[:12]) + ("…" if len(palavras) > 12 else "")
-    return ""
-
-
-class VisualState:
-    """O que o vídeo já usou, para a próxima cena não repetir.
-
-    Duas peças: as FORMAS já exibidas e os ASSUNTOS já exibidos. Um
-    assunto quase igual ao de uma cena anterior não pode receber a mesma
-    forma — é aí que dois "name origin" viram duas telas com a mesma
-    cara. Nestas, a forma vira `spotlight` de propósito: mínima, honesta
-    e visualmente distinta.
-    """
-
-    # Um "não" no começo muda o sentido, não o assunto. "São Bento name
-    # origin question" e "Lack of São Bento name origin information" são
-    # o mesmo assunto visto de dois jeitos, e comparar os token inteiros
-    # dá 0,5 de similaridade — logo abaixo do corte, e as duas cenas
-    # saíam com o mesmo layout.
-    _NEGACOES = {"lack", "falta", "missing", "absence", "no", "nao", "não",
-                 "nothing", "nada", "sem"}
-
-    def __init__(self) -> None:
-        self.forms: list[str] = []
-        self.subjects: list[str] = []
-
-    @staticmethod
-    def _norm(s: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
-
-    @classmethod
-    def _core(cls, s: str) -> set[str]:
-        toks = [t for t in cls._norm(s).split() if t not in cls._NEGACOES]
-        return set(toks)
-
-    def subject_repeated(self, subject: str) -> bool:
-        """O assunto desta cena já apareceu, palavra a palavra?"""
-        novo = self._norm(subject)
-        if not novo:
-            return False
-        for visto in self.subjects:
-            if novo == visto:
-                return True
-            a, b = self._core(subject), set(visto.split())
-            if a and b and len(a & b) / len(a | b) >= 0.5:
-                return True
-        return False
-
-    def record(self, subject: str, form: str) -> None:
-        if form and form not in self.forms:
-            self.forms.append(form)
-        s = self._norm(subject)
-        if s and s not in self.subjects:
-            self.subjects.append(s)
-
-
-def choose_form(ch, state: "VisualState | None" = None,
-                genre: str = "") -> str:
-    """A forma que esta cena deve usar, dada o que o vídeo já mostrou."""
-    from . import editorial
-    perfil = editorial.get(genre)
-    vtype = str(getattr(ch, "visual_type", "") or "literal")
-    sujeito = str(getattr(ch, "subject", "") or "")
-    narration = str(getattr(ch, "narration", "") or "")
-    ents = [e for e in (getattr(ch, "visual_entities", []) or [])
-            if str(e).strip()]
-
-    # 1) a cena pede explicitamente uma negativa → contraste
-    if _contrast_pair(ch) is not None:
-        base = FORM_CONTRAST
-    # 2) nome + datas: a forma que o exemplo de direção de arte pede —
-    #    "SÃO BENTO DE NÚRSIA / c. 480 — 547", o nome na serifada
-    #    principal e a data numa variação discreta. Fica acima do
-    #    spotlight-repetido porque a data é informação nova: repetir o
-    #    assunto sem ela perderia a ecronologia da tela.
-    elif _looks_person(ch, genre) and _date_range(ch):
-        base = FORM_DATED
-    # 3) assunto repetido → spotlight, para não virar cópia da anterior
-    elif state is not None and state.subject_repeated(sujeito):
-        base = FORM_SPOTLIGHT
-    # 3) o perfil do gênero tem forma preferida; senão, a do tipo
-    elif perfil is not None and perfil.visual.preferred_forms:
-        base = perfil.visual.preferred_forms[0]
-    else:
-        base = _FORM_FOR_TYPE.get(vtype, FORM_DEFINITION)
-
-    # 5) assunto pobre e o tipo já saturado: tenta outra forma que sirva a
-    #    esta cena, preferindo uma ainda não usada.
-    if state is not None and base != FORM_SPOTLIGHT:
-        candidatos = [base]
-        if not ents:
-            candidatos.append(FORM_SPOTLIGHT)
-        else:
-            candidatos += [f for f in (FORM_ENUM, FORM_DEFINITION)
-                           if f not in candidatos]
-        if _quote_line(narration):
-            candidatos.append(FORM_QUOTE)
-        if _looks_person(ch, genre) and _date_range(ch):
-            candidatos.append(FORM_DATED)
-        for cand in candidatos:
-            if cand not in state.forms:
-                return cand
-    return base
-
-
-def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR",
-                typo=None) -> object:
-    """Desenha a forma pedida. Cacheado por (forma, assunto, conteúdo, fonte).
-
-    `typo` é opcional e fica no fim da assinatura de propósito: quem já
-    chamava `render_form(ch, form, cache_dir)` continua funcionando com a
-    fonte de sempre, sem gênero.
-    """
+def render_form(ch: VisualFallbackPlan, cache_dir: str,
+                language: str = "pt-BR", typo=None) -> object:
+    """Render a selected form from its validated fallback plan."""
+    if not isinstance(ch, VisualFallbackPlan):
+        raise TypeError("render_form requires a VisualFallbackPlan")
+    if ch.strategy != "form":
+        raise ValueError("render_form requires a form strategy")
+    form = ch.form
     sujeito = str(getattr(ch, "subject", "") or "")
     narration = str(getattr(ch, "narration", "") or "")
     entities = [str(e).strip() for e in (getattr(ch, "visual_entities", []) or [])
@@ -493,26 +168,23 @@ def render_form(ch, form: str, cache_dir: str, language: str = "pt-BR",
     # em foco usa `term`. Sem isto o papel declarado pela cena só
     # chegava à forma de citação, e `mythology` — que põe o nome do mito
     # em itálico e o termo reto — desenhava os dois iguais.
-    papel_assunto = _role(ch, "term")
+    papel_assunto = ch.text_role
     if form == FORM_SPOTLIGHT:
         _draw_spotlight(d, sujeito, narration, english, typo, papel_assunto)
     elif form == FORM_ENUM:
         _draw_enum(d, sujeito, entities, narration, english, typo,
                    papel_assunto)
     elif form == FORM_CONTRAST:
-        par = _contrast_pair(ch)
-        _draw_contrast(d, par[0] if par else sujeito, par[1] if par else "",
+        _draw_contrast(d, ch.contrast_sides[0], ch.contrast_sides[1],
                        narration, english, typo, papel_assunto)
     elif form == FORM_QUOTE:
-        quote = str(getattr(ch, "quote_text", "") or "").strip()
-        _draw_quote(d, quote or _quote_line(narration) or sujeito, english, typo,
-                    _role(ch, "quote"))
+        _draw_quote(d, ch.quote_text, english, typo, ch.text_role)
     elif form == FORM_DATED:
-        _draw_dated(d, sujeito or _person_name(ch), _date_range(ch), english,
-                    typo)
+        _draw_dated(d, sujeito, ch.period, english, typo)
     else:
-        return render_card(sujeito, entities + context, narration, cache_dir,
-                           language, scene_id, ch=ch, typo=typo)
+        return render_card(sujeito, list(ch.card_terms), narration, cache_dir,
+                           language, scene_id, typo=typo,
+                           word_card=ch.visual_type == "typographic")
     img.save(out, "PNG")
     return _asset(out, f"{form} — {sujeito or 'cena'}", form, scene_id)
 
@@ -630,26 +302,6 @@ def _draw_quote(d, frase: str, english: bool, typo=None, papel: str = "") -> Non
            anchor="mm")
 
 
-def _person_name(ch) -> str:
-    """O nome da pessoa, quando a cena tem um e o subject não é ele.
-
-    A cena de uma pessoa costuma ter `subject` no nome mesmo; quando tem
-    outra coisa (a obra, o lugar, a data), o nome vem do contexto, e
-    desenhar o subject no lugar do nome inverteria a ficha da pessoa.
-    """
-    for fonte in (list(getattr(ch, "context", []) or []),
-                  list(getattr(ch, "visual_entities", []) or [])):
-        for item in fonte:
-            if _looks_person_simples(str(item)):
-                return str(item)
-    return str(getattr(ch, "subject", "") or "")
-
-
-def _looks_person_simples(texto: str) -> bool:
-    t = str(texto or "").strip().lower()
-    return bool(t) and t.startswith(_PERSON_PREFIXES) and len(t) <= 60
-
-
 def _draw_dated(d, nome: str, datas: str, english: bool, typo=None) -> None:
     """O nome na serifada principal e a data embaixo, discreta.
 
@@ -681,13 +333,14 @@ def _draw_dated(d, nome: str, datas: str, english: bool, typo=None) -> None:
 
 def render_card(subject: str, terms: list[str], narration: str,
                 cache_dir: str, language: str = "pt-BR",
-                scene_id: int = 0, ch=None, typo=None) -> object:
+                scene_id: int = 0, typo=None,
+                word_card: bool = False) -> object:
     """Cartão tipográfico: a ideia é uma palavra, então mostra-se a palavra.
 
     Ex.: "A palavra salário vem do latim salarium" → SALARIUM / sal /
     salário, em vez de uma foto de banco de moedas que não explica nada.
-    O texto do cartão sai do que a cena JÁ declarou (subject, entities) —
-    nunca é inventado aqui.
+    Assunto, termos e papel de cartão chegam resolvidos pela política de
+    fallback; este módulo só os desenha.
 
     A cadeia é o lugar onde a tipografia vira explicação, e não enfeite:
     as formas históricas recebem o tratamento documental (itálico nos
@@ -710,18 +363,15 @@ def render_card(subject: str, terms: list[str], narration: str,
     english = str(language or "").lower().startswith("en")
 
     f_kicker = _font(30, typo, "kicker")
-    word_card = str(getattr(ch, "visual_type", "") or "") == "typographic"
     d.text((W // 2, 360),
            ("ORIGEM" if english else "A PALAVRA VEM DE") if word_card
            else ("KEY IDEA" if english else "IDEIA-CHAVE"),
            font=f_kicker, fill=ACCENT_2, anchor="mm")
 
-    # A palavra principal, grande, quebrada se preciso. Sem assunto
-    # declarado, a primeira frase da narração — nunca um travessão vazio.
+    # A palavra principal vem pronta da política. Texto narrado não vira
+    # assunto visual por inferência no renderer.
     f_main = _font(96, typo, "term")
-    principal = (str(subject or "").strip()
-                 or " ".join(str(narration or "").split()[:8]).strip()
-                 or "—")
+    principal = str(subject or "").strip() or "—"
     lines = _wrap(d, principal.upper(), f_main, W - 180)[:4]
     y = 520
     for line in lines:
@@ -731,8 +381,8 @@ def render_card(subject: str, terms: list[str], narration: str,
     # Corrente: a decomposição do assunto que a cena declarou.
     # Search representations are not an explanatory chain. Only typographic
     # scenes have declared word morphology/entities suitable for this layout.
-    chain = (_card_chain(ch) if word_card else []) if ch is not None else [
-        str(t).strip() for t in (terms or []) if str(t).strip()][:4]
+    chain = [str(term).strip() for term in (terms or [])
+             if str(term).strip()][:4]
     if chain:
         # A forma que a cadeia desemboca é o elemento em DESTAQUE da
         # tela, e é o papel `emphasis` que existe para isso. O termo
@@ -848,97 +498,6 @@ def render_diagram(subject: str, steps: list[str], narration: str,
     return _asset(out, f"Diagrama — {subject or 'cena'}", "diagram", scene_id)
 
 
-# --- a escada ----------------------------------------------------------
-
-def strategies_for(ch, genre: str = "") -> list[str]:
-    """Escada de estratégias para a cena, do mais adequado ao menos.
-
-    O perfil editorial pode antecipar a escada: um gênero científico não deve
-    receber foto decorativa de laboratório antes do diagrama, e um de
-    etimologia não deve tentar fotografar uma palavra. A escada do perfil
-    é declarada para CADA medium, e a do tipo visual só completa o que
-    faltar.
-    """
-    from . import editorial
-    perfil = editorial.get(genre)
-    vtype = str(getattr(ch, "visual_type", "") or "literal")
-    if perfil is not None and perfil.visual.ladder:
-        base = list(perfil.visual.ladder)
-    else:
-        base = list(LADDERS.get(vtype, LADDERS["literal"]))
-    for s in LADDERS.get(vtype, LADDERS["literal"]):
-        if s not in base:
-            base.append(s)
-    return base
-
-
-def _diagram_steps(ch) -> list[str]:
-    """Passos do diagrama, na ordem: entidades e contexto da cena.
-
-    A cena já sabe o que aparece (`visual_entities`) e o que rodeia
-    (`context`); a sequência deles é a transformação que a cena explica.
-    """
-    out = [str(t).strip() for t in (getattr(ch, "visual_entities", []) or [])
-           if str(t).strip()]
-    out += [str(t).strip() for t in (getattr(ch, "context", []) or [])
-            if str(t).strip()]
-    return out[:4]
-
-
-def build_visual(ch, strategy: str, cache_dir: str, language: str = "pt-BR",
-                 narration: str = "", typo=None) -> object | None:
-    """Produz o visual pedido. None se não souber fazer esse tipo."""
-    subject = str(getattr(ch, "subject", "") or "")
-    terms = list(getattr(ch, "visual_queries", []) or [])
-    scene_id = int(getattr(ch, "id", 0) or 0)
-    if strategy == "card":
-        return render_card(subject, terms, narration or
-                           str(getattr(ch, "narration", "") or ""),
-                           cache_dir, language, scene_id, ch=ch, typo=typo)
-    if strategy == "diagram":
-        return render_diagram(subject, _diagram_steps(ch), narration or
-                              str(getattr(ch, "narration", "") or ""),
-                              cache_dir, language, scene_id, typo=typo)
-    return None
-
-
-def visual_for_scene(ch, cache_dir: str, language: str = "pt-BR",
-                     state: "VisualState | None" = None,
-                     genre: str = "") -> object | None:
-    """Primeira estratégia que este módulo sabe produzir para a cena.
-
-    Só as estratégias de código (cartão, diagrama, e as formas visuais
-   各种). Arte de domínio público e fotografia são busca de outra etapa:
-    esta devolve None para elas, e a cena sobe/desce na escada até
-    alguém entregar um visual.
-
-    `state` carrega o que o vídeo já mostrou, para que a forma escolhida
-    não repita a da cena anterior quando o assunto também repete.
-    """
-    # O gênero já chega neste ponto, então o handle de tipografia nasce
-    # aqui e não precisa atravessar o pipeline. `genre=""` devolve um
-    # handle sem perfil, que resolve para a fonte de sempre: um vídeo sem
-    # gênero sai com a mesma cara de antes.
-    from . import typography as _typo
-    typo = _typo.for_genre(genre)
-
-    for strategy in strategies_for(ch, genre):
-        if strategy in FORMS:
-            forma = choose_form(ch, state, genre)
-            asset = render_form(ch, forma, cache_dir, language, typo)
-            if asset is not None:
-                if state is not None:
-                    state.record(str(getattr(ch, "subject", "") or ""), forma)
-                return asset
-            continue
-        asset = build_visual(ch, strategy, cache_dir, language, typo=typo)
-        if asset is not None:
-            if state is not None:
-                state.record(str(getattr(ch, "subject", "") or ""), strategy)
-            return asset
-    return None
-
-
 def render_fallback_plan(plan: VisualFallbackPlan, cache_dir: str,
                          language: str = "pt-BR", genre: str = ""):
     """Render an already resolved fallback instruction without scene inference."""
@@ -948,6 +507,7 @@ def render_fallback_plan(plan: VisualFallbackPlan, cache_dir: str,
         return render_diagram(plan.subject, list(plan.steps), plan.narration,
                               cache_dir, language, plan.scene_id, typo)
     if plan.strategy == "form":
-        return render_form(plan, plan.form, cache_dir, language, typo)
-    return render_card(plan.subject, [], plan.narration, cache_dir, language,
-                       plan.scene_id, ch=plan, typo=typo)
+        return render_form(plan, cache_dir, language, typo)
+    return render_card(plan.subject, list(plan.card_terms), plan.narration,
+                       cache_dir, language, plan.scene_id, typo=typo,
+                       word_card=plan.visual_type == "typographic")

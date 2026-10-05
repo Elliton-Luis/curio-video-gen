@@ -35,8 +35,8 @@ def test_science_fallback_card_does_not_turn_search_entities_into_a_chain(
         visual_entities=("Event Horizon Telescope logo", "radio telescope array",
                          "Sagittarius A* image"),
     )
-    asset = render_card(scene.subject, list(scene.visual_queries), scene.narration,
-                        str(tmp_path), scene_id=scene.id, ch=scene)
+    asset = render_card(scene.subject, [], scene.narration,
+                        str(tmp_path), scene_id=scene.id)
 
     assert asset is not None
     assert len(visible_text) <= 5  # kicker, wrapped title, and at most two footer lines
@@ -71,8 +71,9 @@ def test_typographic_chain_and_narration_have_separate_vertical_regions(
         id=1, narration="A palavra salário vem do latim e descreve uma origem antiga.",
         visual_type="typographic", subject="salarium",
         visual_entities=("sal", "romano", "uso antigo"))
-    asset = render_card(scene.subject, [], scene.narration, str(tmp_path),
-                        scene_id=scene.id, ch=scene)
+    asset = render_card(scene.subject, ["sal", "romano", "uso antigo"],
+                        scene.narration, str(tmp_path), scene_id=scene.id,
+                        word_card=True)
 
     assert asset is not None
     for index, first in enumerate(boxes):

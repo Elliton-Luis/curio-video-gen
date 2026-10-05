@@ -135,13 +135,18 @@ forma e representação aprovada antes do desenho; o renderer apenas consome o
 plano. `visual_steps` é o único campo que autoriza diagrama, preservando ordem
 declarada; entidades e contexto não são reinterpretados como causalidade.
 O plano e sua origem ficam na auditoria por cena.
+O renderer não infere data, citação, contraste ou termos tipográficos: esses
+valores chegam explícitos no plano. A escada antiga `visuals.LADDERS` e os
+seletores `choose_form`/`visual_for_scene` foram removidos após migrar seus
+testes para os contratos; adapters declaram formas preferidas sem uma segunda
+política paralela de medium.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
 integral histórica daquele relatório tem 909 testes aprovados. As migrações
 incrementais atuais estão no relatório abaixo; G38 passou com 939 testes em
-174,69 s. G39 migrou a composição sintética para um plano explícito por cena;
-seu relatório registra a validação atual.
+174,69 s. G39–G40 migraram fallback e renderer para planos explícitos; os
+relatórios registram testes e validação de cada fase.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

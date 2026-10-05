@@ -1,215 +1,83 @@
-"""Etapa 5 — estratégia visual: a cena nunca fica sem visual.
-
-O ponto que este arquivo trava: quando não há fotografia adequada, a cena
-troca de MEDIUM. Ela não fica vazia e não recebe imagem genérica. Um
-diagrama ou um cartão é a cena certa mostrada do jeito certo, e por isso
-não pode ser contado como falha nas métricas.
-"""
+"""Contracts for scene-specific synthetic fallback and media scoring."""
 
 import os
+from dataclasses import replace
 
 import pytest
 
 from curio.config import CurioConfig
 from curio.stages import scoring, visuals
 from curio.stages.scenes import Chapter
+from curio.stages.scene_contract import SemanticScene
+from curio.stages.visual_contracts import VisualRepresentation
+from curio.stages.visual_fallback_planning import (
+    VisualDiversityState, build_visual_fallback_plan,
+)
+from curio.stages.visual_planning import build_visual_plan
 
 PIL = pytest.importorskip("PIL")
 
 
-def _ch(vtype="mechanism", subject="thermal receipt paper", entities=(),
-        narration="O calor altera o corante e a imagem aparece.",
-        queries=()):
-    return Chapter(id=1, narration=narration, duration_estimate=8.0,
-                   visual_type=vtype, subject=subject,
-                   visual_entities=list(entities), context=[], forbidden=[],
-                   visual_queries=list(queries))
+def _fallback(*, scene_id=1, visual_type="literal", subject="scene subject",
+              topic="global topic", visual_entities=(), visual_steps=(),
+              representations=(), text_role="", period="", event="",
+              intent="", narration="Scene narration is preserved."):
+    scene = SemanticScene(
+        id=scene_id, narration=narration, visual_type=visual_type,
+        subject=subject, visual_entities=tuple(visual_entities),
+        visual_steps=tuple(visual_steps),
+        representations=tuple(VisualRepresentation.from_value(rep)
+                              for rep in representations),
+        text_role=text_role, period=period, event=event,
+        visual_intent_structured=intent,
+        video_context={"topic": topic},
+    )
+    return build_visual_fallback_plan(build_visual_plan(scene), narration)
 
 
-# --- a escada depende do tipo de visual -------------------------------
-
-@pytest.mark.parametrize("vtype,primeira", [
-    ("mechanism", "diagram"),      # processo: foto não mostra
-    ("typographic", "card"),       # a ideia é uma palavra
-    ("conceptual", "card"),
-    ("historical_art", "art"),     # tenta arte de domínio público antes
-    ("literal", "image"),
-])
-def test_escada_comeca_pela_estrategia_certa(vtype, primeira):
-    assert visuals.strategies_for(_ch(vtype))[0] == primeira
+def test_repeated_scene_uses_specific_approved_representation():
+    plan = _fallback(subject="global topic", topic="global topic",
+                     representations=[{"query": "Ottoman Janissaries",
+                                       "kind": "army",
+                                       "source": "scene_planner"}])
+    assert plan.subject == "Ottoman Janissaries"
+    assert plan.subject_source == "approved_representation"
+    assert plan.strategy == "form"
 
 
-def test_historico_nao_cai_em_diagrama_antes_do_cartao():
-    """Um diagrama "fresco → monge → bird" não explica um santo."""
-    escada = visuals.strategies_for(_ch("historical_art"))
-    assert escada.index("card") < escada.index("diagram")
+def test_mechanism_diagram_requires_explicit_ordered_steps():
+    no_steps = _fallback(visual_type="mechanism", visual_entities=("a", "b"))
+    ordered = _fallback(visual_type="mechanism",
+                        visual_steps=("antibody binds hCG", "line appears"))
+    assert no_steps.strategy == "form" and no_steps.steps == ()
+    assert ordered.strategy == "diagram"
+    assert ordered.steps == ("antibody binds hCG", "line appears")
 
 
-def test_typographic_card_emits_a_complete_selection_decision(monkeypatch, tmp_path):
-    from curio.media.providers import MediaAsset
-    from curio.media.selection_result import MediaStageResult
-    from curio.stages.scene_contract import SemanticScene
-    from curio.stages.visual import _search_scene_with_shortcircuit
-
-    card = MediaAsset(provider="synth", asset_id="card-1", title="Salarium",
-                      local_path=str(tmp_path / "card.png"))
-    monkeypatch.setattr(visuals, "visual_for_scene", lambda *args: card)
-    scene = SemanticScene(1, "A palavra salário vem do latim salarium.",
-                          visual_type="typographic", subject="salarium",
-                          planning_mode="deterministic")
-
-    rows, _ = _search_scene_with_shortcircuit(
-        scene, [], CurioConfig(), 1, None, str(tmp_path))
-    result = MediaStageResult.from_rows(rows, "provider")
-
-    assert result.scenes[0].decision.status == "synthetic"
-    assert result.scenes[0].decision.fallback_level == "typographic_card"
-    assert result.scenes[0].visual_audit["search_exhaustion_reason"] == (
-        "typographic_visual_requires_card")
+def test_person_date_form_uses_scene_contract():
+    person = _fallback(visual_type="historical_art", subject="São Bento",
+                       text_role="person", period="c. 480 — 547")
+    empire = _fallback(visual_type="historical_art", subject="Roman Empire",
+                       text_role="term", period="century V")
+    assert person.form == "dated"
+    assert empire.form != "dated"
 
 
-def test_mecanismo_nao_comeca_por_foto():
-    escada = visuals.strategies_for(_ch("mechanism"))
-    assert "image" not in escada[:1]
-    assert escada[0] == "diagram"
+def test_visual_variety_state_tracks_repetition_and_form_usage():
+    state = VisualDiversityState()
+    state.record("São Bento name origin question", "definition")
+    assert state.subject_repeated("Lack of São Bento name origin information")
+    assert state.least_used_form(("spotlight", "definition")) == "spotlight"
 
 
-def test_tipo_desconhecido_cai_na_escada_literal():
-    assert visuals.strategies_for(_ch("banana")) == visuals.strategies_for(
-        _ch("literal"))
-
-
-# --- o visual produzido ------------------------------------------------
-
-def test_mecanismo_vira_diagrama(tmp_path):
-    a = visuals.visual_for_scene(_ch("mechanism",
-                                     entities=["thermal printer", "heat",
-                                               "dye change", "image appears"]),
-                                 str(tmp_path))
-    assert a is not None
-    assert a.provider == "synth"
-    assert a.kind == "image"
-    assert "Diagrama" in a.title
-    assert a.width == visuals.W and a.height == visuals.H
-    assert os.path.getsize(a.local_path) > 10000
-
-
-def test_tipografico_vira_cartao_com_a_palavra(tmp_path):
-    a = visuals.visual_for_scene(
-        _ch("typographic", subject="salarium", queries=["salarium", "sal"],
-            narration="A palavra salário vem do latim salarium."), str(tmp_path))
-    assert "Card" in a.title
-    assert os.path.isfile(a.local_path)
-    assert os.path.getsize(a.local_path) > 10000
-
-
-def test_historico_sem_arte_cai_no_cartao(tmp_path):
-    a = visuals.visual_for_scene(
-        _ch("historical_art", subject="saint francis of assisi",
-            entities=["fresco", "monk"]), str(tmp_path))
-    assert "Card" in a.title, "histórico não deve virar diagrama"
-
-
-def test_visual_e_licenca_livre_por_ser_nosso(tmp_path):
-    """provider='synth' é o que faz classify_rights marcar como clear."""
-    from curio.media.providers import classify_rights
-    a = visuals.visual_for_scene(_ch("mechanism", entities=["a"]), str(tmp_path))
-    assert a.rights_status == "clear"
-    assert classify_rights(a.license, a.provider) == "clear"
-
-
-def test_visual_tem_licenca_e_autor_declarados(tmp_path):
-    a = visuals.visual_for_scene(_ch("mechanism", entities=["a"]), str(tmp_path))
-    assert a.license
-    assert a.used_in.startswith("cena ")
-
-
-# --- determinismo e cache ---------------------------------------------
-
-def test_mesma_cena_gera_o_mesmo_arquivo(tmp_path):
-    ch = _ch("mechanism", entities=["a", "b"])
-    a1 = visuals.visual_for_scene(ch, str(tmp_path))
-    a2 = visuals.visual_for_scene(ch, str(tmp_path))
-    assert a1.local_path == a2.local_path
-    assert a1.asset_id == a2.asset_id
-
-
-def test_diagram_cache_identity_includes_rendered_narration(tmp_path):
-    first = visuals.render_diagram(
-        "M87 black hole", [], "The supermassive black hole is at the center.",
-        str(tmp_path))
-    second = visuals.render_diagram(
-        "M87 black hole", [], "Gravity bends light around the event horizon.",
-        str(tmp_path))
-    same = visuals.render_diagram(
-        "M87 black hole", [], "The supermassive black hole is at the center.",
-        str(tmp_path))
-
-    assert first.asset_id != second.asset_id
-    assert first.local_path != second.local_path
-    assert first.asset_id == same.asset_id
-
-
-def test_cache_reaproveita_o_png(tmp_path):
-    ch = _ch("mechanism", entities=["a", "b"])
-    a1 = visuals.visual_for_scene(ch, str(tmp_path))
-    mtime = os.path.getmtime(a1.local_path)
-    visuals.visual_for_scene(ch, str(tmp_path))
-    assert os.path.getmtime(a1.local_path) == mtime, "re-desenhou do zero"
-
-
-def test_cenas_diferentes_geram_arquivos_diferentes(tmp_path):
-    a1 = visuals.visual_for_scene(_ch("mechanism", subject="papel termico",
-                                      entities=["x"]), str(tmp_path))
-    a2 = visuals.visual_for_scene(_ch("mechanism", subject="bateria",
-                                      entities=["y"]), str(tmp_path))
-    assert a1.local_path != a2.local_path
-
-
-# --- robustez: nada aqui pode quebrar o vídeo -------------------------
-
-def test_cena_sem_nada_declarado_ainda_produz_visual(tmp_path):
-    """Campos vazios (divisão local, IA sem os campos) não podem quebrar."""
-    a = visuals.visual_for_scene(
-        Chapter(id=1, narration="Uma cena qualquer.", duration_estimate=5.0,
-                visual_type="mechanism"), str(tmp_path))
-    assert a is not None
-    assert os.path.getsize(a.local_path) > 10000
-
-
-def test_texto_muito_longo_quebra_em_linhas(tmp_path):
-    a = visuals.visual_for_scene(
-        _ch("typographic",
-            subject="uma expressao absurdamente longa para caber numa linha so",
-            narration="palavra " * 60), str(tmp_path))
-    assert os.path.getsize(a.local_path) > 10000
-
-
-def test_build_visual_recusa_estrategia_desconhecida(tmp_path):
-    assert visuals.build_visual(_ch("mechanism"), "video3d",
-                                str(tmp_path)) is None
-
-
-def test_cena_literal_tem_escada_ate_o_cartao(tmp_path):
-    """Literal sem foto não pode ficar vazia: o cartão é o último chão."""
-    escada = visuals.strategies_for(_ch("literal"))
-    assert escada[-1] == "card"
-
-
-# --- integração: o renderizador consome sem mudança -------------------
-
-def test_visual_entra_no_render_sem_ajuste(tmp_path):
-    """Prova de que a escada não exigiu tocar no renderizador: o PNG gerado
-    é um MediaAsset comum e o collage o aceita como imagem normal."""
-    from curio.config import CurioConfig
-    from curio.stages import render as render_stage
-    a = visuals.visual_for_scene(_ch("mechanism", entities=["a", "b"]),
-                                 str(tmp_path))
-    cfg = CurioConfig(render_backend="cpu", width=160, height=284, fps=12)
-    seg = render_stage.render_image_segment(a.local_path, 1.5,
-                                            str(tmp_path / "seg.mp4"), cfg, 0)
-    assert os.path.isfile(seg)
-    assert os.path.getsize(seg) > 1000
+def test_fallback_plan_renderer_generates_reusable_asset(tmp_path):
+    from curio.stages.visuals import render_fallback_plan
+    plan = _fallback(visual_entities=("black hole event horizon",))
+    first = render_fallback_plan(plan, str(tmp_path), genre="science")
+    second = render_fallback_plan(plan, str(tmp_path), genre="science")
+    assert first.provider == "synth"
+    assert first.asset_id == second.asset_id
+    assert os.path.getsize(first.local_path) > 10000
 
 
 # --- pontuação: núcleo prova o assunto, apoio só desempata ------------
@@ -373,14 +241,10 @@ def test_needs_single_sequence_depende_do_encoder(tmp_path):
     assert not R._needs_single_sequence(CurioConfig(render_backend="cpu"))
 
 
-# --- variedade: fallback ≠ card genérico repetido ----------------------
-# O vídeo de São Bento saiu com 9 de 12 cenas viradas em card, e várias
-# eram "São Bento name origin question" / "mystery" / "speculation": a
-# mesma forma, com o mesmo texto quase igual, N vezes seguidas.
+# --- low-level form rendering (policy is tested above as a contract) ---
 
-def _ch2(vtype="conceptual", subject="assunto", entities=(), narration="Uma "
-         "frase de narração com pelo menos quatro palavras para o rodapé.",
-         context=()):
+
+def _ch2(vtype="conceptual", subject="assunto", entities=(), narration="Uma frase de narração com pelo menos quatro palavras para o rodapé.", context=()):
     return Chapter(id=1, narration=narration, duration_estimate=6.0,
                    visual_type=vtype, subject=subject,
                    visual_entities=list(entities), context=list(context),
@@ -388,222 +252,37 @@ def _ch2(vtype="conceptual", subject="assunto", entities=(), narration="Uma "
 
 
 def test_cada_forma_e_visualmente_diferente(tmp_path):
-    """Cinco formas, cinco arquivos, cinco conteúdos distintos."""
     vistos = set()
     for forma in visuals.FORMS:
-        ch = _ch2(entities=["USP campus", "PUC building", "law books"],
-                  narration="Ele se formou em Direito pela USP em 1963.")
-        a = visuals.render_form(ch, forma, str(tmp_path), "pt-BR")
-        assert a is not None and os.path.getsize(a.local_path) > 10000
-        vistos.add(a.local_path)
+        plan = _fallback(text_role="quote")
+        plan = replace(plan, strategy="form", form=forma,
+                       contrast_sides=("A", "B") if forma == "contrast" else (),
+                       quote_text="A quoted phrase for this visual." if forma == "quote" else "")
+        asset = visuals.render_form(plan, str(tmp_path), "pt-BR")
+        assert asset is not None and os.path.getsize(asset.local_path) > 10000
+        vistos.add(asset.local_path)
     assert len(vistos) == len(visuals.FORMS)
 
 
-def test_forma_depende_do_que_a_cena_comunica():
-    assert visuals.choose_form(_ch2("typographic", "salarium",
-                                    ["sal", "romano"])) == visuals.FORM_DEFINITION
-    assert visuals.choose_form(_ch2("mechanism", "thermal paper",
-                                    ["heat", "dye"])) == visuals.FORM_ENUM
-    # negativa explícita pede contraste, não definição
-    assert visuals.choose_form(
-        _ch2("conceptual", "A não tem relação com B", ["A", "B"])
-    ) == visuals.FORM_CONTRAST
-
-
-def test_assunto_repetido_vira_spotlight():
-    """A forma de uma cena cujo assunto já apareceu não pode ser a mesma."""
-    st = visuals.VisualState()
-    primeira = _ch2("conceptual", "São Bento name origin question")
-    f1 = visuals.choose_form(primeira, st)
-    st.record(primeira.subject, f1)
-    segunda = _ch2("conceptual", "São Bento name origin mystery")
-    f2 = visuals.choose_form(segunda, st)
-    assert f1 != f2
-    assert f2 == visuals.FORM_SPOTLIGHT
-
-
-def test_negacao_no_assunto_nao_esconde_a_repeticao():
-    """"Lack of X information" é o mesmo assunto com um 'não' na frente."""
-    st = visuals.VisualState()
-    st.record("São Bento name origin question", "definition")
-    assert st.subject_repeated("Lack of São Bento name origin information")
-    assert st.subject_repeated("São Bento name origin speculation")
-
-
-def test_um_video_de_6_cenas_iguais_nao_repete_forma():
-    """O caso real: seis cenas quase iguais, seis visuais distintos."""
-    st = visuals.VisualState()
-    assuntos = [
-        "Serra Gaúcha characteristics",
-        "Serra Gaúcha cultural and economic identity",
-        "Serra Gaúcha tourism and wine",
-        "Serra Gaúcha location and borders",
-        "Serra Gaúcha history of settlement",
-        "Serra Gaúcha current population",
-    ]
-    formas = []
-    for a in assuntos:
-        ch = _ch2("literal", a, ["primeiro item", "segundo item"])
-        f = visuals.choose_form(ch, st)
-        formas.append(f)
-        st.record(a, f)
-    assert len(set(formas)) >= 2, formas
-    # e nenhuma das repetições é a forma mais usada no vídeo
-    assert formas.count(max(set(formas), key=formas.count)) <= 3, formas
-
-
-def test_o_estado_registra_o_que_foi_mostrado():
-    st = visuals.VisualState()
-    st.record("assunto um", "spotlight")
-    st.record("assunto dois", "definition")
-    assert st.forms == ["spotlight", "definition"]
-    assert st.subject_repeated("assunto um")
-    assert not st.subject_repeated("outro tema")
-
-
-def test_cena_negativa_nao_vira_cartao_de_definicao():
-    """Um cartão de definição diria o contrário do que a cena afirma."""
-    ch = _ch2("conceptual", "Michel Temer não tem relação com São Bento",
-              ["Michel Temer", "São Bento"])
-    assert visuals.choose_form(ch) == visuals.FORM_CONTRAST
-    a = visuals.render_form(ch, visuals.FORM_CONTRAST, "/tmp/opencode/x", "pt-BR")
-    assert os.path.getsize(a.local_path) > 10000
-
-
-def test_visual_for_scene_passa_o_estado_e_registra(tmp_path):
-    st = visuals.VisualState()
-    ch = _ch2("conceptual", "primeiro assunto", ["a", "b"])
-    a1 = visuals.visual_for_scene(ch, str(tmp_path), "pt-BR", st)
-    assert a1 is not None
-    assert st.forms, "o estado não registrou a forma usada"
-    assert st.subjects
-
-
 def test_todas_as_formas_aceitam_cena_vazia(tmp_path):
-    """Cena sem assunto nem entidades não pode quebrar nenhum layout."""
     for forma in visuals.FORMS:
-        ch = _ch2("conceptual", "", [], narration="")
-        a = visuals.render_form(ch, forma, str(tmp_path), "pt-BR")
-        assert a is not None, forma
-        # confere a imagem de verdade, não o tamanho: uma cena quase vazia
-        # gera um PNG legítimo e pequeno
+        plan = _fallback(subject="", visual_entities=(), text_role="quote",
+                         narration="A quote which can be displayed here.")
+        plan = replace(plan, strategy="form", form=forma,
+                       contrast_sides=("A", "B") if forma == "contrast" else (),
+                       quote_text="A quote which can be displayed here." if forma == "quote" else "")
+        asset = visuals.render_form(plan, str(tmp_path), "pt-BR")
+        assert asset is not None
         from PIL import Image
-        with Image.open(a.local_path) as im:
-            assert im.size == (visuals.W, visuals.H), forma
-            assert im.format == "PNG", forma
+        with Image.open(asset.local_path) as image:
+            assert image.size == (visuals.W, visuals.H)
+            assert image.format == "PNG"
 
 
-# --- a forma "dated": nome + datas, o exemplo de direção de arte ------
-
-def _ch_pessoa(sujeito, datas=None, papel="person", extra_ctx=("mosteiro",),
-               **kw):
-    """Cena de pessoa. Sem papel nem data por padrão, para os casos
-    negativos não serem vencidos por uma declaração explícita."""
-    from curio.stages.scenes import Chapter
-    ctx = ([datas] if datas else []) + list(extra_ctx)
-    return Chapter(id=1, narration="Uma frase sobre a pessoa.",
-                   duration_estimate=13.0, visual_type="historical_art",
-                   subject=sujeito, context=ctx, text_role=papel, **kw)
-
-
-def test_nome_com_datas_usa_a_forma_dated():
-    ch = _ch_pessoa("São Bento de Núrsia", "c. 480 — 547")
-    assert visuals.choose_form(ch, None, "people") == visuals.FORM_DATED
-
-
-def test_sao_jeronimo_e_reconhecido_como_pessoa():
-    """O caso real que motivou a forma."""
-    ch = _ch_pessoa("São Jerônimo", "c. 347 — 420")
-    assert visuals._looks_person(ch, "people")
-    assert visuals.choose_form(ch, None, "people") == visuals.FORM_DATED
-
-
-def test_forma_latina_longa_tambem_e_pessoa():
-    ch = _ch_pessoa("Eusebius Sophronius Hieronymus", "séc. IV")
-    assert visuals.choose_form(ch, None, "people") == visuals.FORM_DATED
-
-
-def test_instituicao_nao_e_pessoa_mesmo_com_data():
-    """O falso positivo óbvio: duas palavras capitalizadas não é pessoa."""
-    for sujeito in ("Império Romano", "Concílio de Éfeso", "Guerra Civil",
-                   "Reino do Sol", "Ordem de São Bento"):
-        # sem papel declarado: aqui o que decide é a heurística
-        ch = _ch_pessoa(sujeito, "séc. V", papel="")
-        assert not visuals._looks_person(ch, "people"), sujeito
-        assert visuals.choose_form(ch, None, "people") != visuals.FORM_DATED
-
-
-def test_conceito_com_data_nao_vira_ficha_de_pessoa():
-    ch = _ch_pessoa("Salário", "séc. I a.C.", papel="", extra_ctx=())
-    assert visuals.choose_form(ch, None, "etymology") != visuals.FORM_DATED
-
-
-def test_datas_reconhecidas_em_varios_formatos():
-    from curio.stages.scenes import Chapter
-    for bruto, esperado in (("c. 480 — 547", "c. 480 — 547"),
-                            ("480-547", "480-547"),
-                            ("347 ao 420", "347 ao 420"),
-                            ("séc. VI", "séc. VI"),
-                            # De um campo declarado, um ano solto é data.
-                            # O que entra na tela é o ANO, não a frase: o
-                            # cartão mostra "480", não "nasceu em 480".
-                            ("nascida em 480", "480")):
-        ch = Chapter(id=1, narration="x", duration_estimate=9.0,
-                     subject="São Bento", context=[bruto])
-        assert visuals._date_range(ch) == esperado, bruto
-
-
-def test_sem_data_a_forma_dated_nao_dispara():
-    ch = _ch_pessoa("São Bento de Núrsia", None)
-    assert visuals.choose_form(ch, None, "people") != visuals.FORM_DATED
-
-
-def test_a_data_vem_do_declarado_antes_da_narracao():
-    """A narração diz 'por volta de 480'; a fonte de tela é a declaration."""
-    from curio.stages.scenes import Chapter
-    ch = Chapter(id=1, narration="nasceu por volta de 480 em Núrsia",
-                 duration_estimate=9.0, subject="São Bento",
-                 context=["c. 480 — 547"], text_role="person")
-    assert visuals._date_range(ch) == "c. 480 — 547"
-
-
-def test_forma_dated_desenha_nome_e_data(tmp_path):
-    ch = _ch_pessoa("São Bento de Núrsia", "c. 480 — 547")
-    a = visuals.render_form(ch, visuals.FORM_DATED, str(tmp_path), "pt-BR")
-    assert a is not None
-    assert os.path.getsize(a.local_path) > 10000
-
-
-def test_forma_dated_usa_papeis_diferentes_para_nome_e_data(tmp_path):
-    """Nome na serifada principal, data discreta: são papéis distintos."""
-    from curio.stages import typography as T
-    real = T.Typography.pil
-    pedidos = []
-
-    def espiao(self, role="title", size=48):
-        pedidos.append(role)
-        return real(self, role, size)
-
-    T.Typography.pil = espiao
-    try:
-        ch = _ch_pessoa("São Bento de Núrsia", "c. 480 — 547")
-        visuals.render_form(ch, visuals.FORM_DATED, str(tmp_path), "pt-BR",
-                            T.for_genre("people"))
-    finally:
-        T.Typography.pil = real
-    assert "person" in pedidos
-    assert "date" in pedidos
-
-
-def test_forma_dated_esta_em_todas_as_formas_visiveis():
-    assert visuals.FORM_DATED in visuals.FORMS
-
-
-def test_ano_que_so_na_narracao_nao_vira_ficha_de_data():
-    """"em 480 cenas" não é uma data, e a narração é texto falado."""
-    from curio.stages.scenes import Chapter
-    ch = Chapter(id=1, narration="O sal foi medido em 480 gramas.",
-                 duration_estimate=9.0, subject="Salário",
-                 text_role="person")
-    assert visuals._date_range(ch) == ""
-    assert visuals.choose_form(ch, None, "people") != visuals.FORM_DATED
+def test_dated_renderer_receives_declared_person_and_period(tmp_path):
+    from curio.stages.typography import for_genre
+    scene = _fallback(subject="São Bento de Núrsia", visual_type="historical_art",
+                      text_role="person", period="c. 480 — 547")
+    asset = visuals.render_form(scene, str(tmp_path),
+                                "pt-BR", for_genre("people"))
+    assert asset is not None and os.path.getsize(asset.local_path) > 10000

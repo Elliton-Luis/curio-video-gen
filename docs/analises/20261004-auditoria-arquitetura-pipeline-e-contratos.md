@@ -463,3 +463,11 @@ O plano é gravado na auditoria. A primeira rodada integral teve 3 expectativas
 antigas de estratégia/diagrama, atualizadas para o novo contrato. Depois de
 endurecer as validações do contrato, a rodada final passou com **942 testes em
 179,13 s**.
+
+G40 removeu a segunda política de fallback escondida no renderer. Os antigos
+seletores (`choose_form`, `strategies_for`, `visual_for_scene`), `VisualState`
+e `VisualStyle.ladder` não tinham consumidor de produção; testes foram migrados
+para `VisualFallbackPlan` e os renderers de baixo nível. `render_form` agora
+aceita apenas o plano resolvido, e data, citação, contraste e termos do cartão
+são dados explícitos, não extrações do texto narrado. G40 passou com **902
+testes em 177,45 s** depois da migração dos testes para os contratos.

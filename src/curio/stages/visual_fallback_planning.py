@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from .visual_contracts import VisualFallbackPlan, VisualPlan
 
 _FORM_NAMES = {
@@ -23,6 +25,50 @@ _FORM_BY_TYPE = {
 }
 
 
+class VisualDiversityState:
+    """Selection history used only to vary synthetic fallback presentation."""
+
+    _NEGATIONS = {"lack", "falta", "missing", "absence", "no", "nao",
+                  "não", "nothing", "nada", "sem"}
+
+    def __init__(self) -> None:
+        self.forms: list[str] = []
+        self.subjects: list[str] = []
+
+    def least_used_form(self, forms: tuple[str, ...]) -> str:
+        counts = {form: self.forms.count(form) for form in forms}
+        return min(forms, key=lambda form: counts[form])
+
+    @staticmethod
+    def _norm(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+    @classmethod
+    def _core(cls, value: str) -> set[str]:
+        return {token for token in cls._norm(value).split()
+                if token not in cls._NEGATIONS}
+
+    def subject_repeated(self, subject: str) -> bool:
+        normalized = self._norm(subject)
+        if not normalized:
+            return False
+        for seen in self.subjects:
+            if normalized == seen:
+                return True
+            current_core, seen_core = self._core(subject), set(seen.split())
+            if current_core and seen_core and len(current_core & seen_core) / len(
+                    current_core | seen_core) >= 0.5:
+                return True
+        return False
+
+    def record(self, subject: str, form: str) -> None:
+        if form:
+            self.forms.append(form)
+        normalized = self._norm(subject)
+        if normalized and normalized not in self.subjects:
+            self.subjects.append(normalized)
+
+
 def build_visual_fallback_plan(visual: VisualPlan, narration: str,
                                genre: str = "", state=None
                                ) -> VisualFallbackPlan:
@@ -40,13 +86,15 @@ def build_visual_fallback_plan(visual: VisualPlan, narration: str,
         reason = "mechanism_has_declared_ordered_steps"
     else:
         strategy = "form"
-        form = _select_form(visual, genre, repeated, steps)
+        form = _select_form(visual, genre, repeated, steps, state)
         reason = ("scene_subject_already_shown" if repeated else
                   "no_declared_steps_for_diagram"
                   if visual.visual_type == "mechanism" else
                   "scene_type_fallback")
 
     role = visual.text_role or _fallback_role(visual)
+    if form == "quote" and not visual.text_role:
+        role = "quote"
     return VisualFallbackPlan(
         scene_id=visual.scene_id,
         strategy=strategy,
@@ -55,14 +103,17 @@ def build_visual_fallback_plan(visual: VisualPlan, narration: str,
         subject_source=subject_source,
         visual_type=visual.visual_type,
         text_role=role,
+        text_language=visual.text_language,
         narration=str(narration or ""),
-        quote_text=str(narration or "") if role == "quote" else "",
+        quote_text=str(narration or "") if form == "quote" else "",
         period=visual.period,
         event=visual.event,
         place=visual.place,
         visual_entities=visual.visual_entities,
         context=visual.context,
         steps=steps if strategy == "diagram" else (),
+        card_terms=tuple(_card_terms(visual, subject)),
+        contrast_sides=steps[:2] if form == "contrast" else (),
         reason=reason,
     )
 
@@ -99,7 +150,7 @@ def _display_subject(visual: VisualPlan, state=None) -> tuple[str, str]:
 
 
 def _select_form(visual: VisualPlan, genre: str, repeated: bool,
-                 steps: tuple[str, ...]) -> str:
+                 steps: tuple[str, ...], state=None) -> str:
     representation_kinds = {rep.kind for rep in visual.representations}
     person = (visual.text_role == "person" or "person" in representation_kinds)
     if visual.text_role == "quote":
@@ -107,7 +158,9 @@ def _select_form(visual: VisualPlan, genre: str, repeated: bool,
     if person and visual.period:
         return "dated"
     if repeated:
-        return "spotlight"
+        candidates = ("spotlight", "definition", "enumeration") if steps else (
+            "spotlight", "definition")
+        return state.least_used_form(candidates) if state else candidates[0]
 
     from . import editorial
     profile = editorial.get(genre)
@@ -126,9 +179,21 @@ def _select_form(visual: VisualPlan, genre: str, repeated: bool,
 
 
 def _fallback_role(visual: VisualPlan) -> str:
+    if visual.text_language.casefold() in {"la", "latin"}:
+        return "latin"
     kinds = {rep.kind for rep in visual.representations}
     if "person" in kinds:
         return "person"
     if visual.visual_type == "typographic":
         return "term"
     return "term"
+
+
+def _card_terms(visual: VisualPlan, subject: str) -> list[str]:
+    """Close typography terms before rendering; never derive from queries."""
+    if visual.visual_type != "typographic":
+        return []
+    display_subject = subject.strip().casefold()
+    terms = [term for term in visual.visual_entities
+             if term.strip().casefold() != display_subject]
+    return list(dict.fromkeys(terms))[:4]

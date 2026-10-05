@@ -13,8 +13,9 @@ import pytest
 
 from curio.config import CurioConfig
 from curio.stages import editorial as E
-from curio.stages import visuals as V
 from curio.stages.scenes import Chapter, scenes_for_length
+from curio.stages.visual_planning import build_visual_plan
+from curio.stages.visual_fallback_planning import build_visual_fallback_plan
 
 
 # --- o registro --------------------------------------------------------
@@ -190,46 +191,23 @@ def test_estrategia_de_pesquisa_chega_ao_roteiro():
     assert "fato" in d2.lower() and "hipótese" in d2.lower()
 
 
-# --- estratégia visual ------------------------------------------------
+# --- estratégia visual declarada -------------------------------------
 
-def test_escada_de_medium_difere_por_genero():
-    ch = Chapter(id=1, narration="x", duration_estimate=5.0,
-                 visual_type="mechanism", subject="s")
-    cien = V.strategies_for(ch, "science")
-    etim = V.strategies_for(ch, "etymology")
-    assert cien[0] == "diagram", cien
-    assert etim[0] == "typographic", etim
-    assert cien != etim
-
-
-def test_ciencia_nao_pega_foto_decorativa_antes_do_diagrama():
-    ch = Chapter(id=1, narration="x", duration_estimate=5.0,
-                 visual_type="mechanism", subject="s")
-    esc = V.strategies_for(ch, "science")
-    assert esc.index("diagram") < esc.index("literal")
-
-
-def test_etimologia_tem_tipografia_antes_de_foto():
-    ch = Chapter(id=1, narration="x", duration_estimate=5.0,
-                 visual_type="literal", subject="s")
-    esc = V.strategies_for(ch, "etymology")
-    assert esc.index("typographic") < esc.index("literal")
-
-
-def test_sem_genero_a_escada_continua_sendo_a_do_tipo():
-    ch = Chapter(id=1, narration="x", duration_estimate=5.0,
-                 visual_type="mechanism", subject="s")
-    assert V.strategies_for(ch, "") == ["diagram", "card"]
+def _fallback_form(chapter, genre):
+    scene = chapter.semantic_scene()
+    return build_visual_fallback_plan(
+        build_visual_plan(scene), scene.narration, genre).form
 
 
 def test_forma_preferida_difere_por_genero():
-    ch = Chapter(id=1, narration="Uma frase com quatro palavras aqui.",
-                 duration_estimate=5.0, visual_type="mechanism", subject="x",
-                 visual_entities=["a", "b"])
-    assert V.choose_form(ch, None, "people") == E.get("people").visual.\
-        preferred_forms[0]
-    assert V.choose_form(ch, None, "science") == E.get("science").visual.\
-        preferred_forms[0]
+    chapter = Chapter(id=1, narration="Uma frase com quatro palavras aqui.",
+                      duration_estimate=5.0, visual_type="literal", subject="x",
+                      visual_entities=["a", "b"],
+                      visual_steps=["first declared step", "second declared step"])
+    for genre in ("people", "science"):
+        plan = build_visual_fallback_plan(
+            build_visual_plan(chapter.semantic_scene()), chapter.narration, genre)
+        assert plan.form == E.get(genre).visual.preferred_forms[0]
 
 
 def test_etimologia_nao_repete_o_rosto_da_pessoa():
@@ -314,8 +292,7 @@ def test_mesmo_roteiro_da_planos_editoriais_distintos():
                      subject="assunto", visual_entities=["a", "b"])
         plano[nome] = {
             "cenas": cenas,
-            "forma": V.choose_form(ch, None, perfil.key),
-            "escada": V.strategies_for(ch, perfil.key),
+            "forma": _fallback_form(ch, perfil.key),
             "legenda": perfil.pacing.caption_max_words,
             "destaque": perfil.pacing.caption_highlight,
             "queries": perfil.research.queries,
@@ -324,12 +301,11 @@ def test_mesmo_roteiro_da_planos_editoriais_distintos():
 
     a, b = plano["people"], plano["etymology"]
     assert a["cenas"] != b["cenas"]
-    assert a["escada"] != b["escada"]
     assert a["legenda"] != b["legenda"]
     assert a["estrutura"] != b["estrutura"]
     assert set(a["queries"]) != set(b["queries"])
     # e o que se vê na tela também difere
-    assert a["forma"] != b["forma"] or a["escada"] != b["escada"]
+    assert a["forma"] != b["forma"]
 
 
 def test_genero_nao_altera_projetos_antigos(tmp_path):

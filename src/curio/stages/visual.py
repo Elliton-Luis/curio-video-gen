@@ -771,8 +771,8 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     scenes = []
     # O estado de variedade atravessa as cenas: é ele que impede seis cenas
     # conceituais de virarem seis cards idênticos.
-    from . import visuals as _visuals
-    visual_state = _visuals.VisualState()
+    from .visual_fallback_planning import VisualDiversityState
+    visual_state = VisualDiversityState()
     asset_uses: dict[str, int] = {}
     # Different scenes often emit same exact search phrase. Reuse provider
     # results within this video, including empty searches, before hitting

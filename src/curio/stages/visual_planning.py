@@ -50,6 +50,7 @@ def build_visual_plan(scene) -> VisualPlan:
         scene_id=int(getattr(scene, "id", 0) or 0),
         visual_type=visual_type,
         text_role=str(getattr(scene, "text_role", "") or ""),
+        text_language=str(getattr(scene, "text_language", "") or ""),
         visual_intent=str(getattr(scene, "visual_intent", "") or ""),
         visual_intent_structured=str(getattr(scene, "visual_intent_structured", "") or ""),
         topic=context.topic,

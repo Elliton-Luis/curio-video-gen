@@ -318,9 +318,10 @@ def test_cartao_mostra_a_cadeia_da_etimologia(tmp_path):
                  subject="salarium", visual_entities=["sal", "romano"],
                  visual_queries=["salarium", "roman salt"], context=[],
                  forbidden=[])
-    cadeia = visuals._card_chain(ch)
-    assert cadeia == ["sal", "romano"]
-    assert "salarium" not in cadeia
-    a = visuals.render_card("salarium", ["salarium", "roman salt"],
-                            ch.narration, str(tmp_path), "pt-BR", 3, ch=ch)
+    from curio.stages.visual_planning import build_visual_plan
+    from curio.stages.visual_fallback_planning import build_visual_fallback_plan
+    plan = build_visual_fallback_plan(
+        build_visual_plan(ch.semantic_scene()), ch.narration)
+    assert plan.card_terms == ("sal", "romano")
+    a = visuals.render_fallback_plan(plan, str(tmp_path), "pt-BR", "etymology")
     assert os.path.getsize(a.local_path) > 10000

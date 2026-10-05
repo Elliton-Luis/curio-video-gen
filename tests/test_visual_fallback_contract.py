@@ -52,7 +52,9 @@ def test_invalid_diagram_plan_is_rejected():
         VisualFallbackPlan(
             scene_id=4, strategy="diagram", form="", subject="test",
             subject_source="approved_representation", visual_type="mechanism",
-            text_role="term", narration="narration", quote_text="", period="",
+            text_role="term", text_language="", narration="narration",
+            quote_text="", period="",
             event="", place="", visual_entities=(), context=(), steps=("only one",),
+            card_terms=(), contrast_sides=(),
             reason="test",
         )
