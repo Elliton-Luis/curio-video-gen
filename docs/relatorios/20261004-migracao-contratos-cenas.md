@@ -654,3 +654,21 @@ isso dificultava revisar o schema da auditoria.
 Removi as entradas repetidas. 55 testes de waterfall, funnel e diretor passaram;
 compileall e diff check passaram. Uma checagem AST específica confirmou que
 `visual.py` não possui mais chaves literais repetidas. Código em `71058e2`.
+
+## G15: ordenação do doador de reuso tem owner de seleção
+
+O late cross-scene reuse ainda calculava evidência e ordenava doadores dentro
+de `visual.py`. A avaliação semântica permanece no scorer; movi a regra de
+ordenação para `media_selection.select_reuse_candidate`, com `ReuseCandidate`
+tipado carregando doador, asset e relevâncias já avaliadas. A política
+preservada prioriza relevância da cena, depois proximidade e, em empate,
+preferência pelo doador anterior. `visual.py` segue responsável por coordenar
+a busca tardia e materializar a decisão tipada, incluindo evidência e
+proveniência.
+
+O teste de seleção cobre a precedência por relevância, distância e desempate.
+84 testes focados passaram; a suíte integral passou com **894 testes em
+195,03 s**, além de compileall e diff check. Código em `e7f5b08`. Isso
+centraliza uma decisão de política, mas não consolida ainda a seleção
+sequencial e o late reuse em um único workflow; aquisição/fallback continuam
+coordenados em `visual.py`.

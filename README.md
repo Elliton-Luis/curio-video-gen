@@ -62,6 +62,10 @@ passou junto aos 893 testes da suíte (197,53 s).
 A auditoria de candidatos também deixou de repetir cinco chaves idênticas no
 schema; waterfall/funnel/diretor passaram com 55 testes e a checagem AST
 confirmou que `visual.py` não tem chaves literais duplicadas.
+O late reuse agora delega a ordenação de doadores a `media_selection` usando
+evidência semântica já calculada; 894 testes passaram na suíte integral. A
+coordenação dos dois caminhos de reuse e da aquisição/fallback ainda está
+registrada como trabalho arquitetural restante.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
