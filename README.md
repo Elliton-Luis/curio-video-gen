@@ -154,8 +154,9 @@ incrementais atuais estão no relatório abaixo; G38 passou com 939 testes em
 relatórios registram testes e validação de cada fase.
 G42–G49 continuam a migração de fronteiras: projection, saída tipada de cenas,
 render, metadata, standby, normalização compartilhada e contrato estrito entre
-representações visuais e suas queries; ver auditoria arquitetural e relatórios
-recentes em `docs/README.md`.
+representações visuais e suas queries, e G50 torna a projeção visual consumidora
+estrita da cena canônica; ver auditoria arquitetural e relatórios recentes em
+`docs/README.md`.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

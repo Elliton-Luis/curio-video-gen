@@ -1,3 +1,7 @@
+from dataclasses import replace
+
+import pytest
+
 from curio.stages.scene_projection import Chapter
 from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.scene_local_planning import (
@@ -32,6 +36,20 @@ def test_visual_plan_closes_scene_inputs_without_copying_narration():
     assert plan.historical_scene
     assert not hasattr(plan, "narration")
     assert "narration" not in plan.to_dict()
+
+
+def test_visual_planner_rejects_uncontracted_scene_mapping():
+    with pytest.raises(TypeError, match="requires a SemanticScene"):
+        build_visual_plan({"id": 1, "narration": "A scene."})
+
+
+def test_visual_plan_rejects_query_mirror_that_diverges_from_representations():
+    scene = SemanticScene(
+        id=1, narration="A scene.", representations=(
+            VisualRepresentation("Battle of Mohács", kind="event"),))
+    plan = build_visual_plan(scene)
+    with pytest.raises(ValueError, match="must mirror representations"):
+        replace(plan, visual_queries=("Ottoman Empire",))
 
 
 def test_legacy_recovery_is_explicit_and_semantic_projection_is_passive():

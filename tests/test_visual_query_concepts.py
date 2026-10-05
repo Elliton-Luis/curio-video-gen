@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from curio.stages.entity import TargetEntity
+from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.scene_projection import Chapter
 from curio.stages.scenes import build_local_semantic_scenes, classify_visual_type
 from curio.stages.scene_enrichment import enrich_scenes
@@ -102,11 +103,11 @@ def test_science_queries_do_not_leak_into_history_and_science_is_specific():
     assert contextual_history.visual_type == "historical_art"
     assert not any("Ottoman Empire Ottoman Empire" == q for q in history_queries)
 
-    science = SimpleNamespace(
+    science = SemanticScene(
         id=2, narration="A microscope reveals cells in a laboratory experiment.",
-        visual_queries=["microscope"], global_visual_queries=[],
+        representations=(VisualRepresentation("microscope", source="test_fixture"),),
         visual_intent="planner", visual_type="mechanism", subject="microscope",
-        visual_entities=["microscope"], context=[], forbidden=[], representations=[])
+        visual_entities=("microscope",))
     science_queries, _ = plan_queries(science)
     assert "laboratory" in science_queries or "microscope" in science_queries
 

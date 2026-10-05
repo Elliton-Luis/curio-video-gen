@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import textnorm
-from .scene_contract import VideoContext, VisualRepresentation
+from .scene_contract import SemanticScene, VideoContext
 from .visual_contracts import VisualPlan
 
 _MECHANISM_CUES = (
@@ -28,9 +28,12 @@ def build_visual_plan(scene) -> VisualPlan:
     Meaning and representations arrive on the semantic scene; this projection
     adds only typed visual policy and provider selection context.
     """
-    context = VideoContext.from_value(getattr(scene, "video_context", {}))
-    reps = tuple(rep for value in (getattr(scene, "representations", []) or [])
-                 if (rep := VisualRepresentation.from_value(value)))
+    if not isinstance(scene, SemanticScene) and hasattr(scene, "semantic_scene"):
+        scene = scene.semantic_scene()
+    if not isinstance(scene, SemanticScene):
+        raise TypeError("visual planning requires a SemanticScene")
+    context = scene.video_context
+    reps = scene.representations
     visual_queries = tuple(rep.query for rep in reps)
     planning_mode = str(getattr(scene, "planning_mode", "unknown") or "unknown")
     subject = str(getattr(scene, "subject", "") or "")

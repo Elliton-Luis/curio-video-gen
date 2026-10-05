@@ -533,3 +533,15 @@ Regressões cobrem construção canônica inválida, conflito de espelho, migra�
 explícita de cache legado e planner/reparo. Isso transforma divergência interna
 em erro observável sem quebrar leitura dos caches antigos. O relatório
 `20261005-semantic-scene-query-invariant.md` registra validação desta fase.
+
+## G50 — projeção visual consome a cena canônica
+
+Mesmo após G49, `build_visual_plan` ainda aceitava qualquer objeto com campos
+parecidos e chamava `VisualRepresentation.from_value` outra vez. Assim, um
+mapping ou objeto improvisado podia atravessar a fronteira e ser corrigido pelo
+consumidor. Agora o planner exige `SemanticScene`; `Chapter` só entra pela
+projeção explícita `semantic_scene()`. `VisualPlan` valida id, aliases e
+representações tipados e exige que suas queries sejam o espelho ordenado das
+representações. As regras derivadas de intenção permanecem no mesmo planner.
+Teste de regressão cobre entrada não contratada e espelho divergente. Ver
+`20261005-visual-plan-contract.md`.

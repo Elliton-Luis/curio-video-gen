@@ -42,6 +42,19 @@ class VisualPlan:
     scientific_context: bool
     historical_scene: bool
 
+    def __post_init__(self) -> None:
+        if (isinstance(self.scene_id, bool)
+                or not isinstance(self.scene_id, int) or self.scene_id <= 0):
+            raise ValueError("visual plan scene_id must be positive")
+        if any(not isinstance(alias, Alias) for alias in self.aliases):
+            raise TypeError("visual plan aliases must be normalized")
+        if any(not isinstance(rep, VisualRepresentation)
+               for rep in self.representations):
+            raise TypeError("visual plan representations must be normalized")
+        expected_queries = tuple(rep.query for rep in self.representations)
+        if self.visual_queries != expected_queries:
+            raise ValueError("visual plan queries must mirror representations")
+
     def to_dict(self) -> dict:
         return {
             "scene_id": self.scene_id,

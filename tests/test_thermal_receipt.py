@@ -21,6 +21,7 @@ from curio.media.providers import MediaAsset
 from curio.metrics import RunMetrics
 from curio.stages import media_rules, scoring
 from curio.stages import visual as V
+from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.scene_projection import Chapter
 
 
@@ -277,12 +278,13 @@ def test_cena_tipografica_nao_busca_foto(tmp_path, monkeypatch):
     from curio.metrics import RunMetrics
     from curio.stages import visual as V
 
-    ch = SimpleNamespace(
+    ch = SemanticScene(
         id=3, narration="A palavra salário vem do latim salarium.",
-        visual_queries=["salarium", "roman salt"],
-        global_visual_queries=["salarium"],
+        representations=(VisualRepresentation("salarium", source="test_fixture"),
+                         VisualRepresentation("roman salt", source="test_fixture")),
+        global_visual_queries=("salarium",),
         visual_type="typographic", subject="salarium",
-        visual_entities=["sal", "romano"], context=[], forbidden=[])
+        visual_entities=("sal", "romano"))
 
     class _Explode:
         name = "nunca-chamado"
