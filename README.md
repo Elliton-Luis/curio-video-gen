@@ -94,7 +94,9 @@ apenas durante uma geração. A seleção do projeto tem manifesto versionado em
 `media/media-selection.json`, ligado às entradas semânticas, gênero, quantidade
 de imagens, modo de planejamento, providers disponíveis e threshold. Um `media.json` adquirido sem
 manifesto compatível é pesquisado novamente; escolhas manuais continuam
-preservadas. `rerender` só consome a seleção registrada e não pesquisa mídia.
+preservadas. O cache é validado como `MediaStageResult` antes do uso; row
+malformado é auditado e causa nova aquisição. `rerender` só consome a seleção
+registrada e não pesquisa mídia.
 As métricas de seleção usam uma projeção canônica em
 `media/selection_metrics.py`: `MediaMetricsInput` é a entrada validada para
 `visual_plan`, criada diretamente do `MediaStageResult` ao vivo ou por adaptador

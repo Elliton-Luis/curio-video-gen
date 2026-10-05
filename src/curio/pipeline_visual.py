@@ -30,37 +30,40 @@ def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
         scoring_stage.threshold())
 
     if manual is not None:
+        result = _MediaStageResult.from_rows(manual, "manual", warnings)
+        manual_paths = {entry.asset.local_path for scene in result.scenes
+                        for entry in scene.assets if entry.asset.local_path}
         warnings.append(
-            f"mídia manual: {len({entry['asset']['local_path'] for scene in manual for entry in scene.get('assets') or []})} "
+            f"mídia manual: {len(manual_paths)} "
             f"foto(s) de {manual_dir}")
+        result = _MediaStageResult(result.scenes, result.source, tuple(warnings))
         print(f"Mídia manual: usando fotos de {manual_dir}.", file=sys.stderr)
-        run_event("cache", f"Mídia manual: {len(manual)} cena(s)",
-                  operation="media", source="manual", scenes=len(manual))
-        _write_selection(paths, manual, signature, source="manual",
-                         write_json=write_json)
-        return _record_selection(manual, "manual", warnings, metrics)
+        run_event("cache", f"Mídia manual: {len(result.scenes)} cena(s)",
+                  operation="media", source="manual", scenes=len(result.scenes))
+        _write_selection(paths, result, signature, write_json)
+        return _record_selection(result, metrics)
 
     if not force and os.path.isfile(paths.media_json):
         cached = _read_current_cache(scenes, paths, signature, max_images)
         if cached is not None:
             run_event("cache", "Mídia reutilizada do cache",
-                      operation="media", scenes=len(cached))
-            return _record_selection(cached, "project-cache", warnings, metrics)
+                      operation="media", scenes=len(cached.scenes))
+            return _record_selection(cached, metrics)
 
     selected, acquisition_warnings = visual_stage.fetch_media_multi(
         scenes, cfg, max_images, metrics, genre=genre)
     warnings.extend(acquisition_warnings)
-    _write_selection(paths, selected, signature, source="provider",
-                     write_json=write_json)
+    result = _MediaStageResult.from_rows(selected, "provider", warnings)
+    _write_selection(paths, result, signature, write_json)
     for warning in acquisition_warnings[:8]:
         run_event("warning", str(warning), operation="media")
-    return _record_selection(selected, "provider", warnings, metrics)
+    return _record_selection(result, metrics)
 
 
-def _record_selection(scenes: list[dict], source: str, warnings: list[str],
-                      metrics) -> _MediaStageResult:
+def _record_selection(result: _MediaStageResult, metrics) -> _MediaStageResult:
     """Record the resolution outcome once, regardless of selection source."""
-    result = _MediaStageResult.from_rows(scenes, source, warnings)
+    if not isinstance(result, _MediaStageResult):
+        raise TypeError("media selection recording requires MediaStageResult")
     for scene in result.scenes:
         provider = scene.asset.provider if scene.asset is not None else ""
         if metrics and scene.visual_audit:
@@ -88,16 +91,29 @@ def _record_selection(scenes: list[dict], source: str, warnings: list[str],
 
 
 def _read_current_cache(scenes: list[SemanticScene], paths, signature: str,
-                        max_images: int) -> list[dict] | None:
+                        max_images: int) -> _MediaStageResult | None:
     try:
         saved = project_artifacts.read_json(paths.media_json)
         expected_ids = [scene.id for scene in scenes]
-        if ([scene["chapter_id"] for scene in saved] != expected_ids
+        if not isinstance(saved, list) or any(not isinstance(row, dict)
+                                              for row in saved):
+            _reject_media_cache("media.json não é uma lista de cenas")
+            return None
+        try:
+            result = _MediaStageResult.from_rows(saved, "project-cache")
+        except (TypeError, ValueError, KeyError, AttributeError) as exc:
+            _reject_media_cache(f"contrato inválido: {exc}")
+            return None
+        saved = result.to_rows()
+        if ([row.get("chapter_id") for row in saved] != expected_ids
                 or not selection_cache_is_current(
-                    saved, paths.media_manifest_json, signature, expected_ids)
-                or not all(isinstance(scene.get("visual_decision"), dict)
-                           for scene in saved
-                           if (scene.get("asset") or {}).get("provider") != "manual")):
+                    saved, paths.media_manifest_json, signature, expected_ids)):
+            return None
+        if not all(isinstance(row.get("visual_decision"), dict)
+                   for row in saved
+                   if not (isinstance(row.get("asset"), dict)
+                           and row["asset"].get("provider") == "manual")):
+            _reject_media_cache("visual_decision ausente em seleção adquirida")
             return None
 
         by_id = {scene.id: scene for scene in scenes}
@@ -121,18 +137,28 @@ def _read_current_cache(scenes: list[SemanticScene], paths, signature: str,
                 if any(not os.path.isfile((entry.get("asset") or {}).get("local_path", ""))
                        for entry in entries):
                     return None
-        return saved
-    except (json.JSONDecodeError, KeyError, TypeError):
+        return result
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError,
+            AttributeError) as exc:
+        _reject_media_cache(f"não foi possível ler/validar: {exc}")
         return None
 
 
-def _write_selection(paths, scenes: list[dict], signature: str,
-                     source: str, write_json) -> None:
+def _reject_media_cache(reason: str) -> None:
+    run_event("warning", f"Cache de mídia ignorado: {reason}",
+              operation="media", cache_rejected=True, reason=reason)
+
+
+def _write_selection(paths, result: _MediaStageResult, signature: str,
+                     write_json) -> None:
+    if not isinstance(result, _MediaStageResult):
+        raise TypeError("media persistence requires MediaStageResult")
+    scenes = result.to_rows()
     write_json(paths.media_json, scenes)
-    if source == "provider" and any(
-            scene.get("asset") or scene.get("assets") for scene in scenes):
+    if result.source == "provider" and any(
+            scene.asset is not None or scene.assets for scene in result.scenes):
         write_manifest(paths.media_manifest_json, scenes, signature)
-    elif source == "provider" and os.path.isfile(paths.media_manifest_json):
+    elif result.source == "provider" and os.path.isfile(paths.media_manifest_json):
         os.unlink(paths.media_manifest_json)
 
 

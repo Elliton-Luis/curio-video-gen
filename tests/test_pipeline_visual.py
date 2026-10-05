@@ -92,6 +92,46 @@ def test_resolve_media_researches_when_manifest_signature_is_stale(tmp_path, mon
         "input_signature"] != "old-signature"
 
 
+def test_invalid_cached_selection_is_audited_and_reacquired(tmp_path, monkeypatch):
+    paths = _paths(tmp_path)
+    scene = _scene()
+    image = tmp_path / "old.png"
+    image.write_bytes(b"old")
+    invalid = [{
+        "chapter_id": 1,
+        "asset": {"provider": "wikimedia", "local_path": str(image)},
+        "assets": [],
+        "visual_decision": {"selection": {"status": "real"}},
+    }]
+    signature = media_selection_signature([scene], "science", 1,
+                                          ["wikimedia"], threshold())
+    _write_json(paths.media_json, invalid)
+    write_manifest(paths.media_manifest_json, invalid, signature)
+    monkeypatch.setattr("curio.pipeline_visual.get_providers",
+                        lambda _cfg: [SimpleNamespace(name="wikimedia")])
+    events = []
+    monkeypatch.setattr("curio.pipeline_visual.run_event",
+                        lambda *args, **kwargs: events.append((args, kwargs)))
+    valid_asset = {"provider": "wikimedia", "asset_id": "fresh-asset",
+                   "title": "Fresh", "local_path": str(image)}
+    fetched = [{
+        "chapter_id": 1, "asset": valid_asset,
+        "assets": [{"asset": valid_asset, "query": "Mars"}],
+        "visual_decision": {"selection": {
+            "scene_id": 1, "status": "real", "asset_id": "fresh-asset",
+            "provider": "wikimedia", "reason": "valid provider result"}},
+    }]
+    monkeypatch.setattr("curio.pipeline_visual.visual_stage.fetch_media_multi",
+                        lambda *args, **kwargs: (fetched, []))
+
+    result = resolve_media([scene], SimpleNamespace(), paths, 1, "science",
+                           metrics=None, force=False, write_json=_write_json)
+
+    assert result.source == "provider"
+    assert result.scenes[0].asset.asset_id == "fresh-asset"
+    assert any(item[1].get("cache_rejected") for item in events)
+
+
 def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
     from curio.pipeline_visual import _record_selection
 
@@ -112,7 +152,9 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
         {"chapter_id": 3, "asset": None, "assets": []},
     ]
 
-    result = _record_selection(scenes, "provider", [], metrics)
+    from curio.media.selection_result import MediaStageResult
+    result = _record_selection(MediaStageResult.from_rows(scenes, "provider"),
+                               metrics)
 
     assert (result.real_scenes, result.synthetic_scenes,
             result.scenes_without_visual) == (1, 1, 1)

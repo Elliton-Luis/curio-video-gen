@@ -983,3 +983,22 @@ que ainda gravam os formatos externos continuam projetando localmente.
 Três testes de integração/review passaram; `compileall` e `git diff --check`
 passaram. A suíte integral imediatamente anterior passou com 924 testes; esta
 limpeza não altera semântica além de eliminar o branch impossível por lista vazia.
+
+## G30: cache de mídia valida contrato antes da aceitação
+
+`_read_current_cache` validava manifesto, ordem/IDs e arquivos, mas devolvia rows
+e só os convertia em `MediaStageResult` depois que o resolver já os tinha aceito.
+Um manifesto vigente com asset sem provider/ID podia causar exceção tardia e
+interromper a geração, em vez de invalidar o cache. Alguns formatos aninhados
+malformados também escapavam dos catches existentes.
+
+Agora o reader verifica a forma da lista e decodifica/valida o contrato antes dos
+gates semânticos e de arquivo. Row estruturalmente inválido emite warning
+`cache_rejected` com causa e segue aquisição; manifesto stale continua sendo uma
+invalidação normal. Manual, cache e providers produzem `MediaStageResult` antes
+de registro e persistência. `_record_selection` e `_write_selection` agora
+recebem somente o contrato; a projeção para `media.json` fica dentro do boundary
+de persistência.
+
+16 testes focados de cache, pipeline e isolamento passaram. Suíte integral:
+**925 testes em 176,77 s**; compileall e diff check passaram.
