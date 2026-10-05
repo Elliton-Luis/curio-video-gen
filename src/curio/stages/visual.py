@@ -306,7 +306,8 @@ def _search_scene_with_shortcircuit(
         metrics.media_record_visual_type(
             str(getattr(ch, "visual_type", "") or "literal"))
 
-    picked: list[dict] = []
+    from ..media.selection_result import SelectedAsset
+    picked: list[SelectedAsset] = []
     scene_content_seen: set[str] = set()
     download_window = min(max(1, media_acquisition.MAX_CONCURRENT_DOWNLOADS),
                           max(1, max_images))
@@ -432,7 +433,6 @@ def _search_scene_with_shortcircuit(
         entry["score"] = entry.get("score", 0)
         if metrics:
             metrics.media_record_score(entry["score"])
-        picked.append(entry)
         if content_key.startswith("sha256:"):
             scene_content_seen.add(content_key)
         if asset_uses is not None:
@@ -441,6 +441,7 @@ def _search_scene_with_shortcircuit(
                 entry["reuse_reason"] = "eligible_pool_exhausted"
             record_asset_usage(asset_uses, asset_dict, entry["asset"],
                                _selection_asset_key)
+        picked.append(SelectedAsset.from_dict(entry, len(picked)))
         if metrics:
             metrics.media_record_funnel("used_real")
 
@@ -461,10 +462,12 @@ def _search_scene_with_shortcircuit(
             if visual_state:
                 visual_state.record(fallback_plan.subject,
                                     fallback_plan.form or fallback_plan.strategy)
-            picked.append({"asset": synth.to_dict(),
-                           "query": queries[0] if queries else "",
-                            "relevance": 0, "order": 0,
-                            "score": 0.0, "strategy": "synth"})
+            picked.append(SelectedAsset.from_dict({
+                "asset": synth.to_dict(),
+                "query": queries[0] if queries else "",
+                "relevance": 0, "order": 0,
+                "score": 0.0, "strategy": "synth",
+            }, len(picked)))
             strategy_used = fallback_plan.strategy
             if metrics:
                 metrics.media_record_fallback(strategy_used)
@@ -492,10 +495,10 @@ def _search_scene_with_shortcircuit(
             asset.used_in = f"cena {ch.id}"
             entry = dict(entry, asset=asset.to_dict(), acquisition=acquisition,
                          reuse_reason="fresh_search_and_synthetic_exhausted")
-            picked.append(entry)
             key = _selection_asset_key(entry["asset"])
             record_asset_usage(asset_uses, entry["asset"], entry["asset"],
                                _selection_asset_key)
+            picked.append(SelectedAsset.from_dict(entry, len(picked)))
             if metrics:
                 metrics.media_record_funnel("reused_fallback")
             break
@@ -518,7 +521,7 @@ def _search_scene_with_shortcircuit(
                 if metrics else 0)
     downloads = metrics.media_downloads - downloads_before if metrics else 0
     cache_hits = metrics.media_cache_hits - cache_before if metrics else 0
-    synthetic = bool(picked and picked[0].get("asset", {}).get("provider") == "synth")
+    synthetic = bool(picked and picked[0].asset.provider == "synth")
     message = (f"Cena {ch.id}: {returned} resultados; {len(candidates)} elegíveis; "
                f"{len(ranked)} acima do score; {len(picked)} selecionado(s); "
                f"{downloads} baixado(s), {cache_hits} cache hit(s)"
@@ -529,7 +532,7 @@ def _search_scene_with_shortcircuit(
               selected=len(picked), downloaded=downloads,
               cache_hits=cache_hits, strategy=strategy_used)
 
-    first = picked[0]["asset"] if picked else None
+    first = picked[0].asset.to_dict() if picked else None
     scene_rejected = rejected[:REJECTED_KEPT]
     video_context = dict(getattr(ch, "video_context", {}) or {})
     representation_levels = {}
@@ -543,8 +546,9 @@ def _search_scene_with_shortcircuit(
                     rep.get("level", 0) or 0)
             except (TypeError, ValueError):
                 representation_levels[rep_query] = 0
+    picked_rows = [entry.to_dict() for entry in picked]
     audit_candidates = candidate_audit_rows(
-        evaluated_entries, rejected, picked, representation_levels, min_score)
+        evaluated_entries, rejected, picked_rows, representation_levels, min_score)
     decision = {
         "topic": video_context.get("topic", ""),
         "visual_plan": visual_plan.to_dict(),
@@ -575,7 +579,7 @@ def _search_scene_with_shortcircuit(
                          if first and (first or {}).get("provider") == "synth" else None)),
         "fallback": strategy_used if synthetic or not picked else "",
         "search_exhausted": bool(
-            (not picked or picked[0].get("reuse_reason")
+            (not picked or picked[0].reuse_reason
              or (first or {}).get("provider") == "synth")
             and all(not state.unexecuted_reason
                     for state in collection.query_audit.values())
@@ -584,7 +588,7 @@ def _search_scene_with_shortcircuit(
                     for state in collection.query_audit.values())),
         "search_exhaustion_reason": (
             "new_asset_selected" if picked and (first or {}).get("provider") != "synth"
-            and not picked[0].get("reuse_reason") else
+            and not picked[0].reuse_reason else
             "queries_not_executed" if any(
                 state.unexecuted_reason
                 for state in collection.query_audit.values()) else
@@ -604,20 +608,17 @@ def _search_scene_with_shortcircuit(
                                        for state in collection.query_audit.values())) else
                            "synthetic_after_exhaustion"
                            if (first or {}).get("provider") == "synth" else
-                           "reused" if picked and picked[0].get("reuse_reason") else
-                           "specific" if picked and picked[0].get("query") in representation_levels
+                           "reused" if picked and picked[0].reuse_reason else
+                           "specific" if picked and picked[0].query in representation_levels
                            else "representation_or_media_variant" if picked else "exhausted"),
     }
-    from ..media.selection_result import SelectedAsset
-    selected_assets = [SelectedAsset.from_dict(entry, index)
-                       for index, entry in enumerate(picked)]
     selection = make_selection_decision(
-        ch.id, selected_assets, decision["fallback_level"])
+        ch.id, picked, decision["fallback_level"])
     decision = VisualDecision.create(selection, **decision).to_dict()
     return [{
         "chapter_id": ch.id,
         "asset": first,
-        "assets": picked,
+        "assets": picked_rows,
         "reused_from": None,
         "rejected": scene_rejected,
         "visual_decision": decision,
