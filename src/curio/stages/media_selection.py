@@ -12,6 +12,7 @@ from .scene_contract import SemanticScene
 
 if TYPE_CHECKING:
     from ..media.selection_result import MediaStageResult
+    from ..media.selection_result import SelectedAsset
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class SelectionPool:
 @dataclass(frozen=True)
 class ReuseCandidate:
     donor_scene_id: int
-    entry: dict
+    entry: SelectedAsset
     topic_relevance: float
     scene_relevance: float
 
@@ -32,8 +33,9 @@ class ReuseCandidate:
                 or not isinstance(self.donor_scene_id, int)
                 or self.donor_scene_id <= 0):
             raise ValueError("reuse donor scene id must be positive")
-        if not isinstance(self.entry, dict):
-            raise TypeError("reuse candidate entry must be an object")
+        from ..media.selection_result import SelectedAsset
+        if not isinstance(self.entry, SelectedAsset):
+            raise TypeError("reuse candidate entry must be a SelectedAsset")
         for value in (self.topic_relevance, self.scene_relevance):
             if isinstance(value, bool) or not isinstance(value, (int, float)) \
                     or not isfinite(value):
@@ -385,14 +387,14 @@ def resolve_cross_scene_reuse(
                 if ((relevance.get("topic_relevance", 0) or 0) > 0
                         and (relevance.get("scene_relevance", 0) or 0) >= 25):
                     eligible.append(ReuseCandidate(
-                        donor_scene_id=donor.scene_id, entry=entry.to_dict(),
+                        donor_scene_id=donor.scene_id, entry=entry,
                         topic_relevance=relevance["topic_relevance"],
                         scene_relevance=relevance["scene_relevance"]))
         selected = select_reuse_candidate(eligible, scene_id)
         if selected is None:
             updated_scenes.append(scene_row)
             continue
-        donor_entry = selected.entry
+        donor_entry = selected.entry.to_dict()
         donor_row = next(item for item in have
                          if item.scene_id == selected.donor_scene_id)
         reuse_reason = "validated_cross_scene_reuse"

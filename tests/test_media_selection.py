@@ -84,21 +84,33 @@ def test_selection_decision_rejects_contradictory_state_and_missing_fallback():
 
 
 def test_cross_scene_reuse_prefers_scene_relevance_then_nearest_donor():
-    far_strong = ReuseCandidate(1, {"asset": {"asset_id": "strong"}},
+    from curio.media.selection_result import SelectedAsset
+
+    def entry(asset_id):
+        return SelectedAsset.from_dict({
+            "asset": {"provider": "fixture", "asset_id": asset_id}}, 0)
+
+    far_strong = ReuseCandidate(1, entry("strong"),
                                topic_relevance=100, scene_relevance=90)
-    near_weaker = ReuseCandidate(4, {"asset": {"asset_id": "near"}},
+    near_weaker = ReuseCandidate(4, entry("near"),
                                  topic_relevance=100, scene_relevance=80)
     near_equal_earlier = ReuseCandidate(
-        3, {"asset": {"asset_id": "earlier"}},
+        3, entry("earlier"),
         topic_relevance=100, scene_relevance=90)
     near_equal_later = ReuseCandidate(
-        5, {"asset": {"asset_id": "later"}},
+        5, entry("later"),
         topic_relevance=100, scene_relevance=90)
 
     selected = select_reuse_candidate(
         [far_strong, near_weaker, near_equal_earlier, near_equal_later], 4)
 
     assert selected is near_equal_earlier
+
+
+def test_reuse_candidate_requires_immutable_selected_asset():
+    with pytest.raises(TypeError, match="SelectedAsset"):
+        ReuseCandidate(1, {"asset": {"asset_id": "legacy-dict"}},
+                       topic_relevance=80, scene_relevance=60)
 
 
 def test_cross_scene_reuse_updates_the_selection_contract():
