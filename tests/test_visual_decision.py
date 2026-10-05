@@ -21,6 +21,7 @@ def test_visual_decision_round_trip_preserves_legacy_and_extension_fields():
     source = {
         "topic": "Ottoman Empire",
         "visual_intent": "Janissary uniform",
+        "visual_plan": {"subject": "Janissary", "details": ["uniform"]},
         "queries": [{"query": "Janissary Ottoman Empire"}],
         "selection": _selection().to_dict(),
         "legacy_extension": {"origin": "project-cache"},
@@ -31,6 +32,10 @@ def test_visual_decision_round_trip_preserves_legacy_and_extension_fields():
     serialized["legacy_extension"]["origin"] = "changed-copy"
 
     assert decision.selection == _selection()
+    assert decision.topic == "Ottoman Empire"
+    assert decision.queries == ({"query": "Janissary Ottoman Empire"},)
+    with pytest.raises(TypeError):
+        decision.visual_plan["subject"] = "mutated"
     assert decision.to_dict() == source
 
 
@@ -67,3 +72,8 @@ def test_visual_decision_rejects_malformed_known_fields(field, value):
 def test_visual_decision_requires_selection():
     with pytest.raises(ValueError, match="requires selection"):
         VisualDecision.from_dict({"topic": "Ottoman Empire"})
+
+
+def test_visual_decision_create_rejects_unknown_producer_field():
+    with pytest.raises(ValueError, match="unknown VisualDecision fields"):
+        VisualDecision.create(_selection(), typoic=True)
