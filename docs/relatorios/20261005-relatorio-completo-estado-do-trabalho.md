@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G82.
-**Estado:** trabalho incompleto e ativo. G80–G82 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G83.
+**Estado:** trabalho incompleto e ativo. G80–G83 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -108,6 +108,7 @@ hashes e diffs.
 | `5f3eeb9` | Torna `PipelineInput` obrigatório e migra CLI/TUI/queue e consumidores de teste (G80). |
 | `aa25487` | Mantém `SceneMediaSelection` tipado entre seletor por cena e agregador do estágio de mídia (G81). |
 | `1b00689` | Faz `SceneMediaSelection.from_components` criar nova seleção de `SelectedAsset` e `VisualDecision` tipados (G82). |
+| `31f6acf` | Rejeita tipos inválidos nos campos de `PipelineInput` (G83). |
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
 render, metadata e cenas estão enumeradas no relatório de estado e no histórico
@@ -261,11 +262,11 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G82 commitadas. | Simplificar coordenador; migrar auditoria aninhada e adapters restantes após comprovar ausência de consumidores. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G83 commitadas. | Simplificar coordenador; migrar auditoria aninhada e adapters restantes após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório atualizado até G82. Não representam
+Os status são os registrados na auditoria e no relatório atualizado até G83. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -305,7 +306,7 @@ limitações. O replay determinístico G77 após falha de aquisição continua p
 - Rodar suíte, compile/check e profile final sobre a revisão final efetivamente
   commitada. Não há evidência de conclusão dessas validações finais.
 
-## Estado após G82
+## Estado após G83
 
 G80 (`5f3eeb9`) tornou `PipelineInput` obrigatório para `run_pipeline` e
 `_run_pipeline`. CLI/TUI/queue e `run_script_pipeline` convertem suas entradas
@@ -318,16 +319,19 @@ funções. G82 (`1b00689`) moveu para `SceneMediaSelection.from_components` a
 montagem de novas seleções, consumindo `SelectedAsset` e `VisualDecision`
 tipados. `from_dict` e `_row` seguem para leitura/round-trip legado;
 `media.json` segue inalterado. O worktree de código está limpo.
+G83 (`31f6acf`) endureceu o contrato de entrada: campos não textuais agora
+falham na validação em vez de serem convertidos implicitamente.
 
 ### Testes atuais
 
 G80 teve **64 testes focados** e **960 testes na suíte completa** em 196,40 s.
 G81 teve **160 testes focados** e **960 testes na suíte completa** em 187,17 s.
 G82 teve **126 testes focados** e **962 testes na suíte completa** em 175,45 s.
-As três fases passaram `python -m compileall -q src tests` e
+G83 teve **25 testes focados** e **965 testes na suíte completa** em 192,60 s.
+As quatro fases passaram `python -m compileall -q src tests` e
 `git diff --check`. Não houve geração real: G80 altera entrada e G81/G82 mudam
-somente contratos internos de seleção. As provas reais de mídia de G79 seguem
-nos relatórios daquela fase.
+somente contratos internos de seleção; G83 restringe tipos de entrada. As
+provas reais de mídia de G79 seguem nos relatórios daquela fase.
 
 ### Escopo da correção da etapa de mídia
 
@@ -358,7 +362,7 @@ em mappings. Consulte o relatório G82.
 
 ## Referências de relatórios
 
-- [`Relatório de arquitetura e estado da migração até G82`](20261005-relatorio-arquitetura-estado-atual.md)
+- [`Relatório de arquitetura e estado da migração até G83`](20261005-relatorio-arquitetura-estado-atual.md)
 - [`Auditoria do pipeline e dos contratos`](../analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 - [`Resultados de execuções reais e limitações`](20261004-validacao-arquitetural-execucoes-reais.md)
 - [`G74 — resultados tipados de aquisição`](20261005-candidate-acquisition-outcomes.md)
@@ -370,4 +374,5 @@ em mappings. Consulte o relatório G82.
 - [`G80 — contrato explícito de entrada do pipeline`](20261005-pipeline-input-contract.md)
 - [`G81 — seleção tipada por cena`](20261005-scene-selection-typed-boundary.md)
 - [`G82 — seleção criada de componentes tipados`](20261005-scene-selection-from-components.md)
+- [`G83 — tipos estritos no contrato de entrada`](20261005-pipeline-input-strict-types.md)
 - [`Inventário de relatórios do projeto`](../README.md)
