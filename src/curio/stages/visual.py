@@ -42,7 +42,9 @@ from .candidate_evaluation import (apply_clip_layer,
 from .media_selection import (annotate_reuse, make_selection_decision,
                               RankedSelectionCandidate,
                               prepare_selection_pool,
-                              resolve_cross_scene_reuse)
+                              resolve_cross_scene_reuse,
+                              SelectionFallbackAction,
+                              next_selection_fallback)
 from .media_selection import SelectionDecision
 from .visual_audit import candidate_audit_rows, search_query_audit_rows
 from .media_provider_policy import ordered_providers
@@ -282,8 +284,14 @@ def _search_scene_with_shortcircuit(
 
     # Generic/context representations are the next search tier, not an excuse
     # to stop after a score-only candidate that could not be acquired.
-    if len(picked) < max_images and not generic_collected and generic_queries:
+    fallback_action = next_selection_fallback(
+        selected_count=len(picked), requested_count=max_images,
+        contextual_available=bool(generic_queries),
+        contextual_searched=generic_collected, synthetic_attempted=False,
+        reuse_available=bool(reused_ranked))
+    if fallback_action is SelectionFallbackAction.CONTEXTUAL_SEARCH:
         collection = collector.collect(generic_queries, phase_budget)
+        generic_collected = True
         generic_candidates = [candidate for candidate in collection.candidates
                               if candidate.search_query.generic]
         score_started = time.monotonic()
@@ -339,7 +347,12 @@ def _search_scene_with_shortcircuit(
             ranked.extend(generic_fresh)
 
     strategy_used = "image"
-    if not picked:
+    fallback_action = next_selection_fallback(
+        selected_count=len(picked), requested_count=max_images,
+        contextual_available=bool(generic_queries),
+        contextual_searched=generic_collected, synthetic_attempted=False,
+        reuse_available=bool(reused_ranked))
+    if fallback_action is SelectionFallbackAction.SYNTHETIC:
         # Nenhuma fotografia serviu. A cena NÃO fica vazia e NÃO recebe
         # imagem genérica: ela troca de medium. Um diagrama ou um cartão
         # é a cena certa mostrada do jeito certo, e a métrica registra
@@ -370,7 +383,12 @@ def _search_scene_with_shortcircuit(
                 print(f"cena {ch.id}: sem foto adequada — visual por código "
                       f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
     # Reuse only after all specific/context searches and the local visual.
-    if not picked and reused_ranked:
+    fallback_action = next_selection_fallback(
+        selected_count=len(picked), requested_count=max_images,
+        contextual_available=bool(generic_queries),
+        contextual_searched=generic_collected, synthetic_attempted=True,
+        reuse_available=bool(reused_ranked))
+    if fallback_action is SelectionFallbackAction.REUSE:
         from .media_candidate_acquisition import acquire_reuse_fallback
         reuse_outcome = acquire_reuse_fallback(
             ch.id, reused_ranked, cfg.cache_dir, metrics, asset_uses)

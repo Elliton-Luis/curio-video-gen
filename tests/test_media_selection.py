@@ -3,13 +3,46 @@ import pytest
 from curio.stages.media_selection import (
     RankedSelectionCandidate,
     ReuseCandidate,
+    SelectionFallbackAction,
     SelectionDecision,
     make_selection_decision,
+    next_selection_fallback,
     prepare_selection_pool,
     record_asset_usage,
     select_reuse_candidate,
 )
 from tests.media_test_support import with_selection
+
+
+@pytest.mark.parametrize(("kwargs", "expected"), [
+    ({"selected_count": 0, "requested_count": 2,
+      "contextual_available": True, "contextual_searched": False,
+      "synthetic_attempted": False, "reuse_available": True},
+     SelectionFallbackAction.CONTEXTUAL_SEARCH),
+    ({"selected_count": 0, "requested_count": 2,
+      "contextual_available": False, "contextual_searched": False,
+      "synthetic_attempted": False, "reuse_available": True},
+     SelectionFallbackAction.SYNTHETIC),
+    ({"selected_count": 0, "requested_count": 2,
+      "contextual_available": True, "contextual_searched": True,
+      "synthetic_attempted": True, "reuse_available": True},
+     SelectionFallbackAction.REUSE),
+    ({"selected_count": 0, "requested_count": 2,
+      "contextual_available": False, "contextual_searched": False,
+      "synthetic_attempted": True, "reuse_available": False},
+     SelectionFallbackAction.NO_ASSET),
+    ({"selected_count": 1, "requested_count": 3,
+      "contextual_available": True, "contextual_searched": True,
+      "synthetic_attempted": False, "reuse_available": True},
+     SelectionFallbackAction.COMPLETE),
+    ({"selected_count": 3, "requested_count": 3,
+      "contextual_available": True, "contextual_searched": False,
+      "synthetic_attempted": False, "reuse_available": True},
+     SelectionFallbackAction.COMPLETE),
+])
+def test_selection_fallback_policy_exposes_order_and_partial_coverage(
+        kwargs, expected):
+    assert next_selection_fallback(**kwargs) is expected
 
 
 def test_fresh_candidates_are_separated_before_reuse_without_score_penalty():

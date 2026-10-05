@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from enum import Enum
 from math import isfinite
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,46 @@ from .scene_contract import SemanticScene
 if TYPE_CHECKING:
     from ..media.selection_result import MediaStageResult
     from ..media.selection_result import SelectedAsset
+
+
+class SelectionFallbackAction(str, Enum):
+    """Next editorial action after attempting fresh specific candidates."""
+
+    CONTEXTUAL_SEARCH = "contextual_search"
+    SYNTHETIC = "synthetic"
+    REUSE = "reuse"
+    NO_ASSET = "no_asset"
+    COMPLETE = "complete"
+
+
+def next_selection_fallback(*, selected_count: int, requested_count: int,
+                            contextual_available: bool,
+                            contextual_searched: bool,
+                            synthetic_attempted: bool,
+                            reuse_available: bool
+                            ) -> SelectionFallbackAction:
+    """Choose the next tier without executing search, fallback or acquisition.
+
+    New contextual assets precede a local synthetic visual; reuse is considered
+    only after that visual attempt. Partial real coverage is retained as-is.
+    """
+    if (isinstance(selected_count, bool) or not isinstance(selected_count, int)
+            or selected_count < 0):
+        raise ValueError("selected count must be a non-negative integer")
+    if (isinstance(requested_count, bool) or not isinstance(requested_count, int)
+            or requested_count <= 0):
+        raise ValueError("requested count must be a positive integer")
+    if selected_count >= requested_count:
+        return SelectionFallbackAction.COMPLETE
+    if contextual_available and not contextual_searched:
+        return SelectionFallbackAction.CONTEXTUAL_SEARCH
+    if selected_count:
+        return SelectionFallbackAction.COMPLETE
+    if not synthetic_attempted:
+        return SelectionFallbackAction.SYNTHETIC
+    if reuse_available:
+        return SelectionFallbackAction.REUSE
+    return SelectionFallbackAction.NO_ASSET
 
 
 @dataclass(frozen=True)
