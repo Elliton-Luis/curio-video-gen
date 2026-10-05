@@ -5,6 +5,10 @@ from curio.stages.scenes import Chapter
 from curio.stages import scoring
 from curio.stages.visual_context import fill_missing_context
 from curio.stages.research import ResearchSource
+from curio.stages.scene_contract import SemanticScene
+from curio.stages.visual_context import attach_video_context
+from curio.stages.visual_planning import build_visual_plan
+from curio.stages.search_planning import build_search_plan
 
 
 def _fill(chapter, target, genre="", sources=()):
@@ -25,6 +29,9 @@ def test_local_context_uses_authoritative_alias_and_rejects_namesake(monkeypatch
     assert changed and ch.narration == narration
     assert "Saint Thomas Aquinas painting" == ch.visual_queries[0]
     assert "Thomas Aquinas" in ch.subject_aliases
+    assert any(alias.value == "Thomas Aquinas" and alias.verified
+               and alias.source == "wikipedia_langlink"
+               for alias in ch.video_context.aliases)
     for title in ("File:Thomas Aquinas painting.jpg", "File:Tomás de Aquino.jpg"):
         assert scoring.base_score({"title": title}, ch)["score"] >= 34
     for title in ("Melchora Aquino monument", "Aquino city", "Saint Thomas island",
@@ -148,3 +155,30 @@ def test_real_candidates_allow_existing_insertion_rule_without_synthetic_assets(
     background, insertion = order_for_insertion(entries, ch)
     assert background[0] == entries[0]
     assert insertion[0] == entries[1]
+
+
+def test_researched_topic_overrides_conflicting_scene_topic_and_unverified_alias():
+    scene = SemanticScene(
+        id=1,
+        narration="Em 1526, Luís II enfrentou o exército otomano em Mohács.",
+        video_context={
+            "topic": "Batalha de Ponta de Gál",
+            "aliases": ["Ponta de Gál"],
+        },
+        representations=[{
+            "query": "Battle of Mohács 1526", "kind": "event", "level": 1,
+        }],
+        visual_intent_structured="Show the Battle of Mohács in 1526",
+    )
+
+    enriched = attach_video_context(
+        (scene,), "Batalha de Mohács",
+        TargetEntity("Batalha de Mohács"))[0]
+    plan = build_search_plan(build_visual_plan(enriched), "history")
+
+    assert enriched.video_context.topic == "Batalha de Mohács"
+    assert any(alias.value == "Ponta de Gál" and not alias.verified
+               for alias in enriched.video_context.aliases)
+    assert all("ponta de gál" not in query.query.casefold()
+               for query in plan.queries)
+    assert any("Batalha de Mohács" in query.query for query in plan.queries)

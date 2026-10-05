@@ -23,7 +23,8 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
     seen: set[str] = set()
     planned: list[SearchQuery] = []
     topic = plan.topic.strip()
-    aliases = [alias.value.strip() for alias in plan.aliases if alias.value.strip()]
+    aliases = [alias.value.strip() for alias in plan.aliases
+               if alias.value.strip() and alias.verified]
     anchor_alias = next((alias for alias in aliases
                          if topic and alias.casefold() != topic.casefold()), topic)
     from .scoring import _tokens

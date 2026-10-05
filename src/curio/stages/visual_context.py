@@ -9,7 +9,7 @@ from dataclasses import replace
 from .. import textnorm
 from . import editorial
 from . import scoring
-from .scene_contract import SemanticScene, VideoContext, VisualRepresentation
+from .scene_contract import Alias, SemanticScene, VideoContext, VisualRepresentation
 
 _HONORIFICS = {"sao", "santo", "santa", "saint"}
 
@@ -37,7 +37,7 @@ def attach_video_context(scenes, topic: str, target=None) -> tuple[SemanticScene
             topic = canonical
     if not topic:
         return tuple(scenes or ())
-    aliases = list(dict.fromkeys(
+    canonical_names = list(dict.fromkeys(
         str(x).strip() for x in
         ([topic] + list(getattr(target, "aliases", []) or [])) if str(x).strip()))
 
@@ -49,18 +49,32 @@ def attach_video_context(scenes, topic: str, target=None) -> tuple[SemanticScene
     enriched = []
     for scene in scenes or ():
         context = scene.video_context.to_dict()
-        current_topic = context.get("topic") or topic
-        if isinstance(current_topic, list):
-            current_topic = current_topic[0] if current_topic else topic
-        context["topic"] = str(current_topic)
+        # A scene planner may suggest visual details, but it cannot replace
+        # the researched topic with a conflicting entity or event name.
+        context["topic"] = topic
         context["primary_entities"] = list(dict.fromkeys(
-            [*_list(context.get("primary_entities")), *aliases]))[:8]
+            [*_list(context.get("primary_entities")), *canonical_names]))[:8]
         context["secondary_entities"] = _list(context.get("secondary_entities"))
         context["places"] = _list(context.get("places"))
         context["events"] = _list(context.get("events"))
         context["period"] = str(context.get("period") or "")
-        context["aliases"] = list(dict.fromkeys(
-            [*_list(context.get("aliases")), *aliases]))[:8]
+        # Keep planner aliases for audit, but do not silently promote them to
+        # search anchors. Target aliases remain unverified until corroborated
+        # by an explicit source (for example a Wikipedia language link).
+        existing_aliases = VideoContext.from_value(context).aliases
+        alias_by_value = {alias.value.casefold(): alias
+                          for alias in existing_aliases}
+        for name in canonical_names:
+            alias_by_value.setdefault(name.casefold(), Alias(
+                name, source="target_entity", evidence="", verified=False))
+        aliases = list(alias_by_value.values())
+        aliases.sort(key=lambda alias: not alias.verified)
+        aliases = aliases[:8]
+        context["aliases"] = [alias.value for alias in aliases]
+        context["alias_provenance"] = [
+            {"value": alias.value, "source": alias.source,
+             "evidence": alias.evidence, "verified": alias.verified}
+            for alias in aliases]
         updates = {"video_context": VideoContext.from_value(context)}
         if scene.planning_mode == "deterministic":
             # Local noun extraction is search support, not trusted screen
@@ -197,9 +211,30 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
     replacements = {}
     for scene in needs:
         context = scene.video_context.to_dict()
-        for key in ("primary_entities", "aliases"):
+        for key in ("primary_entities",):
             context[key] = list(dict.fromkeys(
                 [*(context.get(key, []) or []), *names]))[:8]
+        alias_by_value = {alias.value.casefold(): alias
+                          for alias in VideoContext.from_value(context).aliases}
+        for name in names:
+            alias_by_value.setdefault(name.casefold(), Alias(
+                name, source="target_entity", verified=False))
+        if english:
+            evidence = next((source.url for source in sources
+                             if source.url and any(
+                                 _identity_tokens(source.title) == _identity_tokens(name)
+                                 for name in names)), "Wikipedia language link")
+            alias_by_value[english.casefold()] = Alias(
+                english, source="wikipedia_langlink", evidence=evidence,
+                verified=bool(evidence))
+        aliases = list(alias_by_value.values())
+        aliases.sort(key=lambda alias: not alias.verified)
+        aliases = aliases[:8]
+        context["aliases"] = [alias.value for alias in aliases]
+        context["alias_provenance"] = [
+            {"value": alias.value, "source": alias.source,
+             "evidence": alias.evidence, "verified": alias.verified}
+            for alias in aliases]
         updates = {"video_context": VideoContext.from_value(context)}
         if not scene.subject and not scene.visual_queries:
             subject = names[0]

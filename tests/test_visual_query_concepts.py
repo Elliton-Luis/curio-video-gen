@@ -72,7 +72,12 @@ def test_isolated_noise_is_rejected_and_alias_backed_indirect_visual_survives():
             {"query": "Liberty statue", "kind": "monument"},
         ],
         "visual_queries": ["gold", "primeira", "formavam"],
-        "video_context": {"topic": "freedom", "aliases": ["Liberty"]},
+        "video_context": {
+            "topic": "freedom", "aliases": ["Liberty"],
+            "alias_provenance": [{"value": "Liberty", "source": "catalog",
+                                  "evidence": "verified entity record",
+                                  "verified": True}],
+        },
         "visual_intent": "scene planner",
     })
     assert [r["query"] for r in chapter.representations] == ["Liberty statue"]
