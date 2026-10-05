@@ -420,6 +420,43 @@ def test_media_stage_result_uses_typed_scene_selection_and_roundtrips_project_ro
     assert result.scenes[0].asset.title == "Historical map"
 
 
+def test_scene_media_selection_projects_typed_components_to_project_row():
+    from curio.media.selection_result import (MediaStageResult,
+                                              SceneMediaSelection)
+
+    row = with_selection({
+        "chapter_id": 1,
+        "asset": {"provider": "wikimedia", "asset_id": "map-1",
+                  "title": "Historical map"},
+        "assets": [{"asset": {"provider": "wikimedia", "asset_id": "map-1",
+                                  "title": "Historical map"},
+                    "query": "historical map", "score": 87.5}],
+        "reused_from": None,
+        "rejected": [{"reason": "weak candidate"}],
+        "visual_type": "historical_art",
+        "strategy": "image",
+    })
+    scene = MediaStageResult.from_rows([row], "provider").scenes[0]
+
+    rebuilt = SceneMediaSelection.from_components(
+        scene.scene_id, scene.assets, scene.visual_audit,
+        visual_type=scene.visual_type, strategy=scene.strategy,
+        rejected=scene.rejected)
+
+    assert rebuilt.to_dict() == row
+
+
+def test_scene_media_selection_factory_rejects_decision_for_another_scene():
+    from curio.media.selection_result import MediaStageResult, SceneMediaSelection
+
+    row = with_selection({"chapter_id": 1, "asset": None, "assets": []})
+    scene = MediaStageResult.from_rows([row], "provider").scenes[0]
+
+    with pytest.raises(ValueError, match="another scene"):
+        SceneMediaSelection.from_components(
+            2, (), scene.visual_audit)
+
+
 def test_scene_media_selection_freezes_assets_and_nested_project_rows():
     from curio.media.selection_result import MediaStageResult
     from tests.media_test_support import with_selection

@@ -203,6 +203,39 @@ class SceneMediaSelection:
             rejected=tuple(deepcopy(rejected)), reuse=tuple(deepcopy(reuse)),
             visual_audit=visual_audit, _row=deepcopy(value))
 
+    @classmethod
+    def from_components(
+            cls, scene_id: int, selected_assets: tuple[SelectedAsset, ...],
+            visual_audit: VisualDecision, *, visual_type: str = "",
+            strategy: str = "", rejected: tuple[Mapping, ...] = (),
+            reused_from: int | None = None,
+            reuse: tuple[Mapping, ...] | None = None) -> "SceneMediaSelection":
+        """Create new selection from typed values and own row projection here."""
+        if not isinstance(visual_audit, VisualDecision):
+            raise TypeError("scene selection requires VisualDecision")
+        if not isinstance(selected_assets, tuple) or any(
+                not isinstance(item, SelectedAsset) for item in selected_assets):
+            raise TypeError("scene selection assets must be typed values")
+        if any(not isinstance(item, Mapping) for item in rejected):
+            raise TypeError("scene selection rejections must be objects")
+        if reuse is not None and any(not isinstance(item, Mapping) for item in reuse):
+            raise TypeError("scene reuse audit must contain objects")
+
+        row = {
+            "chapter_id": scene_id,
+            "asset": (selected_assets[0].to_dict()["asset"]
+                      if selected_assets else None),
+            "assets": [item.to_dict() for item in selected_assets],
+            "reused_from": reused_from,
+            "rejected": [_thaw_json(item) for item in rejected],
+            "visual_decision": visual_audit.to_dict(),
+            "visual_type": visual_type,
+            "strategy": strategy,
+        }
+        if reuse is not None:
+            row["reuse"] = [_thaw_json(item) for item in reuse]
+        return cls.from_dict(row)
+
     def to_dict(self) -> dict:
         """Return the original project row without schema expansion."""
         return _thaw_json(self._row)

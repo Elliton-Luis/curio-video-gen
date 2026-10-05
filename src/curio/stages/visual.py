@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from ..config import CurioConfig
 from ..media.asset_snapshot import MediaAssetSnapshot
-from ..media.selection_result import SceneMediaSelection
+from ..media.selection_result import SceneMediaSelection, SelectedAsset
 from ..media.providers import (
     MediaAsset,
     MediaError,
@@ -164,23 +164,19 @@ def _search_scene_with_shortcircuit(
                 search_exhaustion_reason=(
                     "typographic_visual_requires_synthetic_form"),
                 fallback_level="synthetic_without_search")
+            selected_asset = SelectedAsset.from_dict({
+                "asset": synth.to_dict(), "query": "", "relevance": 0,
+                "order": 0, "score": 0.0,
+                "strategy": fallback_plan.strategy,
+            }, 0)
             from ..runlog import event as run_event
             run_event("fallback", f"Cena {ch.id}: form tipográfico ({fallback_plan.form})",
                       operation="media", scene=ch.id,
                       strategy=fallback_plan.strategy, form=fallback_plan.form,
                       reason=fallback_plan.reason)
-            return SceneMediaSelection.from_dict({
-                "chapter_id": ch.id,
-                "asset": synth.to_dict(),
-                "assets": [{"asset": synth.to_dict(), "query": "",
-                            "relevance": 0, "order": 0,
-                            "score": 0.0, "strategy": fallback_plan.strategy}],
-                "reused_from": None,
-                "rejected": [],
-                "visual_type": vtype,
-                "strategy": fallback_plan.strategy,
-                "visual_decision": visual_decision.to_dict(),
-            }), warnings
+            return SceneMediaSelection.from_components(
+                ch.id, (selected_asset,), visual_decision,
+                visual_type=vtype, strategy=fallback_plan.strategy), warnings
 
     from . import scoring
     min_score = scoring.threshold()
@@ -316,7 +312,6 @@ def _search_scene_with_shortcircuit(
         metrics.media_record_visual_type(
             str(getattr(ch, "visual_type", "") or "literal"))
 
-    from ..media.selection_result import SelectedAsset
     from .media_candidate_acquisition import acquire_ranked_candidates
 
     acquisition_batch = acquire_ranked_candidates(
@@ -534,17 +529,11 @@ def _search_scene_with_shortcircuit(
     }
     selection = make_selection_decision(
         ch.id, picked, decision["fallback_level"])
-    decision = VisualDecision.create(selection, **decision).to_dict()
-    return SceneMediaSelection.from_dict({
-        "chapter_id": ch.id,
-        "asset": first,
-        "assets": picked_rows,
-        "reused_from": None,
-        "rejected": scene_rejected,
-        "visual_decision": decision,
-        "visual_type": str(getattr(ch, "visual_type", "") or "literal"),
-        "strategy": strategy_used,
-    }), warnings
+    visual_decision = VisualDecision.create(selection, **decision)
+    return SceneMediaSelection.from_components(
+        ch.id, tuple(picked), visual_decision,
+        visual_type=str(getattr(ch, "visual_type", "") or "literal"),
+        strategy=strategy_used, rejected=tuple(scene_rejected)), warnings
 
 
 def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
