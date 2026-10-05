@@ -25,7 +25,13 @@ canônico e o SearchPlanner deixou de usar aliases sem provenance verificada;
 889 testes passaram. A validação histórica não encontrou candidato adequado
 e terminou sintética, enquanto removeu o falso positivo do Parlamento moderno.
 O relatório compara as duas execuções e registra que providers falharam; busca
-histórica e identidade de conteúdo continuam abertas.
+histórica continua aberta.
+O selector e os relatórios agora priorizam SHA-256 de assets locais, usando URL
+ou ID enquanto o download não existe; duplicatas encontradas depois do download
+são rejeitadas antes de completar a shortlist. O gate integral após essa fase
+passou com 891 testes. A validação M87 v3 encontrou duas imagens únicas e uma
+cena sintética, mas não a fotografia observacional específica de M87; o
+relatório registra essa limitação e o gargalo de research/provider.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

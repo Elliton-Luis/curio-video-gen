@@ -454,3 +454,36 @@ A amostra M87 usou fallback local de cenas após o planner LLM produzir divisão
 incompatível com a narração; a execução concluiu com mídia real, sem reuso.
 Visualmente, dois IDs NASA selecionados na mesma cena têm SHA-256 igual, uma
 limitação pendente da identidade por conteúdo.
+
+## D4: identidade de asset prefere SHA-256 dos bytes adquiridos
+
+Uma inspeção real encontrou IDs NASA diferentes com arquivo de imagem
+byte-a-byte idêntico dentro da mesma cena. `asset_key` e o selector usavam URL
+ou ID de provider mesmo quando `local_path` já existia, então a timeline e
+`visual_report.unique_assets` contavam conteúdo repetido como único. Agora
+`media.identity.asset_identity` calcula SHA-256 para arquivos locais (memoizado
+por caminho/tamanho/mtime) e usa URL normalizada ou ID do provider enquanto os
+bytes não estão disponíveis. A seleção compara a identidade depois do download;
+se descobre duplicata, registra rejeição e continua a shortlist para procurar
+outro candidato. Mídia manual, timeline, reuse e métricas usam o mesmo helper.
+
+Regressões cobrem IDs/providers distintos com bytes iguais, continuação para
+outro candidato, downloads paralelos de arquivos distintos e reuse sob a nova
+chave. O primeiro gate integral revelou três fixtures antigas que atribuíam o
+mesmo arquivo a IDs ficticiamente diferentes e uma que semeava a chave antiga
+de reuse; as fixtures passaram a modelar respectivamente bytes distintos ou a
+identidade contratual. Focados: 41 passaram antes da migração das fixtures;
+depois as regressões afetadas passaram (18). Gate integral final: **891
+passed em 186,93 s**, `compileall` e `git diff --check` passaram.
+
+A geração real M87 v3 selecionou dois assets de bytes distintos em três cenas
+(dois reais, um sintético, zero reuso; SHA-256 distintos 2; 24 queries
+planejadas/21 executadas; mídia 53,26 s). Isso não mostra observação específica
+de M87: a NASA venceu como ilustração de buraco negro e o Pixabay retornou uma
+ilustração genérica; a cena de massa/ring ficou sintética com busca incompleta.
+O tempo total foi 159,93 s, dos quais 81,34 s vieram de pesquisa/grounding e
+53,26 s de mídia. A auditoria real anterior já reproduz o bug de identidade:
+3 IDs selecionados, somente 2 hashes. A lógica nova e sua regressão evitam que
+esse caso conte duplicação como diversidade; o novo run teve apenas uma imagem
+por cena real, então a validação visual de diversidade intrasscene veio do
+teste determinístico.

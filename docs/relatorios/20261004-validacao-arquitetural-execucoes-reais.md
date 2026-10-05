@@ -318,3 +318,33 @@ Após A4v, `pytest -q`: **889 passed em 183,04 s**; compileall e diff check
 passaram. As duas novas execuções humanas não validam TTS/final MP4; o rerender
 separado validou renderização com áudio existente. Tema pessoa/etimologia e
 cache de decisão de busca continuam sem nova geração real nesta rodada.
+
+## Reexecução após identidade por conteúdo (D4)
+
+Projeto `architecture-final-m87-v3`: 3 cenas; 2 cenas com asset real, 2
+ocorrências/IDs reais, **2 SHA-256 distintos**, zero reusos, 1 cena sintética.
+Foram planejadas 24 queries e executadas 21; 3 foram abandonadas por
+duplicatas. Wikimedia, NASA e Pixabay forneceram resultados úteis; AIC/Met
+continuaram indisponíveis nesta amostra e Unsplash respondeu 403/desativou sua
+cota. O relatório recebeu 36 candidatos, reteve 2 e rejeitou por 22 casos sem
+evidência de tópico e 12 sem evidência de cena. A cena 1 escolheu uma ilustração
+NASA de galáxia que contém buraco negro supermassivo (score 55,25; tópico 100,
+cena 35); a cena 3 escolheu uma ilustração Pixabay genérica de buraco negro
+(score 65,75; tópico 100, cena 50). A inspeção confirmou duas imagens
+visualmente diferentes, mas nenhuma é a observação específica M87. A cena 2
+ficou sintética depois de busca incompleta (`provider_errors`). Mídia: 53,26 s;
+research/grounding: 81,34 s; total: 159,93 s. O crescimento do tempo de
+research veio de 111 fontes rejeitadas, não de planejamento de mídia.
+
+Essa geração teve apenas uma imagem em cada cena real; a cobertura de bytes
+duplicados no mesmo conjunto é provada pelo teste de regressão. A amostra
+anterior M87 v2 tinha três IDs em uma cena, mas dois arquivos tinham SHA-256
+idêntico. Após D4, o relatório da geração atual conta identidade local pelo
+conteúdo e seleciona duas imagens visualmente únicas. O rerender de
+`black-hole-lensing` foi repetido depois de D4: 21,13 s, usando roteiro,
+narração e legendas do cache, sem busca.
+
+`pytest -q` após D4: **891 passed em 186,93 s**; `compileall` e
+`git diff --check` passaram. A cobertura histórica continuou sintética e
+incompleta; a evidência real não permite declarar qualidade universal nem
+disponibilidade estável dos acervos.
