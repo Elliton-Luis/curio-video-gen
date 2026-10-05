@@ -542,7 +542,7 @@ def test_todo_genero_tem_teto_proprio():
 
 
 def test_scenes_for_script_respeita_o_genero():
-    from curio.stages.visual import scenes_for_script
+    from curio.stages.script_input import scenes_for_script
     cfg = CurioConfig()
     cfg.duration_target = 0
     texto = " ".join(["palavra"] * 700)

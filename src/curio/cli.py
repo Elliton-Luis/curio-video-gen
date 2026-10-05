@@ -34,7 +34,7 @@ from .stages import transcribe as transcribe_stage
 from .stages import tts as tts_stage
 from .stages import media_rules
 from .stages import scoring as scoring_stage
-from .stages import visual as visual_stage
+from .stages import script_input as script_input_stage
 from .stages import visual_timeline as visual_timeline_stage
 from .runlog import safe_text
 
@@ -170,7 +170,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
     if insertions is not None:
         cfg.visual_insertions = max(0, min(5, int(insertions)))
     try:
-        script_text = visual_stage.read_script_file(args.script)
+        script_text = script_input_stage.read_script_file(args.script)
     except (FileNotFoundError, ValueError) as exc:
         return _fail("roteiro", exc, "arquivo de roteiro inválido.")
     try:

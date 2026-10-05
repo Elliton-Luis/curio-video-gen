@@ -45,7 +45,6 @@ from ..media.providers import (
     min_dimension,
 )
 from . import media_rules
-from . import scenes as scenes_stage
 from .visual_timeline import (_assign_sfx, _shuffled_styles, _spec_images,
                               insertion_scenes, mark_insertion,
                               order_for_insertion)
@@ -187,57 +186,6 @@ def _downloaded_dims_ok(asset: MediaAsset) -> bool:
         return False  # ilegível: o render quebraria depois
     asset.width, asset.height = w, h
     return min(w, h) >= min_dimension()
-
-
-def read_script_file(path: str) -> str:
-    """Lê o roteiro exatamente como fornecido (sem reescrever).
-
-    Só remove BOM e espaços em branco das bordas. Todo o resto — ordem,
-    palavras, pontuação — é preservado para o TTS e as legendas.
-    """
-    if path == "-":
-        import sys as _sys
-        text = _sys.stdin.read()
-    else:
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"roteiro não encontrado: {path}")
-        with open(path, encoding="utf-8-sig") as fh:
-            text = fh.read()
-    text = text.strip()
-    if not text:
-        raise ValueError("roteiro vazio — informe um texto para narrar")
-    return text
-
-
-def scenes_for_script(script_text: str, cfg: CurioConfig,
-                      genre: str = "") -> int:
-    """Nº de cenas p/ roteiro pronto: acompanha o TAMANHO REAL do texto.
-
-    Com duração escolhida, vale o maior entre meta e tamanho (nunca menos
-    cenas que o conteúdo pede). No Automático, só o tamanho manda.
-    Limitado a 12 cenas para não explodir o nº de buscas de mídia — teto
-    esse que é do pipeline herdado, e só um perfil de gênero o substitui.
-    """
-    from . import editorial as _editorial
-    perfil = _editorial.get(genre)
-    pacing = perfil.pacing if perfil is not None else None
-    alvo = pacing.target_scene_seconds if pacing is not None else 9.0
-    teto = pacing.max_scenes if pacing is not None else None
-    by_length = scenes_stage.scenes_for_length(len(script_text.split()),
-                                               alvo, teto)
-    if cfg.duration_target <= 0:
-        return by_length
-    return max(scenes_stage.scenes_for_duration(cfg.duration_target, alvo,
-                                                teto), by_length)
-
-
-def validate_preserved(original: str, chapters) -> None:
-    """Garante que a divisão não reescreveu nada (falha em voz alta)."""
-    joined = " ".join(c.narration for c in chapters)
-    if scenes_stage._norm(joined) != scenes_stage._norm(original):
-        raise ValueError(
-            "divisão em cenas não reproduz o roteiro literal — "
-            "recusando para não adulterar a narração")
 
 
 def _provider_priority_order(cfg: CurioConfig, ch=None,

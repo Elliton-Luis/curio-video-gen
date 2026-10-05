@@ -60,7 +60,7 @@ def scenes_for_length(words: int, target_seconds: float = 9.0,
                       max_scenes: int | None = None) -> int:
     """Nº de cenas pelo TAMANHO do roteiro e o ALVO de segundos por cena.
 
-    Usado no modo Automático e como piso no `visual.scenes_for_script`:
+    Usado no modo Automático e como piso em `script_input.scenes_for_script`:
     roteiro longo = mais cenas, nunca corte para caber em meta.
 
     `target_seconds` e `max_scenes` são os levers de pacing do gênero. É

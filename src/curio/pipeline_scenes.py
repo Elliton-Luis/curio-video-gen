@@ -12,7 +12,7 @@ from .config import CurioConfig
 from .runlog import event as run_event
 from .stages import nvidia as nvidia_stage
 from .stages import scenes as scenes_stage
-from .stages import visual as visual_stage
+from .stages import script_input as script_input_stage
 from .stages.scene_local_planning import recover_legacy_chapters
 from .stages.scene_contract import (ScenePlanResult, SemanticScene,
                                     TimelineSpan)
@@ -110,13 +110,13 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
             persist_chapters = recovered_legacy
             persist_plan = True
         if script_mode:
-            visual_stage.validate_preserved(script_text, semantic_inputs)
+            script_input_stage.validate_preserved(script_text, semantic_inputs)
     else:
         persist_chapters = True
         persist_plan = True
         recovered_legacy = False
         if script_mode:
-            count = visual_stage.scenes_for_script(script_text, cfg, genre)
+            count = script_input_stage.scenes_for_script(script_text, cfg, genre)
         elif cfg.duration_target <= 0:
             count = scenes_stage.scenes_for_length(
                 len(script_text.split()), scene_target_seconds, max_scenes)
@@ -147,7 +147,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
             source = plan.source
             plan_source = plan.source
         if script_mode:
-            visual_stage.validate_preserved(script_text, semantic_inputs)
+            script_input_stage.validate_preserved(script_text, semantic_inputs)
 
     scene_event = ("provider" if source not in ("local", "cache")
                    else "fallback" if source == "local" else "cache")
