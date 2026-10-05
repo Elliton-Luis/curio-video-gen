@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timedelta
 
 from .media.selection_metrics import MediaMetricsInput, MediaSelectionStats
+from .stage_timing import validate_stage_elapsed
 
 
 def utcnow_iso() -> str:
@@ -680,20 +681,26 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
     doc["source"] = ("backfill: visual decisions, assets, and timing derived "
                      "from project metadata; provider request counts unavailable")
     duration = meta.get("processing_time_seconds")
-    try:
-        duration = max(0.0, float(duration))
-    except (TypeError, ValueError):
-        duration = max(0.0, sum(float(value or 0) for value in stage_times.values()))
+    if duration is not None:
+        try:
+            duration = validate_stage_elapsed(duration, "processing time")
+        except (TypeError, ValueError):
+            duration = None
     finished_at = meta.get("created_at") or utcnow_iso()
+    finished = None
+    started = None
     try:
         finished = datetime.fromisoformat(str(finished_at).replace("Z", "+00:00"))
-        started = finished - timedelta(seconds=duration)
-        doc["timestamp"] = started.isoformat()
-        doc["time"].update({"started_at": started.isoformat(),
-                            "finished_at": finished.isoformat(),
-                            "total_seconds": round(duration, 2)})
-    except ValueError:
-        doc["time"]["total_seconds"] = round(duration, 2)
+        if duration is not None:
+            started = finished - timedelta(seconds=duration)
+    except (OverflowError, ValueError):
+        finished = None
+    doc["timestamp"] = started.isoformat() if started is not None else None
+    doc["time"].update({
+        "started_at": started.isoformat() if started is not None else None,
+        "finished_at": finished.isoformat() if finished is not None else None,
+        "total_seconds": round(duration, 2) if duration is not None else None,
+    })
     research = meta.get("research") or {}
     doc["consumption"]["research"]["sources"] = research.get("sources")
     for section in ("nvidia", "tts", "media", "whisper"):

@@ -116,3 +116,37 @@ def test_missing_backfill_selection_stays_unknown_not_zero(tmp_path):
     assert report["unique_assets"] is None
     assert report["synthetic_scenes"] is None
     assert report["sem_visual"] is None
+
+
+def test_backfill_does_not_sum_overlapping_stage_timings_for_total(tmp_path):
+    from curio.metrics import backfill_from_metadata
+    import json
+
+    result = backfill_from_metadata(
+        "partial", {
+            "created_at": "2026-10-05T12:00:00+00:00",
+            "stage_times": {"tts": 8.0, "subs": 9.0},
+        }, str(tmp_path / "metrics"))
+    with open(result, encoding="utf-8") as fh:
+        timing = json.load(fh)["time"]
+
+    assert timing["total_seconds"] is None
+    assert timing["started_at"] is None
+    assert timing["finished_at"] == "2026-10-05T12:00:00+00:00"
+
+
+def test_backfill_uses_explicit_valid_total_duration(tmp_path):
+    from curio.metrics import backfill_from_metadata
+    import json
+
+    result = backfill_from_metadata(
+        "known", {
+            "created_at": "2026-10-05T12:00:00+00:00",
+            "processing_time_seconds": 12.5,
+            "stage_times": {"tts": 8.0, "subs": 9.0},
+        }, str(tmp_path / "metrics"))
+    with open(result, encoding="utf-8") as fh:
+        timing = json.load(fh)["time"]
+
+    assert timing["total_seconds"] == 12.5
+    assert timing["started_at"] == "2026-10-05T11:59:47.500000+00:00"
