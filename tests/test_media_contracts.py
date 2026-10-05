@@ -3,6 +3,7 @@ import pytest
 from curio.media.providers import MediaAsset
 from curio.stages.media_contracts import (
     Candidate,
+    CandidateEvaluation,
     CandidateRejection,
     ProviderAssetSnapshot,
 )
@@ -53,6 +54,34 @@ def test_candidate_freezes_provider_asset_without_freezing_download_asset():
         candidate.asset.title = "mutated candidate"
     with pytest.raises(AttributeError):
         candidate.asset.tags.append("mutated candidate")
+
+
+def test_candidate_evaluation_freezes_evidence_and_projects_mutable_json_copy():
+    candidate = Candidate(
+        MediaAsset(provider="wikimedia", asset_id="commons-3", title="Map"),
+        SearchQuery("Ottoman Empire map", "scene_representation"),
+        "wikimedia:commons-3")
+    evidence = {"layers": ["base"],
+                "topic_evidence": {"matched": ["Ottoman Empire"]}}
+    evaluation = CandidateEvaluation(candidate, 75.0, evidence, True)
+
+    evidence["layers"].append("changed")
+    evidence["topic_evidence"]["matched"].clear()
+    assert evaluation.evidence["layers"] == ("base",)
+    assert evaluation.evidence["topic_evidence"]["matched"] == (
+        "Ottoman Empire",)
+    with pytest.raises(TypeError):
+        evaluation.evidence["score"] = 75
+    with pytest.raises(AttributeError):
+        evaluation.evidence["layers"].append("changed")
+
+    projected = evaluation.to_selection_entry()
+    assert projected["score_detail"] == {
+        "layers": ["base"],
+        "topic_evidence": {"matched": ["Ottoman Empire"]},
+    }
+    projected["score_detail"]["layers"].append("selection-local")
+    assert evaluation.evidence["layers"] == ("base",)
 
 
 def test_candidate_rejection_names_stage_and_preserves_originating_query():

@@ -3,11 +3,34 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from math import isfinite
+from types import MappingProxyType
 
 from ..media.providers import MediaAsset
 from .visual_contracts import SearchQuery
+
+
+def _freeze_mapping(value: Mapping) -> Mapping:
+    return MappingProxyType({key: _freeze_value(item)
+                             for key, item in value.items()})
+
+
+def _freeze_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return _freeze_mapping(value)
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_value(item) for item in value)
+    return deepcopy(value)
+
+
+def _json_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_value(item) for item in value]
+    return deepcopy(value)
 
 
 @dataclass(frozen=True)
@@ -156,6 +179,7 @@ class CandidateEvaluation:
             raise ValueError("candidate score must be finite and within 0..100")
         if not isinstance(self.evidence, Mapping):
             raise TypeError("candidate score evidence must be an object")
+        object.__setattr__(self, "evidence", _freeze_mapping(self.evidence))
         if not isinstance(self.accepted, bool):
             raise TypeError("candidate accepted flag must be boolean")
         if (isinstance(self.order, bool) or not isinstance(self.order, int)
@@ -171,7 +195,7 @@ class CandidateEvaluation:
     def to_selection_entry(self) -> dict:
         entry = self.candidate.to_evaluation_input()
         entry["score"] = self.score
-        entry["score_detail"] = dict(self.evidence)
+        entry["score_detail"] = _json_value(self.evidence)
         entry["order"] = self.order
         if self.rejection_reason:
             entry["rejection_reason"] = self.rejection_reason
