@@ -721,3 +721,60 @@ passaram após corrigir essa dependência; a suíte integral passou com **896
 testes em 177,84 s**. Compileall, diff check e varredura de imports sem uso
 passaram. Código em `4b3bb27`; `pipeline.py` foi reduzido em cerca de 150
 linhas. Ainda coordena a geração assistida principal.
+
+## G19: tópico descritivo não pode virar entidade truncada
+
+A primeira execução local de ciência (`Buracos negros: sombras e ondas`)
+mostrou que a heurística de entidade promovia a primeira palavra em maiúscula
+do título (`Buracos`) a entidade própria. Esse alvo truncado foi copiado pelo
+planner local e pelo enrichment para o contexto das cenas; a query resultante
+misturou `black hole` com `Buracos` e chegou a selecionar uma estação ferroviária
+com esse nome. A origem foi `entity.resolve_entity_heuristic`, não o provider.
+
+A heurística agora preserva como tópico descritivo frases de título com mais de
+uma palavra, em vez de inventar entidade pelo primeiro token. A proveniência
+continua marcada como tópico, e o planner local, enrichment, VisualPlan e
+SearchPlan recebem o mesmo alvo. Regressões cobrem o título e a cadeia até a
+query, incluindo a ausência da âncora isolada. 45 testes focados passaram.
+Código em `99d51b1`.
+
+## G20: busca não pode declarar alternativa nova antes de confirmar identidade
+
+A geração v2 corrigiu o tópico, mas revelou outro erro real: candidatos eram
+marcados como novos pela URL/ID do provider; após download, SHA-256 mostrava que
+eram bytes já usados. A busca então rejeitava o duplicado sem retomar as outras
+representações. `visual.py` agora associa a identidade provisória à identidade
+de conteúdo quando baixa ou deduplica, e, em cenas posteriores, percorre a
+árvore específica de queries antes de concluir que não existe alternativa.
+Isso preserva a deduplicação por conteúdo e mantém reuso como último recurso.
+
+A regressão reproduz o mesmo conteúdo sob ID/URL diferentes, exige tentativa da
+representação alternativa e seleciona seu asset único. 67 testes focados e a
+suíte integral de **900 testes em 199,29 s** passaram; compileall e diff check
+passaram. Código em `2de90ae`.
+
+Geração real local, sem credenciais LLM, confirmou a correção de identidade e
+expôs limite de cobertura/custo: Otomanos v1 teve 8 cenas, 6 ocorrências reais,
+6 assets únicos, zero reuso e 4 sintéticas (mídia 121,90 s; total 185,04 s).
+Buracos negros v1/v2/v3 tiveram 6 cenas. V1 carregou o alvo errado `Buracos`;
+v2 corrigiu o alvo mas encerrava buscas cedo; v3 buscou 40 queries lógicas e
+80 requests (NASA 27, Wikimedia 47), com 6 assets reais únicos em 2 cenas, 4
+sintéticas e zero reuso. Duas cenas esgotaram as queries; outras duas acabaram
+com busca incompleta por erro de provider. A inspeção visual confirmou imagens
+de Sagittarius A* e M87 nas duas cenas reais. Tempo v3: mídia 129,04 s, total
+171,87 s. Wikimedia registrou 20 retries e 4 timeouts; soma de tempos por
+provider excede o tempo de parede, então não representa duração serial. A
+busca mais completa ficou correta quanto às tentativas, mas não aumentou a
+cobertura real; ainda não está aprovada como resultado final de mídia.
+
+A execução também mostrou duas definições de unicidade: `metadata.visual_report`
+registra 6 assets reais únicos, enquanto `consumption.media.selected_unique`
+registra 12 seleções com identidades (inclui visuais sintéticos/identidades do
+funnel). Até consolidar o contrato, esses campos não são comparáveis; a
+divergência foi registrada para a fase de métricas. `media.json` ainda expõe
+auditoria detalhada dentro de `metadata.json`, não como arquivo separado.
+
+Rerender de cópia isolada do projeto `black-hole-lensing`, com providers
+desligados, reutilizou narração/roteiro/legendas persistidos e gerou novo MP4
+sem nova pesquisa. As falhas reais de provider foram observadas no v3; a
+execução foi sem LLM e usou Wikimedia/NASA gratuitos.

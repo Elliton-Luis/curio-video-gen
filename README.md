@@ -115,6 +115,17 @@ do enriquecimento semântico quando disponível.
 `pipeline_research` valida estrutura/tipos de fontes, rejeições, queries, fatos,
 gaps e etimologia antes de registrar ou persistir saída; retorno parcial ou
 malformado falha no limite do estágio sem side effects.
+As regressões arquiteturais mais recentes corrigem a promoção indevida de
+`Buracos` como entidade em títulos descritivos e fazem a busca continuar após
+detectar que um candidato aparentemente novo tem bytes já usados. A suíte
+integral tem 900 testes aprovados. Geração local de ciência após a correção
+consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
+cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
+por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.
+O tempo de mídia subiu para 129 s, com 20 retries e 4 timeouts do Wikimedia.
+`consumption.media.selected_unique` ainda difere de `visual_report.unique_assets`
+porque inclui identidades sintéticas; consolidação dessa métrica permanece
+pendente. Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e
 etimologia; `ResearchStageResult` contém apenas status, prompt e duração da
 etapa, sem cópias concorrentes desses dados.
