@@ -41,6 +41,9 @@ essa próxima fronteira de extração. As políticas e efeitos de composição d
 a extração de finalize depende agora desse módulo em vez de helpers privados
 do coordenador. O gate integral após essa fronteira ficou em 892 testes
 (186,96 s), com compileall e diff check aprovados.
+Leitura de texto/JSON e escrita JSON dos projetos também foram centralizadas em
+`project_artifacts.py` e os helpers duplicados do pipeline foram removidos;
+após essa fase, 892 testes passaram em 195,38 s.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

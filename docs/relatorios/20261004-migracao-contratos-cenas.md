@@ -530,3 +530,21 @@ alterar a política. Próximo passo após o gate:
 extrair finalize usando os módulos de composição de áudio e render já donos,
 com `pipeline.py` mantendo apenas a fronteira pública/log e coordenação da
 geração. Código em `91c5f89`.
+
+## G9: leitura e gravação de artefatos têm uma implementação compartilhada
+
+`pipeline.py` definia leitura de texto/JSON e gravação JSON com criação de
+diretório; CLI importava esses helpers privados do coordenador. `pipeline_visual`
+mantinha uma leitura JSON duplicada para validar seu cache. Isso faria o
+próximo módulo de finalize depender do pipeline ou duplicar I/O.
+
+Extraí `project_artifacts.py` com `read_text`, `read_json` e `write_json`.
+Pipeline, CLI e pipeline_visual usam a mesma implementação; os helpers locais
+foram removidos. Formato UTF-8, indentação, serialização Unicode e criação
+defensiva do diretório pai foram preservados.
+
+19 testes focados de pipeline, mídia, áudio e CLI passaram; a suíte integral
+passou com **892 testes em 195,38 s**. Compileall e diff check passaram. Código
+em `2934469`. A próxima extração de finalize já pode ler/escrever artefatos sem
+importar o coordenador; ainda será necessário mapear contratos de render,
+transcrição e logging.
