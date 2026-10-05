@@ -258,3 +258,63 @@ amostra visual não tem colisões. Após V1, a suíte integral passou com **860
 testes em 177,31 s**. Após a migração G2a de roteiro/título, a suíte integral
 passou com **863 testes em 191,55 s**; `compileall` e `git diff --check`
 passaram.
+
+## Reexecução após tópico canônico e aliases verificados
+
+Foram gerados dois projetos novos com `--narration human`, providers live e
+Groq para pesquisa/roteiro; nenhum projeto anterior foi sobrescrito.
+
+| Projeto | Cenas | Assets reais (ocorrências/IDs) | SHA-256 distintos | Reusos | Sintéticos | Queries planejadas/executadas | Media | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `architecture-final-mohacs-v2` | 3 | 0 / 0 | 0 | 0 | 3 | 24 / 19 | 55,48 s | 81,65 s |
+| `architecture-final-m87-v2` | 1 | 3 / 3 | 2 | 0 | 0 | 8 / 1 | 7,20 s | 32,18 s |
+
+`visual_report.unique_assets` distingue IDs de provider, não hashes de bytes.
+Por isso a contagem SHA-256 foi calculada diretamente nos arquivos baixados.
+No projeto M87, dois IDs NASA (`behemoth-black-hole-found-in-an-unlikely-
+place_26209716511_o` e `GSFC_20171208_Archive_e000386`) têm o mesmo hash e
+renderizam a mesma ilustração; `GSFC_20171208_Archive_e000984` é outro visual.
+Os três foram selecionados como complementos dentro da mesma cena. A identidade
+editorial ainda conta conteúdo duplicado como diverso e precisa de fase própria.
+
+### Mohács: precisão subiu, cobertura caiu
+
+O re-run anterior, `architecture-final-mohacs`, selecionou foto do Parlamento
+Húngaro moderno na cena de início da batalha: evidência de título/tags era
+somente “Danube river”, com score 100. A inspeção visual confirmou o erro. O
+re-run atual usa o tópico pesquisado “Batalha de Mohács” em todas as cenas;
+“Ponta de Gál” ficou registrado como alias não verificado e desapareceu das
+queries. Foram planejadas 24 consultas, 19 executadas e 5 abandonadas por
+duplicatas. Os providers consultados foram Met, AIC, Wikimedia, Pixabay, NASA
+e Unsplash; Pexels não foi habilitado por falta de chave. Met respondeu HTTP
+410 e AIC HTTP 500; nenhum resultado dos outros providers passou a evidência de
+tópico. Os 36 candidatos registrados foram rejeitados por “no topic evidence”.
+As três decisões têm `search_exhausted=false` e `provider_errors`. O vídeo
+terminou com 3 cards sintéticos, nenhum reuso e zero assets reais após 55,48 s
+de mídia. O falso positivo foi removido, mas busca e cobertura histórica
+continuam incompletas; a execução não prova ausência de imagens em acervos.
+
+### M87: fallback local e identidade por conteúdo
+
+O planner LLM de cenas produziu narração incompatível com o roteiro. O pipeline
+registrou a rejeição e usou o planejador local, convergindo no mesmo
+`SemanticScene`; pesquisa e roteiro usaram Groq. A única cena selecionou três
+assets NASA com evidência de buraco negro/EHT. A inspeção visual mostra duas
+cópias exatas de uma ilustração de lente gravitacional e uma segunda
+visualização artística genérica de buraco negro; nenhuma é a fotografia
+observacional de M87. Houve 15 resultados, 12 elegíveis, 1 rejeição por
+divergência de âncora; 8 queries planejadas e 1 executada antes da seleção de
+asset novo. Mídia levou 7,20 s; houve 4 downloads e 1 cache hit. A seleção é
+relacionada ao assunto, porém não é específica para M87 e duplica pixels sob
+IDs diferentes.
+
+Rerender de um projeto científico já narrado terminou em 21,13 s; roteiro,
+narração e legendas vieram do cache, sem pesquisa. A geração M87 também provou
+fallback local de cenas após planejamento LLM incompatível. A falha dos
+providers em Mohács foi registrada, mas `provider_errors` impede chamar aquela
+busca de exaustiva.
+
+Após A4v, `pytest -q`: **889 passed em 183,04 s**; compileall e diff check
+passaram. As duas novas execuções humanas não validam TTS/final MP4; o rerender
+separado validou renderização com áudio existente. Tema pessoa/etimologia e
+cache de decisão de busca continuam sem nova geração real nesta rodada.

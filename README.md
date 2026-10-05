@@ -20,6 +20,12 @@ No gate de 2026-10-04, a suíte completa passou com 888 testes após migrar a
 asserção de metadata para o módulo que agora é dono da projeção; `compileall`
 e `git diff --check` também passaram. Esse resultado não encerra as fases
 arquiteturais ainda parciais descritas na auditoria.
+No gate seguinte, o enrichment passou a usar o alvo de pesquisa como tópico
+canônico e o SearchPlanner deixou de usar aliases sem provenance verificada;
+889 testes passaram. A validação histórica não encontrou candidato adequado
+e terminou sintética, enquanto removeu o falso positivo do Parlamento moderno.
+O relatório compara as duas execuções e registra que providers falharam; busca
+histórica e identidade de conteúdo continuam abertas.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

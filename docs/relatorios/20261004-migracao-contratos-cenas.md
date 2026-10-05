@@ -423,3 +423,34 @@ Gate após a migração: `pytest -q` — **888 passed em 174,45 s**;
 `python -m compileall -q src/curio` e `git diff --check` passaram. Este gate
 fecha somente as fases registradas até G6; não declara concluídas a arquitetura,
 as métricas ou a validação real final descritas na auditoria.
+
+## A4v: tópico pesquisado e aliases têm autoridade/proveniência explícitas
+
+A geração real de Mohács localizou `Batalha de Mohács` em `ResearchResult`,
+mas o planner de cenas escreveu `Batalha de Ponta de Gál` no seu contexto.
+`attach_video_context` preservava o tópico do planner e juntava aliases sem
+proveniência; `SearchPlanner` usava qualquer string como âncora. Assim a busca
+foi formada com o nome incorreto e o gate aceitou o Parlamento de Budapeste
+porque o título/tags continham Danúbio/Hungria. A inspeção do asset confirmou o
+falso positivo visual.
+
+O enrichment agora aplica o alvo pesquisado como tópico canônico, mantendo o
+contexto sugerido pelo planner sem autoridade para substituí-lo. Aliases sem
+proveniência continuam registrados para auditoria, mas não entram nas queries.
+Uma ligação de idioma da Wikipedia vira alias verificado somente com a URL da
+fonte como evidência; target aliases não corroborados ficam explicitamente
+não verificados. O SearchPlanner usa somente aliases verificados. Regressões
+cobrem conflito de tópico, alias inventado, tópico canônico, ligação Wikipedia
+e o alias editorial validado. Focados: **27 passaram**; suíte integral:
+**889 passaram em 183,04 s**; compileall e diff check passaram.
+
+Validação real comparativa atualizada em
+`20261004-validacao-arquitetural-execucoes-reais.md`. No re-run Mohács, o
+Parlamento deixou de vencer, mas 3/3 cenas ficaram sintéticas: 36 candidatos
+foram rejeitados por ausência de evidência do tópico, busca levou 55,48 s e
+providers falharam (Met 410, AIC 500; Pexels sem chave). É degradação segura
+enquanto faltam candidatos eventuais adequados, não uma solução de cobertura.
+A amostra M87 usou fallback local de cenas após o planner LLM produzir divisão
+incompatível com a narração; a execução concluiu com mídia real, sem reuso.
+Visualmente, dois IDs NASA selecionados na mesma cena têm SHA-256 igual, uma
+limitação pendente da identidade por conteúdo.
