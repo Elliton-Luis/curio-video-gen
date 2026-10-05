@@ -55,11 +55,12 @@ def test_candidate_audit_projects_selected_reused_and_rejected_reasons():
         "asset": map_asset, "query": "Ottoman map", "reuse_reason":
             "fresh_search_and_synthetic_exhausted"}, 0),)
 
+    portrait_rejection = CandidateRejection(
+        evaluated[1].candidate, "technical gate", "technical_gate")
     rows = candidate_audit_rows(
-        evaluated, [{"title": "Portrait", "identity": "portrait-1",
-                     "reason": "technical gate"}],
-        picked, _visual_plan(representations=(
-            ("Ottoman map", "map", 2),)), min_score=50)
+        evaluated, picked, _visual_plan(representations=(
+            ("Ottoman map", "map", 2),)), min_score=50,
+        technical_rejections=(portrait_rejection,))
 
     assert rows[0]["decision"] == "selected"
     assert rows[0]["reason"] == "reused only after fresh searches and local visual exhausted"
@@ -111,7 +112,7 @@ def test_scene_visual_decision_builder_owns_audit_projection():
     decision = build_scene_visual_decision(
         selection=selection, selection_provenance=provenance,
         scene=scene, visual_plan=visual_plan, search_plan=search_plan,
-        collection=collection, evaluations=(evaluation,), rejected=[],
+        collection=collection, evaluations=(evaluation,),
         technical_rejections=(),
         acquisition_rejections=(),
         picked=(picked,), min_score=40, fallback_plan=None, strategy="image")
@@ -130,7 +131,7 @@ def test_candidate_audit_marks_below_threshold_without_semantic_reason():
         (_evaluation("Ottoman map", 12,
                      {"asset_id": "map", "title": "Map"}, {},
                      accepted=False, reason="score below threshold"),),
-        [], (), _visual_plan(), min_score=50)
+        (), _visual_plan(), min_score=50)
 
     assert rows == [{
         "title": "Map", "provider": "", "query": "Ottoman map", "query_level": 3,
@@ -144,7 +145,7 @@ def test_candidate_audit_marks_below_threshold_without_semantic_reason():
 
 def test_candidate_audit_rejects_untyped_evaluation_rows():
     with pytest.raises(TypeError, match="CandidateEvaluation"):
-        candidate_audit_rows([{"query": "Ottoman map"}], [], (),
+        candidate_audit_rows(({"query": "Ottoman map"},), (),
                              _visual_plan(), min_score=50)
 
 
@@ -158,7 +159,7 @@ def test_candidate_audit_projects_typed_technical_rejection():
         {"topic_relevance": 80, "scene_relevance": 12})
 
     rows = candidate_audit_rows(
-        (), [], (), _visual_plan(), min_score=50,
+        (), (), _visual_plan(), min_score=50,
         technical_rejections=(rejection,))
 
     assert rows == [{
@@ -180,7 +181,7 @@ def test_candidate_audit_projects_typed_acquisition_failure():
         reason="network unavailable")
 
     rows = candidate_audit_rows(
-        (evaluation,), [], (), _visual_plan(), min_score=50,
+        (evaluation,), (), _visual_plan(), min_score=50,
         acquisition_rejections=(outcome,))
 
     assert rows[0]["decision"] == "rejected"
@@ -203,7 +204,7 @@ def test_query_audit_projects_provider_results_and_search_provenance():
 
     rows = search_query_audit_rows(
         SearchPlan(4, (query,)), {query.query: state.snapshot()},
-        [{"query": query.query}],
+        {query.query: 1},
             _visual_plan(scene_id=4, representations=(
             ("Battle of Mohács", "event", 2),),
             aliases=("Ottoman Empire",)))
@@ -247,7 +248,7 @@ def test_query_audit_distinguishes_duplicate_only_and_budget_exhaustion():
         SearchPlan(1, (duplicate_query, budget_query)),
         {duplicate_query.query: duplicate.snapshot(),
          budget_query.query: budget.snapshot()},
-        [], _visual_plan(scene_id=1))
+        {}, _visual_plan(scene_id=1))
 
     assert (rows[0]["outcome"], rows[0]["status"]) == (
         "duplicates_only", "abandoned_duplicates")
@@ -261,7 +262,7 @@ def test_query_audit_reports_deferred_tier_as_not_consulted():
     deferred = QueryAuditAccumulator(unexecuted_reason="tier_not_reached")
 
     row = search_query_audit_rows(
-        SearchPlan(1, (query,)), {query.query: deferred.snapshot()}, [],
+        SearchPlan(1, (query,)), {query.query: deferred.snapshot()}, {},
         _visual_plan(scene_id=1))[0]
 
     assert row["status"] == "not_consulted"
@@ -288,12 +289,12 @@ def test_query_audit_requires_state_for_each_planned_query():
     plan = SearchPlan(1, (
         SearchQuery("French Revolution", "scene_representation"),))
     with pytest.raises(ValueError, match="must match SearchPlan"):
-        search_query_audit_rows(plan, {}, [], _visual_plan(scene_id=1))
+        search_query_audit_rows(plan, {}, {}, _visual_plan(scene_id=1))
 
 
 def test_query_audit_rejects_visual_plan_for_another_scene():
     query = SearchQuery("French Revolution", "scene_representation")
     with pytest.raises(ValueError, match="same scene"):
         search_query_audit_rows(
-            SearchPlan(1, (query,)), {query.query: SearchQueryAudit()}, [],
+            SearchPlan(1, (query,)), {query.query: SearchQueryAudit()}, {},
             _visual_plan(scene_id=2))

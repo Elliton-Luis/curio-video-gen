@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import Counter
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from math import isfinite
 from typing import TYPE_CHECKING
 
@@ -170,7 +171,7 @@ class SearchQueryAudit:
 
 def search_query_audit_rows(
         plan: SearchPlan, states: Mapping[str, SearchQueryAudit],
-        rejected: list[dict], visual_plan: VisualPlan) -> list[dict]:
+        rejected_counts: Mapping[str, int], visual_plan: VisualPlan) -> list[dict]:
     """Project query states in SearchPlan order, preserving their provenance."""
     if not isinstance(plan, SearchPlan):
         raise TypeError("query audit requires a SearchPlan")
@@ -181,20 +182,23 @@ def search_query_audit_rows(
     if not isinstance(states, Mapping) or any(
             not isinstance(state, SearchQueryAudit) for state in states.values()):
         raise TypeError("query audit projection requires immutable audit states")
+    if not isinstance(rejected_counts, Mapping) or any(
+            not isinstance(query, str) or isinstance(count, bool)
+            or not isinstance(count, int) or count < 0
+            for query, count in rejected_counts.items()):
+        raise TypeError("query rejection counts must be non-negative integers")
     planned_queries = {query.query for query in plan.queries}
     if set(states) != planned_queries:
         raise ValueError("query audit states must match SearchPlan queries")
     return [states[query.query].to_row(
         query,
-        rejected_candidates_total=sum(
-            item.get("query") == query.query for item in rejected),
+        rejected_candidates_total=rejected_counts.get(query.query, 0),
         visual_plan=visual_plan,
     ) for query in plan.queries]
 
 
 def candidate_audit_rows(
     evaluations: tuple[CandidateEvaluation, ...],
-    rejected: list[dict],
     picked: tuple[SelectedAsset, ...],
     visual_plan: VisualPlan,
     min_score: float,
@@ -212,9 +216,6 @@ def candidate_audit_rows(
     if not isinstance(picked, tuple) or any(
             not isinstance(item, SelectedAsset) for item in picked):
         raise TypeError("candidate audit requires selected asset values")
-    if not isinstance(rejected, list) or any(
-            not isinstance(item, dict) for item in rejected):
-        raise TypeError("candidate audit technical rejections must be rows")
     if not isinstance(technical_rejections, tuple) or any(
             not isinstance(item, CandidateRejection)
             for item in technical_rejections):
@@ -226,7 +227,6 @@ def candidate_audit_rows(
         raise TypeError("candidate audit requires rejected acquisition outcomes")
     acquisition_rows = [item.to_rejection_row()
                         for item in acquisition_rejections]
-    rejection_rows = [*rejected, *acquisition_rows]
     representation_levels = {rep.query: rep.level
                              for rep in visual_plan.representations}
     rows = []
@@ -234,7 +234,7 @@ def candidate_audit_rows(
         candidate = evaluation.candidate
         asset = candidate.asset
         detail = evaluation.evidence_dict()
-        lifecycle_rejection = next((item for item in rejection_rows
+        lifecycle_rejection = next((item for item in acquisition_rows
             if item.get("identity") == candidate.identity), None)
         technical_rejection = next((item for item in technical_rejections
             if item.candidate.identity == candidate.identity), None)
@@ -284,19 +284,17 @@ def candidate_audit_rows(
         })
 
     rows.extend({
-        "title": item.get("title", ""),
-        "provider": item.get("provider", ""),
-        "query": item.get("query", ""),
-        "topic_relevance": item.get("topic_relevance"),
-        "scene_relevance": item.get("scene_relevance"),
-        "creator": str((item.get("asset") or {}).get("author", ""))[:120],
-        "source_url": str((item.get("asset") or {}).get("source_url", ""))[:300],
-        "date_created": (item.get("asset") or {}).get("date_created", ""),
-        "media_type": (item.get("asset") or {}).get("media_type", "image"),
+        "title": item.asset.title,
+        "provider": item.asset.provider,
+        "query": item.candidate.evaluation.candidate.search_query.query,
+        "creator": item.asset.author[:120],
+        "source_url": item.asset.source_url[:300],
+        "date_created": item.asset.date_created,
+        "media_type": item.asset.media_type or "image",
         "decision": "rejected",
-        "reason": item.get("reason", ""),
-    } for item in rejection_rows if not any(
-        row["title"] == item.get("title") for row in rows))
+        "reason": item.reason,
+    } for item in acquisition_rejections if not any(
+        row["title"] == item.asset.title for row in rows))
     rows.extend({
         "title": item.candidate.asset.title,
         "provider": item.candidate.asset.provider,
@@ -314,13 +312,77 @@ def candidate_audit_rows(
     return rows[:40]
 
 
+def candidate_rejection_rows(
+        evaluations: tuple[CandidateEvaluation, ...],
+        technical_rejections: tuple[CandidateRejection, ...],
+        acquisition_rejections: tuple[object, ...]) -> list[dict]:
+    """Project typed rejection evidence into the persisted scene row shape."""
+    from .media_acquisition_contracts import CandidateAcquisitionOutcome
+
+    if not isinstance(evaluations, tuple) or any(
+            not isinstance(item, CandidateEvaluation) for item in evaluations):
+        raise TypeError("rejection projection requires CandidateEvaluation values")
+    if not isinstance(technical_rejections, tuple) or any(
+            not isinstance(item, CandidateRejection)
+            for item in technical_rejections):
+        raise TypeError("rejection projection requires CandidateRejection values")
+    if not isinstance(acquisition_rejections, tuple) or any(
+            not isinstance(item, CandidateAcquisitionOutcome)
+            or item.disposition == "selected"
+            for item in acquisition_rejections):
+        raise TypeError("rejection projection requires rejected acquisition outcomes")
+
+    rows = [{
+        "title": item.candidate.asset.title,
+        "query": item.candidate.search_query.query,
+        "reason": (item.rejection_reason
+                   or item.evidence.get("semantic_rejection")
+                   or "score threshold"),
+        "provider": item.candidate.asset.provider,
+        "identity": item.candidate.identity,
+        "score": item.score,
+        "score_detail": item.evidence_dict(),
+    } for item in evaluations if not item.accepted]
+    rows.extend(item.to_dict() for item in technical_rejections)
+    rows.extend(item.to_rejection_row() for item in acquisition_rejections)
+    return rows
+
+
+def candidate_rejection_counts(
+        evaluations: tuple[CandidateEvaluation, ...],
+        technical_rejections: tuple[CandidateRejection, ...],
+        acquisition_rejections: tuple[object, ...]) -> dict[str, int]:
+    """Count rejection facts per query without serializing candidate rows."""
+    from .media_acquisition_contracts import CandidateAcquisitionOutcome
+
+    if (not isinstance(evaluations, tuple)
+            or not isinstance(technical_rejections, tuple)
+            or not isinstance(acquisition_rejections, tuple)):
+        raise TypeError("rejection counts require immutable tuples")
+    counts: Counter[str] = Counter()
+    for item in evaluations:
+        if not isinstance(item, CandidateEvaluation):
+            raise TypeError("rejection counts require CandidateEvaluation values")
+        if not item.accepted:
+            counts[item.candidate.search_query.query] += 1
+    for item in technical_rejections:
+        if not isinstance(item, CandidateRejection):
+            raise TypeError("rejection counts require CandidateRejection values")
+        counts[item.candidate.search_query.query] += 1
+    for item in acquisition_rejections:
+        if (not isinstance(item, CandidateAcquisitionOutcome)
+                or item.disposition == "selected"):
+            raise TypeError("rejection counts require rejected acquisition outcomes")
+        counts[item.candidate.evaluation.candidate.search_query.query] += 1
+    return dict(counts)
+
+
 def build_scene_visual_decision(*, selection: "SelectionDecision",
                                 selection_provenance: "SelectionProvenance",
                                 scene: SemanticScene, visual_plan: VisualPlan,
                                 search_plan: SearchPlan,
                                 collection: "SceneCandidateCollection",
                                 evaluations: tuple[CandidateEvaluation, ...],
-                                rejected: list[dict],
                                 technical_rejections: tuple[CandidateRejection, ...],
                                 acquisition_rejections: tuple[object, ...],
                                 picked: tuple["SelectedAsset", ...],
@@ -359,8 +421,6 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
     if (not isinstance(evaluations, tuple)
             or any(not isinstance(item, CandidateEvaluation)
                    for item in evaluations)
-            or not isinstance(rejected, list)
-            or any(not isinstance(item, dict) for item in rejected)
             or not isinstance(technical_rejections, tuple)
             or any(not isinstance(item, CandidateRejection)
                    for item in technical_rejections)
@@ -386,12 +446,10 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
         raise ValueError("visual audit fallback plan belongs to another scene")
 
     candidates = candidate_audit_rows(
-        evaluations, rejected, picked, visual_plan, min_score,
+        evaluations, picked, visual_plan, min_score,
         technical_rejections, acquisition_rejections)
-    query_rejections = [*rejected,
-                        *(item.to_dict() for item in technical_rejections),
-                        *(item.to_rejection_row()
-                          for item in acquisition_rejections)]
+    rejected_counts = candidate_rejection_counts(
+        evaluations, technical_rejections, acquisition_rejections)
     first = picked[0] if picked else None
     synthetic = bool(first and first.asset.provider == "synth")
     selected = next((item for item in candidates
@@ -420,7 +478,7 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
         representations_discarded=list(scene.representation_rejections),
         aliases=[alias.value for alias in visual_plan.aliases],
         queries=search_query_audit_rows(
-            search_plan, collection.query_audit, query_rejections, visual_plan),
+            search_plan, collection.query_audit, rejected_counts, visual_plan),
         providers_consulted=list(collection.providers_consulted),
         candidates=candidates,
         selected=selected,
