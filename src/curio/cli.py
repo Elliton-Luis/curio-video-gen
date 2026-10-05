@@ -471,15 +471,17 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     transitions = pipeline_render_stage.genre_transitions(
         semantic_scenes, project_genre, transition_mode)
     if visual_timeline:
-        pipeline_render_stage.build_silent_visual(
+        visual_usage = pipeline_render_stage.build_silent_visual(
                              semantic_scenes, timeline_spans,
                              visual_timeline, args.slug, paths,
                              cfg, paths.silent_mp4, transitions=transitions)
+        metrics.visual_record_render_usage(visual_usage)
     else:
-        pipeline_render_stage.build_silent(
+        visual_usage = pipeline_render_stage.build_silent(
                       semantic_scenes, timeline_spans, render_plan,
                       args.slug, paths, cfg,
                       paths.silent_mp4, transitions=transitions)
+        metrics.visual_record_render_usage(visual_usage)
 
     total = round(audio_duration + 0.8, 2)
     title = (old_meta.get("video_title") or

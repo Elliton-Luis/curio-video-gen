@@ -174,12 +174,13 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
             project_artifacts.write_json(paths.visual_json, visual_timeline)
             render_transition_plan = pipeline_render_stage.plan_transitions(
                 semantic_scenes, render_spans, project_genre, transition_mode)
-            pipeline_render_stage.build_silent_visual(
+            visual_usage = pipeline_render_stage.build_silent_visual(
                                  semantic_scenes, timeline_spans,
                                  visual_timeline, idea, paths,
                                  cfg, adj,
                                  transitions=render_transition_plan.boundary_durations,
                                  kinds=render_transition_plan.kinds)
+            metrics.visual_record_render_usage(visual_usage)
         else:
             last = timeline_spans[-1]
             render_spans = (*timeline_spans[:-1], TimelineSpan(
@@ -187,12 +188,13 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
                 last.start, last.end + diff))
             render_transition_plan = pipeline_render_stage.plan_transitions(
                 semantic_scenes, render_spans, project_genre, transition_mode)
-            pipeline_render_stage.build_silent(
+            visual_usage = pipeline_render_stage.build_silent(
                            semantic_scenes, render_spans, render_plan,
                            idea, paths,
                            cfg, adj,
                            transitions=render_transition_plan.boundary_durations,
                            kinds=render_transition_plan.kinds)
+            metrics.visual_record_render_usage(visual_usage)
         silent = adj
         warnings.append(f"última cena estendida +{diff:.1f}s p/ caber o áudio")
     else:

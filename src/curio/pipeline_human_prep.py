@@ -104,19 +104,21 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
     t0 = time.monotonic()
     emit(5, "Montando silencioso")
     if visual_timeline:
-        pipeline_render_stage.build_silent_visual(
+        visual_usage = pipeline_render_stage.build_silent_visual(
                              semantic_scenes, timeline_spans,
                              visual_timeline, idea, paths, cfg,
                              paths.silent_mp4,
                              transitions=transition_plan.boundary_durations,
                              kinds=transition_plan.kinds)
+        metrics.visual_record_render_usage(visual_usage)
     else:
-        pipeline_render_stage.build_silent(
+        visual_usage = pipeline_render_stage.build_silent(
                       semantic_scenes, timeline_spans, render_plan,
                       idea, paths, cfg,
                       paths.silent_mp4,
                       transitions=transition_plan.boundary_durations,
                       kinds=transition_plan.kinds)
+        metrics.visual_record_render_usage(visual_usage)
     stage_times = stage_times.with_stage(
         "silent", round(time.monotonic() - t0, 2))
     emit(5, "Montando silencioso", "OK")

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from .config import CurioConfig
+from .media.render_usage import VisualRenderSceneUsage, VisualRenderUsage
 from .media.selection_result import MediaStageResult
 from .stage_timing import validate_stage_elapsed
 from .stages import editorial as editorial_stage
@@ -38,7 +39,9 @@ class RenderAsset:
         kind = value.get("kind", "image") or "image"
         if not isinstance(local_path, str) or not isinstance(kind, str):
             raise TypeError("render asset path and kind must be strings")
-        identity = json.dumps(value, sort_keys=True, ensure_ascii=False)
+        from .stages.visual_beats import asset_key
+        identity = asset_key(value) or json.dumps(
+            value, sort_keys=True, ensure_ascii=False)
         return cls(local_path, kind, identity)
 
 
@@ -182,9 +185,10 @@ def _scene_segment(scene_id: int, asset: RenderAsset | None, idea: str,
     os.makedirs(os.path.dirname(segment), exist_ok=True)
     if asset and asset.local_path:
         local = asset.local_path
-        if asset.kind == "video":
-            return render_stage.render_video_segment(local, duration, segment, cfg)
         if os.path.isfile(local):
+            if asset.kind == "video":
+                return render_stage.render_video_segment(
+                    local, duration, segment, cfg)
             return render_stage.render_image_segment(local, duration, segment,
                                                      cfg, variant)
     return render_stage.render_fallback_segment(
@@ -192,31 +196,61 @@ def _scene_segment(scene_id: int, asset: RenderAsset | None, idea: str,
 
 
 def _visual_segment(trecho: dict, idea: str, duration: float,
-                    paths, cfg: CurioConfig, variant: int) -> str:
+                    paths, cfg: CurioConfig, variant: int
+                    ) -> tuple[str, VisualRenderSceneUsage]:
     """Build one from-script segment: collage for multiple selected images."""
-    images = [dict(img) for img in trecho.get("images", [])
+    from .stages.visual_beats import asset_key
+    requested_images = [dict(img) for img in trecho.get("images", [])
+                        if isinstance(img, dict)]
+    requested_backgrounds = [dict(img) for img in trecho.get("backgrounds", [])
+                             if isinstance(img, dict)]
+    requested_ids = {asset_key(asset) for asset in
+                     (*requested_images, *requested_backgrounds)} - {""}
+    images = [img for img in requested_images
               if img.get("local_path") and os.path.isfile(img["local_path"])]
-    backgrounds = [dict(img) for img in trecho.get("backgrounds", [])
+    backgrounds = [img for img in requested_backgrounds
                    if img.get("local_path") and os.path.isfile(img["local_path"])]
-    render_assets = [RenderAsset.from_media_dict(image)
-                     for image in (*images, *backgrounds)]
+    available_ids = {asset_key(asset) for asset in (*images, *backgrounds)} - {""}
+    if len(backgrounds) >= 2 or len(images) >= 2:
+        valid = images or ([backgrounds[0]] if backgrounds else [])
+        if len(valid) == 1 and len(backgrounds) <= 1:
+            passed = [valid[0]]
+        elif valid:
+            passed = [*(backgrounds or [valid[0]]), *valid[1:]]
+        else:
+            passed = []
+    else:
+        asset = backgrounds[0] if backgrounds else images[0] if images else None
+        passed = [asset] if asset else []
+    passed_ids = {asset_key(asset) for asset in passed} - {""}
+    render_assets = [RenderAsset.from_media_dict(image) for image in passed]
     identity = _segment_identity(render_assets, cfg, variant)
     segment = os.path.join(paths.root, "render", "segments",
                            f"scene{trecho['chapter_id']}_visual_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(segment):
-        return segment
-    os.makedirs(os.path.dirname(segment), exist_ok=True)
-    if len(backgrounds) >= 2 or len(images) >= 2:
-        return render_stage.render_collage_segment(
-            images, duration, segment, cfg, variant, backgrounds=backgrounds)
-    asset = backgrounds[0] if backgrounds else images[0] if images else None
-    return _scene_segment(
-        int(trecho["chapter_id"]),
-        RenderAsset.from_media_dict(
-            {"local_path": asset["local_path"],
-             "kind": asset.get("kind", "image")})
-        if asset else None,
-        idea, duration, paths, cfg, variant)
+        rendered_segment = segment
+    else:
+        os.makedirs(os.path.dirname(segment), exist_ok=True)
+        if len(backgrounds) >= 2 or len(images) >= 2:
+            rendered_segment = render_stage.render_collage_segment(
+                images, duration, segment, cfg, variant, backgrounds=backgrounds)
+        else:
+            asset = passed[0] if passed else None
+            rendered_segment = _scene_segment(
+                int(trecho["chapter_id"]),
+                RenderAsset.from_media_dict(
+                    {"local_path": asset["local_path"],
+                     "kind": asset.get("kind", "image")})
+                if asset else None,
+                idea, duration, paths, cfg, variant)
+    usage = VisualRenderSceneUsage(
+        scene_id=int(trecho["chapter_id"]),
+        requested_asset_ids=tuple(sorted(requested_ids)),
+        passed_asset_ids=tuple(sorted(passed_ids)),
+        unavailable_asset_ids=tuple(sorted(requested_ids - available_ids)),
+        omitted_asset_ids=tuple(sorted(requested_ids - passed_ids)),
+        fallback_used=not passed_ids)
+    return rendered_segment, usage
 
 
 def build_silent(semantic_scenes: tuple[SemanticScene, ...],
@@ -224,19 +258,33 @@ def build_silent(semantic_scenes: tuple[SemanticScene, ...],
                  render_plan: SceneRenderPlan, idea: str,
                  paths, cfg: CurioConfig, out_path: str,
                  transitions: list[float] | None = None,
-                 kinds: list[str] | None = None) -> str:
+                 kinds: list[str] | None = None) -> VisualRenderUsage:
     _validate_render_inputs(semantic_scenes, timeline_spans)
     if not isinstance(render_plan, SceneRenderPlan):
         raise TypeError("silent render requires a SceneRenderPlan")
     assets = render_plan.for_scenes(semantic_scenes)
-    segments = [_scene_segment(scene.id, assets.get(scene.id), idea,
-                               round(max(0.5, span.end - span.start), 1),
-                               paths, cfg, variant=index)
-                for index, (scene, span) in enumerate(
-                    zip(semantic_scenes, timeline_spans))]
-    return (render_stage.concat_with_transitions(segments, out_path, cfg,
-                                                transitions, kinds)
-            if transitions else render_stage.concat_copy(segments, out_path, cfg))
+    segments = []
+    scene_usage = []
+    for index, (scene, span) in enumerate(zip(semantic_scenes, timeline_spans)):
+        asset = assets.get(scene.id)
+        requested_ids = (asset.identity,) if asset else ()
+        available = bool(asset and asset.local_path
+                         and os.path.isfile(asset.local_path))
+        passed_ids = requested_ids if available else ()
+        duration = round(max(0.5, span.end - span.start), 1)
+        segments.append(_scene_segment(scene.id, asset, idea, duration,
+                                       paths, cfg, variant=index))
+        scene_usage.append(VisualRenderSceneUsage(
+            scene_id=scene.id,
+            requested_asset_ids=requested_ids,
+            passed_asset_ids=passed_ids,
+            unavailable_asset_ids=requested_ids if not available else (),
+            omitted_asset_ids=requested_ids if not available else (),
+            fallback_used=not available))
+    output = (render_stage.concat_with_transitions(
+        segments, out_path, cfg, transitions, kinds)
+        if transitions else render_stage.concat_copy(segments, out_path, cfg))
+    return VisualRenderUsage(output, tuple(scene_usage))
 
 
 def build_silent_visual(semantic_scenes: tuple[SemanticScene, ...],
@@ -244,10 +292,11 @@ def build_silent_visual(semantic_scenes: tuple[SemanticScene, ...],
                         visual_timeline: list[dict],
                         idea: str, paths, cfg: CurioConfig, out_path: str,
                         transitions: list[float] | None = None,
-                        kinds: list[str] | None = None) -> str:
+                        kinds: list[str] | None = None) -> VisualRenderUsage:
     _validate_render_inputs(semantic_scenes, timeline_spans)
     scenes = {scene["chapter_id"]: scene for scene in visual_timeline}
     segments = []
+    scene_usage = []
     for index, (semantic_scene, span) in enumerate(
             zip(semantic_scenes, timeline_spans)):
         scene = scenes.get(semantic_scene.id, {})
@@ -258,10 +307,14 @@ def build_silent_visual(semantic_scenes: tuple[SemanticScene, ...],
                   if scene else
                   {"chapter_id": semantic_scene.id, "narration": semantic_scene.narration,
                    "images": []})
-        segments.append(_visual_segment(trecho, idea, duration, paths, cfg, index))
-    return (render_stage.concat_with_transitions(segments, out_path, cfg,
-                                                transitions, kinds)
-            if transitions else render_stage.concat_copy(segments, out_path, cfg))
+        segment, usage = _visual_segment(
+            trecho, idea, duration, paths, cfg, index)
+        segments.append(segment)
+        scene_usage.append(usage)
+    output = (render_stage.concat_with_transitions(
+        segments, out_path, cfg, transitions, kinds)
+        if transitions else render_stage.concat_copy(segments, out_path, cfg))
+    return VisualRenderUsage(output, tuple(scene_usage))
 
 
 def genre_transitions(semantic_scenes: tuple[SemanticScene, ...], genre: str,
@@ -388,6 +441,7 @@ class RenderStageResult:
     warnings: tuple[str, ...]
     credits: tuple[str, ...]
     elapsed: float
+    visual_usage: VisualRenderUsage | None = None
 
     def __post_init__(self) -> None:
         if (not isinstance(self.render_info, dict)
@@ -395,6 +449,9 @@ class RenderStageResult:
             raise TypeError("render stage requires render and audio metadata objects")
         if not isinstance(self.transition_plan, RenderTransitionPlan):
             raise TypeError("render stage requires a RenderTransitionPlan")
+        if self.visual_usage is not None and not isinstance(
+                self.visual_usage, VisualRenderUsage):
+            raise TypeError("render visual usage must be typed or null")
         if not isinstance(self.transition_metadata, dict):
             raise TypeError("render transition metadata must be an object")
         if any(not isinstance(item, str) for item in (*self.warnings, *self.credits)):
@@ -471,17 +528,19 @@ def run_render_stage(request: RenderStageInput) -> RenderStageResult:
         render_info = {"backend": "cache", "encoder": "cache",
                        "duration": duration, "path": paths.final_mp4}
         sfx_path = (previous_meta.get("artifacts") or {}).get("sfx")
+        visual_usage = None
     else:
         silent = paths.silent_mp4
+        visual_usage = None
         if force or transition_dirty or not os.path.isfile(silent):
             if visual_timeline:
-                build_silent_visual(
+                visual_usage = build_silent_visual(
                     semantic_scenes, timeline_spans, visual_timeline, idea,
                     paths, cfg, silent,
                     transitions=transition_plan.boundary_durations,
                     kinds=transition_plan.kinds)
             else:
-                build_silent(
+                visual_usage = build_silent(
                     semantic_scenes, timeline_spans, media_plan, idea,
                     paths, cfg, silent,
                     transitions=transition_plan.boundary_durations,
@@ -511,4 +570,5 @@ def run_render_stage(request: RenderStageInput) -> RenderStageResult:
             audio_composition.final_audio_fade(genre, transition_mode)),
         visual_plan_signature=visual_signature,
         warnings=tuple(warnings), credits=tuple(credits),
-        elapsed=round(time.monotonic() - started, 2))
+        elapsed=round(time.monotonic() - started, 2),
+        visual_usage=visual_usage)

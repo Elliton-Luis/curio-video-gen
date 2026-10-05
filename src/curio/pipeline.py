@@ -336,6 +336,8 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
                        "insert_gain_db": cfg.visual_insert_gain_db,
                        "visual_sfx": cfg.visual_sfx})
     render_result = pipeline_render_stage.run_render_stage(render_request)
+    if render_result.visual_usage is not None:
+        metrics.visual_record_render_usage(render_result.visual_usage)
     render_info = render_result.render_info
     video_duration = render_result.duration
     warnings.extend(render_result.warnings)

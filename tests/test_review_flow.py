@@ -363,6 +363,10 @@ def test_rerender_uses_timed_chapters_and_records_asset_usage(tmp_path, monkeypa
     captured = {}
     def build(scenes, spans, *args, **kwargs):
         captured["duration"] = spans[0].end - spans[0].start
+        from curio.media.render_usage import (
+            VisualRenderSceneUsage, VisualRenderUsage)
+        return VisualRenderUsage("mock-silent.mp4", (VisualRenderSceneUsage(
+            spans[0].scene_id, (), (), (), (), True),))
     monkeypatch.setattr(cli.pipeline_render_stage, "build_silent_visual", build)
     monkeypatch.setattr(cli.ff, "probe_duration", lambda *args: 4.0)
     monkeypatch.setattr("curio.stages.render.burn_final", lambda *a, **kw: {

@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timedelta
 
 from .media.selection_metrics import MediaMetricsInput, MediaSelectionStats
+from .media.render_usage import VisualRenderUsage
 from .stage_timing import validate_stage_elapsed
 
 
@@ -111,6 +112,7 @@ class RunMetrics:
         self.visual_asset_uses = 0
         self.visual_asset_ids: set[str] = set()
         self.visual_timeline_observed = False
+        self.visual_render_usage: VisualRenderUsage | None = None
         # Candidates admitted to a per-scene download shortlist. This is not
         # the final set of real assets assigned to scenes.
         self.media_shortlist_ids: set[str] = set()
@@ -489,6 +491,11 @@ class RunMetrics:
             "queries_abandoned_duplicates": self.media_duplicate_queries,
         }
 
+    def visual_record_render_usage(self, usage: VisualRenderUsage) -> None:
+        if not isinstance(usage, VisualRenderUsage):
+            raise TypeError("visual render metrics require VisualRenderUsage")
+        self.visual_render_usage = usage
+
     # -- saída --
     def to_dict(self, meta: dict, stage_times: dict, metrics_dir: str) -> dict:
         total = round(time.monotonic() - self.started_monotonic, 2)
@@ -594,6 +601,9 @@ class RunMetrics:
                     "persisted" if self.visual_timeline_observed
                     else "estimated_from_selection"),
                 "selection_render_reconciliation": reconciliation,
+                "visual_render_usage": (
+                    self.visual_render_usage.to_dict()
+                    if self.visual_render_usage is not None else None),
                 "visual_assets_unique": len(self.visual_asset_ids),  # legacy alias
                 "visual_asset_beat_counts": dict(self.visual_asset_beat_counts),
                 "visual_asset_scene_counts": dict(self.visual_asset_scene_counts),
