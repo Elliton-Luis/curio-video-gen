@@ -78,6 +78,8 @@ class RunMetrics:
         self.media_assets_rejected = 0
         self.media_assets_reused = 0
         self.media_timeouts = 0
+        self.media_timeouts_by_provider: dict[str, int] = {}
+        self.media_disabled_providers: dict[str, dict[str, int]] = {}
         self.media_retries = 0
         self.media_synthetic_assets = 0
         self.media_rights_verify = 0
@@ -242,8 +244,19 @@ class RunMetrics:
             }
         return out
 
-    def media_record_timeout(self) -> None:
-        self.media_timeouts += 1
+    def media_record_timeout(self, provider: str = "unknown") -> None:
+        with self._lock:
+            self.media_timeouts += 1
+            key = provider or "unknown"
+            self.media_timeouts_by_provider[key] = (
+                self.media_timeouts_by_provider.get(key, 0) + 1)
+
+    def media_record_provider_disabled(self, provider: str, reason: str) -> None:
+        if reason not in {"rate_limited", "access_denied", "unknown"}:
+            reason = "unknown"
+        with self._lock:
+            reasons = self.media_disabled_providers.setdefault(provider or "unknown", {})
+            reasons[reason] = reasons.get(reason, 0) + 1
 
     def media_record_asset_rejected(self) -> None:
         self.media_assets_rejected += 1
@@ -628,6 +641,10 @@ class RunMetrics:
                     "assets_rejected": self.media_assets_rejected,
                     "assets_reused": self.media_assets_reused,
                     "timeouts": self.media_timeouts,
+                    "timeouts_by_provider": dict(self.media_timeouts_by_provider),
+                    "disabled_providers": {
+                        provider: dict(reasons) for provider, reasons in
+                        self.media_disabled_providers.items()},
                     "retries": self.media_retries,
                     "retries_by_provider": dict(self.media_retries_by_provider),
                     "retries_by_operation": dict(self.media_retries_by_operation),

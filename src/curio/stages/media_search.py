@@ -64,7 +64,7 @@ def search_with_timeout(provider: MediaProvider, query: str, timeout: float,
     except concurrent.futures.TimeoutError as exc:
         future.cancel()
         if metrics:
-            metrics.media_record_timeout()
+            metrics.media_record_timeout(provider.name)
         raise MediaError(f"{provider.name}: busca timeout ({timeout}s)") from exc
 
 
@@ -105,7 +105,7 @@ def search_providers(query: str, providers: list[MediaProvider], *,
             except concurrent.futures.TimeoutError:
                 future.cancel()
                 if metrics:
-                    metrics.media_record_timeout()
+                    metrics.media_record_timeout(provider.name)
                 yield ProviderSearchResult(query, provider.name, error="timeout")
                 continue
             except MediaError as exc:
@@ -114,7 +114,11 @@ def search_providers(query: str, providers: list[MediaProvider], *,
                         or "Too Many Requests" in error):
                     provider._disabled = True
                     if metrics:
-                        metrics.media_record_timeout()
+                        reason = ("rate_limited" if "429" in error
+                                  or "Too Many Requests" in error
+                                  else "access_denied")
+                        metrics.media_record_provider_disabled(
+                            provider.name, reason)
                     from ..runlog import event
                     logged = event("fallback",
                                    f"{provider.name}: provider desativado; {error}",

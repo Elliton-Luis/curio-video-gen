@@ -1,6 +1,7 @@
 import pytest
 
 from curio.media.providers import MediaAsset, MediaError
+from curio.metrics import RunMetrics
 from curio.stages.media_search import ProviderSearchResult, search_providers
 
 
@@ -58,6 +59,52 @@ def test_provider_error_is_returned_as_transport_result():
     assert result.provider == "met"
     assert result.error == "met: unavailable"
     assert result.assets == ()
+
+
+@pytest.mark.parametrize(("error", "reason"), [
+    ("429 Too Many Requests", "rate_limited"),
+    ("403 Forbidden", "access_denied"),
+])
+def test_provider_disablement_is_not_counted_as_timeout(monkeypatch, error, reason):
+    class Provider:
+        name = "met"
+        _disabled = False
+
+        def search(self, *_args):
+            raise MediaError(error)
+
+    monkeypatch.setattr("curio.runlog.event", lambda *args, **kwargs: True)
+    provider = Provider()
+    metrics = RunMetrics("test", "topic", "narration")
+
+    result, = search_providers("a query", [provider], metrics=metrics, timeout=1)
+    report = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+
+    assert result.error == error
+    assert provider._disabled is True
+    assert report["timeouts"] == 0
+    assert report["timeouts_by_provider"] == {}
+    assert report["disabled_providers"] == {"met": {reason: 1}}
+
+
+def test_actual_search_timeout_is_counted_for_its_provider():
+    import time
+
+    class Provider:
+        name = "wikimedia"
+
+        def search(self, *_args):
+            time.sleep(0.04)
+            return []
+
+    metrics = RunMetrics("test", "topic", "narration")
+    result, = search_providers("a query", [Provider()], metrics=metrics,
+                              timeout=0.001)
+    report = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+
+    assert result.error == "timeout"
+    assert report["timeouts"] == 1
+    assert report["timeouts_by_provider"] == {"wikimedia": 1}
 
 
 def test_provider_response_rejects_assets_and_error_together():
