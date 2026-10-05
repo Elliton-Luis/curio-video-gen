@@ -101,7 +101,7 @@ O payload de `VisualDecision` agora é montado em `stages/visual_audit.py`, a
 partir de `SemanticScene`, planos, coleção de candidatos e decisão de seleção
 validados; `visual.py` não recompõe esse dicionário. A mudança G88 preserva o
 schema persistido e passou com 994 testes. A auditoria arquitetural e os
-relatórios G88–G92/F8–F11 registram as responsabilidades e pendências restantes.
+relatórios G88–G92/F8–F12 registram as responsabilidades e pendências restantes.
 As avaliações semânticas também permanecem como `CandidateEvaluation` imutável
 até a auditoria; o thaw da evidência ocorre somente na projeção JSON. G89 passou
 com 995 testes. G90–G92 mantêm rejeições tipadas até a projeção da auditoria.
@@ -220,7 +220,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G92/F11 está em
+O relatório completo do estado registrado até G92/F12 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -354,6 +354,10 @@ individual de cada tentativa HTTP de busca continua desconhecida, então
 operação explícita aparecem sob `unknown`. `timeouts` conta espera realmente
 expirada e `timeouts_by_provider` localiza a origem; rate limits e erros de
 acesso que desativam um provider ficam em `disabled_providers` com motivo.
+`download_cache_hits`/`download_cache_misses` contam bytes de mídia reutilizados
+ou obtidos da rede; `shared_search_cache_hits` conta respostas de provider
+reutilizadas durante a geração. `cache_hits` e `cache_misses` continuam como
+aliases dos contadores de download.
 O enriquecimento pós-planner de contexto está centralizado em
 `scene_enrichment.py`: consome cenas semânticas e devolve uma transformação
 validada sem mutar a saída do planner. Contexto global, âncoras, aliases

@@ -1,12 +1,12 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G92 e métricas até F11.
-**Estado:** trabalho incompleto. G80–G92 e F4–F11 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G92 e métricas até F12.
+**Estado:** trabalho incompleto. G80–G92 e F4–F12 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F11 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`) e G86–G92
+> **Atualização:** F6–F12 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`) e G86–G92
 > (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
@@ -133,6 +133,7 @@ hashes e diffs.
 | `ed34825` | Projeta os totais de seleção em `consumption.media` a partir da mesma estatística tipada de `visual_report` (F9). |
 | `1054c8a` | Classifica retries de mídia por operação e provider, mantendo o total agregado (F10). |
 | `4ee2506` | Separa expiração real de busca de bloqueio de provider por rate limit/acesso negado (F11). |
+| `9d86d4e` | Distingue cache de bytes e cache de resultados de busca no schema de métricas (F12). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -297,7 +298,7 @@ F6 fecha o acumulador mutável comum. F9 unifica a projeção dos totais de sele
 entre `consumption.media` e `visual_report`; os três nomes históricos permanecem
 aliases explícitos. F10 separa retries de busca e download sem alterar os
 campos agregados; F11 evita contar bloqueio de provider como timeout. A fase de
-métricas continua parcial: definições canônicas globais para requests/cache/timing,
+métricas continua parcial: definições canônicas globais para requests/timing,
 backfill de contadores históricos,
 timers adicionais, profile por suboperação e conciliação seleção-render seguem
 pendentes. Ver [relatório F9](20261005-selection-metrics-single-projection.md).
@@ -338,12 +339,12 @@ query, provider, ranking ou seleção de imagem.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F11 parciais. | Requests/cache, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F12 parciais. | Requests, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G92 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallback e métricas; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G92/F11. Não representam
+Os status são os registrados na auditoria e neste relatório até G92/F12. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -601,6 +602,14 @@ Somente espera realmente expirada incrementa `timeouts`, com breakdown em
 **1002 em 190,17 s**; compileall e diff check passaram. Ver
 [relatório F11](20261005-media-timeout-error-separation.md).
 
+## F12 — unidades explícitas de cache (`9d86d4e`)
+
+`download_cache_hits` e `download_cache_misses` medem o cache de bytes; `shared_search_cache_hits`
+mede resultados de provider reutilizados durante a geração. `cache_hits` e
+`cache_misses` mantêm os valores do primeiro par como aliases compatíveis.
+21 focados e **1003 completos em 178,60 s**, compileall e diff check passaram.
+Ver [relatório F12](20261005-media-cache-metric-units.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -655,4 +664,5 @@ passaram. Não houve geração real. Consulte
 - [`F9 — projeção única das métricas de seleção`](20261005-selection-metrics-single-projection.md)
 - [`F10 — retries por operação`](20261005-media-retry-operation-metrics.md)
 - [`F11 — timeout e falhas de provider`](20261005-media-timeout-error-separation.md)
+- [`F12 — unidades explícitas de cache`](20261005-media-cache-metric-units.md)
 - [`Inventário de relatórios do projeto`](../README.md)
