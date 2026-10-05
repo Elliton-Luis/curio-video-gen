@@ -19,6 +19,7 @@ from .stages.subs import strip_list_markers
 
 SCRIPT_POLICY_REVISION = 1
 TITLE_POLICY_REVISION = 1
+TEMPLATE_POLICY_REVISION = 1
 
 
 @dataclass(frozen=True)
@@ -235,7 +236,10 @@ def _script_input_hash(idea, cfg, research_prompt, research_target,
     llm_routes = {
         "configured": {
             "nvidia": (getattr(cfg, "nvidia_model", ""),
-                       getattr(cfg, "nvidia_base_url", "")),
+                       getattr(cfg, "nvidia_base_url", ""),
+                       getattr(cfg, "nvidia_timeout", None),
+                       getattr(cfg, "nvidia_timeout_max", None),
+                       getattr(cfg, "nvidia_connect_timeout", None)),
             "openrouter": (getattr(cfg, "openrouter_model", ""),
                            getattr(cfg, "openrouter_base_url", "")),
             "fallbacks": (cfg.llm_overrides() if callable(
@@ -250,8 +254,10 @@ def _script_input_hash(idea, cfg, research_prompt, research_target,
     }
     return input_identity({
         "revision": SCRIPT_POLICY_REVISION,
+        "template_policy_revision": TEMPLATE_POLICY_REVISION,
         "chars_per_second": script_stage.CHARS_PER_SECOND,
         "automatic_max_chars": script_stage.AUTO_MAX_CHARS,
+        "template_closers": [script_stage.CLOSER_PT, script_stage.CLOSER_EN],
         "curated_topics": script_stage.TOPIC_KEYS,
         "curated_texts": script_stage.CURATED,
         "idea": idea,
@@ -279,8 +285,11 @@ def _title_input_hash(script_text, idea, cfg) -> str:
         "language": getattr(cfg, "language", ""),
         "routes": {
             "configured": {
-                "nvidia": (getattr(cfg, "nvidia_model", ""),
-                           getattr(cfg, "nvidia_base_url", "")),
+            "nvidia": (getattr(cfg, "nvidia_model", ""),
+                       getattr(cfg, "nvidia_base_url", ""),
+                       getattr(cfg, "nvidia_timeout", None),
+                       getattr(cfg, "nvidia_timeout_max", None),
+                       getattr(cfg, "nvidia_connect_timeout", None)),
                 "openrouter": (getattr(cfg, "openrouter_model", ""),
                                getattr(cfg, "openrouter_base_url", "")),
                 "fallbacks": (cfg.llm_overrides() if callable(

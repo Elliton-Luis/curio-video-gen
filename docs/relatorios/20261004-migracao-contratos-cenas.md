@@ -809,7 +809,8 @@ roteiro.
 `script/artifacts.json` agora usa schema 2 e inclui hashes dos inputs de roteiro
 e título. A identidade de roteiro cobre ideia, prompt de pesquisa, alvo/fontes,
 diretiva, contexto da entidade, idioma, duração, políticas/prompts e rotas/modelos
-disponíveis. A de título cobre roteiro atual, ideia, idioma, rota e prompt. O
+disponíveis, limites de timeout e versão da política/template local. A de título
+cobre roteiro atual, ideia, idioma, rota, limites de timeout e prompt. O
 manifesto contém apenas hashes dos valores e não inclui credenciais. Cache
 gerado só é aceito com assinatura correspondente; título exige também vínculo
 com o hash do roteiro atual. Texto explicitamente fornecido/editado continua

@@ -333,6 +333,8 @@ def test_script_input_identity_tracks_each_semantic_and_generation_input():
     changed_duration.duration_target += 1
     changed_model = deepcopy(cfg)
     changed_model.nvidia_model = "different/model"
+    changed_timeout = deepcopy(cfg)
+    changed_timeout.nvidia_timeout += 1
     variants = [
         ("different idea", cfg, "research", TargetEntity(name="Subject"),
          [ResearchSource("Source", "https://example.test/source", "evidence")],
@@ -356,6 +358,9 @@ def test_script_input_identity_tracks_each_semantic_and_generation_input():
          [ResearchSource("Source", "https://example.test/source", "evidence")],
          "genre directive"),
         ("idea", changed_model, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+        ("idea", changed_timeout, "research", TargetEntity(name="Subject"),
          [ResearchSource("Source", "https://example.test/source", "evidence")],
          "genre directive"),
     ]
