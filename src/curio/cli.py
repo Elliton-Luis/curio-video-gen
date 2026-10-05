@@ -18,12 +18,8 @@ from . import queue as queue_mod
 from . import verify as verify_mod
 from .config import CurioConfig, parse_duration
 from .metrics import RunMetrics, backfill_from_metadata
-from .pipeline import (_apply_audio_request, _audio_events,
-                         _final_audio_fade,
-                         _mark_audio_used, _narration_with_sfx, _read, _read_json,
-                         _transition_mode,
-                        _sfx_track_for,
-                        _write_json, finalize_project,
+from .audio import composition as audio_composition
+from .pipeline import (_read, _read_json, _write_json, finalize_project,
                          run_pipeline,
                          run_script_pipeline)
 from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
@@ -459,7 +455,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     previous_audio = old_meta.get("audio") or {}
     metrics = RunMetrics(args.slug, old_meta.get("input", args.slug), "rerender")
     if previous_audio:
-        _apply_audio_request(cfg, previous_audio)
+        audio_composition.apply_audio_request(cfg, previous_audio)
     else:
         cfg.music_mode = "none"
         cfg.music_transitions = "none"
@@ -482,7 +478,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
             semantic_scenes, timeline_spans, media, cfg)
         _write_json(paths.visual_json, visual_timeline)
 
-    transition_mode = _transition_mode(cfg)
+    transition_mode = audio_composition.transition_mode(cfg)
     transitions = pipeline_render_stage.genre_transitions(
         semantic_scenes, project_genre, transition_mode)
     if visual_timeline:
@@ -500,16 +496,16 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     title = (old_meta.get("video_title") or
              (_read(paths.title_txt).strip() if os.path.isfile(paths.title_txt) else ""))
     script_text = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
-    events = _audio_events(visual_timeline or [])
+    events = audio_composition.sfx_events(visual_timeline or [])
     audio_plan = resolve_audio(
         cfg, project_genre, audio_seed(args.slug, title, script_text),
         title, script_text, events, previous_audio)
     wav = paths.narration_wav
     sfx_path = None
     if visual_timeline and cfg.visual_sfx:
-        sfx_path = _sfx_track_for(visual_timeline, total, paths)
+        sfx_path = audio_composition.sfx_track(visual_timeline, total, paths)
         if sfx_path:
-            wav = _narration_with_sfx(paths.narration_wav, sfx_path, total, paths)
+            wav = audio_composition.narration_with_sfx(paths.narration_wav, sfx_path, total, paths)
     music_asset = audio_plan.get("music_asset")
     info = render_stage.burn_final(
         paths.silent_mp4, paths.subs_ass, wav, paths.final_mp4, cfg, total,
@@ -517,8 +513,8 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         title_fontfile=subs_stage.ensure_display_font(cfg.cache_dir)[2],
         music_path=str(music_asset.get("path")) if music_asset else None,
         music_gain_db=cfg.music_gain_db, music_ducking=cfg.music_ducking,
-        final_fade=_final_audio_fade(project_genre, transition_mode))
-    _mark_audio_used(cfg, audio_plan)
+        final_fade=audio_composition.final_audio_fade(project_genre, transition_mode))
+    audio_composition.mark_audio_used(cfg, audio_plan)
     from .stages.visual_beats import BEAT_SECONDS
     metrics.visual_plan(timeline_spans,
                         media, BEAT_SECONDS, visual_timeline,
@@ -540,7 +536,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     old_meta["visual_transitions"] = {
         "genre": project_genre, "mode": transition_mode,
         "boundary_durations": transitions,
-        "final_fade": _final_audio_fade(project_genre, transition_mode),
+        "final_fade": audio_composition.final_audio_fade(project_genre, transition_mode),
     }
     old_meta.setdefault("artifacts", {})["video"] = paths.final_mp4
     if sfx_path:

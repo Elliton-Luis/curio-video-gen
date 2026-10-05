@@ -1,6 +1,7 @@
 import json
 
 from curio import pipeline
+from curio.audio import composition as audio_composition
 from curio.config import CurioConfig
 
 
@@ -11,7 +12,7 @@ def test_generation_audio_request_does_not_mutate_interface_config(tmp_path,
 
     def fake_run(_idea, run_config, **_kwargs):
         seen["config"] = run_config
-        pipeline._apply_audio_request(run_config, {
+        audio_composition.apply_audio_request(run_config, {
             "music": {"mode": "none", "gain_db": -12, "ducking": False},
             "transitions": {"mode": "none"},
         })

@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from . import ffmpeg as ff
 from .audio import selection as audio_selection
 from .audio.library import audio_seed
+from .audio import composition as audio_composition
 from .config import CurioConfig
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
@@ -123,74 +124,6 @@ def _typography_report(cfg: CurioConfig, genre_key: str = "") -> dict:
         return {}
     return typo_stage.for_genre(
         genre_key, (cfg.typography or {}).get(genre_key)).report()
-
-
-def _sfx_track_for(visual_timeline: list[dict], total: float,
-                   paths: project_paths.VideoPaths) -> str | None:
-    """Gera audio/sfx.wav a partir dos eventos da timeline (ou None)."""
-    events = [img["sfx"] for t in visual_timeline for img in t.get("images", [])
-              if isinstance(img.get("sfx"), dict)]
-    if not events:
-        return None
-    out = os.path.join(paths.root, "audio", "sfx.wav")
-    return render_stage.build_sfx_track(events, total, out)
-
-
-def _narration_with_sfx(wav_path: str, sfx_path: str | None, total: float,
-                        paths: project_paths.VideoPaths) -> str:
-    """Mistura o SFX na narração (sem tocar seu volume) ou devolve o original."""
-    if not sfx_path:
-        return wav_path
-    out = os.path.join(paths.root, "audio", "mixed.wav")
-    return render_stage.mix_sfx(wav_path, sfx_path, out, total)
-
-
-def _audio_events(visual_timeline: list[dict]) -> list[dict]:
-    return [img["sfx"] for t in visual_timeline for img in t.get("images", [])
-            if isinstance(img.get("sfx"), dict)]
-
-
-def _final_audio_fade(genre: str, transitions: str = "auto") -> float:
-    if transitions == "none" or not genre:
-        return 0.0
-    return {"people": 0.8, "history": 0.65, "etymology": 0.35,
-            "mythology": 0.75, "mystery": 0.7, "science": 0.3}.get(genre, 0.0)
-
-
-def _transition_mode(cfg: CurioConfig) -> str:
-    """Audio ausente em projetos antigos preserva cuts e render legado."""
-    active = bool(getattr(cfg, "audio_enabled", False)) or cfg.music_mode != "auto"
-    return cfg.music_transitions if active else "none"
-
-
-def _mark_audio_used(cfg: CurioConfig, plan: dict) -> None:
-    try:
-        audio_selection.mark_used(
-            cfg.audio_library_dir, plan.get("music_asset"),
-            plan.get("sfx_assets") or [])
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"AVISO: não foi possível atualizar uso da biblioteca de áudio: {exc}",
-              file=sys.stderr)
-
-
-def _apply_audio_request(cfg: CurioConfig, audio: dict | None) -> None:
-    """Reaplica a escolha gravada no projeto (especialmente human-pending)."""
-    if not isinstance(audio, dict):
-        return
-    cfg.audio_enabled = True
-    music = audio.get("music") if isinstance(audio.get("music"), dict) else {}
-    if music.get("mode") in ("auto", "none", "manual"):
-        cfg.music_mode = music["mode"]
-    if music.get("gain_db") is not None:
-        cfg.music_gain_db = max(-40, min(-3, int(music["gain_db"])))
-    if music.get("ducking") is not None:
-        cfg.music_ducking = bool(music["ducking"])
-    track = music.get("track") if isinstance(music.get("track"), dict) else {}
-    if cfg.music_mode == "manual" and track.get("path"):
-        cfg.music_file = str(track["path"])
-    transitions = audio.get("transitions")
-    if isinstance(transitions, dict) and transitions.get("mode") in ("auto", "none"):
-        cfg.music_transitions = transitions["mode"]
 
 
 def _resolve_paths(out_dir: str, slug: str | None, idea: str,
@@ -330,7 +263,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         except (OSError, ValueError, json.JSONDecodeError):
             previous_project = {}
         if previous_project.get("audio"):
-            _apply_audio_request(cfg, previous_project["audio"])
+            audio_composition.apply_audio_request(cfg, previous_project["audio"])
     metrics = RunMetrics(slug, idea, narration)
     for d in ("script", "audio", "subtitles", "assets", "render",
               "media", "timeline", "teleprompter", "sources"):
@@ -436,7 +369,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                            overlap_cap=overlap_cap,
                            insert_budget=insert_budget,
                            genre_key=genre_key,
-                           transition_mode=_transition_mode(cfg),
+                           transition_mode=audio_composition.transition_mode(cfg),
                            genre_profile=editorial_stage.summary(perfil),
                            scene_context_enrichment=enrichment.to_dict(),
                            media_source=media_result.source,
@@ -484,7 +417,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     previous_audio = previous_meta.get("audio") or {}
     visual_plan_signature = hashlib.sha256(
         json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
-    transition_mode = _transition_mode(cfg)
+    transition_mode = audio_composition.transition_mode(cfg)
     transition_sig = pipeline_render_stage.transition_signature(
         tuple(semantic_scenes), timeline_spans, genre_key, transition_mode,
         {"insertions": insert_budget,
@@ -498,7 +431,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     transition_dirty = transition_dirty or (
         any(t.get("backgrounds") for t in visual_timeline) and
         previous_meta.get("visual_plan_signature") != visual_plan_signature)
-    events = _audio_events(visual_timeline)
+    events = audio_composition.sfx_events(visual_timeline)
     audio_plan = audio_selection.resolve_audio(
         cfg, genre_key,
         audio_seed(slug, video_title or idea, script_text),
@@ -538,14 +471,14 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                               media_scenes, idea, paths,
                               cfg, silent, transitions=transitions, kinds=kinds)
         narration_wav = paths.narration_wav
-        sfx_path = (_sfx_track_for(visual_timeline, total, paths)
+        sfx_path = (audio_composition.sfx_track(visual_timeline, total, paths)
                     if visual_timeline and cfg.visual_sfx else None)
         if sfx_path:
-            narration_wav = _narration_with_sfx(paths.narration_wav, sfx_path,
+            narration_wav = audio_composition.narration_with_sfx(paths.narration_wav, sfx_path,
                                                 total, paths)
         music_asset = audio_plan.get("music_asset")
         music_path = str(music_asset.get("path")) if music_asset else None
-        final_fade = _final_audio_fade(genre_key, transition_mode)
+        final_fade = audio_composition.final_audio_fade(genre_key, transition_mode)
         render_info = render_stage.burn_final(
             silent, paths.subs_ass, narration_wav, paths.final_mp4,
             cfg, total, title=video_title,
@@ -553,7 +486,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             music_path=music_path, music_gain_db=cfg.music_gain_db,
             music_ducking=cfg.music_ducking, final_fade=final_fade)
         video_duration = render_info["duration"]
-        _mark_audio_used(cfg, audio_plan)
+        audio_composition.mark_audio_used(cfg, audio_plan)
     stage_times["render"] = round(time.monotonic() - t0, 2)
     run_event("result", f"Render: {render_info['backend']} / "
               f"{render_info['encoder']}; {video_duration:.1f}s",
@@ -607,7 +540,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "mode": transition_mode,
             "boundary_durations": pipeline_render_stage.genre_transitions(
                 tuple(semantic_scenes), genre_key, transition_mode),
-            "final_fade": _final_audio_fade(genre_key, transition_mode),
+            "final_fade": audio_composition.final_audio_fade(genre_key, transition_mode),
         },
         "sources": {
             "claims": len(sources.claims),
@@ -740,7 +673,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, _write_json)
     visual_timeline = timeline_result.entries
-    audio_events = _audio_events(visual_timeline)
+    audio_events = audio_composition.sfx_events(visual_timeline)
     try:
         previous_meta = _read_json(paths.metadata_json)
     except (OSError, ValueError, json.JSONDecodeError):
@@ -817,7 +750,7 @@ def _human_prep(idea: str, slug: str, cfg: CurioConfig,
             "genre": genre_key, "mode": transition_mode,
             "boundary_durations": pipeline_render_stage.genre_transitions(
                 semantic_scenes, genre_key, transition_mode),
-            "final_fade": _final_audio_fade(genre_key, transition_mode),
+            "final_fade": audio_composition.final_audio_fade(genre_key, transition_mode),
         },
         "genre_profile": genre_profile or editorial_stage.summary(None),
         "scene_context_enrichment": scene_context_enrichment or {},
@@ -918,7 +851,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         idea = slug
     saved_audio = meta.get("audio_request") or meta.get("audio")
     if saved_audio:
-        _apply_audio_request(cfg, saved_audio)
+        audio_composition.apply_audio_request(cfg, saved_audio)
     else:
         cfg.audio_enabled = False
         cfg.music_mode = "none"
@@ -926,7 +859,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         cfg.sfx_library_enabled = False
         cfg.music_auto_fill = cfg.sfx_auto_fill = False
     project_genre = str(meta.get("genre") or cfg.genre or "")
-    transition_mode = _transition_mode(cfg)
+    transition_mode = audio_composition.transition_mode(cfg)
 
     progress_started: dict[str, float] = {}
 
@@ -1051,7 +984,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                         rendered_duration=total)
     human_wav = paths.human_wav
     sfx_path = None
-    events = _audio_events(visual_timeline or [])
+    events = audio_composition.sfx_events(visual_timeline or [])
     script_text = _read(paths.script_txt) if os.path.isfile(paths.script_txt) else ""
     video_title = (meta.get("video_title") or "").strip()
     audio_plan = audio_selection.resolve_audio(
@@ -1060,9 +993,9 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         meta.get("audio") or meta.get("audio_request"))
     warnings.extend(audio_plan["warnings"])
     if visual_timeline and cfg.visual_sfx:
-        sfx_path = _sfx_track_for(visual_timeline, total, paths)
+        sfx_path = audio_composition.sfx_track(visual_timeline, total, paths)
         if sfx_path:
-            human_wav = _narration_with_sfx(paths.human_wav, sfx_path,
+            human_wav = audio_composition.narration_with_sfx(paths.human_wav, sfx_path,
                                             total, paths)
     video_title = video_title or None
     music_asset = audio_plan.get("music_asset")
@@ -1074,13 +1007,13 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
         music_path=str(music_asset.get("path")) if music_asset else None,
         music_gain_db=cfg.music_gain_db,
         music_ducking=cfg.music_ducking,
-        final_fade=_final_audio_fade(project_genre, transition_mode))
+        final_fade=audio_composition.final_audio_fade(project_genre, transition_mode))
     run_event("result", f"Render: {render_info['backend']} / "
               f"{render_info['encoder']}; {render_info['duration']:.1f}s",
               operation="render", backend=render_info["backend"],
               encoder=render_info["encoder"],
               duration_seconds=round(render_info["duration"], 2))
-    _mark_audio_used(cfg, audio_plan)
+    audio_composition.mark_audio_used(cfg, audio_plan)
     emit("Merge final", "OK")
 
     try:
@@ -1105,7 +1038,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
             "genre": project_genre, "mode": transition_mode,
             "boundary_durations": pipeline_render_stage.genre_transitions(
                 semantic_scenes, project_genre, transition_mode),
-            "final_fade": _final_audio_fade(
+            "final_fade": audio_composition.final_audio_fade(
                 project_genre, transition_mode),
         },
         "finalize_warnings": warnings,

@@ -121,7 +121,7 @@ def test_default_music_gain_is_audible_under_ducking():
 
 
 def test_genre_transition_plan_distinguishes_genres_and_scene_roles():
-    from curio.pipeline import _final_audio_fade
+    from curio.audio.composition import final_audio_fade
     from curio.pipeline_render import genre_transitions
     from curio.stages.scene_contract import SemanticScene
     scenes = (
@@ -135,7 +135,7 @@ def test_genre_transition_plan_distinguishes_genres_and_scene_roles():
     assert people[0] > science[0]
     assert people[1] > people[0]
     assert genre_transitions(scenes, "people", "none") == [0.0, 0.0]
-    assert _final_audio_fade("people") > _final_audio_fade("science")
+    assert final_audio_fade("people") > final_audio_fade("science")
 
 
 def test_genre_transition_kinds_vary_effect_without_changing_lengths():
