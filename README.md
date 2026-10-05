@@ -200,6 +200,8 @@ G75 (`c4ef8c5`) extrai as tentativas de aquisição de mídia para um owner pró
 G76 (`b87ba98`) unifica download/cache e validação técnica dos caminhos fresh e
 reuse sob `TechnicalAcquisitionAttempt`, preservando o tratamento editorial de
 cada caminho.
+G77 (`111995f`) consulta a tier contextual planejada se candidatos específicos
+passam scoring, mas não produzem mídia utilizável após aquisição.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
