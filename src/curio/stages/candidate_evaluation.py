@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from . import scoring
-from .media_contracts import Candidate, CandidateEvaluation, EvaluationBatch
+from .media_contracts import (Candidate, CandidateEvaluation, CandidateRejection,
+                              EvaluationBatch)
 
 
 def evaluate_specific(candidates: list[Candidate], scene,
@@ -81,6 +82,16 @@ def evaluate_generic(candidates: list[Candidate], scene,
         rejected=tuple(_evaluation(entry, by_identity, False, threshold)
                        for entry in rejected),
     )
+
+
+def describe_technical_rejections(
+        rejected: tuple[CandidateRejection, ...], scene) -> tuple[dict, ...]:
+    """Add semantic evidence to technical rejections without changing gates."""
+    if not isinstance(rejected, tuple) or any(
+            not isinstance(item, CandidateRejection) for item in rejected):
+        raise TypeError("technical rejection evidence requires CandidateRejection values")
+    return tuple({**item.to_dict(), **scoring.semantic_relevance(
+        item.candidate.asset.to_dict(), scene)} for item in rejected)
 
 
 def _scoring_entries(candidates: list[Candidate], *, generic: bool

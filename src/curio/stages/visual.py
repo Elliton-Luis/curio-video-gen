@@ -42,18 +42,17 @@ from . import media_rules
 from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
-from .media_contracts import Candidate, CandidateRejection
-from .candidate_evaluation import evaluate_generic, evaluate_specific
+from .candidate_evaluation import (describe_technical_rejections,
+                                  evaluate_generic, evaluate_specific)
 from .media_selection import (annotate_reuse, make_selection_decision,
                               prepare_selection_pool, record_asset_usage,
                               resolve_cross_scene_reuse)
 from .media_selection import SelectionDecision
-from .visual_audit import (SearchQueryAudit, candidate_audit_rows,
-                           search_query_audit_rows)
+from .visual_audit import candidate_audit_rows, search_query_audit_rows
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
+from .scene_candidate_search import SceneCandidateCollector
 from . import media_acquisition
-from . import media_search
 
 if TYPE_CHECKING:
     from ..media.selection_result import MediaStageResult
@@ -74,12 +73,6 @@ CANDIDATE_MULTIPLIER = 4
 MAX_SCENE_CANDIDATES = 20
 # Rejeições que a folha de contato guarda por cena (o resto é ruído).
 REJECTED_KEPT = 8
-
-
-# O gate de metadados é `media_rules.asset_gate_reason`: era a terceira
-# cópia da mesma regra, e a única que devolvia booleano — o que jogava fora
-# a informação que o autor precisa ("por que a cena ficou sem foto").
-_validate_asset_for = media_rules.asset_gate_reason
 
 
 def _selection_asset_key(asset: dict) -> str:
@@ -126,7 +119,6 @@ def _search_scene_with_shortcircuit(
         metrics.media_query_generation_time += time.monotonic() - planning_started
     queries = [item.query for item in search_plan.queries]
     generics = set(search_plan.generic_queries)
-    search_query_by_text = {item.query: item for item in search_plan.queries}
     blocked = media_rules.scene_blocklist(ch)
     vtype = visual_plan.visual_type
 
@@ -193,110 +185,8 @@ def _search_scene_with_shortcircuit(
                 },
             }], warnings
 
-    candidates: list[dict] = []   # candidatos que passaram nos filtros
-    rejected: list[dict] = []     # (motivo, título) p/ a folha de contato
-    seen_ids: set[str] = set()
-    providers_consulted: set[str] = set()
-    query_audit = {query.query: SearchQueryAudit()
-                   for query in search_plan.queries}
-
-    def _consider(cand: MediaAsset, query: str) -> None:
-        dedupe_started = time.monotonic()
-        source = (cand.source_url or "").split("?", 1)[0].rstrip("/").casefold()
-        identity = (f"url:{source}" if source else
-                    f"{cand.provider}:{cand.asset_id}")
-        candidate = Candidate(cand, search_query_by_text[query], identity)
-        # Provider aliases often expose the same Commons/Met object. Prefer
-        # stable source identity; asset IDs remain provider-scoped fallback.
-        if identity in seen_ids:
-            query_audit[query].record_duplicate()
-            if metrics:
-                metrics.media_record_funnel("duplicates")
-                metrics.media_deduplication_time += time.monotonic() - dedupe_started
-            return
-        seen_ids.add(identity)
-        if metrics:
-            metrics.media_deduplication_time += time.monotonic() - dedupe_started
-        if metrics:
-            metrics.media_record_funnel("unique_considered")
-        why = _validate_asset_for(cand, blocked)
-        if why:
-            query_audit[query].record_rejection()
-            semantic = scoring.semantic_relevance(cand.to_dict(), ch)
-            rejected.append({**CandidateRejection(
-                candidate, why, "technical_gate").to_dict(), **semantic})
-            if metrics:
-                metrics.media_record_asset_rejected()
-                metrics.media_record_funnel("hard_rejected")
-                if classify_rights(cand.license or "", cand.provider) == "blocked":
-                    metrics.media_record_rights("blocked")
-            return
-        if metrics:
-            metrics.media_record_funnel("eligible")
-        query_audit[query].record_eligible()
-        candidates.append(candidate)
-
     from . import scoring
     min_score = scoring.threshold()
-
-    def collect(query_list: list[str], limit: int) -> None:
-        for query_index, query in enumerate(query_list):
-            if len(candidates) >= MAX_SCENE_CANDIDATES:
-                for pending in query_list[query_index:]:
-                    query_audit[pending].mark_unexecuted("scene_candidate_budget")
-                break
-            candidates_before_query = len(candidates)
-            query_key = query.casefold()
-            identities_before = len(seen_ids)
-            duplicates_before = query_audit[query].duplicates
-            shared = (shared_search_cache.setdefault(query_key, {})
-                      if shared_search_cache is not None else {})
-            active = [prov for prov in providers
-                      if not getattr(prov, "_disabled", False)]
-            scene_order = [p.name for p in
-                           ordered_providers(cfg, visual_plan, genre, providers)]
-            rank = {name: index for index, name in enumerate(scene_order)}
-            active.sort(key=lambda p: rank.get(p.name, len(rank)))
-            providers_consulted.update(prov.name for prov in active)
-            query_audit[query].set_providers([prov.name for prov in active])
-            if metrics and active:
-                metrics.media_queries_count += 1
-            response_stream = media_search.search_providers(
-                query, active,
-                shared_results=(shared if shared_search_cache is not None else None),
-                metrics=metrics, timeout=media_search.SEARCH_TIMEOUT)
-            try:
-                responses = iter(response_stream)
-                for response in responses:
-                    if response.query != query:
-                        raise ValueError("provider response query does not match request")
-                    provider_name = response.provider
-                    if response.error:
-                        query_audit[query].record_error(
-                            provider_name, response.error)
-                        continue
-                    prov_results = response.assets
-                    query_audit[query].record_result(provider_name,
-                                                     len(prov_results))
-                    for result_index, cand in enumerate(prov_results):
-                        if (len(candidates) >= MAX_SCENE_CANDIDATES
-                                or len(candidates) - candidates_before_query >= limit):
-                            if metrics:
-                                metrics.media_record_funnel(
-                                    "budget_unexamined",
-                                    len(prov_results) - result_index)
-                            break
-                        _consider(cand, query)
-                    if (len(candidates) >= MAX_SCENE_CANDIDATES
-                            or len(candidates) - candidates_before_query >= limit):
-                        break
-            finally:
-                response_stream.close()
-            if (len(seen_ids) == identities_before
-                    and query_audit[query].duplicates > duplicates_before):
-                query_audit[query].mark_duplicates_only()
-                if metrics:
-                    metrics.media_duplicate_queries += 1
     # Colete e pontue específicos antes de buscar fotos genéricas do gênero.
     # Generic queries só rodam quando nenhuma foto específica passa o gate.
     specific_queries = [q for q in queries if q.lower() not in generics]
@@ -305,7 +195,12 @@ def _search_scene_with_shortcircuit(
     # fail or reveal unusable dimensions. Explore the bounded query tree before
     # selecting, then download ranked candidates until one passes acquisition.
     phase_budget = max(1, max_images * CANDIDATE_MULTIPLIER)
-    collect(specific_queries, phase_budget)
+    collector = SceneCandidateCollector(
+        ch, visual_plan, search_plan, providers, cfg, metrics, blocked,
+        genre=genre, shared_search_cache=shared_search_cache,
+        max_candidates=MAX_SCENE_CANDIDATES)
+    collection = collector.collect(specific_queries, phase_budget)
+    candidates = list(collection.candidates)
     score_started = time.monotonic()
     specific_result = evaluate_specific(
         [candidate for candidate in candidates
@@ -322,7 +217,8 @@ def _search_scene_with_shortcircuit(
     if fresh_specific:
         ranked, low = specific, low_specific
     else:
-        collect(generic_queries, phase_budget)
+        collection = collector.collect(generic_queries, phase_budget)
+        candidates = list(collection.candidates)
         score_started = time.monotonic()
         generic_result = evaluate_generic(
             [candidate for candidate in candidates
@@ -336,6 +232,8 @@ def _search_scene_with_shortcircuit(
         # Preserve qualified used results solely for the final fallback after
         # fresh contextual results and synthetic visuals have been tried.
         ranked.extend(deferred_specific)
+    collection = collector.snapshot()
+    rejected = list(describe_technical_rejections(collection.rejected, ch))
     if scoring.clip_enabled(cfg) and ranked:
         status = scoring.clip_status(cfg) or ""
         if "habilitada (" in status:
@@ -649,10 +547,10 @@ def _search_scene_with_shortcircuit(
         "representations_discarded": getattr(ch, "representation_rejections", []) or [],
         "aliases": list(video_context.get("aliases", []) or []),
         "queries": search_query_audit_rows(
-            search_plan, query_audit, rejected, representation_levels,
+            search_plan, collection.query_audit, rejected, representation_levels,
             representation_kinds,
             list(video_context.get("aliases", []) or [])),
-        "providers_consulted": sorted(providers_consulted),
+        "providers_consulted": list(collection.providers_consulted),
         "candidates": audit_candidates,
         "selected": (next((item for item in audit_candidates
                            if item["decision"] == "selected"), None)
@@ -664,26 +562,31 @@ def _search_scene_with_shortcircuit(
         "search_exhausted": bool(
             (not picked or picked[0].get("reuse_reason")
              or (first or {}).get("provider") == "synth")
-            and all(not state.unexecuted_reason for state in query_audit.values())
+            and all(not state.unexecuted_reason
+                    for state in collection.query_audit.values())
             and all(state.providers and not state.provider_errors
-                    and not state.unavailable for state in query_audit.values())),
+                    and not state.unavailable
+                    for state in collection.query_audit.values())),
         "search_exhaustion_reason": (
             "new_asset_selected" if picked and (first or {}).get("provider") != "synth"
             and not picked[0].get("reuse_reason") else
             "queries_not_executed" if any(
-                state.unexecuted_reason for state in query_audit.values()) else
+                state.unexecuted_reason
+                for state in collection.query_audit.values()) else
             "provider_errors" if any(
-                state.provider_errors for state in query_audit.values()) else
+                state.provider_errors
+                for state in collection.query_audit.values()) else
             "no_available_provider" if any(
-                not state.providers for state in query_audit.values()) else
+                not state.providers
+                for state in collection.query_audit.values()) else
             "all_queries_consulted_no_valid_asset" if synthetic or not picked else
             "asset_reuse_after_search" if picked else ""),
         "fallback_level": ("synthetic_after_incomplete_search"
                            if (first or {}).get("provider") == "synth"
                            and (any(state.unexecuted_reason
-                                    for state in query_audit.values())
+                                    for state in collection.query_audit.values())
                                 or any(state.provider_errors or not state.providers
-                                       for state in query_audit.values())) else
+                                       for state in collection.query_audit.values())) else
                            "synthetic_after_exhaustion"
                            if (first or {}).get("provider") == "synth" else
                            "reused" if picked and picked[0].get("reuse_reason") else
