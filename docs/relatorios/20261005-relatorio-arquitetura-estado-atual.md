@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G70.
+**Escopo:** auditoria documentada e migrações incrementais até G71.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -88,6 +88,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `0e62a18` | Unificou snapshots de assets e congelou recursivamente rows da seleção, preservando a projeção JSON (G68). |
 | `1d1335f` | Manteve `SelectedAsset` tipado em candidatos de reuso cross-scene até decidir o donor (G69). |
 | `dd19b24` | Introduziu `RankedSelectionCandidate` e tipou `SelectionPool`; CLIP atualiza evidência imutável e auditoria associa rejeições pós-aquisição por identidade (G70). |
+| `d8dace3` | Faz `make_selection_decision` consumir `SelectedAsset` com query, origem e representação tipadas (G71). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -118,6 +119,9 @@ relatórios listados em `docs/README.md`.
 - **Seleção:** `SelectionDecision`; distingue asset novo, reuso, sintético e
   ausência, com motivo/fallback validado. `MediaStageResult`/`SceneMediaSelection`
   expõem `MediaAssetSnapshot` e rows aninhadas imutáveis; `to_dict()` é adapter.
+  `SelectedAsset` preserva `query`, `query_source` e `representation`; a
+  política que cria `SelectionDecision` recebe esse contrato, não reinterpreta
+  row JSON.
 - **Auditoria da decisão visual:** `VisualDecision` contém `SelectionDecision`
   tipada, valida campos conhecidos e mantém as extensões legadas na projeção.
 - **Auditoria de busca:** `QueryAuditAccumulator` acumula fatos mutáveis dentro da aquisição; `SearchQueryAudit` e a tabela da `SceneCandidateCollection` são snapshots imutáveis, projetados no JSON existente.
@@ -128,7 +132,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G70
+## Arquivos alterados nas fases G57–G71
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -210,7 +214,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G70 commitadas; parcial. | `visual.py` ainda orquestra várias fases e projeta para rows mutáveis antes do restante do lifecycle de aquisição, dedupe, fallback e persistência; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G71 commitadas; parcial. | `visual.py` ainda orquestra várias fases e projeta para rows mutáveis antes do restante do lifecycle de aquisição, dedupe, fallback e persistência; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -264,6 +268,9 @@ excluído** por HTTP 429 da Wikipédia em 179,65 s; esse gate ocorreu antes da
 inclusão do último teste unitário de rejeição de rows untyped, validado na
 bateria focada subsequente. Compileall e diff check passaram após esse teste.
 Não houve geração real nesta fase.
+G71: **88 testes focados passaram**; a suíte ampla passou com **940 testes e 1
+excluído** por HTTP 429 da Wikipédia em 179,44 s. Compileall e diff check
+passaram. Não houve geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -590,3 +597,30 @@ coordena essas transições; extraí-las exige um contrato de aquisição/result
 que mantenha estados e auditoria sem recolocar aliasing implícito. A validação
 real de providers e qualidade editorial continua pendente. Ver o
 [relatório G70](20261005-ranked-selection-candidate-contract.md).
+
+
+## G71 — decisão construída a partir do asset selecionado (`d8dace3`)
+
+`make_selection_decision` ainda consumia `list[dict]` e relia provider, asset ID,
+query e reuse reason para decidir o estado final. Esse era um segundo lugar que
+reinterpretava a seleção depois de `SelectedAsset` já validar o row em
+`MediaStageResult`. G71 adiciona `query_source` e `representation` ao contrato
+`SelectedAsset` e migra a decisão para consumir esse tipo. A seleção normal e a
+resolução de reuso cross-scene agora passam o asset selecionado validado; dicts
+legados são convertidos por `SelectedAsset.from_dict()` na fronteira do
+coordenador. Não muda os estados, razões, fallback ou schema persistido.
+
+Arquivos: `src/curio/media/selection_result.py`,
+`src/curio/stages/media_selection.py`, `src/curio/stages/visual.py` e
+`tests/test_media_selection.py`. Regressões validam decisão para real/reused/
+synthetic/none, rejeição de rows dict na política e propagação de query, origem
+e representação. **88 testes focados**, **940 testes amplos** e 1 teste externo
+deselecionado por HTTP 429 da Wikipédia passaram; compileall e diff check
+passaram. Não houve geração real. Ver o
+[relatório G71](20261005-selection-decision-selected-asset.md).
+
+A conversão dos assets escolhidos acontece antes de construir a decisão final,
+mas as rows de candidatos continuam existindo até auditoria e serialização. O
+próximo lifecycle não resolvido segue sendo download/hash/seleção em
+`visual.py`; G71 deixa explícito apenas que a decisão final consome o resultado
+tipado, não a row.

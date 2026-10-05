@@ -191,6 +191,7 @@ G67 (`833df32`) congela recursivamente a evidência em `CandidateEvaluation` e p
 G68 (`0e62a18`) unifica o snapshot de asset e congela o resultado final de seleção; adapters projetam rows mutáveis para revisão e persistência.
 G69 (`1d1335f`) mantém o candidato a doador cross-scene tipado como `SelectedAsset` até a decisão e só projeta JSON ao aplicá-lo.
 G70 (`dd19b24`) mantém candidatos ranqueados tipados durante CLIP e `SelectionPool`; rejeições após download chegam à auditoria por identidade do candidato.
+G71 (`d8dace3`) constrói `SelectionDecision` a partir de `SelectedAsset`, preservando origem e representação da query no contrato.
 O relatório arquitetural completo — com estado antes/depois, commits,
 contratos, fases, testes, regressões, etapa de mídia e pendências — está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
