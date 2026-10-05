@@ -33,7 +33,7 @@ from ..media.selection_result import SceneMediaSelection, SelectedAsset
 from ..media.providers import MediaProvider
 from ..media.visual_decision import VisualDecision
 from . import media_rules
-from .visual_contracts import VisualPlan
+from .visual_contracts import SearchPlan, VisualPlan
 from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
 from .candidate_evaluation import (apply_clip_layer,
@@ -83,6 +83,8 @@ def _selection_asset_key(asset: dict) -> str:
 
 def _search_scene_with_shortcircuit(
     ch,
+    visual_plan: VisualPlan,
+    search_plan: SearchPlan,
     providers: list[MediaProvider],
     cfg: CurioConfig,
     max_images: int,
@@ -109,14 +111,15 @@ def _search_scene_with_shortcircuit(
     warnings = []
     if hasattr(ch, "semantic_scene"):
         ch = ch.semantic_scene()
+    if not isinstance(visual_plan, VisualPlan):
+        raise TypeError("scene search requires a VisualPlan")
+    if not isinstance(search_plan, SearchPlan):
+        raise TypeError("scene search requires a SearchPlan")
+    if visual_plan.scene_id != ch.id or search_plan.scene_id != ch.id:
+        raise ValueError("scene search plans must belong to the searched scene")
     results_before = sum(metrics.media_results_received.values()) if metrics else 0
     downloads_before = metrics.media_downloads if metrics else 0
     cache_before = metrics.media_cache_hits if metrics else 0
-    planning_started = time.monotonic()
-    visual_plan = build_visual_plan(ch)
-    search_plan = build_search_plan(visual_plan, genre)
-    if metrics:
-        metrics.media_query_generation_time += time.monotonic() - planning_started
     queries = [item.query for item in search_plan.queries]
     generics = set(search_plan.generic_queries)
     blocked = media_rules.scene_blocklist(ch)
@@ -480,11 +483,16 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     shared_search_cache: dict[str, dict[str, list[dict]]] = {}
 
     for scene in semantic_scenes:
+        planning_started = time.monotonic()
         scene_plan = build_visual_plan(scene.semantic_scene()
                                        if hasattr(scene, "semantic_scene") else scene)
+        search_plan = build_search_plan(scene_plan, genre)
+        if metrics:
+            metrics.media_query_generation_time += time.monotonic() - planning_started
         providers = ordered_providers(cfg, scene_plan, genre)
         scene_selection, scene_warnings = _search_scene_with_shortcircuit(
-            scene, providers, cfg, max_images, metrics, cfg.cache_dir,
+            scene, scene_plan, search_plan, providers, cfg, max_images,
+            metrics, cfg.cache_dir,
             visual_state=visual_state, genre=genre, asset_uses=asset_uses,
             shared_search_cache=shared_search_cache,
         )

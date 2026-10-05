@@ -69,16 +69,21 @@ def test_provider_priority_is_ordered_independently_for_each_scene(monkeypatch):
         "science": [SimpleNamespace(name="nasa"),
                     SimpleNamespace(name="wikimedia")],
     }
-    plans = {1: SimpleNamespace(policy="history"),
-             2: SimpleNamespace(policy="science")}
+    plans = {1: SimpleNamespace(scene_id=1, policy="history"),
+             2: SimpleNamespace(scene_id=2, policy="science")}
     monkeypatch.setattr(visual, "build_visual_plan",
                         lambda scene: plans[scene.id])
+    from curio.stages.visual_contracts import SearchPlan
+    monkeypatch.setattr(visual, "build_search_plan",
+                        lambda plan, _genre: SearchPlan(plan.scene_id, ()))
     monkeypatch.setattr(visual, "ordered_providers",
                         lambda _cfg, plan, _genre: providers[plan.policy])
 
     calls = []
 
-    def search(scene, ordered, *_args, **_kwargs):
+    def search(scene, visual_plan, search_plan, ordered, *_args, **_kwargs):
+        assert visual_plan is plans[scene.id]
+        assert search_plan.scene_id == scene.id
         calls.append((scene.id, tuple(provider.name for provider in ordered)))
         selection = MediaStageResult.from_rows([with_selection({
             "chapter_id": scene.id, "asset": None, "assets": [],
@@ -93,6 +98,22 @@ def test_provider_priority_is_ordered_independently_for_each_scene(monkeypatch):
         (1, ("met", "wikimedia")),
         (2, ("nasa", "wikimedia")),
     ]
+
+
+def test_scene_search_rejects_visual_and_search_plans_from_other_scene(tmp_path):
+    import pytest
+    from curio.stages import visual
+
+    first = SemanticScene(1, "Cena histórica.")
+    second = SemanticScene(2, "Cena espacial.")
+    visual_plan = visual.build_visual_plan(first)
+    search_plan = visual.build_search_plan(visual_plan)
+
+    with pytest.raises(ValueError, match="belong to the searched scene"):
+        visual._search_scene_with_shortcircuit(
+            second, visual_plan, search_plan, [],
+            SimpleNamespace(cache_dir=str(tmp_path)), 1, None,
+            str(tmp_path))
 
 
 def test_resolve_media_consumes_only_cache_with_current_manifest(tmp_path, monkeypatch):
