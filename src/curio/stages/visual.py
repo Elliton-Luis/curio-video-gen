@@ -44,7 +44,8 @@ from .media_selection import (annotate_reuse, make_selection_decision,
                               prepare_selection_pool,
                               resolve_cross_scene_reuse,
                               SelectionFallbackAction,
-                              next_selection_fallback)
+                              next_selection_fallback,
+                              describe_selection_provenance)
 from .media_selection import SelectionDecision
 from .visual_audit import candidate_audit_rows, search_query_audit_rows
 from .media_provider_policy import ordered_providers
@@ -429,6 +430,8 @@ def _search_scene_with_shortcircuit(
     picked_rows = [entry.to_dict() for entry in picked]
     audit_candidates = candidate_audit_rows(
         evaluated_entries, rejected, picked_rows, visual_plan, min_score)
+    selection_provenance = describe_selection_provenance(
+        tuple(picked), visual_plan, search_plan, collection.query_audit)
     decision = {
         "topic": visual_plan.topic,
         "visual_plan": visual_plan.to_dict(),
@@ -456,41 +459,9 @@ def _search_scene_with_shortcircuit(
                           "reason": "No candidate passed semantic gates; rendered safe local visual"}
                          if first and (first or {}).get("provider") == "synth" else None)),
         "fallback": strategy_used if synthetic or not picked else "",
-        "search_exhausted": bool(
-            (not picked or picked[0].reuse_reason
-             or (first or {}).get("provider") == "synth")
-            and all(not state.unexecuted_reason
-                    for state in collection.query_audit.values())
-            and all(state.providers and not state.provider_errors
-                    and not state.unavailable
-                    for state in collection.query_audit.values())),
-        "search_exhaustion_reason": (
-            "new_asset_selected" if picked and (first or {}).get("provider") != "synth"
-            and not picked[0].reuse_reason else
-            "queries_not_executed" if any(
-                state.unexecuted_reason
-                for state in collection.query_audit.values()) else
-            "provider_errors" if any(
-                state.provider_errors
-                for state in collection.query_audit.values()) else
-            "no_available_provider" if any(
-                not state.providers
-                for state in collection.query_audit.values()) else
-            "all_queries_consulted_no_valid_asset" if synthetic or not picked else
-            "asset_reuse_after_search" if picked else ""),
-        "fallback_level": ("synthetic_after_incomplete_search"
-                           if (first or {}).get("provider") == "synth"
-                           and (any(state.unexecuted_reason
-                                    for state in collection.query_audit.values())
-                                or any(state.provider_errors or not state.providers
-                                       for state in collection.query_audit.values())) else
-                           "synthetic_after_exhaustion"
-                           if (first or {}).get("provider") == "synth" else
-                           "reused" if picked and picked[0].reuse_reason else
-                           "specific" if picked and any(
-                               rep.query == picked[0].query
-                               for rep in visual_plan.representations)
-                           else "representation_or_media_variant" if picked else "exhausted"),
+        "search_exhausted": selection_provenance.search_exhausted,
+        "search_exhaustion_reason": selection_provenance.search_exhaustion_reason,
+        "fallback_level": selection_provenance.fallback_level,
     }
     selection = make_selection_decision(
         ch.id, picked, decision["fallback_level"])

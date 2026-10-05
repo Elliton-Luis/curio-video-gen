@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -16,6 +17,8 @@ from .scene_contract import SemanticScene
 if TYPE_CHECKING:
     from ..media.selection_result import MediaStageResult
     from ..media.selection_result import SelectedAsset
+    from .visual_audit import SearchQueryAudit
+    from .visual_contracts import SearchPlan, VisualPlan
 
 
 class SelectionFallbackAction(str, Enum):
@@ -249,6 +252,84 @@ class SelectionDecision:
             reuse_reason=str(value.get("reuse_reason", "")),
             reason=str(value.get("reason", "")),
         )
+
+
+@dataclass(frozen=True)
+class SelectionProvenance:
+    """Selection-owned explanation of search completion and fallback tier."""
+
+    search_exhausted: bool
+    search_exhaustion_reason: str
+    fallback_level: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.search_exhausted, bool):
+            raise TypeError("selection search_exhausted must be boolean")
+        for name in ("search_exhaustion_reason", "fallback_level"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"selection {name} is required")
+
+
+def describe_selection_provenance(
+        picked: tuple["SelectedAsset", ...], visual_plan: "VisualPlan",
+        search_plan: "SearchPlan",
+        query_audit: Mapping[str, "SearchQueryAudit"]
+        ) -> SelectionProvenance:
+    """Classify the selected tier from typed plans and completed query states."""
+    from ..media.selection_result import SelectedAsset
+    from .visual_audit import SearchQueryAudit
+    from .visual_contracts import SearchPlan, VisualPlan
+
+    if not isinstance(picked, tuple) or any(
+            not isinstance(item, SelectedAsset) for item in picked):
+        raise TypeError("selection provenance requires selected asset values")
+    if not isinstance(visual_plan, VisualPlan):
+        raise TypeError("selection provenance requires VisualPlan")
+    if not isinstance(search_plan, SearchPlan):
+        raise TypeError("selection provenance requires SearchPlan")
+    if visual_plan.scene_id != search_plan.scene_id:
+        raise ValueError("selection provenance plans must belong to the same scene")
+    if not isinstance(query_audit, Mapping) or any(
+            not isinstance(state, SearchQueryAudit)
+            for state in query_audit.values()):
+        raise TypeError("selection provenance requires query audit states")
+    expected_queries = {query.query for query in search_plan.queries}
+    if set(query_audit) != expected_queries:
+        raise ValueError("selection provenance audit must match SearchPlan")
+
+    first = picked[0] if picked else None
+    synthetic = bool(first and first.asset.provider == "synth")
+    reused = bool(first and first.reuse_reason)
+    incomplete = any(state.unexecuted_reason or state.provider_errors
+                     or not state.providers or state.unavailable
+                     for state in query_audit.values())
+    search_exhausted = bool(
+        (not first or reused or synthetic)
+        and all(not state.unexecuted_reason for state in query_audit.values())
+        and all(state.providers and not state.provider_errors and not state.unavailable
+                for state in query_audit.values()))
+
+    exhaustion_reason = (
+        "new_asset_selected" if first and not synthetic and not reused else
+        "queries_not_executed" if any(
+            state.unexecuted_reason for state in query_audit.values()) else
+        "provider_errors" if any(
+            state.provider_errors for state in query_audit.values()) else
+        "no_available_provider" if any(
+            not state.providers for state in query_audit.values()) else
+        "all_queries_consulted_no_valid_asset" if synthetic or not first else
+        "asset_reuse_after_search")
+    specific_queries = {representation.query
+                        for representation in visual_plan.representations}
+    fallback_level = (
+        "synthetic_after_incomplete_search" if synthetic and incomplete else
+        "synthetic_after_exhaustion" if synthetic else
+        "reused" if reused else
+        "specific" if first and first.query in specific_queries else
+        "representation_or_media_variant" if first else "exhausted")
+    return SelectionProvenance(
+        search_exhausted, exhaustion_reason, fallback_level)
 
 
 @dataclass(frozen=True)

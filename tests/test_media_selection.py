@@ -45,6 +45,99 @@ def test_selection_fallback_policy_exposes_order_and_partial_coverage(
     assert next_selection_fallback(**kwargs) is expected
 
 
+def _selection_provenance_inputs():
+    from curio.stages.scene_projection import Chapter
+    from curio.stages.search_planning import build_search_plan
+    from curio.stages.visual_audit import SearchQueryAudit
+    from curio.stages.visual_planning import build_visual_plan
+
+    chapter = Chapter.from_dict({
+        "id": 1,
+        "narration": "Os janízaros formavam a elite militar otomana.",
+        "visual_type": "historical_art",
+        "representations": [{
+            "query": "Ottoman Janissaries", "kind": "person_group", "level": 1}],
+        "video_context": {"topic": "Ottoman Empire"},
+    })
+    visual_plan = build_visual_plan(chapter.semantic_scene())
+    search_plan = build_search_plan(visual_plan, "history")
+    audit = {query.query: SearchQueryAudit(providers=("wikimedia",))
+             for query in search_plan.queries}
+    return visual_plan, search_plan, audit
+
+
+def _provenance_asset(provider="wikimedia", query="Ottoman Janissaries",
+                      reuse_reason=""):
+    from curio.media.selection_result import SelectedAsset
+
+    return SelectedAsset.from_dict({
+        "asset": {"provider": provider, "asset_id": "asset-1",
+                  "title": "Ottoman Janissaries", "source_url":
+                  "https://museum.test/asset-1"},
+        "query": query, "score": 82, "relevance": 82,
+        "reuse_reason": reuse_reason,
+    }, 0)
+
+
+def test_selection_provenance_explains_new_specific_asset():
+    from curio.stages.media_selection import describe_selection_provenance
+
+    visual_plan, search_plan, audit = _selection_provenance_inputs()
+    provenance = describe_selection_provenance(
+        (_provenance_asset(),), visual_plan, search_plan, audit)
+
+    assert provenance.search_exhausted is False
+    assert provenance.search_exhaustion_reason == "new_asset_selected"
+    assert provenance.fallback_level == "specific"
+
+
+def test_selection_provenance_distinguishes_synthetic_after_provider_failure():
+    from curio.stages.media_selection import describe_selection_provenance
+    from curio.stages.visual_audit import SearchQueryAudit
+
+    visual_plan, search_plan, audit = _selection_provenance_inputs()
+    query = search_plan.queries[0].query
+    audit[query] = SearchQueryAudit(provider_errors=(("wikimedia", "timeout"),))
+    provenance = describe_selection_provenance(
+        (_provenance_asset("synth", ""),), visual_plan, search_plan, audit)
+
+    assert provenance.search_exhausted is False
+    assert provenance.search_exhaustion_reason == "provider_errors"
+    assert provenance.fallback_level == "synthetic_after_incomplete_search"
+
+
+def test_selection_provenance_explains_reuse_and_unexecuted_queries():
+    from curio.stages.media_selection import describe_selection_provenance
+    from curio.stages.visual_audit import SearchQueryAudit
+
+    visual_plan, search_plan, audit = _selection_provenance_inputs()
+    reused = describe_selection_provenance(
+        (_provenance_asset(reuse_reason="after_fallback"),),
+        visual_plan, search_plan, audit)
+    assert reused.search_exhausted is True
+    assert reused.search_exhaustion_reason == "asset_reuse_after_search"
+    assert reused.fallback_level == "reused"
+
+    query = search_plan.queries[0].query
+    audit[query] = SearchQueryAudit(unexecuted_reason="scene_candidate_budget")
+    absent = describe_selection_provenance((), visual_plan, search_plan, audit)
+    assert absent.search_exhausted is False
+    assert absent.search_exhaustion_reason == "queries_not_executed"
+    assert absent.fallback_level == "exhausted"
+
+
+def test_selection_provenance_rejects_divergent_plan_or_audit():
+    from curio.stages.media_selection import describe_selection_provenance
+    from curio.stages.visual_contracts import SearchPlan
+
+    visual_plan, search_plan, audit = _selection_provenance_inputs()
+    wrong_scene = SearchPlan(search_plan.scene_id + 1, search_plan.queries)
+    with pytest.raises(ValueError, match="same scene"):
+        describe_selection_provenance((), visual_plan, wrong_scene, audit)
+    with pytest.raises(ValueError, match="match SearchPlan"):
+        describe_selection_provenance((), visual_plan, search_plan, {})
+
+
 def test_fresh_candidates_are_separated_before_reuse_without_score_penalty():
     from curio.media.providers import MediaAsset
     from curio.stages.media_contracts import Candidate, CandidateEvaluation
