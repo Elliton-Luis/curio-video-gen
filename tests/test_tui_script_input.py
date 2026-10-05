@@ -1,6 +1,7 @@
 from curio import pipeline, tui
 from curio.cli import build_parser
 from curio.config import CurioConfig
+from curio.pipeline_input import PipelineInput
 from curio.project_paths import video_paths
 from curio.stages.research import ResearchResult
 
@@ -32,8 +33,8 @@ def test_script_flow_pastes_text_and_hands_it_to_pipeline(monkeypatch, capsys):
     monkeypatch.setattr(tui, "_ask", lambda _prompt: next(prompts))
     monkeypatch.setattr(tui, "_ask_duration", lambda _colors, current: current)
 
-    def fake_pipeline(idea, _cfg, **kwargs):
-        captured["idea"] = idea
+    def fake_pipeline(request, _cfg, **kwargs):
+        captured["request"] = request
         captured.update(kwargs)
         return {"duration_actual": 42.0,
                 "artifacts": {"teleprompter": "teleprompter.mp4"}}
@@ -41,7 +42,8 @@ def test_script_flow_pastes_text_and_hands_it_to_pipeline(monkeypatch, capsys):
     monkeypatch.setattr(pipeline, "run_pipeline", fake_pipeline)
     tui._script_flow(tui._colors(), cfg)
 
-    assert captured["provided_script"] == SCRIPT
+    assert captured["request"] == PipelineInput(
+        topic="Primeira linha: ação!", script=SCRIPT)
     assert captured["narration"] == "human"
     output = capsys.readouterr().out
     assert f"Roteiro recebido: {len(SCRIPT)} caracteres" in output
@@ -126,8 +128,8 @@ def test_from_script_separates_research_topic_from_display_title(monkeypatch):
     cfg = CurioConfig()
     captured = {}
 
-    def fake_run_pipeline(idea, _cfg, **kwargs):
-        captured["topic"] = idea
+    def fake_run_pipeline(request, _cfg, **kwargs):
+        captured["request"] = request
         captured.update(kwargs)
         return {"ok": True}
 
@@ -138,9 +140,9 @@ def test_from_script_separates_research_topic_from_display_title(monkeypatch):
         slug="black-holes")
 
     assert result == {"ok": True}
-    assert captured["topic"] == "Black holes"
-    assert captured["display_title"] == "Black holes — field notes"
-    assert captured["provided_script"] == SCRIPT
+    assert captured["request"] == PipelineInput(
+        topic="Black holes", script=SCRIPT,
+        display_title="Black holes — field notes")
 
 
 def test_from_script_defaults_topic_to_title_for_compatibility(monkeypatch):
@@ -149,7 +151,8 @@ def test_from_script_defaults_topic_to_title_for_compatibility(monkeypatch):
 
     monkeypatch.setattr(
         pipeline, "run_pipeline",
-        lambda idea, _cfg, **kwargs: captured.update(topic=idea, **kwargs) or {})
+        lambda request, _cfg, **kwargs: captured.update(
+            topic=request.topic, display_title=request.display_title, **kwargs) or {})
 
     pipeline.run_script_pipeline(SCRIPT, cfg, title="Topic title", slug="legacy")
 

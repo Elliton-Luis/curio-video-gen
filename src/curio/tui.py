@@ -20,6 +20,7 @@ from . import verify as verify_mod
 from .config import ALLOWED_INSERT_STYLES as INSERT_STYLES
 from .config import CurioConfig, parse_duration
 from .pipeline import run_pipeline
+from .pipeline_input import PipelineInput
 from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from .pipeline_media import MediaStandby
 from .slug import find_project_root, project_dir, slugify_with_timestamp
@@ -914,7 +915,7 @@ def _ai_flow(c: dict[str, str], cfg: CurioConfig,
         cfg = _ask_duration(c, cfg)
         force = _ask("Refazer etapas já concluídas? [s/N]: ").strip().lower().startswith("s")
     try:
-        meta = run_pipeline(idea, cfg, slug=slug, force=force,
+        meta = run_pipeline(PipelineInput(topic=idea), cfg, slug=slug, force=force,
                             narration="ai", on_progress=_progress,
                             on_event=_run_event)
     except KeyboardInterrupt:
@@ -956,7 +957,7 @@ def _human_step1(c: dict[str, str], cfg: CurioConfig) -> str | None:
     print(f"Pasta do projeto: {project_dir(cfg.out_dir, cfg.genre, slug)}/")
     cfg = _ask_duration(c, cfg)
     try:
-        meta = run_pipeline(idea, cfg, slug=slug, force=False,
+        meta = run_pipeline(PipelineInput(topic=idea), cfg, slug=slug, force=False,
                             narration="human", on_progress=_progress,
                             on_event=_run_event)
     except KeyboardInterrupt:

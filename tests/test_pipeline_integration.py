@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from curio.config import CurioConfig
 from curio.pipeline import run_pipeline
+from curio.pipeline_input import PipelineInput
 from curio.project_paths import video_paths
 from curio.media.selection_result import MediaStageResult
 from curio.stages.research import ResearchResult, ResearchSource
@@ -137,7 +138,7 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
     for p in patches:
         p.start()
     try:
-        return run_pipeline("por que marte e vermelho", cfg,
+        return run_pipeline(PipelineInput(topic="por que marte e vermelho"), cfg,
                             slug="teste-integracao", max_images=3,
                             narration=narration), out_dir
     finally:

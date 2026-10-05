@@ -2,6 +2,7 @@ import json
 
 from curio import pipeline
 from curio import pipeline_finalize
+from curio.pipeline_input import PipelineInput
 from curio.audio import composition as audio_composition
 from curio.config import CurioConfig
 
@@ -20,7 +21,8 @@ def test_generation_audio_request_does_not_mutate_interface_config(tmp_path,
         return {"artifacts": {}}
 
     monkeypatch.setattr(pipeline, "_run_pipeline", fake_run)
-    result = pipeline.run_pipeline("A topic", config, slug="config-isolation")
+    result = pipeline.run_pipeline(PipelineInput(topic="A topic"), config,
+                                   slug="config-isolation")
 
     assert result == {"artifacts": {}}
     assert seen["config"] is not config

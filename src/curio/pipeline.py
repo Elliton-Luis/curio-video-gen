@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 from .audio import composition as audio_composition
 from .config import CurioConfig
+from .pipeline_input import PipelineInput
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_research as pipeline_research_stage
 from . import pipeline_scenes as pipeline_scenes_stage
@@ -46,7 +47,7 @@ STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
                 "teleprompter"]
 
 
-def _resolve_paths(out_dir: str, slug: str | None, idea: str,
+def _resolve_paths(out_dir: str, slug: str | None, topic: str,
                     genre_key: str, force: bool = False,
                     ) -> tuple[str, project_paths.VideoPaths]:
     """Slug final + caminhos, com pasta de gênero e anti-colisão.
@@ -55,26 +56,28 @@ def _resolve_paths(out_dir: str, slug: str | None, idea: str,
     `output/<genero>/<slug>`. Em rerun (`force` ou mesma ideia) reutiliza;
     em colisão com outra ideia, sufixa `-2`, `-3`…
     """
-    final = slug or slugify_with_timestamp(idea)
+    final = slug or slugify_with_timestamp(topic)
     if slug is None and not force:
         # Só o slug AUTOMÁTICO ganha anti-colisão: slug explícito é
         # endereço exato (retomada de cache/standby/rerun depende disso).
-        final = unique_slug(out_dir, genre_key, final, idea)
+        final = unique_slug(out_dir, genre_key, final, topic)
     return final, project_paths.video_paths(out_dir, final, genre_key)
 
 
-def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
+def run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
+                 slug: str | None = None,
                  force: bool = False, narration: str = "ai",
-                 on_progress=None, provided_script: str | None = None,
+                 on_progress=None,
                  max_images: int = 1,
                  visual_overlap: float | None = None,
-                 genre: str | None = None, on_event=None,
-                 display_title: str | None = None) -> dict:
+                 genre: str | None = None, on_event=None) -> dict:
+    if not isinstance(pipeline_input, PipelineInput):
+        raise TypeError("run_pipeline requires PipelineInput")
     # Per-project audio requests and finalize policy may adjust scalars; never
     # let those adjustments leak into a TUI/queue caller's shared config.
     cfg = deepcopy(cfg)
     genre_key = (genre if genre is not None else cfg.genre) or ""
-    run_slug, paths = _resolve_paths(cfg.out_dir, slug, idea, genre_key,
+    run_slug, paths = _resolve_paths(cfg.out_dir, slug, pipeline_input.topic, genre_key,
                                      force)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     log_path = os.path.join(paths.root, "logs", f"run-{stamp}.jsonl")
@@ -83,10 +86,10 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         run_event("log_ready", f"Log: {log_path}", log_path=log_path)
         try:
             result = _run_pipeline(
-                idea, cfg, slug=run_slug, force=force, narration=narration,
-                on_progress=on_progress, provided_script=provided_script,
+                pipeline_input, cfg, slug=run_slug, force=force,
+                narration=narration, on_progress=on_progress,
                 max_images=max_images, visual_overlap=visual_overlap,
-                genre=genre, display_title=display_title)
+                genre=genre)
         except BaseException as exc:
             if isinstance(exc, pipeline_media_stage.MediaStandby):
                 runlog.event("run_standby", "Execução em standby",
@@ -107,18 +110,20 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         return result
 
 
-def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
+def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
+                  slug: str | None = None,
                   force: bool = False, narration: str = "ai",
-                  on_progress=None, provided_script: str | None = None,
+                  on_progress=None,
                   max_images: int = 1,
                   visual_overlap: float | None = None,
-                  genre: str | None = None,
-                  display_title: str | None = None) -> dict:
+                  genre: str | None = None) -> dict:
+    if not isinstance(pipeline_input, PipelineInput):
+        raise TypeError("pipeline core requires PipelineInput")
     started = time.monotonic()
     stage_times: dict[str, float] = {}
     warnings: list[str] = []
     stages = STAGES_HUMAN if narration == "human" else STAGES_AI
-    script_mode = provided_script is not None
+    script_mode = pipeline_input.script is not None
     max_images = max(1, min(5, int(max_images or 1)))
     # Gênero: parâmetro explícito > config. Sem chave, `perfil` é None e
     # nada abaixo muda de comportamento — é a compatibilidade com os
@@ -177,7 +182,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         if on_progress:
             on_progress(idx, len(stages), label, status)
 
-    slug, paths = _resolve_paths(cfg.out_dir, slug, idea, genre_key,
+    slug, paths = _resolve_paths(cfg.out_dir, slug, pipeline_input.topic, genre_key,
                                    force)
     if not cfg.audio_enabled and cfg.music_mode == "auto":
         try:
@@ -186,7 +191,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             previous_project = {}
         if previous_project.get("audio"):
             audio_composition.apply_audio_request(cfg, previous_project["audio"])
-    metrics = RunMetrics(slug, idea, narration)
+    metrics = RunMetrics(slug, pipeline_input.topic, narration)
     for d in ("script", "audio", "subtitles", "assets", "render",
               "media", "timeline", "teleprompter", "sources"):
         os.makedirs(os.path.join(paths.root, d), exist_ok=True)
@@ -196,7 +201,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # [0/6] Pesquisa é um estágio. Pipeline só passa dependências e recebe
     # contexto/estado para roteiro, cenas e metadados seguintes.
     research_output = pipeline_research_stage.run_research_stage(
-        idea, cfg, paths, metrics, genre_key, warnings, sources, emit,
+        pipeline_input.topic, cfg, paths, metrics, genre_key, warnings, sources, emit,
         project_artifacts.write_json)
     research = research_output.result
     research_sources = research.sources
@@ -208,10 +213,11 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # [1/6] Roteiro e título: transforma inputs pesquisados em artefatos validados.
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro")
     script_result = pipeline_script_stage.run_script_stage(
-        idea, cfg, paths, metrics, research_prompt=research_pack,
+        pipeline_input.topic, cfg, paths, metrics, research_prompt=research_pack,
         research_target=research_target, research_sources=research_sources,
         genre_directive=genre_directive, force=force,
-        provided_script=provided_script, provided_title=display_title)
+        provided_script=pipeline_input.script,
+        provided_title=pipeline_input.display_title)
     script_artifact, title_artifact = script_result.script, script_result.title
     script_text, script_source = script_artifact.text, script_artifact.source
     video_title, title_source = title_artifact.text, title_artifact.source
@@ -230,7 +236,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         script_text, cfg, paths, force=force_after_script,
         script_mode=script_mode, genre=genre_key,
         scene_target_seconds=alvo_cena, max_scenes=teto_cena,
-        scene_directive=editorial_stage.scene_directive(perfil), topic=idea,
+        scene_directive=editorial_stage.scene_directive(perfil),
+        topic=pipeline_input.topic,
         target=research_target, research_sources=research_sources,
         research_timeout=cfg.research_timeout, etymology=scene_etymology,
         metrics=metrics, warnings=warnings, write_json=project_artifacts.write_json)
@@ -263,7 +270,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     # Sem nenhuma imagem o vídeo NÃO é produzido: standby até fotos manuais.
     if media_result.selected_asset_count == 0:
         standby = pipeline_media_stage.prepare_media_standby(
-            idea, slug, paths, len(semantic_scenes), media_result, stage_times,
+            pipeline_input.topic, slug, paths, len(semantic_scenes), media_result, stage_times,
             warnings, sources, research_sources, grounding,
             project_artifacts.write_json)
         emit(3, "Buscando mídia", "STANDBY")
@@ -271,7 +278,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
 
     if narration == "human":
         return pipeline_human_prep.prepare_human_project(
-            idea, slug, cfg, paths, script_text, script_source,
+            pipeline_input.topic, slug, cfg, paths, script_text, script_source,
             tuple(semantic_scenes), scenes_source, media_result, warnings,
             stage_times, started, emit, metrics,
             script_mode=script_mode, max_images=max_images,
@@ -315,7 +322,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     render_request = pipeline_render_stage.RenderStageInput(
         semantic_scenes=tuple(semantic_scenes),
         timeline_spans=timeline_spans, visual_timeline=visual_timeline,
-        media_plan=media_render_plan, idea=idea, slug=slug,
+        media_plan=media_render_plan, idea=pipeline_input.topic, slug=slug,
         title=video_title, script_text=script_text, paths=paths, cfg=cfg,
         genre=genre_key, audio_duration=audio_duration, tts_info=tts_info,
         subtitles_changed=subs_changed, force=force,
@@ -342,7 +349,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         sources, paths, research=research_sources, grounding=grounding,
         media_notes=media_rights_notes, credits=credits)
     metadata = pipeline_metadata_stage.build_assisted_run_metadata(
-        idea=idea, slug=slug, cfg=cfg, paths=paths,
+        idea=pipeline_input.topic, slug=slug, cfg=cfg, paths=paths,
         script_result=script_result, research_output=research_output,
         scene_result=scene_result, media_result=media_result,
         audio_result=audio_result, render_result=render_result,
@@ -396,10 +403,11 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
     slug = slug or slugify_with_timestamp(title)
     if max_images is None:
         max_images = cfg.visual_max_images
-    return run_pipeline(research_topic, cfg, slug=slug, force=force,
+    request = PipelineInput(topic=research_topic, script=text,
+                            display_title=provided_title)
+    return run_pipeline(request, cfg, slug=slug, force=force,
                         narration=narration, on_progress=on_progress,
-                        provided_script=text, max_images=max_images,
-                        on_event=on_event, display_title=provided_title)
+                        max_images=max_images, on_event=on_event)
 
 
 

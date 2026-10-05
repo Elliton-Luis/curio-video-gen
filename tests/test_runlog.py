@@ -7,6 +7,7 @@ import pytest
 
 from curio.config import CurioConfig
 from curio import pipeline
+from curio.pipeline_input import PipelineInput
 from curio.runlog import RunLog, event, safe_text, set_stage
 
 
@@ -26,7 +27,8 @@ def test_run_log_exists_before_work_and_survives_failure_without_metrics(
 
     monkeypatch.setattr(pipeline, "_run_pipeline", fail)
     with pytest.raises(RuntimeError, match="fixture failure"):
-        pipeline.run_pipeline("idea", CurioConfig(out_dir=str(tmp_path)),
+        pipeline.run_pipeline(PipelineInput(topic="idea"),
+                              CurioConfig(out_dir=str(tmp_path)),
                               slug="broken")
     logs = list((tmp_path / "broken" / "logs").glob("*.jsonl"))
     rows = _records(logs[0])
@@ -44,7 +46,8 @@ def test_interruption_flushes_interrupted_record(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pipeline, "_run_pipeline", interrupt)
     with pytest.raises(KeyboardInterrupt):
-        pipeline.run_pipeline("idea", CurioConfig(out_dir=str(tmp_path)),
+        pipeline.run_pipeline(PipelineInput(topic="idea"),
+                              CurioConfig(out_dir=str(tmp_path)),
                               slug="interrupted")
     log = next((tmp_path / "interrupted" / "logs").glob("*.jsonl"))
     rows = _records(log)
@@ -62,7 +65,7 @@ def test_success_creates_log_and_callback_only_receives_short_events(
 
     monkeypatch.setattr(pipeline, "_run_pipeline", succeed)
     result = pipeline.run_pipeline(
-        "idea", CurioConfig(out_dir=str(tmp_path)), slug="ok",
+        PipelineInput(topic="idea"), CurioConfig(out_dir=str(tmp_path)), slug="ok",
         on_event=seen.append)
     log = next((tmp_path / "ok" / "logs").glob("*.jsonl"))
     rows = _records(log)

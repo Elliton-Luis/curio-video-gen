@@ -23,6 +23,7 @@ from . import project_artifacts
 from .pipeline import (finalize_project,
                          run_pipeline,
                          run_script_pipeline)
+from .pipeline_input import PipelineInput
 from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from . import pipeline_render as pipeline_render_stage
 from .media.selection_metrics import MediaMetricsInput
@@ -102,7 +103,8 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
         print("Narração deve ser 'ai' ou 'human'.", file=sys.stderr)
         return 2
     try:
-        meta = run_pipeline(idea, cfg, slug=args.slug, force=args.force,
+        meta = run_pipeline(PipelineInput(topic=idea), cfg,
+                            slug=args.slug, force=args.force,
                             narration=narration, on_progress=_progress,
                             on_event=_run_event)
     except KeyboardInterrupt:

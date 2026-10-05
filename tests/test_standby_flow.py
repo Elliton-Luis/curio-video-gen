@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from curio.config import CurioConfig
 from curio.pipeline import run_pipeline
+from curio.pipeline_input import PipelineInput
 from curio.pipeline_media import MediaStandby, manual_media_dir
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
@@ -53,7 +54,8 @@ def test_standby_sem_imagens(tmp_path):
     with patch("curio.stages.visual.fetch_media_multi",
                side_effect=_empty_media):
         try:
-            run_pipeline("ideia teste", cfg, slug="teste-standby",
+            run_pipeline(PipelineInput(topic="ideia teste"), cfg,
+                         slug="teste-standby",
                          max_images=3)
             raise AssertionError("deveria entrar em standby")
         except MediaStandby as exc:
@@ -100,7 +102,8 @@ def test_resume_com_foto_manual(tmp_path):
          patch("curio.stages.research.research_topic", side_effect=_fonte), \
          patch("curio.stages.tts.synthesize", side_effect=_boom):
         try:
-            run_pipeline("ideia teste", cfg, slug="teste-standby",
+            run_pipeline(PipelineInput(topic="ideia teste"), cfg,
+                         slug="teste-standby",
                          max_images=3)
             raise AssertionError("deveria chegar ao TTS")
         except RuntimeError as exc:

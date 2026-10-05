@@ -18,6 +18,7 @@ from typing import Callable, Optional
 
 from .config import CurioConfig
 from .pipeline import run_pipeline
+from .pipeline_input import PipelineInput
 from .pipeline_media import MediaStandby
 from .slug import slugify_with_timestamp
 
@@ -234,7 +235,8 @@ def process_queue(
             try:
                 # Executa pipeline completo (mesmo pipeline do modo individual).
                 try:
-                    result = run_pipeline(item.idea, item_cfg, slug=item.slug,
+                    result = run_pipeline(PipelineInput(topic=item.idea), item_cfg,
+                                          slug=item.slug,
                                           on_event=on_event)
                 except MediaStandby as standby:
                     item.status = QueueItemStatus.PAUSED
