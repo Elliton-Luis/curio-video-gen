@@ -110,8 +110,9 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
   embora tenha melhorado do baseline anterior. Não se demonstrou esgotamento
   suficiente de mídia específica em todos os casos.
 - A divergência dos contadores Met/AIC acima afeta a interpretação dos requests
-  observados em runs anteriores a F15. F15 corrige a contagem no código, mas
-  ainda não há uma geração real posterior que valide o novo breakdown.
+  observados em runs anteriores a F15. A geração pós-F15 confirmou o agregado
+  e o breakdown `search`; lookups `metadata` foram confirmados por sondagem
+  NASA, enquanto Met continuou indisponível (HTTP 410).
 - `visual.py` continua coordenando muitas decisões e efeitos. A extração das
   funções técnicas de aquisição não concluiu a separação de responsabilidades
   editoriais.
@@ -122,6 +123,7 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
 |---|---:|---:|---:|---:|---:|---|
 | Batalha de Mohács, sem LLM | 4 | 3 | 3 | 0 | 1 | 26 queries lógicas; 66,43 s |
 | M87, sem LLM | 3 | 3 | 3 por ID/hash | 0 | 0 | 18 queries lógicas; 27,68 s |
+| Batalha de Mohács, F15 | 4 | 4 | 4 | 0 | 0 | 31 queries lógicas; mídia 81,98 s; total 148,89 s |
 
 Os detalhes por cena, fontes, seleção e inspeção visual constam em
 [`20261005-english-entity-connectors-and-real-runs.md`](20261005-english-entity-connectors-and-real-runs.md).
@@ -137,8 +139,14 @@ requests. O contrato mantém `provider_search_calls` por invocação do adapter 
 `provider_requests` por tentativa HTTP; o breakdown identifica `search`,
 `metadata` e `unknown`. O campo `searches` permanece alias agregado por
 compatibilidade. A suíte completa passou com **1014 testes em 182,23 s**,
-focados com 40 testes, além de compileall e diff check. Não houve geração real
-após esta mudança. O relatório da fase descreve a cobertura e os limites.
+focados com 40 testes, além de compileall e diff check. A validação real
+posterior gerou 4 assets Wikimedia únicos, sem reuse nem sintético; 31 requests
+search por provider para 31 queries lógicas. Met respondeu HTTP 410 e AIC HTTP
+500; sondagem NASA Apollo 11 registrou uma busca e um request metadata. Os
+quatro vencedores foram inspecionados visualmente; o diorama moderno é uma
+ressalva editorial. Ver
+[`20261005-provider-request-metric-boundary.md`](20261005-provider-request-metric-boundary.md)
+para queries, providers e limites por cena.
 
 ## Resumo do estado
 
