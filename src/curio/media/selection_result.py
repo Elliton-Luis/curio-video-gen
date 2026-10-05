@@ -7,18 +7,37 @@ is the explicit compatibility projection for consumers not yet migrated.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from math import isfinite
+from types import MappingProxyType
 
-from .providers import MediaAsset
+from .asset_snapshot import MediaAssetSnapshot
 from ..stages.media_selection import SelectionDecision
 from .visual_decision import VisualDecision
 
 
+def _freeze_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_json(item)
+                                 for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item) for item in value)
+    return deepcopy(value)
+
+
+def _thaw_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return deepcopy(value)
+
+
 @dataclass(frozen=True)
 class SelectedAsset:
-    asset: MediaAsset
+    asset: MediaAssetSnapshot
     query: str
     relevance: float
     order: int
@@ -27,8 +46,19 @@ class SelectedAsset:
     acquisition: str
     reuse_reason: str
     strategy: str
-    score_detail: dict | None
-    _row: dict = field(repr=False, compare=False)
+    score_detail: Mapping | None
+    _row: Mapping = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.asset, MediaAssetSnapshot):
+            raise TypeError("selected asset requires an immutable asset snapshot")
+        if self.score_detail is not None:
+            if not isinstance(self.score_detail, Mapping):
+                raise TypeError("selected asset score detail must be an object or null")
+            object.__setattr__(self, "score_detail", _freeze_json(self.score_detail))
+        if not isinstance(self._row, Mapping):
+            raise TypeError("selected asset source row must be an object")
+        object.__setattr__(self, "_row", _freeze_json(self._row))
 
     @classmethod
     def from_dict(cls, value: object, index: int) -> "SelectedAsset":
@@ -37,7 +67,7 @@ class SelectedAsset:
         raw_asset = value.get("asset")
         if not isinstance(raw_asset, dict):
             raise ValueError("selected media entry requires an asset object")
-        asset = MediaAsset.from_dict(raw_asset)
+        asset = MediaAssetSnapshot.from_dict(raw_asset)
         if not asset.provider or not asset.asset_id:
             raise ValueError("selected media asset requires provider and asset id")
         relevance = _finite_number(value.get("relevance", 0), "asset relevance")
@@ -65,22 +95,35 @@ class SelectedAsset:
 
     def to_dict(self) -> dict:
         """Return the original row, without normalizing project metadata."""
-        return deepcopy(self._row)
+        return _thaw_json(self._row)
 
 
 @dataclass(frozen=True)
 class SceneMediaSelection:
     scene_id: int
-    asset: MediaAsset | None
+    asset: MediaAssetSnapshot | None
     assets: tuple[SelectedAsset, ...]
     decision: SelectionDecision
     reused_from: int | None
     visual_type: str
     strategy: str
-    rejected: tuple[dict, ...]
-    reuse: tuple[dict, ...]
+    rejected: tuple[Mapping, ...]
+    reuse: tuple[Mapping, ...]
     visual_audit: VisualDecision
-    _row: dict = field(repr=False, compare=False)
+    _row: Mapping = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.asset is not None and not isinstance(self.asset, MediaAssetSnapshot):
+            raise TypeError("scene selection asset must be an immutable snapshot")
+        for name in ("rejected", "reuse"):
+            rows = getattr(self, name)
+            if not isinstance(rows, tuple) or any(
+                    not isinstance(item, Mapping) for item in rows):
+                raise TypeError(f"scene selection {name} must be immutable object rows")
+            object.__setattr__(self, name, tuple(_freeze_json(item) for item in rows))
+        if not isinstance(self._row, Mapping):
+            raise TypeError("scene selection source row must be an object")
+        object.__setattr__(self, "_row", _freeze_json(self._row))
 
     @classmethod
     def from_dict(cls, value: object) -> "SceneMediaSelection":
@@ -93,7 +136,8 @@ class SceneMediaSelection:
         raw_asset = value.get("asset")
         if raw_asset is not None and not isinstance(raw_asset, dict):
             raise TypeError("selected media asset must be an object or null")
-        asset = MediaAsset.from_dict(raw_asset) if raw_asset is not None else None
+        asset = (MediaAssetSnapshot.from_dict(raw_asset)
+                 if raw_asset is not None else None)
         if asset is not None and (not asset.provider or not asset.asset_id):
             raise ValueError("selected media asset requires provider and asset id")
 
@@ -156,7 +200,7 @@ class SceneMediaSelection:
 
     def to_dict(self) -> dict:
         """Return the original project row without schema expansion."""
-        return deepcopy(self._row)
+        return _thaw_json(self._row)
 
     def with_reuse_audit(self, reuse: list[dict]) -> "SceneMediaSelection":
         """Update reuse audit through the contract's persisted-row boundary."""

@@ -174,7 +174,7 @@ def test_scene_selection_contract_owns_and_validates_reuse_projection():
 
 
 def test_media_stage_result_uses_typed_scene_selection_and_roundtrips_project_row():
-    from curio.media.providers import MediaAsset
+    from curio.media.asset_snapshot import MediaAssetSnapshot
     from curio.media.selection_result import (MediaStageResult,
                                               SceneMediaSelection)
 
@@ -190,13 +190,49 @@ def test_media_stage_result_uses_typed_scene_selection_and_roundtrips_project_ro
     result = MediaStageResult.from_rows(rows, "provider")
 
     assert isinstance(result.scenes[0], SceneMediaSelection)
-    assert isinstance(result.scenes[0].asset, MediaAsset)
+    assert isinstance(result.scenes[0].asset, MediaAssetSnapshot)
     assert result.scenes[0].assets[0].query == "historical map"
     assert result.real_scenes == result.selected_asset_count == 1
     assert result.to_rows() == rows
     projected = result.to_rows()
     projected[0]["asset"]["title"] = "mutated projection"
     assert result.scenes[0].asset.title == "Historical map"
+
+
+def test_scene_media_selection_freezes_assets_and_nested_project_rows():
+    from curio.media.selection_result import MediaStageResult
+    from tests.media_test_support import with_selection
+
+    row = with_selection({
+        "chapter_id": 1,
+        "asset": {"provider": "wikimedia", "asset_id": "map-1",
+                  "title": "Historical map", "tags": ["map"]},
+        "assets": [{"asset": {"provider": "wikimedia", "asset_id": "map-1",
+                                "title": "Historical map"},
+                    "score_detail": {"topic_evidence": {"matched": ["Ottoman"]}}}],
+        "rejected": [{"reason": "weak", "evidence": {"terms": ["unrelated"]}}],
+        "reuse": [{"reason": "none", "details": {"scenes": [1, 2]}}],
+    })
+    result = MediaStageResult.from_rows([row], "fixture")
+    scene = result.scenes[0]
+
+    row["asset"]["title"] = "changed source row"
+    row["rejected"][0]["evidence"]["terms"].append("changed source row")
+    assert scene.asset.title == "Historical map"
+    assert scene.rejected[0]["evidence"]["terms"] == ("unrelated",)
+
+    with pytest.raises((AttributeError, TypeError)):
+        scene.asset.title = "changed"
+    with pytest.raises(TypeError):
+        scene.assets[0].score_detail["topic_evidence"]["matched"] = ("changed",)
+    with pytest.raises(AttributeError):
+        scene.rejected[0]["evidence"]["terms"].append("changed")
+    with pytest.raises(TypeError):
+        scene.reuse[0]["details"]["scenes"] = (9,)
+
+    mutable_projection = result.to_rows()
+    mutable_projection[0]["rejected"][0]["evidence"]["terms"].append("edited")
+    assert result.to_rows()[0]["rejected"][0]["evidence"]["terms"] == ["unrelated"]
 
 
 def test_media_stage_result_rejects_selected_asset_without_identity():

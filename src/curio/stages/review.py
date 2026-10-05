@@ -124,7 +124,8 @@ class ReviewMediaPlan:
                 entry.asset.license_url, entry.score, entry.query, entry.order,
                 entry.strategy or "image")
                   for entry in scene.assets),
-            scene.rejected, scene.reused_from, "")
+            tuple(scene.to_dict().get("rejected", [])),
+            scene.reused_from, "")
             for scene in result.scenes))
 
     @classmethod

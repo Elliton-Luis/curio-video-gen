@@ -1,11 +1,11 @@
 import pytest
 
 from curio.media.providers import MediaAsset
+from curio.media.asset_snapshot import MediaAssetSnapshot
 from curio.stages.media_contracts import (
     Candidate,
     CandidateEvaluation,
     CandidateRejection,
-    ProviderAssetSnapshot,
 )
 from curio.stages.visual_contracts import SearchQuery
 
@@ -22,7 +22,7 @@ def test_candidate_retains_provider_query_and_representation_provenance():
     candidate = Candidate(asset, query, "url:https://commons.wikimedia.org/wiki/file:mohacs.jpg")
 
     normalized = candidate.to_evaluation_input()
-    assert isinstance(candidate.asset, ProviderAssetSnapshot)
+    assert isinstance(candidate.asset, MediaAssetSnapshot)
     assert normalized["asset"]["provider"] == "wikimedia"
     assert normalized["query"] == query.query
     assert normalized["query_source"] == "representation_variant"
