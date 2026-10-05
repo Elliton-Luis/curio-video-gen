@@ -689,3 +689,17 @@ de linha duplicada. 59 testes focados passaram; a suíte integral passou com
 `155e6af`. O módulo visual ficou 51 linhas menor, mas permanece um coordenador
 grande; esta extração é uma fronteira de responsabilidade, não uma conclusão
 da migração da aquisição.
+
+## G17: política de ordem dos providers sai da aquisição
+
+`visual.py` calculava a prioridade por cena, consultando o adapter de gênero e
+interpretando flags de `VisualPlan` antes de chamar os providers. A regra foi
+movida para `media_provider_policy.ordered_providers`, que recebe um plano já
+construído, lê as preferências declarativas de gênero e apenas ordena os
+adapters disponíveis. Pesquisa e avaliação continuam fora dessa política; a
+ordem observada para história, espaço, mecanismo e demais cenas foi preservada.
+
+Os testes de museus e providers agora usam o módulo dono e continuam cobrindo
+prioridade histórica, prioridade-base e Unsplash ao final. 73 testes focados
+passaram; a suíte integral passou com **896 testes em 175,70 s**; compileall e
+diff check passaram. Código em `4fc4bf3`.

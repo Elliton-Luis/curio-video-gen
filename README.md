@@ -69,6 +69,9 @@ registrada como trabalho arquitetural restante.
 A projeção das decisões de candidatos foi separada para `visual_audit.py`;
 59 testes focados e 896 testes integrais passaram. `visual.py` ainda agrega
 aquisição, seleção e fallback, em migração incremental.
+A prioridade por cena agora pertence a `media_provider_policy.py` e consome
+`VisualPlan` já pronto; os providers históricos/científicos mantiveram a ordem
+anterior. Após essa fase, 896 testes passaram na suíte integral.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
