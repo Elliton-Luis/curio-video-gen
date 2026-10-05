@@ -42,7 +42,6 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                 video_title: str = "", title_source: str = "") -> dict:
     if not isinstance(media_result, MediaStageResult):
         raise TypeError("human preparation requires a MediaStageResult")
-    media_scenes = media_result.to_rows()
     render_plan = pipeline_render_stage.SceneRenderPlan.from_media_result(
         media_result)
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)

@@ -225,7 +225,10 @@ validado → aquisição e retorna `MediaStageResult` com origem explícita; o
 contrato tipado em `media/selection_result.py` valida IDs únicos, identidade e
 coerência entre asset/entries/decision. Contagens de seleção são derivadas desse
 contrato. `to_rows()` projeta explicitamente o schema persistido para consumidores
-ainda em migração. `pipeline_timeline` exige esse resultado tipado e valida o
+ainda em migração; o coordenador não cria rows só para testar se há cenas. A
+seleção tipada segue diretamente para fonte/créditos, timeline, render, metadata e
+review; cada owner projeta o formato externo que ainda precisa. `pipeline_timeline`
+exige esse resultado tipado e valida o
 alinhamento entre cena, mídia e span antes de materializar o plano visual. O estágio
 registra auditoria por cena e distingue seleção real,
 sintética e cena sem visual; o

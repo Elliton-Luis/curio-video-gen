@@ -254,7 +254,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     media_result = pipeline_visual_stage.resolve_media(
         semantic_scenes, cfg, paths, max_images, genre_key, metrics,
         force_after_script, project_artifacts.write_json)
-    media_scenes = media_result.to_rows()
     media_render_plan = pipeline_render_stage.SceneRenderPlan.from_media_result(
         media_result)
     warnings.extend(media_result.warnings)
@@ -516,14 +515,13 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         media_notes=media_rights_notes, credits=credits)
     metadata["sources"] = source_summary
     # Folha de contato: o autor revisa o vídeo em ~1 min sem assistir.
-    if media_scenes:
-        from .stages import review as review_stage
-        review_stage.write_contact_sheet(
-            paths.contact_sheet, tuple(semantic_scenes),
-            review_stage.ReviewMediaPlan.from_media_result(media_result),
-            paths.root, slug,
-            threshold=scoring_stage.threshold(), genre=genre_key,
-            typography=pipeline_metadata_stage.typography_report(cfg, genre_key))
+    from .stages import review as review_stage
+    review_stage.write_contact_sheet(
+        paths.contact_sheet, tuple(semantic_scenes),
+        review_stage.ReviewMediaPlan.from_media_result(media_result),
+        paths.root, slug,
+        threshold=scoring_stage.threshold(), genre=genre_key,
+        typography=pipeline_metadata_stage.typography_report(cfg, genre_key))
     for warning in warnings[:8]:
         run_event("warning", str(warning), operation="pipeline_warning")
     if len(warnings) > 8:

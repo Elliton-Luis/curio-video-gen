@@ -252,6 +252,12 @@ Os conceitos são dados simples: dataclasses/enum apenas onde validam invariante
 
 Cada fase recebe um commit estrutural próprio, testes relevantes e relatório de fechamento. A/A+B não devem alterar ranking/threshold deliberadamente; D pode revelar mudança comportamental e precisa comparar replay baseline. Não há refatoração big-bang. Não use performance como justificativa até H.
 
+G29 removeu a projeção redundante `MediaStageResult.to_rows()` do coordenador e
+de human-pending: ela só sustentava uma condição de lista não vazia ou não tinha
+consumidores. A folha de contato agora é sempre construída para o resultado de
+mídia, cuja existência é invariante do contrato. Três testes focados de integração
+e review passaram; a suíte integral anterior é 924 testes.
+
 ## Baseline verificável
 
 - Última suíte completa na base deste audit: `789 passed` (antes de alterações desta tarefa).

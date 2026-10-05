@@ -966,3 +966,20 @@ consistentes para review, métricas e rerender.
 36 testes focados passaram; uma regressão também reabre a seleção via
 `MediaStageResult` e confirma identidade pós-swap. Suíte integral: **924 testes em
 176,16 s**; compileall e diff check passaram.
+
+## G29: remover projeções sem consumidor
+
+O coordenador gerava rows de `MediaStageResult` apenas para testar a lista antes
+de escrever review; o contrato já exige pelo menos uma cena. Human-pending também
+criava rows sem nenhum consumidor após timeline, render e metadata migrarem para
+seus contratos próprios. Essas conversões duplicavam cópias do mesmo estado sem
+serem fonte de persistência.
+
+As duas projeções foram removidas. O coordenador usa o resultado tipado para
+seleção e sempre materializa review, mantendo o caso standby tratado antes; o
+fluxo human-pending retém apenas `MediaStageResult` e `SceneRenderPlan`. Os owners
+que ainda gravam os formatos externos continuam projetando localmente.
+
+Três testes de integração/review passaram; `compileall` e `git diff --check`
+passaram. A suíte integral imediatamente anterior passou com 924 testes; esta
+limpeza não altera semântica além de eliminar o branch impossível por lista vazia.
