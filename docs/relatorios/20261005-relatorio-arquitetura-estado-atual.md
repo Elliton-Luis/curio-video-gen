@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G85/F7.
+**Escopo:** auditoria documentada e migrações incrementais até G86/F7.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -103,6 +103,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `31f6acf` | Rejeita campos não textuais em `PipelineInput` em vez de coercionar objetos para `str` (G83). |
 | `bc131b9` | Move a camada opcional CLIP e o reranqueamento da shortlist para `candidate_evaluation.py` (G84). |
 | `8ae6616` | Faz a projeção de auditoria de query/candidato consumir o `VisualPlan` canônico e validar identidade de cena (G85). |
+| `4b0b4e7` | Centraliza em `media_selection.py` a decisão da próxima tier contextual/sintética/reuso (G86). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -256,7 +257,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F7 parciais. | F6 torna a coleção de tempos imutável; F7 preserva como null a duração histórica irrecuperável. Definições canônicas para demais campos, lifecycle timers, profile por suboperação e reconciliação seleção-render permanecem. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G85 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 move a origem da provenance auditada para `VisualPlan`. `visual.py` ainda compõe busca, tiers, fallback e parte da auditoria final. Rows aninhadas e adapters de leitura/reuso permanecem. Coordenadores das demais etapas precisam convergir/remover adapters após prova de ausência de consumidores. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G86 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a decisão da próxima tier em `media_selection.py`. `visual.py` ainda coordena coleta, avaliação, aquisição, fallbacks e montagem da auditoria. Rows aninhadas e adapters de leitura/reuso permanecem. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -373,6 +374,16 @@ G85: auditoria visual, coleta de candidatos, diretor visual e contratos:
 em **197,08 s**. `compileall` e `git diff --check` passaram. Sem geração real;
 foram preservados os campos JSON. Ver
 [relatório G85](20261005-visual-audit-from-visual-plan.md).
+
+## G86 — política explícita da próxima tier (`4b0b4e7`)
+
+A função pura `next_selection_fallback()` em `media_selection.py` define a
+ordem CONTEXTUAL_SEARCH → SYNTHETIC → REUSE e retorna COMPLETE para cobertura
+real já existente ou NO_ASSET após esgotar as opções. `visual.py` só executa a
+ação; busca, aquisição, gates e persistência não mudaram. 89 testes focados
+passaram, e a suíte completa passou com 986 testes. A orquestração restante em
+`visual.py` segue como dívida. Consulte
+[relatório G86](20261005-selection-fallback-policy.md).
 
 F4: timeline visual/integração/metadata: **16 testes focados passaram**;
 suíte completa: **967 passaram em 191,41 s**. `compileall` e
