@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G67.
+**Escopo:** auditoria documentada e migrações incrementais até G68.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -85,6 +85,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `28e4799` | Separou o acumulador mutável de auditoria por query do snapshot imutável emitido pela coleta (G65). |
 | `8bed5ec` | Fez `Candidate` capturar `ProviderAssetSnapshot` imutável, preservando `MediaAsset` mutável no lifecycle de aquisição (G66). |
 | `833df32` | Congelou recursivamente evidência de `CandidateEvaluation` e manteve a projeção para seleção como cópia independente (G67). |
+| `0e62a18` | Unificou snapshots de assets e congelou recursivamente rows da seleção, preservando a projeção JSON (G68). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -107,7 +108,8 @@ relatórios listados em `docs/README.md`.
   rejeições com evidência JSON recursivamente imutável, sem gerar query ou
   decidir fallback editorial. `to_selection_entry()` projeta cópia editável.
 - **Seleção:** `SelectionDecision`; distingue asset novo, reuso, sintético e
-  ausência, com motivo/fallback validado.
+  ausência, com motivo/fallback validado. `MediaStageResult`/`SceneMediaSelection`
+  expõem `MediaAssetSnapshot` e rows aninhadas imutáveis; `to_dict()` é adapter.
 - **Auditoria da decisão visual:** `VisualDecision` contém `SelectionDecision`
   tipada, valida campos conhecidos e mantém as extensões legadas na projeção.
 - **Auditoria de busca:** `QueryAuditAccumulator` acumula fatos mutáveis dentro da aquisição; `SearchQueryAudit` e a tabela da `SceneCandidateCollection` são snapshots imutáveis, projetados no JSON existente.
@@ -118,7 +120,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G67
+## Arquivos alterados nas fases G57–G68
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -178,9 +180,14 @@ G66 (`8bed5ec`): `src/curio/stages/media_contracts.py` e
 `tests/test_media_contracts.py`. G67 (`833df32`) também altera esses dois
 arquivos; adiciona freeze/thaw recursivo para a evidência de avaliação.
 
+G68 (`0e62a18`): cria `src/curio/media/asset_snapshot.py`; altera
+`src/curio/media/selection_result.py`, `src/curio/stages/media_contracts.py`,
+`src/curio/stages/review.py` e os testes `test_media_contracts.py` e
+`test_media_selection.py`.
+
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G67.
+relatório e os relatórios G57–G68.
 
 
 ## Estado das fases
@@ -194,7 +201,7 @@ relatório e os relatórios G57–G67.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G67 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G68 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -237,6 +244,9 @@ passaram. Não houve geração real nesta fase.
 G67: **28 testes focados passaram**; suíte ampla: **934 passaram, 1 excluído**
 pelo HTTP 429 da API da Wikipédia, em 179,60 s. Compileall e diff check
 passaram. Não houve geração real nesta fase.
+G68: **70 testes focados passaram**; suíte ampla: **935 passaram, 1 excluído**
+pelo HTTP 429 da API da Wikipédia, em 178,39 s. Compileall e diff check
+passaram. Não houve geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -273,7 +283,7 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G67 passam os gates registrados. Auditoria integral, ownership único de
+G57–G68 passam os gates registrados. Auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
@@ -449,9 +459,9 @@ a evidência da coleção. `MediaAsset`, porém, é o modelo do lifecycle de byt
 download enriquece dimensão/tamanho/caminho, e a seleção atribui `used_in`;
 congelar esse modelo global quebraria essas responsabilidades.
 
-G66 cria `ProviderAssetSnapshot`, uma projeção frozen dos mesmos campos, com
-tags/categorias em tuplas. `Candidate.__post_init__` captura o snapshot ao
-receber um `MediaAsset`. `to_dict()` preserva os campos/formatos consumidos por
+G66 inicialmente criou `ProviderAssetSnapshot`, depois unificado por G68 em
+`MediaAssetSnapshot` em `curio.media.asset_snapshot`. `Candidate.__post_init__`
+captura esse snapshot ao receber um `MediaAsset`. `to_dict()` preserva os campos/formatos consumidos por
 `to_evaluation_input()`; o lifecycle técnico continua usando o `MediaAsset`
 original ou uma reconstrução mutável a partir do dict.
 
@@ -480,3 +490,27 @@ forma JSON/listas esperada e não compartilha memória. **28 testes focados** e
 **934 testes da suíte ampla** passaram; um teste externo foi excluído por HTTP
 429 da Wikipédia. Compileall e diff check passaram. Não houve geração real.
 Commit: `833df32`.
+
+
+## G68 — snapshots imutáveis do resultado de seleção (`0e62a18`)
+
+A inspeção dos consumidores mostrou que `SelectedAsset` e `SceneMediaSelection`
+eram frozen externamente, mas continham `MediaAsset` mutável, rows persistidas
+como dict e dados de score/rejeição/reuso nested mutáveis. Assim, o valor tipado
+podia divergir de sua projeção persistida ou mudar por alias. A revisão também
+exigia rows dict como formato de entrada.
+
+G68 centraliza o snapshot de G66 em `media/asset_snapshot.py` como
+`MediaAssetSnapshot`, usado tanto por `Candidate` quanto por ativos em seleção.
+`SelectedAsset` e `SceneMediaSelection` congelam recursivamente score details,
+rejected/reuse e row original; `to_dict()` retorna cópia independente em JSON.
+A conversão `ReviewMediaPlan.from_media_result()` projeta rejeições explicitamente
+para o contrato do review. O ciclo de download segue usando `MediaAsset` mutable.
+
+Arquivos: `src/curio/media/asset_snapshot.py`,
+`src/curio/media/selection_result.py`, `src/curio/stages/media_contracts.py`,
+`src/curio/stages/review.py`, `tests/test_media_contracts.py` e
+`tests/test_media_selection.py`. Os testes cobrem mutations de rows originais e
+projetados, aninhamento, reuso, review e render. **70 testes focados** e **935
+testes amplos** passaram; um teste foi excluído pelo HTTP 429 recorrente da API
+externa. Compileall e diff check passaram; sem geração real. Commit: `0e62a18`.
