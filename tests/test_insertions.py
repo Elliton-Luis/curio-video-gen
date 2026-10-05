@@ -9,7 +9,6 @@ Contratos garantidos aqui (o resto é escolha estética):
 
 import pytest
 
-from curio.stages import visual as V
 from curio.stages import visual_timeline as VT
 from curio.stages.scenes import Chapter
 from tests.test_support.visual_timeline import build_visual_timeline
@@ -59,14 +58,14 @@ def _overlays(timeline) -> list[dict]:
                                            (12, 2), (12, 3), (20, 2)])
 def test_orcamento_global_respeitado(n_scenes, budget):
     chapters = _chapters(n_scenes)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=budget)
     assert len(_overlays(vt)) == budget
 
 
 def test_orcamento_zero_nunca_insere():
     chapters = _chapters(8)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=0)
     assert _overlays(vt) == []
     assert all(len(t["images"]) == 1 for t in vt)
@@ -75,7 +74,7 @@ def test_orcamento_zero_nunca_insere():
 def test_mais_cenas_nao_vira_slideshow():
     """20 cenas com 2 de orçamento: 2 inserções, não 20 nem 40."""
     chapters = _chapters(20)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2)
     assert len(_overlays(vt)) == 2
     assert sum(len(t["images"]) for t in vt) == 22  # 20 fundos + 2 insertions
@@ -84,7 +83,7 @@ def test_mais_cenas_nao_vira_slideshow():
 def test_cena_curta_nao_quebra_orcamento():
     chapters = [Chapter(id=i + 1, narration="x", duration_estimate=0.4,
                         start=i * 0.4, end=(i + 1) * 0.4) for i in range(6)]
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2)
     assert len(_overlays(vt)) <= 2
 
@@ -113,7 +112,7 @@ def test_determinismo():
 
 def test_fundo_nunca_vira_cartao():
     chapters = _chapters(10)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2, insert_style="drop_in")
     for t in vt:
         base = t["images"][0]
@@ -125,7 +124,7 @@ def test_fundo_nunca_vira_cartao():
 
 def test_insercao_usa_o_estilo_pedido():
     chapters = _chapters(10)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2, insert_style="drop_in")
     assert [im["transition"] for im in _overlays(vt)] == ["drop_in", "drop_in"]
 
@@ -133,7 +132,7 @@ def test_insercao_usa_o_estilo_pedido():
 def test_som_marca_o_instante_da_entrada():
     """O `at` do SFX é absoluto e coincide com o início da foto na cena."""
     chapters = _chapters(10)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2, insert_style="drop_in",
                                  insert_gain_db=-15)
     for t in vt:
@@ -150,7 +149,7 @@ def test_som_marca_o_instante_da_entrada():
 
 def test_som_desligado_nao_quebra_a_timeline():
     chapters = _chapters(8)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2, sfx=False)
     assert len(_overlays(vt)) == 2
     assert all(im["sfx"] is None for im in _overlays(vt))
@@ -164,7 +163,7 @@ def test_cena_sem_segunda_foto_nao_inventa_insercao():
                "assets": [{"asset": _asset(0, "thermal paper receipt")["asset"],
                            "query": "a", "order": 0}],
                "reused_from": None} for c in chapters]
-    vt = build_visual_timeline(V, chapters, scenes, 0.9, seed="s", insertions=2)
+    vt = build_visual_timeline(VT, chapters, scenes, 0.9, seed="s", insertions=2)
     assert _overlays(vt) == []
 
 
@@ -173,7 +172,7 @@ def test_cena_sem_midia_continua_fallback():
     scenes = _scenes(chapters)
     scenes[3] = {"chapter_id": chapters[3].id, "asset": None, "assets": [],
                  "reused_from": None}
-    vt = build_visual_timeline(V, chapters, scenes, 0.9, seed="s", insertions=2)
+    vt = build_visual_timeline(VT, chapters, scenes, 0.9, seed="s", insertions=2)
     assert vt[3]["fallback"] is True
     assert vt[3]["images"] == []
 
@@ -182,7 +181,7 @@ def test_cena_sem_midia_continua_fallback():
 
 def test_retime_preserva_estilo_e_som():
     chapters = _chapters(10)
-    vt = build_visual_timeline(V, chapters, _scenes(chapters), 0.9, seed="s",
+    vt = build_visual_timeline(VT, chapters, _scenes(chapters), 0.9, seed="s",
                                  insertions=2, insert_style="drop_in")
     slower = [Chapter(id=c.id, narration=c.narration,
                       duration_estimate=20.0, start=c.start * 2.5,
@@ -213,7 +212,7 @@ def test_none_mantem_album_por_cena():
                           {"asset": _asset(2, "thermal paper receipt roll")["asset"],
                            "query": "c", "order": 2}],
                "reused_from": None} for c in chapters]
-    vt = build_visual_timeline(V, chapters, scenes, 0.9, seed="s", insertions=None)
+    vt = build_visual_timeline(VT, chapters, scenes, 0.9, seed="s", insertions=None)
     assert len(_overlays(vt)) == 12  # 2 por cena, sem teto
 
 
@@ -318,7 +317,7 @@ def test_timeline_marca_a_cena_que_ficou_sem_insercao():
                            "assets": [_entry(0, "steam smoke"),
                                       _entry(1, "thermal paper receipt roll")],
                            "reused_from": None})
-    vt = build_visual_timeline(V, chapters, scenes, 0.9, seed="s", insertions=2)
+    vt = build_visual_timeline(VT, chapters, scenes, 0.9, seed="s", insertions=2)
     por_cena = {t["chapter_id"]: t for t in vt}
     assert "no_insertion" in por_cena[3], "cena sem inserção não foi sinalizada"
     assert all("no_insertion" not in por_cena[i] for i in (2, 4))

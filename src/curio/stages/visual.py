@@ -34,7 +34,6 @@ import sys
 import time
 
 from .. import ffmpeg as ff
-from .. import textnorm
 from ..config import CurioConfig
 from ..media import download_asset, get_providers
 from ..media.providers import (
@@ -45,22 +44,18 @@ from ..media.providers import (
     min_dimension,
 )
 from . import media_rules
-from .visual_timeline import (_assign_sfx, _shuffled_styles, _spec_images,
-                              insertion_scenes, mark_insertion,
-                              order_for_insertion)
 from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
 from .media_contracts import Candidate, CandidateRejection
 from .candidate_evaluation import evaluate_generic, evaluate_specific
-from .scene_contract import SemanticScene, TimelineSpan
+from .scene_contract import SemanticScene
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
-import os as _os
-MAX_CONCURRENT_SEARCHES = int(_os.environ.get("CURIO_MAX_CONCURRENT_SEARCHES", "3"))
-MAX_CONCURRENT_DOWNLOADS = int(_os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS", "2"))
-SEARCH_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
-DOWNLOAD_TIMEOUT = float(_os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
+MAX_CONCURRENT_SEARCHES = int(os.environ.get("CURIO_MAX_CONCURRENT_SEARCHES", "3"))
+MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS", "2"))
+SEARCH_TIMEOUT = float(os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
+DOWNLOAD_TIMEOUT = float(os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
 _SEARCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=max(1, MAX_CONCURRENT_SEARCHES), thread_name_prefix="curio-search")
 _DOWNLOAD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
@@ -1126,113 +1121,3 @@ def _resolve_reuse_multi(scenes: list[dict],
             }
         print(f"AVISO: cena {cid} reusa imagem(ns) da cena "
               f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)
-
-
-def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
-                          timeline_spans: tuple[TimelineSpan, ...],
-                          media_scenes: list[dict],
-                          overlap_cap: float = 0.9, seed: str = "",
-                          sfx: bool = True,
-                          insertions: int | None = None,
-                          insert_style: str = "drop_in",
-                           insert_gain_db: int = -15,
-                          honor_order: bool = False) -> list[dict]:
-    """Timeline visual renderizável: um trecho por cena com suas imagens.
-
-    Cada trecho carrega texto/narração original, início/fim, imagens em
-    ordem (com consulta que a encontrou), duração, transição e geometria
-    de sobreposição. Cenas semânticas e spans alinhados são entradas
-    separadas; os spans precisam ter tempos definidos antes desta chamada.
-
-    `insertions` é o orçamento de fotos COMPLEMENTARES do VÍDEO inteiro
-    (padrão 2, `None` mantém o álbum por cena sem limite). As cenas
-    escolhidas por `insertion_scenes` recebem 1 cartaz a mais, sempre com
-    `insert_style` (padrão: caiu do álbum) e um toque de som discreto no
-    instante exato da entrada — as outras cenas ficam só com o fundo.
-
-    `honor_order` respeita a ordem que já está em `assets` em vez de
-    redecidir o papel de cada foto. É o que o `swap` precisa: se o
-    replanejamento re-executasse `order_for_insertion`, ele devolveria a
-    foto que o autor acabou de tirar para o fim.
-    """
-    _validate_visual_timeline_inputs(semantic_scenes, timeline_spans)
-    by_chapter = {s["chapter_id"]: s for s in media_scenes}
-    styles = _shuffled_styles(seed)
-    sparse = insertions is not None and not honor_order
-    insert_at = (insertion_scenes(len(semantic_scenes), insertions or 0)
-                 if sparse else set())
-    scene_no_insert: set[int] = set()  # cena que ficou sem deepenho
-    overlay_counter, sfx_ordinal, style_pos = 0, 0, 0
-    timeline = []
-    from .visual_beats import plan as plan_visual_beats, bind_assets, asset_key
-    background_uses: dict[str, int] = {}
-    for idx, (scene_plan, span) in enumerate(zip(semantic_scenes, timeline_spans)):
-        scene = by_chapter.get(scene_plan.id, {})
-        start, end = round(float(span.start), 3), round(float(span.end), 3)
-        dur = max(0.5, end - start)
-        entries = list(scene.get("assets") or [])
-        background_entries = list(entries)
-        if not honor_order:
-            background_entries.sort(key=lambda entry: (
-                bool(entry.get("generic")),
-                background_uses.get(asset_key(entry.get("asset") or {}), 0),
-                -entry.get("score", 0)))
-        if sparse:
-            # A inserção tem de ser a imagem MAIS PRECISA sobre o assunto da
-            # cena — é o que a diferencia do fundo. Sem candidata que bata o
-            # fundo, a cena fica só com o fundo.
-            background, insertion = order_for_insertion(entries, scene_plan)
-            entries = background if idx not in insert_at else background + insertion
-            if idx in insert_at and not insertion:
-                scene_no_insert.add(scene_plan.id)
-        images, consumed = _spec_images(entries, dur,
-                                       overlap_cap, styles, style_pos)
-        if sparse:
-            # No modo esparso toda foto extra É uma inserção: entra no
-            # ritmo de álbum e sempre marca com som, independentemente da
-            # cadência ~1/3 do modo álbum cheio. `style_pos` não anda:
-            # a sequência variada pertence só ao álbum cheio.
-            mark_insertion(images, start, insert_style, insert_gain_db, sfx)
-        else:
-            style_pos += consumed
-            overlay_counter, sfx_ordinal = _assign_sfx(
-                images, start, overlay_counter, sfx_ordinal, sfx)
-        beats = plan_visual_beats(dur, start)
-        available = [_spec_images([entry], dur)[0][0] for entry in background_entries]
-        backgrounds = bind_assets(beats, available, start)
-        for background in backgrounds:
-            key = asset_key(background)
-            background_uses[key] = background_uses.get(key, 0) + 1
-        for beat in beats:
-            visible = beat.setdefault("asset_ids", [])
-            for image in images[1:]:
-                if image["start"] < beat["end"] - start:
-                    key = asset_key(image)
-                    if key and key not in visible:
-                        visible.append(key)
-        timeline.append({
-            "chapter_id": scene_plan.id,
-            "narration": scene_plan.narration,  # original, intocado
-            "start": start,
-            "end": end,
-            "images": images,
-            "visual_beats": beats,
-            "backgrounds": backgrounds,
-            "fallback": not images and not backgrounds,
-            "reused_from": scene.get("reused_from"),
-            **({"no_insertion": "nenhuma imagem mais precisa que o fundo"
-               } if scene_plan.id in scene_no_insert else {}),
-        })
-    return timeline
-
-
-def _validate_visual_timeline_inputs(semantic_scenes, timeline_spans) -> None:
-    if (any(not isinstance(scene, SemanticScene) for scene in semantic_scenes)
-            or any(not isinstance(span, TimelineSpan) for span in timeline_spans)):
-        raise TypeError("visual timeline requires SemanticScene and TimelineSpan values")
-    scene_ids = tuple(scene.id for scene in semantic_scenes)
-    span_ids = tuple(span.scene_id for span in timeline_spans)
-    if not scene_ids or len(scene_ids) != len(set(scene_ids)):
-        raise ValueError("visual timeline requires unique semantic scenes")
-    if scene_ids != span_ids:
-        raise ValueError("visual timeline spans do not match scene order")

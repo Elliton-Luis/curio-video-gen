@@ -18,7 +18,7 @@ def entry(index, path=""):
 def test_all_selected_backgrounds_survive_sparse_insert_budget():
     chapters = [Chapter(1, "Rome", 8, start=0, end=8)]
     media = [{"chapter_id": 1, "assets": [entry(i) for i in range(3)]}]
-    timeline = build_visual_timeline(visual, chapters, media, insertions=0)
+    timeline = build_visual_timeline(visual_timeline, chapters, media, insertions=0)
     assert len(timeline[0]["images"]) == 1
     assert len(timeline[0]["backgrounds"]) == 3
     keys = {key for beat in timeline[0]["visual_beats"] for key in beat["asset_ids"]}
@@ -121,7 +121,7 @@ def test_real_render_switches_all_backgrounds(tmp_path):
                         f"color=c={color}:s={size}", "-frames:v", "1", str(path)], check=True)
         entries.append(entry(index, str(path)))
     timeline = build_visual_timeline(
-        visual, chapters, [{"chapter_id": 1, "assets": entries}], insertions=0)
+        visual_timeline, chapters, [{"chapter_id": 1, "assets": entries}], insertions=0)
     scene = timeline[0]
     output = tmp_path / "varied.mp4"
     render.render_collage_segment(scene["images"], 6.3, str(output), cfg,
@@ -202,14 +202,14 @@ def test_literal_rome_context_keeps_maps_and_artifacts_eligible(monkeypatch):
     timeline_scene = Chapter.from_semantic_scene(
         ch, timing=TimelineSpan(scene_id=1, duration_estimate=8, start=0, end=8))
     timeline = build_visual_timeline(
-        visual, [timeline_scene], [{"chapter_id": 1, "assets": assets}],
+        visual_timeline, [timeline_scene], [{"chapter_id": 1, "assets": assets}],
         insertions=0)
     assert len(timeline[0]["backgrounds"]) == 3
 
 
 def test_retiming_preserves_background_variety():
     ch = Chapter(1, "Rome", 8, start=0, end=8)
-    timeline = build_visual_timeline(visual, [ch], [{"chapter_id": 1, "assets":
+    timeline = build_visual_timeline(visual_timeline, [ch], [{"chapter_id": 1, "assets":
                                                   [entry(i) for i in range(3)]}], insertions=0)
     ch.start, ch.end = 2, 14
     updated = visual_timeline.retime_visual_timeline(
@@ -231,7 +231,7 @@ def test_retiming_rejects_misaligned_timeline_contract():
 def test_metrics_exclude_assets_after_final_audio_cut():
     ch = Chapter(1, "Rome", 8, start=0, end=8)
     media = [{"chapter_id": 1, "assets": [entry(i) for i in range(3)]}]
-    timeline = build_visual_timeline(visual, [ch], media, insertions=0)
+    timeline = build_visual_timeline(visual_timeline, [ch], media, insertions=0)
     metrics = RunMetrics("test", "Rome", "human")
     metrics.visual_plan((ch.timeline_span(),), media, 2.1, timeline,
                         rendered_duration=1.5)

@@ -15,7 +15,7 @@ class _Metrics:
 def test_timeline_stage_returns_and_persists_the_same_plan(tmp_path, monkeypatch):
     entries = [{"chapter_id": 1, "fallback": True,
                 "images": [{"order": 0}, {"order": 1}]}]
-    monkeypatch.setattr("curio.pipeline_timeline.visual_stage.build_visual_timeline",
+    monkeypatch.setattr("curio.pipeline_timeline.visual_timeline_stage.build_visual_timeline",
                         lambda *args, **kwargs: entries)
     writes = []
     metrics = _Metrics()
@@ -39,7 +39,7 @@ def test_timeline_stage_returns_and_persists_the_same_plan(tmp_path, monkeypatch
 
 def test_disabled_timeline_still_records_visual_metrics_without_writes(monkeypatch):
     monkeypatch.setattr(
-        "curio.pipeline_timeline.visual_stage.build_visual_timeline",
+        "curio.pipeline_timeline.visual_timeline_stage.build_visual_timeline",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("no overlays requested")))
     metrics = _Metrics()

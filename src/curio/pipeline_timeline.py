@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .stages import visual as visual_stage
+from .stages import visual_timeline as visual_timeline_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
 from .stages.visual_beats import BEAT_SECONDS
 
@@ -30,13 +30,12 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
         raise ValueError("visual timeline scenes and spans are misaligned")
     entries = []
     if enabled:
-        entries = visual_stage.build_visual_timeline(
+        entries = visual_timeline_stage.build_visual_timeline(
             semantic_scenes, timeline_spans, media_scenes,
             overlap_cap, seed=slug, sfx=sfx,
             insertions=insertions, insert_style=insert_style,
             insert_gain_db=insert_gain_db)
         write_json(paths.visual_json, entries)
-        from .stages import visual_timeline as visual_timeline_stage
         print(f"Timeline visual: {visual_timeline_stage.visual_summary(entries)}")
         count = _count_insertions(entries)
         if entries:

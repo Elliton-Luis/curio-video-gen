@@ -298,7 +298,7 @@ def test_rerender_uses_timed_chapters_and_records_asset_usage(tmp_path, monkeypa
         json.dump(untimed, stream)
     with open(paths.visual_json, "w", encoding="utf-8") as stream:
         from tests.test_support.visual_timeline import build_visual_timeline
-        json.dump(build_visual_timeline(visual_stage, chapters, media, insertions=0), stream)
+        json.dump(build_visual_timeline(visual_timeline, chapters, media, insertions=0), stream)
     captured = {}
     def build(scenes, spans, *args, **kwargs):
         captured["duration"] = spans[0].end - spans[0].start
