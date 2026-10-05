@@ -96,9 +96,12 @@ de imagens, modo de planejamento, providers disponíveis e threshold. Um `media.
 manifesto compatível é pesquisado novamente; escolhas manuais continuam
 preservadas. `rerender` só consome a seleção registrada e não pesquisa mídia.
 As métricas de seleção usam uma projeção canônica em
-`media/selection_metrics.py`; beats/duração continuam sendo medidas distintas
-da quantidade de assets atribuídos às cenas. Backfills sem `media` preservam
-contagens visuais como desconhecidas (`null`).
+`media/selection_metrics.py`: `MediaMetricsInput` é a entrada validada para
+`visual_plan`, criada diretamente do `MediaStageResult` ao vivo ou por adaptador
+explícito do formato persistido no finalize/backfill. Beats/duração continuam
+sendo medidas distintas da quantidade de assets atribuídos às cenas. Backfills
+sem `media` e cenas sem decisão recuperável preservam valores como desconhecidos
+(`null`/`unknown`) em vez de inventar zeros.
 `visual_report.unique_assets` conta IDs reais selecionados; o relatório de
 pipeline nomeia separadamente `visual_timeline_assets_unique` (reais e
 sintéticos usados na timeline) e

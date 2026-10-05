@@ -25,6 +25,7 @@ from .pipeline import (finalize_project,
                          run_script_pipeline)
 from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from . import pipeline_render as pipeline_render_stage
+from .media.selection_metrics import MediaMetricsInput
 from . import pipeline_media as pipeline_media_stage
 from .stages.scenes import Chapter
 from .slug import slugify
@@ -521,7 +522,8 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
     audio_composition.mark_audio_used(cfg, audio_plan)
     from .stages.visual_beats import BEAT_SECONDS
     metrics.visual_plan(timeline_spans,
-                        media, BEAT_SECONDS, visual_timeline,
+                        MediaMetricsInput.from_persisted_rows(media),
+                        BEAT_SECONDS, visual_timeline,
                         rendered_duration=total)
     old_meta["visual_plan_signature"] = hashlib.sha256(
         json.dumps(visual_timeline or [], sort_keys=True).encode()).hexdigest()

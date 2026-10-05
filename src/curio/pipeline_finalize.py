@@ -18,6 +18,7 @@ from .audio.library import audio_seed
 from .config import CurioConfig
 from .metrics import RunMetrics
 from .project_paths import VideoPaths
+from .media.selection_metrics import MediaMetricsInput
 from .runlog import current_log_path, event as run_event, set_stage as set_log_stage
 from .stages import editorial as editorial_stage
 from .stages import render as render_stage
@@ -198,7 +199,8 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
     emit("Merge final")
     total = round(human_dur + 0.5, 2)
     metrics.visual_plan(timeline_spans,
-                        media_scenes, BEAT_SECONDS, visual_timeline,
+                        MediaMetricsInput.from_persisted_rows(media_scenes),
+                        BEAT_SECONDS, visual_timeline,
                         rendered_duration=total)
     human_wav = paths.human_wav
     sfx_path = None

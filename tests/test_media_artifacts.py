@@ -80,17 +80,20 @@ def test_selection_metrics_use_scene_decision_and_identity_not_render_beats():
     unique = {"asset_id": "portrait", "provider": "met",
               "source_url": "https://museum.test/portrait"}
     scenes = [
-        {"asset": repeated,
+        {"chapter_id": 1, "asset": repeated,
          "visual_decision": {"selection": {"status": "real"}}},
-        {"asset": repeated,
+        {"chapter_id": 2, "asset": repeated,
          "visual_decision": {"selection": {"status": "reused"}}},
-        {"asset": {"asset_id": "synth-1", "provider": "synth"},
+        {"chapter_id": 3,
+         "asset": {"asset_id": "synth-1", "provider": "synth"},
          "visual_decision": {"selection": {"status": "synthetic"}}},
-        {"asset": unique,
+        {"chapter_id": 4, "asset": unique,
          "visual_decision": {"selection": {"status": "real"}}},
     ]
 
-    stats = MediaSelectionStats.from_scenes(scenes)
+    from curio.media.selection_metrics import MediaMetricsInput
+    stats = MediaSelectionStats.from_input(
+        MediaMetricsInput.from_persisted_rows(scenes))
 
     assert stats.unique_assets == 2
     assert stats.reused_assets == 1

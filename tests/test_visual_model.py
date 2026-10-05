@@ -327,7 +327,8 @@ def test_relatorio_distingue_assets_unicos_reusados_e_sinteticos():
         {"chapter_id": 3, "assets": [synthetic]},
     ]
     metrics = RunMetrics("s", "i", "n")
-    metrics.visual_plan(spans, media, 2.1)
+    from curio.media.selection_metrics import MediaMetricsInput
+    metrics.visual_plan(spans, MediaMetricsInput.from_persisted_rows(media), 2.1)
     metrics.media_duplicate_queries = 4
     report = metrics.media_visual_report(3)
     assert report["unique_assets"] == 2

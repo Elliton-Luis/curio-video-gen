@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .media.selection_metrics import MediaMetricsInput
 from .media.selection_result import MediaStageResult
 from .stages import visual_timeline as visual_timeline_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
@@ -32,6 +33,7 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
     if enabled and (not scene_ids or len(scene_ids) != len(set(scene_ids))
                     or scene_ids != span_ids or scene_ids != media_ids):
         raise ValueError("visual timeline scenes, media and spans are misaligned")
+    metric_input = MediaMetricsInput.from_result(media_result)
     media_rows = media_result.to_rows()
     entries = []
     if enabled:
@@ -48,7 +50,7 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
                   f"(estilo {insert_style}).")
     else:
         count = 0
-    metrics.visual_plan(timeline_spans, media_rows, BEAT_SECONDS, entries)
+    metrics.visual_plan(timeline_spans, metric_input, BEAT_SECONDS, entries)
     return VisualTimelineResult(entries, count, enabled)
 
 

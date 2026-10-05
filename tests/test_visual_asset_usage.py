@@ -24,8 +24,9 @@ def test_all_selected_backgrounds_survive_sparse_insert_budget():
     keys = {key for beat in timeline[0]["visual_beats"] for key in beat["asset_ids"]}
     assert keys == {"fixture:0", "fixture:1", "fixture:2"}
     metrics = RunMetrics("test", "Rome", "ai")
+    from curio.media.selection_metrics import MediaMetricsInput
     metrics.visual_plan(tuple(chapter.timeline_span() for chapter in chapters),
-                        media, 2.1, timeline)
+                        MediaMetricsInput.from_persisted_rows(media), 2.1, timeline)
     assert metrics.media_available_ids == metrics.visual_asset_ids == keys
     assert sum(metrics.visual_asset_beat_counts.values()) == len(timeline[0]["visual_beats"])
     assert metrics.media_available_acquisitions == {"cache": 3}
@@ -233,7 +234,9 @@ def test_metrics_exclude_assets_after_final_audio_cut():
     media = [{"chapter_id": 1, "assets": [entry(i) for i in range(3)]}]
     timeline = build_visual_timeline(visual_timeline, [ch], media, insertions=0)
     metrics = RunMetrics("test", "Rome", "human")
-    metrics.visual_plan((ch.timeline_span(),), media, 2.1, timeline,
+    from curio.media.selection_metrics import MediaMetricsInput
+    metrics.visual_plan((ch.timeline_span(),),
+                        MediaMetricsInput.from_persisted_rows(media), 2.1, timeline,
                         rendered_duration=1.5)
     assert len(metrics.media_available_ids) == 3
     assert len(metrics.visual_asset_ids) == 1

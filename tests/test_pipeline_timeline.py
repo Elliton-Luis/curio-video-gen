@@ -30,7 +30,8 @@ def test_timeline_stage_returns_and_persists_the_same_plan(tmp_path, monkeypatch
     semantic_scenes = (SemanticScene(1, "A scene."),)
     spans = (TimelineSpan(1, 1, 0, 1),)
     media_result = _selection()
-    scenes = media_result.to_rows()
+    from curio.media.selection_metrics import MediaMetricsInput
+    metric_input = MediaMetricsInput.from_result(media_result)
 
     result = build_visual_timeline(
         semantic_scenes, spans, media_result,
@@ -42,7 +43,7 @@ def test_timeline_stage_returns_and_persists_the_same_plan(tmp_path, monkeypatch
     assert result.insertion_count == 1
     assert result.enabled is True
     assert writes == [(str(tmp_path / "visual.json"), entries)]
-    assert metrics.visual[0:2] == (spans, scenes)
+    assert metrics.visual[0:2] == (spans, metric_input)
     assert metrics.visual[3] is entries
 
 

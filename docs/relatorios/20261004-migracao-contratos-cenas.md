@@ -926,3 +926,24 @@ com rows e três erros locais nas fixtures; migradas para o adaptador/contrato.
 em 188,39 s**; compileall e diff check passaram.
 Próximo limite: remover `media_scenes` dicts dos consumidores de metadata/render
 ou fechar adapters explícitos para seus formatos persistidos.
+
+## G27: métricas visuais consomem snapshot tipado
+
+`RunMetrics.visual_plan` recebia rows e voltava a interpretar scene ID, asset,
+reuse/status e provenance. `MediaSelectionStats.from_scenes` repetia essa leitura,
+enquanto geração, finalize e backfill chegavam por chamadas diferentes. Em dados
+incompletos, a contagem podia parecer zero mesmo sem decisão recuperável.
+
+`MediaMetricsInput`/`MetricSceneSelection`/`MetricAssetEntry` em
+`media/selection_metrics.py` formam a leitura canônica. Geração cria o snapshot de
+`MediaStageResult`; finalize/CLI/backfill usam `from_persisted_rows`, que preserva
+status ausente como unknown. `RunMetrics.visual_plan` exige o snapshot; a função
+duplicada `from_scenes` foi removida. Seleções sem row correspondente a um span
+ganham placeholder unknown para relatório, sem fingir decisão nenhuma. Hash de
+conteúdo e unidades de métricas continuam iguais.
+
+Os focados de seleção/métricas/integr. passaram (91); após acrescentar a regressão
+de status histórico malformado, 17 testes diretos de métricas/timeline passaram.
+Suíte integral final: **923 testes em 196,37 s**; compileall e diff check passaram.
+Testes antigos foram migrados ao adaptador nomeado em vez de manter a API dict
+interna.

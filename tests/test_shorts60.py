@@ -26,7 +26,9 @@ def test_metrics_count_beat_pacing_and_asset_reuse():
         for index in range(2)
     ]
 
-    metrics.visual_plan(spans, media_scenes, visual_beats.BEAT_SECONDS)
+    from curio.media.selection_metrics import MediaMetricsInput
+    metrics.visual_plan(spans, MediaMetricsInput.from_persisted_rows(media_scenes),
+                        visual_beats.BEAT_SECONDS)
 
     assert metrics.visual_scene_count == 2
     assert metrics.visual_beat_count == 4

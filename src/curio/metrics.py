@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from .media.selection_metrics import MediaSelectionStats
+from .media.selection_metrics import MediaMetricsInput, MediaSelectionStats
 
 
 def utcnow_iso() -> str:
@@ -300,19 +300,30 @@ class RunMetrics:
         key = (reason or "motivo desconhecido")[:60]
         self.research_rejected[key] = self.research_rejected.get(key, 0) + 1
 
-    def visual_plan(self, timeline_spans, media_scenes, beat_seconds: float,
+    def visual_plan(self, timeline_spans, media_input: MediaMetricsInput,
+                    beat_seconds: float,
                     visual_timeline=None, rendered_duration: float | None = None,
-                    cached_selection: bool | None = None,
-                    known_selection: bool = True) -> None:
+                    cached_selection: bool | None = None) -> None:
         """Snapshot selected/available assets and renderer-bound beat identities."""
         from .stages.scene_contract import TimelineSpan
         if any(not isinstance(span, TimelineSpan) for span in timeline_spans):
             raise TypeError("visual metrics require TimelineSpan values")
+        if not isinstance(media_input, MediaMetricsInput):
+            raise TypeError("visual metrics require MediaMetricsInput")
         from .stages.visual_beats import asset_key, plan
-        by_scene = {s.get("chapter_id"): s for s in (media_scenes or [])}
+        by_scene = {scene.scene_id: scene for scene in media_input.scenes}
         by_timeline = {s["chapter_id"]: s for s in (visual_timeline or [])}
         if cached_selection is None:
             cached_selection = not self.media_funnel.get("selected") and not self.media_downloads
+        if media_input.known:
+            from .media.selection_metrics import MetricSceneSelection
+            known_scene_ids = {scene.scene_id for scene in media_input.scenes}
+            missing_scenes = tuple(MetricSceneSelection(
+                span.scene_id, None, (), None, None, False)
+                for span in timeline_spans if span.scene_id not in known_scene_ids)
+            if missing_scenes:
+                media_input = MediaMetricsInput(
+                    (*media_input.scenes, *missing_scenes), known=True)
         self.visual_scene_count = self.visual_beat_count = self.visual_asset_uses = 0
         self.visual_beat_seconds = 0.0
         self.visual_asset_ids.clear()
@@ -336,31 +347,36 @@ class RunMetrics:
             duration = max(0.0, end - start)
             self.visual_scene_count += int(duration > 0)
             self.visual_beat_seconds += duration
-            scene = by_scene.get(span.scene_id, {})
-            assets = scene.get("assets") or []
-            if not assets and scene.get("asset"):
-                assets = [{"asset": scene["asset"]}]
-            primary = next((item.get("asset") or {} for item in assets), {})
+            scene = by_scene.get(span.scene_id)
+            assets = scene.assets if scene else ()
+            if not assets and scene and scene.primary:
+                from .media.selection_metrics import MetricAssetEntry
+                assets = (MetricAssetEntry(scene.primary, "unknown", ""),)
+            primary = scene.primary if scene else None
             for item in assets:
-                asset = item.get("asset") or {}
-                key = asset_key(asset)
+                asset = item.asset
+                if asset is None:
+                    continue
+                asset_identity = asset.identity_fields()
+                key = asset_key(asset_identity)
                 if key:
                     self.media_available_ids.add(key)
                     self.visual_asset_beat_counts.setdefault(key, 0)
                     acquisition = ("cache" if cached_selection else "generated"
-                                   if asset.get("provider") == "synth" else
-                                   item.get("acquisition", "unknown"))
+                                   if asset.provider == "synth" else item.acquisition)
                     self.media_available_acquisitions[acquisition] = (
                         self.media_available_acquisitions.get(acquisition, 0) + 1)
                     self.visual_asset_details[key] = {
-                        "title": asset.get("title", ""),
-                        "provider": asset.get("provider", ""),
-                        "local_path": asset.get("local_path", ""),
+                        "title": asset.title,
+                        "provider": asset.provider,
+                        "local_path": asset.local_path,
                         "acquisition": acquisition}
             beats = timeline.get("visual_beats", []) if timeline else plan(duration, start)
             beats = [beat for beat in beats if beat["start"] < end]
             self.visual_beat_count += len(beats)
-            base = asset_key(scene.get("asset") or (assets[0].get("asset") if assets else {}) or {})
+            base_asset = primary or (assets[0].asset if assets else None)
+            base = (asset_key(base_asset.identity_fields())
+                    if base_asset else "")
             scene_keys = set()
             for beat in beats:
                 if timeline:
@@ -380,8 +396,7 @@ class RunMetrics:
                     self.visual_asset_beat_counts[key] = self.visual_asset_beat_counts.get(key, 0) + 1
             for key in scene_keys:
                 self.visual_asset_scene_counts[key] = self.visual_asset_scene_counts.get(key, 0) + 1
-        self.media_selection_stats = MediaSelectionStats.from_scenes(
-            media_scenes, known=known_selection)
+        self.media_selection_stats = MediaSelectionStats.from_input(media_input)
         stats = self.media_selection_stats
         if stats.unique_assets is not None:
             self.media_unique_assets = stats.unique_assets
@@ -640,10 +655,12 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
         except (AttributeError, TypeError, ValueError):
             # Historical rows without valid identity/timing remain unknown.
             continue
-    collector.visual_plan(spans, media, 2.1, visual_timeline,
-                          rendered_duration=meta.get("duration_actual"),
-                          cached_selection=False,
-                          known_selection="media" in meta and meta.get("media") is not None)
+    collector.visual_plan(
+        spans, MediaMetricsInput.from_persisted_rows(
+            meta.get("media"),
+            known="media" in meta and meta.get("media") is not None),
+        2.1, visual_timeline,
+        rendered_duration=meta.get("duration_actual"), cached_selection=False)
     query_statuses = [query.get("status")
                       for decision in collector.media_scene_decisions.values()
                       for query in decision.get("queries", [])]
