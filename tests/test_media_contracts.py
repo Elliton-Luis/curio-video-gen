@@ -1,5 +1,11 @@
+import pytest
+
 from curio.media.providers import MediaAsset
-from curio.stages.media_contracts import Candidate, CandidateRejection
+from curio.stages.media_contracts import (
+    Candidate,
+    CandidateRejection,
+    ProviderAssetSnapshot,
+)
 from curio.stages.visual_contracts import SearchQuery
 
 
@@ -15,6 +21,7 @@ def test_candidate_retains_provider_query_and_representation_provenance():
     candidate = Candidate(asset, query, "url:https://commons.wikimedia.org/wiki/file:mohacs.jpg")
 
     normalized = candidate.to_evaluation_input()
+    assert isinstance(candidate.asset, ProviderAssetSnapshot)
     assert normalized["asset"]["provider"] == "wikimedia"
     assert normalized["query"] == query.query
     assert normalized["query_source"] == "representation_variant"
@@ -23,6 +30,29 @@ def test_candidate_retains_provider_query_and_representation_provenance():
     assert normalized["alias"] == "Ottoman Empire"
     assert normalized["query_variant"] == "engraving"
     assert normalized["identity"] == candidate.identity
+
+
+def test_candidate_freezes_provider_asset_without_freezing_download_asset():
+    asset = MediaAsset(
+        provider="wikimedia", asset_id="commons-2", title="Janissary portrait",
+        tags=["janissary"], categories=["Ottoman Empire"])
+    query = SearchQuery("Janissary Ottoman Empire portrait", "scene_representation",
+                        representation="Janissary", representation_kind="person")
+    candidate = Candidate(asset, query, "wikimedia:commons-2")
+    original_snapshot = candidate.asset.to_dict()
+
+    asset.title = "Changed after provider response"
+    asset.tags.append("changed")
+    asset.local_path = "/cache/downloaded.jpg"
+
+    assert candidate.asset.to_dict() == original_snapshot
+    assert candidate.to_evaluation_input()["asset"]["title"] == "Janissary portrait"
+    assert candidate.asset.tags == ("janissary",)
+    assert asset.local_path == "/cache/downloaded.jpg"
+    with pytest.raises((AttributeError, TypeError)):
+        candidate.asset.title = "mutated candidate"
+    with pytest.raises(AttributeError):
+        candidate.asset.tags.append("mutated candidate")
 
 
 def test_candidate_rejection_names_stage_and_preserves_originating_query():
