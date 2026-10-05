@@ -103,3 +103,47 @@ def test_search_plan_queries_have_representation_context_and_provenance():
     assert specific.representation == "Ottoman Janissaries"
     assert specific.representation_kind == "army"
     assert specific.alias == "Ottoman Empire"
+
+
+def test_search_plan_prioritizes_scene_event_and_avoids_repeated_medium():
+    scene = SemanticScene(
+        id=12, narration="The battle was decisive.",
+        visual_type="historical_art", planning_mode="deterministic",
+        video_context={"topic": "Ottoman Empire"},
+        representations=[
+            {"query": "Ottoman Empire painting", "kind": "entity", "level": 0,
+             "source": "verified_entity_context"},
+            {"query": "Battle of Mohács", "kind": "event", "level": 1,
+             "source": "local_concrete_phrase"},
+            {"query": "Battle of Mohács 1526", "kind": "event", "level": 1,
+             "source": "local_concrete_phrase"},
+        ])
+
+    queries = [item.query for item in build_search_plan(
+        build_visual_plan(scene), "history").queries]
+
+    assert len(queries) == 8
+    assert queries[0] == "Battle of Mohács Ottoman Empire"
+    assert "Battle of Mohács 1526 Ottoman Empire" in queries
+    assert not any("painting painting" in query.casefold() for query in queries)
+    assert not any(query.casefold().count("ottoman empire") > 1
+                   for query in queries)
+    assert all("Ottoman Empire" in query for query in queries)
+
+
+def test_science_search_never_inherits_historical_map_fallback():
+    scene = SemanticScene(
+        id=13, narration="The black hole bends light around its event horizon.",
+        visual_type="mechanism", planning_mode="deterministic",
+        video_context={"topic": "M87* black hole",
+                       "primary_entities": ["M87* black hole"]},
+        primary_entity="M87* black hole",
+        representations=[{"query": "event horizon", "kind": "event",
+                          "level": 1, "source": "local_concrete_phrase"}])
+
+    queries = [item.query for item in build_search_plan(
+        build_visual_plan(scene), "science").queries]
+
+    assert not any("historical map" in query.casefold() for query in queries)
+    assert all(query.casefold().count("m87 black hole") <= 1
+               for query in queries)

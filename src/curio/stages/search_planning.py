@@ -30,12 +30,10 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
     from .scoring import _tokens
 
     def contextual(query: str) -> str:
-        tokens = set(_tokens(query))
         anchors = [topic, *aliases]
-        if any(set(_tokens(anchor)).issubset(tokens)
-               for anchor in anchors if _tokens(anchor)):
+        if any(_contains_phrase(query, anchor) for anchor in anchors if anchor):
             return query
-        return f"{query} {anchor_alias}".strip()
+        return _with_context(query, anchor_alias)
 
     def add(query: str, *, source: str, representation: str = "",
             kind: str = "", alias: str = "", variant: str = "entity",
@@ -55,7 +53,9 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
 
     ai = list(plan.visual_queries)
     deterministic = plan.planning_mode == "deterministic"
-    representations = sorted(plan.representations, key=lambda item: item.level)
+    representations = sorted(
+        plan.representations,
+        key=lambda item: (_representation_priority(item), item.level))
     query_only_sources = {"declared_scene_query", "entity_context",
                           "verified_entity_context"}
     semantic_representations = [
@@ -75,10 +75,11 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                 representation=focus, kind=kind, alias=anchor_alias,
                 level=max(1, rep.level + 1))
             for medium in _media_variants(kind, plan.visual_type, historical=True):
-                add(f"{focus} {medium} {anchor_alias}".strip(),
-                    source="representation_variant", representation=focus,
-                    kind=kind, alias=anchor_alias, variant=medium,
-                    level=max(2, rep.level + 2))
+                if not _already_contains(focus, medium):
+                    add(_with_context(f"{focus} {medium}", anchor_alias),
+                        source="representation_variant", representation=focus,
+                        kind=kind, alias=anchor_alias, variant=medium,
+                        level=max(2, rep.level + 2))
 
     if deterministic and topic:
         topic_names = [topic, *aliases, *plan.primary_entities]
@@ -93,11 +94,11 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
         to_search = specific or [rep for rep in representations if topic_representation(rep)]
         for rep in to_search:
             focus, kind = rep.query.strip(), rep.kind
-            add(f"{focus} {anchor_alias}", source="scene_representation",
+            add(_with_context(focus, anchor_alias), source="scene_representation",
                 representation=focus, kind=kind, alias=anchor_alias,
                 level=max(1, rep.level + 1))
             if anchor_alias.casefold() != topic.casefold():
-                add(f"{focus} {topic}", source="topic_context",
+                add(_with_context(focus, topic), source="topic_context",
                     representation=focus, kind=kind, alias=topic,
                     level=max(2, rep.level + 1))
             if plan.period:
@@ -106,16 +107,24 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                     kind=kind, alias=anchor_alias, variant=plan.period,
                     level=max(2, rep.level + 2))
             for medium in _media_variants(kind, plan.visual_type, historical=False):
-                add(f"{focus} {medium} {anchor_alias}",
-                    source="representation_variant", representation=focus,
-                    kind=kind, alias=anchor_alias, variant=medium,
-                    level=max(2, rep.level + 2))
+                if not _already_contains(focus, medium):
+                    add(_with_context(f"{focus} {medium}", anchor_alias),
+                        source="representation_variant", representation=focus,
+                        kind=kind, alias=anchor_alias, variant=medium,
+                        level=max(2, rep.level + 2))
         for entity in plan.primary_entities[:2]:
-            add(f"{entity} {topic}", source="topic_entity", representation=entity,
-                alias=topic, level=4)
-        add(f"{anchor_alias} historical map", source="topic_fallback",
-            representation=topic, alias=anchor_alias, variant="historical map",
-            level=5, generic=True)
+            add(_with_context(entity, topic), source="topic_entity",
+                representation=entity, alias=topic, level=4)
+        historical_query_context = (
+            genre == "history" or plan.visual_type == "historical_art"
+            or bool(plan.period)
+            or any(rep.kind in {"empire", "army", "monument", "artifact", "map"}
+                   for rep in representations))
+        if historical_query_context:
+            add(_with_context(anchor_alias, "historical map"),
+                source="topic_fallback", representation=topic,
+                alias=anchor_alias, variant="historical map",
+                level=5, generic=True)
 
     if deterministic and not topic:
         # A recovered/local scene without global context still has explicit
@@ -151,8 +160,10 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                      or [plan.subject or ""])
         for term in art_terms:
             for medium in ART_MEDIA_HINTS:
-                add(f"{term} {medium}", source="historical_visual_variant",
-                    representation=term, variant=medium, level=4)
+                if not _already_contains(term, medium):
+                    add(_with_context(f"{term} {medium}", anchor_alias),
+                        source="historical_visual_variant",
+                        representation=term, variant=medium, level=4)
 
     if ai and not deterministic:
         for term in ai:
@@ -191,6 +202,34 @@ def _media_variants(kind: str, visual_type: str, historical: bool) -> tuple[str,
     if not historical and kind == "entity":
         return ("painting", "engraving", "artifact")
     return ()
+
+
+def _representation_priority(rep) -> int:
+    """Keep scene events/entities ahead of broad topic-only anchors."""
+    if rep.kind in {"event", "person", "monument", "artifact", "army", "object"}:
+        return 0
+    if (rep.source in {"entity_context", "verified_entity_context"}
+            or rep.kind in {"empire", "map"}):
+        return 2
+    return 1
+
+
+def _already_contains(query: str, phrase: str) -> bool:
+    return _contains_phrase(query, phrase)
+
+
+def _contains_phrase(query: str, phrase: str) -> bool:
+    phrase_tokens = textnorm.tokens(phrase, min_len=2)
+    query_tokens = textnorm.tokens(query, min_len=2)
+    size = len(phrase_tokens)
+    return bool(size) and any(query_tokens[index:index + size] == phrase_tokens
+                              for index in range(len(query_tokens) - size + 1))
+
+
+def _with_context(query: str, context: str) -> str:
+    if not context or _already_contains(query, context):
+        return query
+    return f"{query} {context}".strip()
 
 
 def _generic_queries(genre: str, plan: VisualPlan) -> tuple[str, ...]:
