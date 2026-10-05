@@ -99,7 +99,8 @@ class SceneCandidateCollector:
         self.seen_ids: set[str] = set()
         self.providers_consulted: set[str] = set()
         self.query_audit = {
-            query.query: QueryAuditAccumulator()
+            query.query: QueryAuditAccumulator(
+                unexecuted_reason=("tier_not_reached" if query.generic else ""))
             for query in search_plan.queries}
         self.search_query_by_text = {
             query.query: query for query in search_plan.queries}
@@ -117,6 +118,7 @@ class SceneCandidateCollector:
                     self.query_audit[pending].mark_unexecuted(
                         "scene_candidate_budget")
                 break
+            self.query_audit[query].unexecuted_reason = ""
             candidates_before_query = len(self.candidates)
             query_key = query.casefold()
             identities_before = len(self.seen_ids)

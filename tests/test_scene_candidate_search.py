@@ -14,7 +14,8 @@ from curio.stages.visual_contracts import SearchPlan, SearchQuery
 from curio.stages.visual_planning import build_visual_plan
 
 
-def _collector(monkeypatch, *, max_candidates=20, responses=None):
+def _collector(monkeypatch, *, max_candidates=20, responses=None,
+               include_generic=False):
     scene = SemanticScene(
         id=1, narration="Battle of Mohacs in 1526",
         subject="Battle of Mohacs", primary_entity="Battle of Mohacs",
@@ -30,6 +31,9 @@ def _collector(monkeypatch, *, max_candidates=20, responses=None):
                     representation="Battle of Mohacs", representation_kind="event",
                     variant="1526", level=2),
     )
+    if include_generic:
+        queries += (SearchQuery("Ottoman Empire historical map", "topic_fallback",
+                                representation="Ottoman Empire", generic=True),)
     search_plan = SearchPlan(scene.id, queries)
     provider = SimpleNamespace(name="wikimedia", _disabled=False)
     asset = MediaAsset(
@@ -103,6 +107,23 @@ def test_candidate_collection_marks_queries_skipped_by_scene_budget(monkeypatch)
     assert len(result.candidates) == 1
     skipped = result.query_audit[plan.queries[1].query]
     assert skipped.unexecuted_reason == "scene_candidate_budget"
+
+
+def test_generic_query_audit_distinguishes_deferred_from_executed(monkeypatch):
+    collector, plan = _collector(monkeypatch, include_generic=True)
+    generic = plan.queries[-1]
+
+    before = collector.snapshot().query_audit[generic.query]
+    assert before.unexecuted_reason == "tier_not_reached"
+
+    collector.collect([plan.queries[0].query], 10)
+    deferred = collector.snapshot().query_audit[generic.query]
+    assert deferred.unexecuted_reason == "tier_not_reached"
+
+    collector.collect([generic.query], 10)
+    executed = collector.snapshot().query_audit[generic.query]
+    assert executed.unexecuted_reason == ""
+    assert executed.providers == ("wikimedia",)
 
 
 def test_candidate_collection_rejects_query_outside_search_plan(monkeypatch):

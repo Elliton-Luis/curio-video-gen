@@ -117,6 +117,18 @@ def test_query_audit_distinguishes_duplicate_only_and_budget_exhaustion():
     assert rows[1]["unexecuted_reason"] == "scene_candidate_budget"
 
 
+def test_query_audit_reports_deferred_tier_as_not_consulted():
+    query = SearchQuery("Ottoman Empire historical map", "topic_fallback",
+                       generic=True)
+    deferred = QueryAuditAccumulator(unexecuted_reason="tier_not_reached")
+
+    row = search_query_audit_rows(
+        SearchPlan(1, (query,)), {query.query: deferred.snapshot()}, [], {}, {}, [])[0]
+
+    assert row["status"] == "not_consulted"
+    assert row["unexecuted_reason"] == "tier_not_reached"
+
+
 def test_query_audit_snapshot_is_immutable_and_preserves_provider_facts():
     accumulator = QueryAuditAccumulator()
     accumulator.set_providers(["wikimedia"])

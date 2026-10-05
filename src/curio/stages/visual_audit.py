@@ -119,6 +119,7 @@ class SearchQueryAudit:
                    "eligible" if self.eligible else "empty_or_unavailable")
         status = ("not_consulted_budget_exhausted"
                   if self.unexecuted_reason == "scene_candidate_budget" else
+                  "not_consulted" if self.unexecuted_reason else
                   "abandoned_duplicates" if self.duplicates_only else
                   "consulted" if self.providers else "no_provider_results")
         matching_representations = [
