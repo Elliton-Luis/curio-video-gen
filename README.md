@@ -49,6 +49,10 @@ O workflow de áudio humano agora está em `pipeline_finalize.py`; a API
 RunLog. `pipeline.py` caiu de 1.054 para 739 linhas. Gate integral: 892 testes
 passaram em 173,98 s; após remover o wrapper interno sem consumidores, 25
 testes focados passaram em 150,41 s.
+O tratamento de roteiro fornecido também saiu de `stages/visual.py` para
+`stages/script_input.py`, que agora é o owner da leitura literal, contagem por
+pacing e validação da divisão. A suíte após essa fase passou com 892 testes
+em 195,33 s.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

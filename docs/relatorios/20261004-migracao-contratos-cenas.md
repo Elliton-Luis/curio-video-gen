@@ -577,3 +577,23 @@ compileall e diff check passaram. Código em `bbd06b3`.
 Rerender/finalize preserva o contrato de CLI/TUI e usa os mesmos arquivos em
 disco. A coordenação da geração IA/humana e o workflow visual extenso continuam
 no pipeline; separar finalize não conclui a simplificação do coordenador.
+
+## G11: regras de roteiro fornecido saem da aquisição de mídia
+
+`stages/visual.py` ainda era importado por CLI e `pipeline_scenes` para ler
+roteiro de arquivo/stdin, calcular contagem de cenas por pacing e garantir que
+a divisão preservasse literalmente a narração. Essas decisões são do modo de
+entrada de roteiro; misturá-las à aquisição fazia esse módulo participar de
+um caminho sem relação com providers ou seleção.
+
+Extraí as três operações para `stages/script_input.py`. CLI e `pipeline_scenes`
+consomem o novo owner, e os testes de pacing importam esse contrato. Removi as
+implementações de `visual.py` e atualizei a referência documental em
+`scenes.py`. A leitura continua removendo BOM e espaços nas bordas, e a
+validação mantém a normalização histórica de comparação.
+
+91 testes focados passaram; a suíte integral passou com **892 testes em
+195,33 s**, compileall e diff check aprovados. Código em `39a36d8`. `visual.py`
+caiu de 1.290 para 1.238 linhas; ainda conserva a aquisição e uma função de
+construção de timeline visual, que será avaliada como próxima fronteira sem
+misturar decisões de aquisição com geometria temporal.
