@@ -61,6 +61,8 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
     timeline_spans = tuple(chapter.timeline_span() for chapter in saved_timeline)
     del saved_timeline
     media_scenes = project_artifacts.read_json(paths.media_json)
+    render_plan = pipeline_render_stage.SceneRenderPlan.from_persisted_rows(
+        media_scenes)
     try:
         meta = project_artifacts.read_json(paths.metadata_json)
         idea = meta.get("input", slug)
@@ -181,7 +183,7 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
                 last.scene_id, last.duration_estimate + diff,
                 last.start, last.end + diff))
             pipeline_render_stage.build_silent(
-                           semantic_scenes, render_spans, media_scenes,
+                           semantic_scenes, render_spans, render_plan,
                            idea, paths,
                            cfg, adj, transitions=pipeline_render_stage.genre_transitions(
                                semantic_scenes, project_genre, transition_mode),

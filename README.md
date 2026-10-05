@@ -166,8 +166,11 @@ Finalize usa `TimelineSpan` para extensão após áudio e métricas; Chapter só
 carregado para adaptar o `timeline.json` salvo e reserializado se tempos mudam.
 O render silencioso recebe os mesmos contratos: identidade/texto vêm de
 `SemanticScene`, duração vem de `TimelineSpan`, e a assinatura das transições
-rejeita batches desalinhados. `Chapter` é adaptado ao reabrir projetos salvos;
-não participa mais da escolha de segmentos no pipeline de render.
+rejeita batches desalinhados. A seleção vira `SceneRenderPlan` com apenas
+identidade de cena e caminho/tipo do asset. Geração cria-o de `MediaStageResult`;
+finalize e rerender usam adaptador nomeado do `media.json` histórico, sem fingir
+que os metadados editoriais legados foram validados. `Chapter` é adaptado ao
+reabrir projetos salvos; não participa da escolha de segmentos no render.
 No consumo de mídia, `logical_queries`, `provider_requests` e
 `provider_search_calls` têm unidades próprias; retries são separados e o tempo
 de adapter inclui seus retries/backoff. `download_durations` mede a cadeia

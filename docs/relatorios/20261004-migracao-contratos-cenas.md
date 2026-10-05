@@ -865,5 +865,30 @@ Regressões cobrem contrato obrigatório, IDs desalinhados, timeline desativada 
 persistência do mesmo plano; integração assistida, fontes e revisão passaram
 (49 focados). Suíte integral: **912 testes em 179,68 s**; compileall e diff check
 passaram.
+
+## G24: render recebe somente os dados necessários
+
+`build_silent` recebia linhas editoriais completas e extraía `asset`/`chapter_id`
+por chave; render só precisa de ID da cena, caminho local e tipo. Rerender e
+finalize também leem `media.json` diretamente, e parte dos projetos antigos não
+tem identidade completa de provider/asset necessária ao contrato editorial.
+
+`pipeline_render` agora possui `SceneRenderPlan`/`SceneRenderInput` e `RenderAsset`.
+Geração assistida e human-pending constroem o plano a partir de
+`MediaStageResult`. Finalize e CLI/rerender usam `from_persisted_rows`, adaptador
+explícito que valida linhas/IDs e preserva assets renderizáveis antigos sem
+inventar identidade editorial. `build_silent` rejeita rows crus e verifica ordem
+e alinhamento com cenas semânticas. O hash do segmento ainda considera toda a
+identidade serializada do asset e estatísticas do arquivo, preservando
+invalidação por conteúdo/configuração. A trilha de render visual continua
+consumindo o plano geométrico persistido `visual.json`, com adaptação local para
+identidade do cache.
+
+Primeira rodada focada expôs 8 falhas de integração no caminho de collage porque
+`visual.json` tem imagens com geometria, diferentes do novo `RenderAsset`; o
+renderer agora faz conversão explícita apenas para calcular cache. Rodada após a
+correção: 53 testes focados passaram. Suíte integral: **918 testes em 181,07 s**;
+21 testes do contrato/cache de render após o ajuste final; compileall e diff check
+passaram.
 Próximo limite: remover `media_scenes` dicts dos consumidores de metadata/render
 ou fechar adapters explícitos para seus formatos persistidos.

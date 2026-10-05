@@ -44,6 +44,8 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
     if not isinstance(media_result, MediaStageResult):
         raise TypeError("human preparation requires a MediaStageResult")
     media_scenes = media_result.to_rows()
+    render_plan = pipeline_render_stage.SceneRenderPlan.from_media_result(
+        media_result)
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
     emit(4, "Estimando timeline")
@@ -103,7 +105,7 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                                  semantic_scenes, genre_key, transition_mode))
     else:
         pipeline_render_stage.build_silent(
-                      semantic_scenes, timeline_spans, media_scenes,
+                      semantic_scenes, timeline_spans, render_plan,
                       idea, paths, cfg,
                       paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
                           semantic_scenes, genre_key, transition_mode),

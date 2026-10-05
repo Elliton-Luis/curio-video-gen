@@ -255,6 +255,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
         semantic_scenes, cfg, paths, max_images, genre_key, metrics,
         force_after_script, project_artifacts.write_json)
     media_scenes = media_result.to_rows()
+    media_render_plan = pipeline_render_stage.SceneRenderPlan.from_media_result(
+        media_result)
     warnings.extend(media_result.warnings)
     provenance = pipeline_media_sources_stage.record_selected_media(
         semantic_scenes, media_result.scenes, sources)
@@ -394,7 +396,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             else:
                 pipeline_render_stage.build_silent(
                               tuple(semantic_scenes), timeline_spans,
-                              media_scenes, idea, paths,
+                              media_render_plan, idea, paths,
                               cfg, silent, transitions=transitions, kinds=kinds)
         narration_wav = paths.narration_wav
         sfx_path = (audio_composition.sfx_track(visual_timeline, total, paths)

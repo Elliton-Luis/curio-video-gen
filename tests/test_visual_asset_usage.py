@@ -135,11 +135,11 @@ def test_real_render_switches_all_backgrounds(tmp_path):
 
 
 def test_segment_cache_tracks_asset_identity_and_render_size(tmp_path):
-    from curio.pipeline_render import _segment_identity
+    from curio.pipeline_render import RenderAsset, _segment_identity
     cfg = CurioConfig()
     path = tmp_path / "asset.png"
     path.write_bytes(b"first")
-    asset = {"local_path": str(path)}
+    asset = RenderAsset.from_media_dict({"local_path": str(path)})
     first = _segment_identity([asset], cfg, 0)
     path.write_bytes(b"other contents")
     assert _segment_identity([asset], cfg, 0) != first

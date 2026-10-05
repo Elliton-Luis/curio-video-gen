@@ -449,6 +449,8 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
                             for chapter in chapters)
     timeline_spans = tuple(chapter.timeline_span() for chapter in chapters)
     media = project_artifacts.read_json(paths.media_json)
+    render_plan = pipeline_render_stage.SceneRenderPlan.from_persisted_rows(
+        media)
     try:
         old_meta = project_artifacts.read_json(paths.metadata_json)
     except (OSError, ValueError, json.JSONDecodeError):
@@ -489,7 +491,7 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
                              cfg, paths.silent_mp4, transitions=transitions)
     else:
         pipeline_render_stage.build_silent(
-                      semantic_scenes, timeline_spans, media,
+                      semantic_scenes, timeline_spans, render_plan,
                       args.slug, paths, cfg,
                       paths.silent_mp4, transitions=transitions)
 

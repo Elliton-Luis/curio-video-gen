@@ -5,11 +5,102 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 
 from .config import CurioConfig
+from .media.selection_result import MediaStageResult
 from .stages import editorial as editorial_stage
 from .stages import render as render_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
+
+
+@dataclass(frozen=True)
+class RenderAsset:
+    """Minimal media input needed to render one scene."""
+
+    local_path: str
+    kind: str
+    identity: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.local_path, str) or not isinstance(self.kind, str):
+            raise TypeError("render asset path and kind must be strings")
+        if not isinstance(self.identity, str):
+            raise TypeError("render asset identity must be a string")
+
+    @classmethod
+    def from_media_dict(cls, value: object) -> "RenderAsset":
+        if not isinstance(value, dict):
+            raise TypeError("render asset must be an object")
+        local_path = value.get("local_path", "") or ""
+        kind = value.get("kind", "image") or "image"
+        if not isinstance(local_path, str) or not isinstance(kind, str):
+            raise TypeError("render asset path and kind must be strings")
+        identity = json.dumps(value, sort_keys=True, ensure_ascii=False)
+        return cls(local_path, kind, identity)
+
+
+@dataclass(frozen=True)
+class SceneRenderInput:
+    scene_id: int
+    asset: RenderAsset | None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int) \
+                or self.scene_id <= 0:
+            raise ValueError("render scene id must be a positive integer")
+        if self.asset is not None and not isinstance(self.asset, RenderAsset):
+            raise TypeError("render scene asset must be RenderAsset or null")
+
+
+@dataclass(frozen=True)
+class SceneRenderPlan:
+    scenes: tuple[SceneRenderInput, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scenes, tuple):
+            raise TypeError("render plan scenes must be a tuple")
+        if any(not isinstance(scene, SceneRenderInput) for scene in self.scenes):
+            raise TypeError("render plan requires SceneRenderInput values")
+        ids = tuple(scene.scene_id for scene in self.scenes)
+        if not ids or len(ids) != len(set(ids)):
+            raise ValueError("render plan requires unique positive scene ids")
+
+    @classmethod
+    def from_media_result(cls, result: MediaStageResult) -> "SceneRenderPlan":
+        if not isinstance(result, MediaStageResult):
+            raise TypeError("render plan requires a MediaStageResult")
+        return cls(tuple(SceneRenderInput(
+            scene.scene_id,
+            RenderAsset.from_media_dict(scene.asset.to_dict())
+            if scene.asset is not None else None)
+            for scene in result.scenes))
+
+    @classmethod
+    def from_persisted_rows(cls, rows: object) -> "SceneRenderPlan":
+        """Read the project media format without inventing editorial identity."""
+        if not isinstance(rows, list):
+            raise TypeError("persisted media must be a list")
+        scenes = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise TypeError("persisted media scene must be an object")
+            scene_id = row.get("chapter_id")
+            if isinstance(scene_id, bool) or not isinstance(scene_id, int):
+                raise ValueError("persisted media chapter_id must be an integer")
+            asset = row.get("asset")
+            if asset is not None and not isinstance(asset, dict):
+                raise TypeError("persisted media asset must be an object or null")
+            scenes.append(SceneRenderInput(
+                scene_id, RenderAsset.from_media_dict(asset) if asset else None))
+        return cls(tuple(scenes))
+
+    def for_scenes(self, scenes: tuple[SemanticScene, ...]) -> dict[int, RenderAsset | None]:
+        expected = tuple(scene.id for scene in scenes)
+        actual = tuple(scene.scene_id for scene in self.scenes)
+        if expected != actual:
+            raise ValueError("render plan scenes do not match semantic scene order")
+        return {scene.scene_id: scene.asset for scene in self.scenes}
 
 
 def title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
@@ -25,31 +116,33 @@ def title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:
     return subs_stage.ensure_display_font(cfg.cache_dir)[2]
 
 
-def _segment_identity(assets: list, cfg: CurioConfig, variant: int) -> str:
+def _segment_identity(assets: list[RenderAsset], cfg: CurioConfig,
+                      variant: int) -> str:
     """Invalidate segment cache when assets, file contents or presentation change."""
     files = []
     for asset in assets:
-        path = (asset or {}).get("local_path")
+        path = asset.local_path if asset else ""
         if path and os.path.isfile(path):
             stat = os.stat(path)
             files.append((path, stat.st_size, stat.st_mtime_ns))
-    payload = [assets, files, cfg.width, cfg.height, cfg.fps,
+    payload = [[asset.identity for asset in assets], files,
+               cfg.width, cfg.height, cfg.fps,
                cfg.render_backend, variant]
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
 
-def _scene_segment(scene_id: int, asset_dict: dict | None, idea: str,
+def _scene_segment(scene_id: int, asset: RenderAsset | None, idea: str,
                    duration: float, paths, cfg: CurioConfig,
                    variant: int) -> str:
-    identity = _segment_identity([asset_dict] if asset_dict else [], cfg, variant)
+    identity = _segment_identity([asset] if asset else [], cfg, variant)
     segment = os.path.join(paths.root, "render", "segments",
                            f"scene{scene_id}_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(segment):
         return segment
     os.makedirs(os.path.dirname(segment), exist_ok=True)
-    if asset_dict and asset_dict.get("local_path"):
-        local = asset_dict["local_path"]
-        if asset_dict.get("kind") == "video":
+    if asset and asset.local_path:
+        local = asset.local_path
+        if asset.kind == "video":
             return render_stage.render_video_segment(local, duration, segment, cfg)
         if os.path.isfile(local):
             return render_stage.render_image_segment(local, duration, segment,
@@ -65,7 +158,9 @@ def _visual_segment(trecho: dict, idea: str, duration: float,
               if img.get("local_path") and os.path.isfile(img["local_path"])]
     backgrounds = [dict(img) for img in trecho.get("backgrounds", [])
                    if img.get("local_path") and os.path.isfile(img["local_path"])]
-    identity = _segment_identity([*images, *backgrounds], cfg, variant)
+    render_assets = [RenderAsset.from_media_dict(image)
+                     for image in (*images, *backgrounds)]
+    identity = _segment_identity(render_assets, cfg, variant)
     segment = os.path.join(paths.root, "render", "segments",
                            f"scene{trecho['chapter_id']}_visual_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(segment):
@@ -77,19 +172,23 @@ def _visual_segment(trecho: dict, idea: str, duration: float,
     asset = backgrounds[0] if backgrounds else images[0] if images else None
     return _scene_segment(
         int(trecho["chapter_id"]),
-        {"local_path": asset["local_path"], "kind": asset.get("kind", "image")}
+        RenderAsset.from_media_dict(
+            {"local_path": asset["local_path"],
+             "kind": asset.get("kind", "image")})
         if asset else None,
         idea, duration, paths, cfg, variant)
 
 
 def build_silent(semantic_scenes: tuple[SemanticScene, ...],
                  timeline_spans: tuple[TimelineSpan, ...],
-                 media_scenes: list[dict], idea: str,
+                 render_plan: SceneRenderPlan, idea: str,
                  paths, cfg: CurioConfig, out_path: str,
                  transitions: list[float] | None = None,
                  kinds: list[str] | None = None) -> str:
     _validate_render_inputs(semantic_scenes, timeline_spans)
-    assets = {scene["chapter_id"]: scene["asset"] for scene in media_scenes}
+    if not isinstance(render_plan, SceneRenderPlan):
+        raise TypeError("silent render requires a SceneRenderPlan")
+    assets = render_plan.for_scenes(semantic_scenes)
     segments = [_scene_segment(scene.id, assets.get(scene.id), idea,
                                round(max(0.5, span.end - span.start), 1),
                                paths, cfg, variant=index)
