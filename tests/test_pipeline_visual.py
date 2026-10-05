@@ -58,6 +58,43 @@ def test_visual_acquisition_stage_returns_validated_selection(monkeypatch):
     assert result.scenes[0].decision.status == "none"
 
 
+def test_provider_priority_is_ordered_independently_for_each_scene(monkeypatch):
+    from curio.stages import visual
+
+    scenes = [SemanticScene(1, "Cena histórica."),
+              SemanticScene(2, "Cena espacial.")]
+    providers = {
+        "history": [SimpleNamespace(name="met"),
+                    SimpleNamespace(name="wikimedia")],
+        "science": [SimpleNamespace(name="nasa"),
+                    SimpleNamespace(name="wikimedia")],
+    }
+    plans = {1: SimpleNamespace(policy="history"),
+             2: SimpleNamespace(policy="science")}
+    monkeypatch.setattr(visual, "build_visual_plan",
+                        lambda scene: plans[scene.id])
+    monkeypatch.setattr(visual, "ordered_providers",
+                        lambda _cfg, plan, _genre: providers[plan.policy])
+
+    calls = []
+
+    def search(scene, ordered, *_args, **_kwargs):
+        calls.append((scene.id, tuple(provider.name for provider in ordered)))
+        selection = MediaStageResult.from_rows([with_selection({
+            "chapter_id": scene.id, "asset": None, "assets": [],
+        })], "provider").scenes[0]
+        return selection, []
+
+    monkeypatch.setattr(visual, "_search_scene_with_shortcircuit", search)
+    visual.fetch_media_multi(
+        scenes, SimpleNamespace(cache_dir="/tmp/curio-test-cache"))
+
+    assert calls == [
+        (1, ("met", "wikimedia")),
+        (2, ("nasa", "wikimedia")),
+    ]
+
+
 def test_resolve_media_consumes_only_cache_with_current_manifest(tmp_path, monkeypatch):
     paths = _paths(tmp_path)
     scene = _scene()

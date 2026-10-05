@@ -465,17 +465,6 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     if not scene_ids or len(scene_ids) != len(set(scene_ids)):
         raise ValueError("media acquisition requires unique semantic scenes")
     max_images = max(1, min(5, int(max_images)))
-    # A ordem de provedores é por cena: histórica quer acervo de arte
-    # primeiro, as demais mantêm a ordem global.
-    providers = []
-    seen_names: set[str] = set()
-    for scene in semantic_scenes:
-        scene_plan = build_visual_plan(scene.semantic_scene()
-                                       if hasattr(scene, "semantic_scene") else scene)
-        for prov in ordered_providers(cfg, scene_plan, genre):
-            if prov.name not in seen_names:
-                seen_names.add(prov.name)
-                providers.append(prov)
     # An empty provider list still uses the per-scene synthetic fallback.
     # Do not copy an unrelated neighbor's asset merely to fill the timeline.
     all_warnings = []
@@ -491,6 +480,9 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     shared_search_cache: dict[str, dict[str, list[dict]]] = {}
 
     for scene in semantic_scenes:
+        scene_plan = build_visual_plan(scene.semantic_scene()
+                                       if hasattr(scene, "semantic_scene") else scene)
+        providers = ordered_providers(cfg, scene_plan, genre)
         scene_selection, scene_warnings = _search_scene_with_shortcircuit(
             scene, providers, cfg, max_images, metrics, cfg.cache_dir,
             visual_state=visual_state, genre=genre, asset_uses=asset_uses,
