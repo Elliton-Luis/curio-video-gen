@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G68.
+**Escopo:** auditoria documentada e migrações incrementais até G69.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -86,6 +86,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `8bed5ec` | Fez `Candidate` capturar `ProviderAssetSnapshot` imutável, preservando `MediaAsset` mutável no lifecycle de aquisição (G66). |
 | `833df32` | Congelou recursivamente evidência de `CandidateEvaluation` e manteve a projeção para seleção como cópia independente (G67). |
 | `0e62a18` | Unificou snapshots de assets e congelou recursivamente rows da seleção, preservando a projeção JSON (G68). |
+| `1d1335f` | Manteve `SelectedAsset` tipado em candidatos de reuso cross-scene até decidir o donor (G69). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -120,7 +121,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G68
+## Arquivos alterados nas fases G57–G69
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -183,11 +184,12 @@ arquivos; adiciona freeze/thaw recursivo para a evidência de avaliação.
 G68 (`0e62a18`): cria `src/curio/media/asset_snapshot.py`; altera
 `src/curio/media/selection_result.py`, `src/curio/stages/media_contracts.py`,
 `src/curio/stages/review.py` e os testes `test_media_contracts.py` e
-`test_media_selection.py`.
+`test_media_selection.py`. G69 (`1d1335f`) altera `src/curio/stages/media_selection.py`
+e `tests/test_media_selection.py`.
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G68.
+relatório e os relatórios G57–G69.
 
 
 ## Estado das fases
@@ -201,7 +203,7 @@ relatório e os relatórios G57–G68.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G68 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G69 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -247,6 +249,9 @@ passaram. Não houve geração real nesta fase.
 G68: **70 testes focados passaram**; suíte ampla: **935 passaram, 1 excluído**
 pelo HTTP 429 da API da Wikipédia, em 178,39 s. Compileall e diff check
 passaram. Não houve geração real nesta fase.
+G69: **63 testes focados passaram**; suíte ampla: **936 passaram, 1 excluído**
+pelo HTTP 429 da API da Wikipédia, em 178,81 s. Compileall e diff check
+passaram. Não houve geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -283,7 +288,7 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G68 passam os gates registrados. Auditoria integral, ownership único de
+G57–G69 passam os gates registrados. Auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
@@ -514,3 +519,23 @@ Arquivos: `src/curio/media/asset_snapshot.py`,
 projetados, aninhamento, reuso, review e render. **70 testes focados** e **935
 testes amplos** passaram; um teste foi excluído pelo HTTP 429 recorrente da API
 externa. Compileall e diff check passaram; sem geração real. Commit: `0e62a18`.
+
+
+## G69 — donor cross-scene tipado (`1d1335f`)
+
+`ReuseCandidate` tinha campo `entry: dict`, embora o candidato fosse construído
+a partir de um `SelectedAsset` validado e imutável. G69 mantém o objeto tipado
+no resultado da elegibilidade e na ordenação do donor. A projeção mutável
+`to_dict()` só ocorre após a decisão de qual candidato reutilizar, imediatamente
+antes de compor a nova seleção receptora. `ReuseCandidate` rejeita agora payloads
+JSON genéricos. Não altera relevância, ranking ou política de reuso.
+
+Arquivos: `src/curio/stages/media_selection.py` e
+`tests/test_media_selection.py`. **63 testes focados**, **936 testes amplos** e
+um teste excluído por HTTP 429 na API da Wikipédia; compileall e diff check
+passaram. Nenhuma geração real.
+
+A dívida adjacente permanece em `SelectionPool` e em `visual.py`: as listas de
+candidatos durante CLIP, aquisição de bytes, dedupe por hash e seleção são dicts
+editáveis que representam transições de estado. A próxima migração deve
+especificar esse lifecycle antes de substituir o formato. Commit: `1d1335f`.

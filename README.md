@@ -189,6 +189,7 @@ G65 (`28e4799`) separa o acumulador mutável da auditoria por query do snapshot 
 G66 (`8bed5ec`) faz `Candidate` capturar um `ProviderAssetSnapshot` imutável; `MediaAsset` segue mutável no ciclo técnico de download.
 G67 (`833df32`) congela recursivamente a evidência em `CandidateEvaluation` e projeta uma cópia independente para seleção.
 G68 (`0e62a18`) unifica o snapshot de asset e congela o resultado final de seleção; adapters projetam rows mutáveis para revisão e persistência.
+G69 (`1d1335f`) mantém o candidato a doador cross-scene tipado como `SelectedAsset` até a decisão e só projeta JSON ao aplicá-lo.
 O relatório arquitetural completo — com estado antes/depois, commits,
 contratos, fases, testes, regressões, etapa de mídia e pendências — está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
