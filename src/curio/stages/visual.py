@@ -608,8 +608,11 @@ def _search_scene_with_shortcircuit(
                            "specific" if picked and picked[0].get("query") in representation_levels
                            else "representation_or_media_variant" if picked else "exhausted"),
     }
+    from ..media.selection_result import SelectedAsset
+    selected_assets = [SelectedAsset.from_dict(entry, index)
+                       for index, entry in enumerate(picked)]
     selection = make_selection_decision(
-        ch.id, picked, decision["fallback_level"])
+        ch.id, selected_assets, decision["fallback_level"])
     decision = VisualDecision.create(selection, **decision).to_dict()
     return [{
         "chapter_id": ch.id,

@@ -100,7 +100,11 @@ def test_asset_usage_links_provider_identity_to_downloaded_content_hash():
     ([], "exhausted", "none"),
 ])
 def test_selection_decision_explains_all_outcomes(picked, fallback, status):
-    decision = make_selection_decision(3, picked, fallback)
+    from curio.media.selection_result import SelectedAsset
+
+    selected = [SelectedAsset.from_dict(entry, index)
+                for index, entry in enumerate(picked)]
+    decision = make_selection_decision(3, selected, fallback)
 
     assert decision.status == status
     assert decision.reason
@@ -127,6 +131,31 @@ def test_selection_decision_rejects_contradictory_state_and_missing_fallback():
         SelectionDecision(scene_id=1, status="synthetic", asset_id="a",
                           provider="wikimedia", fallback_level="synthetic",
                           reason="synthetic")
+
+
+def test_selection_decision_rejects_untyped_rows():
+    with pytest.raises(TypeError, match="SelectedAsset"):
+        make_selection_decision(
+            1, [{"asset": {"provider": "fixture", "asset_id": "a"}}],
+            "specific")
+
+
+def test_selection_decision_reads_provenance_from_selected_asset_contract():
+    from curio.media.selection_result import SelectedAsset
+
+    picked = SelectedAsset.from_dict({
+        "asset": {"provider": "wikimedia", "asset_id": "battle"},
+        "query": "Battle of Mohacs painting",
+        "query_source": "scene_representation",
+        "representation": "Battle of Mohacs",
+        "score": 84,
+    }, 0)
+
+    decision = make_selection_decision(4, [picked], "specific")
+
+    assert decision.query == "Battle of Mohacs painting"
+    assert decision.query_source == "scene_representation"
+    assert decision.representation == "Battle of Mohacs"
 
 
 def test_cross_scene_reuse_prefers_scene_relevance_then_nearest_donor():
@@ -215,7 +244,7 @@ def test_scene_selection_contract_owns_and_validates_reuse_projection():
     reused_row = {"asset": {"provider": "fixture", "asset_id": "asset-1"},
                   "order": 0, "reuse_reason": "validated_cross_scene_reuse"}
     reused_asset = SelectedAsset.from_dict(reused_row, 0)
-    decision = make_selection_decision(2, [reused_row], "validated_reuse")
+    decision = make_selection_decision(2, [reused_asset], "validated_reuse")
 
     updated = target.with_cross_scene_reuse(
         reused_asset, 1, decision, topic_relevance=100,

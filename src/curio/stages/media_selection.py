@@ -363,18 +363,23 @@ def select_reuse_candidate(candidates: list[ReuseCandidate],
         0 if candidate.donor_scene_id < scene_id else 1))
 
 
-def make_selection_decision(scene_id: int, picked: list[dict],
+def make_selection_decision(scene_id: int, picked: list["SelectedAsset"],
                             fallback_level: str) -> SelectionDecision:
     """Describe the chosen result after downloads/fallback policy complete."""
+    from ..media.selection_result import SelectedAsset
+
+    if not isinstance(picked, list) or any(
+            not isinstance(entry, SelectedAsset) for entry in picked):
+        raise TypeError("selection decision requires SelectedAsset values")
     if not picked:
         return SelectionDecision(
             scene_id, "none", fallback_level=fallback_level,
             reason="no candidate downloaded and no visual fallback was produced")
     entry = picked[0]
-    asset = entry.get("asset") or {}
-    provider = str(asset.get("provider", ""))
+    asset = entry.asset
+    provider = asset.provider
     status = ("synthetic" if provider == "synth" else
-              "reused" if entry.get("reuse_reason") else "real")
+              "reused" if entry.reuse_reason else "real")
     if status == "synthetic":
         reason = "no eligible fresh real asset remained; semantic synthetic fallback selected"
     elif status == "reused":
@@ -384,14 +389,14 @@ def make_selection_decision(scene_id: int, picked: list[dict],
     return SelectionDecision(
         scene_id=scene_id,
         status=status,
-        asset_id=str(asset.get("asset_id", "")),
+        asset_id=asset.asset_id,
         provider=provider,
-        query=str(entry.get("query", "")),
-        query_source=str(entry.get("query_source", "")),
-        representation=str(entry.get("representation", "")),
-        score=float(entry["score"]) if entry.get("score") is not None else None,
+        query=entry.query,
+        query_source=entry.query_source,
+        representation=entry.representation,
+        score=entry.score,
         fallback_level=fallback_level,
-        reuse_reason=str(entry.get("reuse_reason", "")),
+        reuse_reason=entry.reuse_reason,
         reason=reason,
     )
 
@@ -477,7 +482,7 @@ def resolve_cross_scene_reuse(
                             reuse_reason=reuse_reason)
         reused_asset = SelectedAsset.from_dict(reused_entry, 0)
         decision = make_selection_decision(
-            scene_id, [reused_entry], "validated_reuse")
+            scene_id, [reused_asset], "validated_reuse")
         decision = replace(
             decision,
             reason=("validated topic and scene evidence; reused from scene "

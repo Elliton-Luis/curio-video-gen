@@ -39,6 +39,8 @@ def _thaw_json(value: object) -> object:
 class SelectedAsset:
     asset: MediaAssetSnapshot
     query: str
+    query_source: str
+    representation: str
     relevance: float
     order: int
     generic: bool
@@ -82,11 +84,14 @@ class SelectedAsset:
         query = value.get("query", "")
         if not isinstance(query, str):
             raise TypeError("selected asset query must be a string")
+        query_source = _string(value, "query_source")
+        representation = _string(value, "representation")
         score_detail = value.get("score_detail")
         if score_detail is not None and not isinstance(score_detail, dict):
             raise TypeError("selected asset score detail must be an object or null")
         return cls(
-            asset=asset, query=query,
+            asset=asset, query=query, query_source=query_source,
+            representation=representation,
             relevance=relevance, order=order, generic=generic, score=score,
             acquisition=_string(value, "acquisition"),
             reuse_reason=_string(value, "reuse_reason"),
