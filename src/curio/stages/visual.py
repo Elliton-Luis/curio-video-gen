@@ -238,7 +238,7 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_funnel("eligible")
         query_audit[query]["eligible"] += 1
-        candidates.append(candidate.to_evaluation_input())
+        candidates.append(candidate)
 
     from . import scoring
     min_score = scoring.threshold()
@@ -318,7 +318,8 @@ def _search_scene_with_shortcircuit(
     collect(specific_queries, phase_budget)
     score_started = time.monotonic()
     specific_result = evaluate_specific(
-        [entry for entry in candidates if not entry["generic"]], ch, min_score)
+        [candidate for candidate in candidates
+         if not candidate.search_query.generic], ch, min_score)
     if metrics:
         metrics.media_selection_time += time.monotonic() - score_started
     specific = [item.to_selection_entry() for item in specific_result.accepted]
@@ -334,7 +335,8 @@ def _search_scene_with_shortcircuit(
         collect(generic_queries, phase_budget)
         score_started = time.monotonic()
         generic_result = evaluate_generic(
-            [entry for entry in candidates if entry["generic"]], ch, min_score)
+            [candidate for candidate in candidates
+             if candidate.search_query.generic], ch, min_score)
         if metrics:
             metrics.media_selection_time += time.monotonic() - score_started
         ranked = [item.to_selection_entry() for item in generic_result.accepted]

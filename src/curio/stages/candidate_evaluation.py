@@ -6,9 +6,10 @@ from . import scoring
 from .media_contracts import Candidate, CandidateEvaluation, EvaluationBatch
 
 
-def evaluate_specific(entries: list[dict], scene, threshold: float) -> EvaluationBatch:
+def evaluate_specific(candidates: list[Candidate], scene,
+                      threshold: float) -> EvaluationBatch:
     """Score scene-specific candidates and partition by the semantic gate."""
-    prepared = [_copy_entry(entry) for entry in entries]
+    prepared, by_identity = _scoring_entries(candidates, generic=False)
     ranked = scoring.rank_candidates(prepared, scene)
     semantic_rejects = [entry for entry in ranked
                         if entry.get("score_detail", {}).get("semantic_rejection")]
@@ -17,17 +18,19 @@ def evaluate_specific(entries: list[dict], scene, threshold: float) -> Evaluatio
     rejected = [*below, *semantic_rejects]
     accepted_ids = {id(entry) for entry in accepted}
     return EvaluationBatch(
-        accepted=tuple(_evaluation(entry, id(entry) in accepted_ids, threshold)
+        accepted=tuple(_evaluation(entry, by_identity, True, threshold)
                        for entry in ranked if id(entry) in accepted_ids),
-        rejected=tuple(_evaluation(entry, False, threshold) for entry in rejected),
+        rejected=tuple(_evaluation(entry, by_identity, False, threshold)
+                       for entry in rejected),
     )
 
 
-def evaluate_generic(entries: list[dict], scene, threshold: float) -> EvaluationBatch:
+def evaluate_generic(candidates: list[Candidate], scene,
+                     threshold: float) -> EvaluationBatch:
     """Score late generic candidates against their own terms and topic gates."""
+    entries, by_identity = _scoring_entries(candidates, generic=True)
     evaluated = []
-    for raw in entries:
-        entry = _copy_entry(raw)
+    for entry in entries:
         info = scoring.generic_score(entry["asset"], entry["query"])
         if not scoring.topic_anchor_matches(entry["asset"], scene):
             info["score"] = 0.0
@@ -73,23 +76,34 @@ def evaluate_generic(entries: list[dict], scene, threshold: float) -> Evaluation
     accepted, below = scoring.below_threshold(scoreable, threshold)
     rejected = [*below, *semantic_rejects]
     return EvaluationBatch(
-        accepted=tuple(_evaluation(entry, True, threshold) for entry in accepted),
-        rejected=tuple(_evaluation(entry, False, threshold) for entry in rejected),
+        accepted=tuple(_evaluation(entry, by_identity, True, threshold)
+                       for entry in accepted),
+        rejected=tuple(_evaluation(entry, by_identity, False, threshold)
+                       for entry in rejected),
     )
 
 
-def _copy_entry(entry: dict) -> dict:
-    return {**entry, "asset": dict(entry.get("asset") or {})}
+def _scoring_entries(candidates: list[Candidate], *, generic: bool
+                     ) -> tuple[list[dict], dict[str, Candidate]]:
+    if any(not isinstance(candidate, Candidate) for candidate in candidates):
+        raise TypeError("candidate evaluation requires Candidate values")
+    selected = [candidate for candidate in candidates
+                if candidate.search_query.generic is generic]
+    identities = [candidate.identity for candidate in selected]
+    if len(identities) != len(set(identities)):
+        raise ValueError("candidate evaluation identities must be unique")
+    return ([candidate.to_evaluation_input() for candidate in selected],
+            {candidate.identity: candidate for candidate in selected})
 
 
-def _evaluation(entry: dict, accepted: bool,
+def _evaluation(entry: dict, by_identity: dict[str, Candidate], accepted: bool,
                 threshold: float) -> CandidateEvaluation:
     reason = ""
     if not accepted:
         reason = (entry.get("score_detail", {}).get("semantic_rejection")
                   or f"nota {entry.get('score', 0):.0f} abaixo do mínimo {threshold:.0f}")
     return CandidateEvaluation(
-        candidate=Candidate.from_evaluation_input(entry),
+        candidate=by_identity[entry["identity"]],
         score=float(entry.get("score", 0.0)),
         evidence=dict(entry.get("score_detail", {})),
         accepted=accepted,

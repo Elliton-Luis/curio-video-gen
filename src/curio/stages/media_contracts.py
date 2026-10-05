@@ -16,23 +16,6 @@ class Candidate:
     search_query: SearchQuery
     identity: str
 
-    @classmethod
-    def from_evaluation_input(cls, entry: dict) -> "Candidate":
-        asset = MediaAsset.from_dict(entry.get("asset") or {})
-        query = SearchQuery(
-            query=str(entry.get("query", "")),
-            source=str(entry.get("query_source", "legacy_entry")),
-            representation=str(entry.get("representation", "")),
-            representation_kind=str(entry.get("representation_kind", "")),
-            alias=str(entry.get("alias", "")),
-            variant=str(entry.get("query_variant", "entity")),
-            level=int(entry.get("query_level", 1) or 1),
-            generic=bool(entry.get("generic", False)),
-        )
-        identity = str(entry.get("identity", "") or
-                       f"{asset.provider}:{asset.asset_id}")
-        return cls(asset, query, identity)
-
     def to_evaluation_input(self) -> dict:
         return {
             "asset": self.asset.to_dict(),

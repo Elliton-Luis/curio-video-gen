@@ -161,6 +161,8 @@ contexto visual em helpers privados do scoring, mantendo tokenização em
 `textnorm`.
 G52 valida `SearchQuery` e `SearchPlan` antes de a aquisição receber queries:
 proveniência obrigatória, níveis válidos e ausência de duplicatas.
+G53 mantém `Candidate` tipado da aquisição à avaliação e elimina sua conversão
+de ida e volta antes de produzir `CandidateEvaluation`.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

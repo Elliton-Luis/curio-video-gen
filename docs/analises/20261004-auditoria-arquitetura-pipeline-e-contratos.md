@@ -565,3 +565,15 @@ Agora cada query exige texto, source, variant e nível positivo; o plano exige
 id válido, tupla tipada e queries únicas (case-insensitive). Busca vazia segue
 permitida para cenas que não geram mídia. A validação não traduz nem completa
 dados. Ver `20261005-search-plan-invariants.md`.
+
+## G53 — candidato tipado permanece até a avaliação
+
+Aquisição materializava `Candidate` e imediatamente convertia para dict; a
+avaliação remontava um `Candidate` por `from_evaluation_input`, perdendo a
+identidade do objeto normalizado e aceitando uma estrutura interna solta. O
+executor agora guarda `Candidate[]` e `evaluate_specific`/`evaluate_generic`
+exigem esses objetos. O scorer legado recebe uma projeção local explícita; os
+resultados `CandidateEvaluation` apontam para o mesmo candidato original. A
+conversão reversa sem consumidores foi removida. A saída dict para seleção
+permanece adaptador no limite já usado pelo seletor/persistência. Ver
+`20261005-candidate-evaluation-boundary.md`.
