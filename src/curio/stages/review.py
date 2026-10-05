@@ -17,8 +17,11 @@ baixar o arquivo final e sem renderizar.
 from __future__ import annotations
 
 import html
+import math
 import os
+from dataclasses import dataclass
 
+from ..media.selection_result import MediaStageResult
 from .scene_contract import SemanticScene
 
 # Quantas rejeições mostrar por cena. Mais que isso vira mural e esconde o
@@ -39,6 +42,159 @@ _STRATEGY_LABEL = {
     "card": "cartão tipográfico",
     "diagram": "diagrama",
 }
+
+
+@dataclass(frozen=True)
+class ReviewAsset:
+    path: str
+    title: str
+    provider: str
+    author: str
+    license: str
+    license_url: str
+    score: float | int | None
+    query: str
+    order: int
+    strategy: str
+
+    def __post_init__(self) -> None:
+        if any(not isinstance(value, str) for value in (
+                self.path, self.title, self.provider, self.author, self.license,
+                self.license_url, self.query, self.strategy)):
+            raise TypeError("review asset text fields must be strings")
+        if self.score is not None and (
+                isinstance(self.score, bool)
+                or not isinstance(self.score, (int, float))
+                or not math.isfinite(self.score)):
+            raise ValueError("review asset score must be finite or null")
+        if isinstance(self.order, bool) or not isinstance(self.order, int) \
+                or self.order < 0:
+            raise ValueError("review asset order must be non-negative")
+
+
+@dataclass(frozen=True)
+class ReviewSceneMedia:
+    scene_id: int
+    chosen: tuple[ReviewAsset, ...]
+    rejected: tuple[dict, ...]
+    reused_from: int | None
+    no_insertion: str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int) \
+                or self.scene_id <= 0:
+            raise ValueError("review scene id must be positive")
+        if not isinstance(self.chosen, tuple) or any(
+                not isinstance(asset, ReviewAsset) for asset in self.chosen):
+            raise TypeError("review scene chosen assets must be typed values")
+        if not isinstance(self.rejected, tuple) or any(
+                not isinstance(item, dict) for item in self.rejected):
+            raise TypeError("review scene rejections must be objects")
+        if self.reused_from is not None and (
+                isinstance(self.reused_from, bool)
+                or not isinstance(self.reused_from, int)
+                or self.reused_from <= 0):
+            raise ValueError("review reuse donor must be positive")
+        if not isinstance(self.no_insertion, str):
+            raise TypeError("review no_insertion reason must be a string")
+
+
+@dataclass(frozen=True)
+class ReviewMediaPlan:
+    scenes: tuple[ReviewSceneMedia, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scenes, tuple) or any(
+                not isinstance(scene, ReviewSceneMedia) for scene in self.scenes):
+            raise TypeError("review media requires ReviewSceneMedia values")
+        ids = tuple(scene.scene_id for scene in self.scenes)
+        if len(ids) != len(set(ids)):
+            raise ValueError("review media scene ids must be unique")
+
+    @classmethod
+    def from_media_result(cls, result: MediaStageResult) -> "ReviewMediaPlan":
+        if not isinstance(result, MediaStageResult):
+            raise TypeError("review requires a MediaStageResult")
+        return cls(tuple(ReviewSceneMedia(
+            scene.scene_id,
+            tuple(ReviewAsset(
+                entry.asset.local_path, entry.asset.title, entry.asset.provider,
+                entry.asset.author,
+                entry.asset.license or "desconhecida",
+                entry.asset.license_url, entry.score, entry.query, entry.order,
+                entry.strategy or "image")
+                  for entry in scene.assets),
+            scene.rejected, scene.reused_from, "")
+            for scene in result.scenes))
+
+    @classmethod
+    def from_persisted_rows(cls, rows: object) -> "ReviewMediaPlan":
+        """Adapt the persisted project format while allowing older asset metadata."""
+        if not isinstance(rows, list):
+            raise TypeError("persisted review media must be a list")
+        return cls(tuple(_review_scene_from_selection(row) for row in rows))
+
+
+def _review_scene_from_selection(row: object) -> ReviewSceneMedia:
+    if not isinstance(row, dict):
+        raise TypeError("review media scene must be an object")
+    scene_id = row.get("chapter_id")
+    if isinstance(scene_id, bool) or not isinstance(scene_id, int) or scene_id <= 0:
+        raise ValueError("review scene id must be a positive integer")
+    entries = row.get("assets", [])
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        raise TypeError("review assets must be a list")
+    chosen = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise TypeError("review asset entry must be an object")
+        asset = entry.get("asset") or {}
+        if not isinstance(asset, dict):
+            raise TypeError("review asset metadata must be an object")
+        path = asset.get("local_path", "") or ""
+        if not isinstance(path, str):
+            raise TypeError("review asset path must be a string")
+        score = entry.get("score")
+        if score is not None and (isinstance(score, bool)
+                                  or not isinstance(score, (int, float))):
+            raise TypeError("review asset score must be numeric or null")
+        order = entry.get("order", 0)
+        if isinstance(order, bool) or not isinstance(order, int) or order < 0:
+            raise ValueError("review asset order must be non-negative")
+        text_fields = {
+            "title": asset.get("title", "") or "",
+            "provider": asset.get("provider", "") or "",
+            "author": asset.get("author", "") or "",
+            "license": asset.get("license", "") or "desconhecida",
+            "license_url": asset.get("license_url", "") or "",
+            "query": entry.get("query", "") or "",
+            "strategy": entry.get("strategy", "image") or "image",
+        }
+        if any(not isinstance(value, str) for value in text_fields.values()):
+            raise TypeError("review asset display fields must be strings")
+        chosen.append(ReviewAsset(path, text_fields["title"],
+                                  text_fields["provider"], text_fields["author"],
+                                  text_fields["license"], text_fields["license_url"],
+                                  score, text_fields["query"], order,
+                                  text_fields["strategy"]))
+    rejected = row.get("rejected", [])
+    if rejected is None:
+        rejected = []
+    if not isinstance(rejected, list) or any(not isinstance(item, dict)
+                                             for item in rejected):
+        raise TypeError("review rejections must be a list of objects")
+    reused_from = row.get("reused_from")
+    if reused_from is not None and (isinstance(reused_from, bool)
+                                    or not isinstance(reused_from, int)
+                                    or reused_from <= 0):
+        raise ValueError("review reuse donor must be a positive scene id")
+    no_insertion = row.get("no_insertion", "") or ""
+    if not isinstance(no_insertion, str):
+        raise TypeError("review no_insertion reason must be a string")
+    return ReviewSceneMedia(scene_id, tuple(chosen), tuple(rejected),
+                            reused_from, no_insertion)
 
 
 def _rel(path: str, base: str) -> str:
@@ -71,35 +227,35 @@ def _score_badge(score) -> str:
 
 
 def scene_rows(semantic_scenes: tuple[SemanticScene, ...],
-               media_scenes: list[dict], base: str) -> list[dict]:
+               media_plan: ReviewMediaPlan, base: str) -> list[dict]:
     """Junta semântica + mídia + rejeições numa linha por cena."""
     if any(not isinstance(scene, SemanticScene) for scene in semantic_scenes):
         raise TypeError("review requires SemanticScene values")
+    if not isinstance(media_plan, ReviewMediaPlan):
+        raise TypeError("review requires a ReviewMediaPlan")
     scene_ids = tuple(scene.id for scene in semantic_scenes)
     if not scene_ids or len(scene_ids) != len(set(scene_ids)):
         raise ValueError("review requires unique semantic scenes")
-    by_scene = {s["chapter_id"]: s for s in media_scenes or []}
+    by_scene = {scene.scene_id: scene for scene in media_plan.scenes}
     rows = []
     for semantic_scene in semantic_scenes:
-        scene = by_scene.get(semantic_scene.id, {})
-        assets = list(scene.get("assets") or [])
+        scene = by_scene.get(semantic_scene.id)
         chosen = []
-        for entry in assets:
-            asset = entry.get("asset") or {}
-            if not asset.get("local_path"):
+        for asset in scene.chosen if scene else ():
+            if not asset.path:
                 continue
             chosen.append({
-                "path": asset["local_path"],
-                "rel": _rel(asset["local_path"], base),
-                "title": asset.get("title", ""),
-                "provider": asset.get("provider", ""),
-                "author": asset.get("author", ""),
-                "license": asset.get("license", "") or "desconhecida",
-                "license_url": asset.get("license_url", ""),
-                "score": entry.get("score"),
-                "query": entry.get("query", ""),
-                "order": entry.get("order", 0),
-                "strategy": entry.get("strategy", "image"),
+                "path": asset.path,
+                "rel": _rel(asset.path, base),
+                "title": asset.title,
+                "provider": asset.provider,
+                "author": asset.author,
+                "license": asset.license,
+                "license_url": asset.license_url,
+                "score": asset.score,
+                "query": asset.query,
+                "order": asset.order,
+                "strategy": asset.strategy,
             })
         rows.append({
             "id": semantic_scene.id,
@@ -110,10 +266,10 @@ def scene_rows(semantic_scenes: tuple[SemanticScene, ...],
             "forbidden": list(semantic_scene.forbidden),
             "queries": list(semantic_scene.visual_queries),
             "chosen": chosen,
-            "rejected": list(scene.get("rejected") or [])[:REJECTED_SHOWN],
-            "rejected_total": len(scene.get("rejected") or []),
-            "reused_from": scene.get("reused_from"),
-            "no_insertion": scene.get("no_insertion", ""),
+            "rejected": list(scene.rejected[:REJECTED_SHOWN]) if scene else [],
+            "rejected_total": len(scene.rejected) if scene else 0,
+            "reused_from": scene.reused_from if scene else None,
+            "no_insertion": scene.no_insertion if scene else "",
         })
     return rows
 
@@ -182,14 +338,14 @@ def _typography_from_report(report: dict | None) -> str:
 
 def write_contact_sheet(out_path: str,
                         semantic_scenes: tuple[SemanticScene, ...],
-                        media_scenes: list[dict],
+                        media_plan: ReviewMediaPlan,
                         root: str, slug: str = "", threshold: float = 0.0,
                         layers: list[str] | None = None,
                         genre: str = "",
                         typography: dict | None = None) -> str:
     """Gera `review/contact_sheet.html` — uma linha por cena."""
     base = os.path.dirname(os.path.abspath(out_path))
-    rows = scene_rows(semantic_scenes, media_scenes, base)
+    rows = scene_rows(semantic_scenes, media_plan, base)
     layers = layers or ["base"]
     sem_foto = [r for r in rows if not r["chosen"]]
     geradas = [r for r in rows
@@ -323,7 +479,7 @@ visual · <b>{len(geradas)}</b> geradas por código
 # --- dry-run -----------------------------------------------------------
 
 def dry_run_text(semantic_scenes: tuple[SemanticScene, ...],
-                 media_scenes: list[dict], threshold: float = 0.0,
+                 media_plan: ReviewMediaPlan, threshold: float = 0.0,
                  layers: list[str] | None = None, clip_device: str = "",
                  genre: str = "",
                  typography: dict | None = None) -> str:
@@ -336,7 +492,7 @@ def dry_run_text(semantic_scenes: tuple[SemanticScene, ...],
     ty = _typography_from_report(typography) or typography_banner(genre)
     if ty:
         out.append(f"Tipografia: {ty}")
-    for r in scene_rows(semantic_scenes, media_scenes, "."):
+    for r in scene_rows(semantic_scenes, media_plan, "."):
         out.append(f"\nCena {r['id']}  [{r['visual_type']}]")
         out.append(f"  texto      : {r['narration'][:150]}")
         if r["subject"]:

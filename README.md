@@ -230,6 +230,9 @@ sintética e cena sem visual; o
 avisos explícitos; o mesmo componente persiste `sources.json` e `FONTES.md` nos
 modos assistido e `human-pending`, para que mídia, pesquisa e créditos tenham a
 mesma trilha editorial nos dois fluxos.
+Review recebe `ReviewMediaPlan`: geração deriva os campos exibidos da seleção
+tipada; CLI adapta explicitamente `media.json` salvo para a leitura histórica,
+sem exigir que metadados antigos ausentes virem identidade editorial.
 `pipeline_metadata.py` monta os campos base comuns de geração humana/assistida
 consumindo `MediaStageResult`, valida os mesmos IDs de cena/span e deriva dele a
 origem da seleção; só o owner persiste a projeção `media` histórica. Ele fecha

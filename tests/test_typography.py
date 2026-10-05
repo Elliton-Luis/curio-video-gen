@@ -862,7 +862,8 @@ def test_folha_de_contato_mostra_a_tipografia(tmp_path):
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     out = str(tmp_path / "c.html")
-    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj", genre="people")
+    empty_review = R.ReviewMediaPlan.from_persisted_rows([])
+    R.write_contact_sheet(out, scenes, empty_review, str(tmp_path), "proj", genre="people")
     html = pathlib.Path(out).read_text(encoding="utf-8")
     assert "tipografia" in html.lower() or "Utopia" in html
 
@@ -884,7 +885,8 @@ def test_folha_prefere_o_que_esta_gravado_no_metadata(tmp_path):
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     out = str(tmp_path / "c.html")
-    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj", genre="people",
+    empty_review = R.ReviewMediaPlan.from_persisted_rows([])
+    R.write_contact_sheet(out, scenes, empty_review, str(tmp_path), "proj", genre="people",
                           typography=gravado)
     from curio.stages import review as R
     linha = R._typography_from_report(gravado)
@@ -900,7 +902,8 @@ def test_folha_sem_genero_nao_mostra_tipografia(tmp_path):
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
     out = str(tmp_path / "c.html")
-    R.write_contact_sheet(out, scenes, [], str(tmp_path), "proj")
+    empty_review = R.ReviewMediaPlan.from_persisted_rows([])
+    R.write_contact_sheet(out, scenes, empty_review, str(tmp_path), "proj")
     html = pathlib.Path(out).read_text(encoding="utf-8")
     assert "Tipografia" not in html and "typograph" not in html.lower()
 
@@ -913,7 +916,7 @@ def test_dry_run_mostra_a_tipografia():
     ch = [Chapter(id=1, narration="x", duration_estimate=10.0,
                   visual_type="literal", subject="x")]
     scenes = tuple(c.semantic_scene("typography_fixture") for c in ch)
-    texto = R.dry_run_text(scenes, [], genre="people",
+    texto = R.dry_run_text(scenes, R.ReviewMediaPlan.from_persisted_rows([]), genre="people",
                            typography=typography_report(CurioConfig(),
                                                         "people"))
     assert "Tipografia:" in texto

@@ -519,7 +519,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if media_scenes:
         from .stages import review as review_stage
         review_stage.write_contact_sheet(
-            paths.contact_sheet, tuple(semantic_scenes), media_scenes,
+            paths.contact_sheet, tuple(semantic_scenes),
+            review_stage.ReviewMediaPlan.from_media_result(media_result),
             paths.root, slug,
             threshold=scoring_stage.threshold(), genre=genre_key,
             typography=pipeline_metadata_stage.typography_report(cfg, genre_key))

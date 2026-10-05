@@ -906,5 +906,23 @@ human-pending. O schema externo do metadata mantém o mesmo formato.
 13 testes focados de metadata, pipeline e fontes passaram; regressão adicional
 valida seleção para ID de cena divergente. Testes unitários finais do módulo: 4.
 Suíte integral: **919 testes em 179,16 s**; compileall e diff check passaram.
+
+## G26: review recebe dados de mídia tipados
+
+`stages/review` lia cada row e reinterpretava `assets`, licença, query, score,
+rejeições e reuso durante a geração da folha e do dry-run. O CLI lia o mesmo
+schema salvo sem validação, enquanto geração já tinha a seleção tipada.
+
+`ReviewMediaPlan`/`ReviewSceneMedia`/`ReviewAsset` definem o mínimo que a revisão
+apresenta. Geração deriva esse plano diretamente de `MediaStageResult`; CLI usa
+`from_persisted_rows`, adaptador que valida shape e deixa IDs editoriais ausentes
+como ausentes. `scene_rows`, contato HTML e dry-run exigem o plano. A folha e o
+formato salvo não mudam; o limite de quatro rejeições continua sendo apenas de
+apresentação, enquanto a contagem total usa a auditoria inteira.
+
+Primeira rodada focada revelou fixtures de testes que ainda chamavam a API interna
+com rows e três erros locais nas fixtures; migradas para o adaptador/contrato.
+20 regressões de review e chamadas afetadas passaram. Suíte integral: **920 testes
+em 188,39 s**; compileall e diff check passaram.
 Próximo limite: remover `media_scenes` dicts dos consumidores de metadata/render
 ou fechar adapters explícitos para seus formatos persistidos.
