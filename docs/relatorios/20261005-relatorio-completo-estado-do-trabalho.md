@@ -1,12 +1,12 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G92 e métricas até F10.
-**Estado:** trabalho incompleto. G80–G92 e F4–F10 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G92 e métricas até F11.
+**Estado:** trabalho incompleto. G80–G92 e F4–F11 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F10 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`) e G86–G92
+> **Atualização:** F6–F11 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`) e G86–G92
 > (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
@@ -132,6 +132,7 @@ hashes e diffs.
 | `b0b272e` | Faz a métrica live de duração total consumir o elapsed canônico do pipeline (F8). |
 | `ed34825` | Projeta os totais de seleção em `consumption.media` a partir da mesma estatística tipada de `visual_report` (F9). |
 | `1054c8a` | Classifica retries de mídia por operação e provider, mantendo o total agregado (F10). |
+| `4ee2506` | Separa expiração real de busca de bloqueio de provider por rate limit/acesso negado (F11). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -295,8 +296,9 @@ Detalhes e a ressalva sobre a ordem das verificações estão no relatório F6.
 F6 fecha o acumulador mutável comum. F9 unifica a projeção dos totais de seleção
 entre `consumption.media` e `visual_report`; os três nomes históricos permanecem
 aliases explícitos. F10 separa retries de busca e download sem alterar os
-campos agregados. A fase de métricas continua parcial: definições canônicas
-globais para requests/cache/timing, backfill de contadores históricos,
+campos agregados; F11 evita contar bloqueio de provider como timeout. A fase de
+métricas continua parcial: definições canônicas globais para requests/cache/timing,
+backfill de contadores históricos,
 timers adicionais, profile por suboperação e conciliação seleção-render seguem
 pendentes. Ver [relatório F9](20261005-selection-metrics-single-projection.md).
 
@@ -336,12 +338,12 @@ query, provider, ranking ou seleção de imagem.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F10 parciais. | Requests/cache, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F11 parciais. | Requests/cache, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G92 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallback e métricas; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G92/F10. Não representam
+Os status são os registrados na auditoria e neste relatório até G92/F11. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -591,6 +593,14 @@ continuam visíveis em `unknown`. 34 focados e 999 testes completos em 187,91 s,
 compileall e diff check passaram. Ver
 [relatório F10](20261005-media-retry-operation-metrics.md).
 
+## F11 — timeout separado de bloqueio de provider (`4ee2506`)
+
+Somente espera realmente expirada incrementa `timeouts`, com breakdown em
+`timeouts_by_provider`. `401/403` ficam em `disabled_providers` como
+`access_denied`; `429` como `rate_limited`. Focos: 20 passaram; suíte completa:
+**1002 em 190,17 s**; compileall e diff check passaram. Ver
+[relatório F11](20261005-media-timeout-error-separation.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -644,4 +654,5 @@ passaram. Não houve geração real. Consulte
 - [`F8 — fonte única da duração total live`](20261005-live-metric-total-duration.md)
 - [`F9 — projeção única das métricas de seleção`](20261005-selection-metrics-single-projection.md)
 - [`F10 — retries por operação`](20261005-media-retry-operation-metrics.md)
+- [`F11 — timeout e falhas de provider`](20261005-media-timeout-error-separation.md)
 - [`Inventário de relatórios do projeto`](../README.md)
