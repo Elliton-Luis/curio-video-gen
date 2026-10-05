@@ -1,15 +1,16 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G85 e métricas até F6.
-**Estado:** trabalho incompleto. G80–G85 e F4–F6 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G85 e métricas até F7.
+**Estado:** trabalho incompleto. G80–G85 e F4–F7 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6 foi implementada e commitada em `11022b2`. A validação
-> completa e a verificação focada posterior constam neste relatório e no
-> [relatório F6](20261005-stage-timings-immutable-contract.md). A refatoração
-> ampla continua incompleta.
+> **Atualização:** F6 (`11022b2`) e F7 (`254f48f`) foram implementadas e
+> commitadas. Validações e limites constam neste relatório e nos
+> [relatórios F6](20261005-stage-timings-immutable-contract.md) e
+> [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
+> continua incompleta.
 
 ## Resumo do estado
 
@@ -118,6 +119,8 @@ hashes e diffs.
 | `8ae6616` | Faz auditoria de query/candidato consumir provenance do `VisualPlan` e rejeitar plano de cena divergente (G85). |
 | `11ac1f3` | Mede a etapa de timeline visual em `VisualTimelineResult` e agrega duração explícita nos stage times (F4). |
 | `e534ee3` | Compartilha a validação de durações nos resultados de etapa (F5). |
+| `11022b2` | Substitui o acumulador mutável por `StageTimings` imutável; dict fica na projeção persistida (F6). |
+| `254f48f` | Mantém duração total desconhecida como `null` em backfill sem valor total explícito (F7). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -318,12 +321,12 @@ query, provider, ranking ou seleção de imagem.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F6 parciais. | Definições canônicas, unknown/null, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F7 parciais. | Definições canônicas para demais campos, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G85 commitadas. | Simplificar coordenador; migrar campos restantes da auditoria final e adapters após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G85/F6. Não representam
+Os status são os registrados na auditoria e neste relatório até G85/F7. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -518,4 +521,5 @@ passaram. Não houve geração real. Consulte
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)
+- [`F7 — duração desconhecida no backfill`](20261005-backfill-unknown-total-duration.md)
 - [`Inventário de relatórios do projeto`](../README.md)

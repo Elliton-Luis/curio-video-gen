@@ -208,7 +208,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G85/F6 está em
+O relatório completo do estado registrado até G85/F7 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -254,6 +254,9 @@ completa: 977 testes. Ver
 F6 substitui o acumulador mutável por `StageTimings` imutável e projeta dict
 somente ao persistir metadata/métricas. Suíte completa: 978 testes; ver
 [relatório F6](docs/relatorios/20261005-stage-timings-immutable-contract.md).
+F7 impede que o backfill some timers possivelmente sobrepostos para inventar
+uma duração total; sem medida explícita, grava `null`. Suíte completa: 980
+testes; ver [relatório F7](docs/relatorios/20261005-backfill-unknown-total-duration.md).
 O manifesto de roteiro schema 2 também assina inputs de roteiro e título, incluindo contexto de pesquisa, políticas e rotas: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e
