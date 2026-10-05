@@ -31,11 +31,16 @@ o fechamento documental dessa alteração.
 > `verify` 8/8. Detalhes e limites estão em
 > [I1](20261005-rerender-runtime-no-search.md).
 
+> **Atualização I2:** aquisição nova real de M87 após F15 produziu 4 assets
+> únicos, validou 9 requests NASA de metadata e manteve 0 reusos/sintéticos.
+> A inspeção encontrou duas imagens quase duplicadas e fontes factuais
+> homônimas irrelevantes; ver [I2](20261005-ciencia-real-pos-f15.md).
+
 ## Estado exato do trabalho retomado
 
 O último commit de implementação é `b9e6ff1` (`fix: count provider API
 request attempts`), fase F15; os registros documentais posteriores são
-`8420ab4`, `c519528` e o relatório I1 deste estado. O último commit de
+`8420ab4`, `c519528`, I1 e I2. O último commit de
 implementação sucede G95 `3978670`, G94 `60703ae`, G93 `38b892e` e a
 proveniência até render `8daa29f`.
 
@@ -111,7 +116,11 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
   threshold nem corrigido esse caso.
 - A geração científica de M87 selecionou três IDs e hashes distintos, mas duas
   imagens têm composição quase igual; deduplicação binária não detecta
-  duplicidade perceptual/editorial.
+  duplicidade perceptual/editorial. A repetição visual foi reproduzida na
+  aquisição pós-F15: as cenas 1 e 2 são composições quase idênticas.
+- A pesquisa factual pós-F15 de M87 aceitou fontes homônimas irrelevantes
+  (“Capacete M87” e “Zastava M87”) e deixou sem grounding uma afirmação sobre
+  2019. É uma regressão no retrieval/qualificação de fontes ainda sem correção.
 - O vídeo histórico G95 ainda terminou com uma cena sintética (3/4 mídia real),
   embora tenha melhorado do baseline anterior. Não se demonstrou esgotamento
   suficiente de mídia específica em todos os casos.
@@ -130,9 +139,12 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
 | Batalha de Mohács, sem LLM | 4 | 3 | 3 | 0 | 1 | 26 queries lógicas; 66,43 s |
 | M87, sem LLM | 3 | 3 | 3 por ID/hash | 0 | 0 | 18 queries lógicas; 27,68 s |
 | Batalha de Mohács, F15 | 4 | 4 | 4 | 0 | 0 | 31 queries lógicas; mídia 81,98 s; total 148,89 s |
+| M87, I2 pós-F15 | 4 | 4 | 4 por ID/hash | 0 | 0 | 30 queries lógicas; mídia 38,33 s; total 76,00 s |
 
-Os detalhes por cena, fontes, seleção e inspeção visual constam em
+Os detalhes por cena, fontes, seleção e inspeção visual de Mohács constam em
 [`20261005-english-entity-connectors-and-real-runs.md`](20261005-english-entity-connectors-and-real-runs.md).
+M87 pós-F15, incluindo requests por provider/operação e as regressões
+visuais/factuais, está em [I2](20261005-ciencia-real-pos-f15.md).
 Essas medições são execuções pontuais; não constituem profile pareado nem
 validação final da arquitetura. No caso M87, a composição quase duplicada
 mostra o limite de contar apenas identidade binária.
@@ -496,7 +508,7 @@ seus pixels aparecem no MP4. F15 não altera essa limitação do renderer.
 | F — métricas/estado | F1–F15 parciais. | Contagem de requests foi confirmada em geração e sondagem; lifecycle timers, profile de performance e validação dos frames após FFmpeg permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G95 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
-| I — validação/limpeza | Parcial. | Há Mohács real pós-F15, M87 real anterior, fallback local sem LLM e rerender real sem nova busca. Faltam execução de ciência pós-F15, falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior. |
+| I — validação/limpeza | Parcial. | Há Mohács e M87 reais pós-F15, fallback local sem LLM e rerender real sem nova busca. Faltam falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior; M87 mostrou quase duplicatas e fontes homônimas. |
 
 Os status são os registrados na auditoria e neste relatório até G95/F15. Não representam
 aceite final dos objetivos amplos.

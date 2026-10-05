@@ -26,6 +26,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo até G95/F15: arquitetura, commits, contratos, testes, regressões reais, correção de métricas Met/AIC e pendências ainda abertas.
 - `relatorios/20261005-provider-request-metric-boundary.md` — F15: conta todas as tentativas de API Met/AIC/NASA/Unsplash, incluindo falhas e metadata; detalhe por operação; suíte completa: 1014 testes.
 - `relatorios/20261005-rerender-runtime-no-search.md` — I1: rerender de projeto científico real preserva hashes da seleção e registra zero requests/queries; verify 8/8.
+- `relatorios/20261005-ciencia-real-pos-f15.md` — I2: geração M87 pós-F15 com 4 assets únicos e breakdown real search/metadata; registra quase duplicatas visuais e fontes homônimas.
 - `relatorios/20261005-live-metric-total-duration.md` — F8: `processing_time_seconds` é a fonte canônica da duração total live publicada nas métricas.
 - `relatorios/20261005-selection-provenance-owner.md` — G87: seleção classifica esgotamento e nível de fallback de plans e auditoria tipados.
 - `relatorios/20261005-selection-fallback-policy.md` — G86: seleção decide explicitamente a próxima tier contextual, sintética, reuso ou ausência.

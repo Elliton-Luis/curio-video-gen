@@ -837,10 +837,16 @@ sincroniza `SelectionDecision` com o asset primário e marca reuso se a imagem j
 foi atribuída a outra cena. O CLI só verifica o arquivo local e persiste o
 resultado. `rerender` refaz o vídeo e as legendas a partir do que mudou — **sem**
 re-sintetizar a narração, sem re-pesquisar e sem chamar o LLM.
+
 Um rerender real do projeto M87 preservou os hashes de `media.json` e
 `media-selection.json`, publicou zero requests/queries e passou `verify`
 8/8, em uma cópia isolada do projeto; veja
 [I1](docs/relatorios/20261005-rerender-runtime-no-search.md).
+Após F15, duas aquisições locais sem LLM em domínios distintos (Mohács e M87)
+terminaram com quatro assets reais únicos por vídeo. A execução M87 confirmou
+9 requests NASA de metadata, mas mostrou duas imagens polarizadas quase iguais
+em cenas diferentes e fontes homônimas irrelevantes; os detalhes estão em
+[I2](docs/relatorios/20261005-ciencia-real-pos-f15.md).
 
 ## Configuração
 
