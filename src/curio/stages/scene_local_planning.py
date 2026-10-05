@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 
 from .. import textnorm
-from . import scenes as scenes_stage
 from .scene_contract import VisualRepresentation
+from .scene_representations import _representation_rejection_reason
 
 # Heurística offline p/ consultas visuais (sem chave NVIDIA as cenas locais
 # não trazem `visual_queries` — sem isto, tudo cairia em fallback). Extrai
@@ -157,7 +157,7 @@ def local_visual_representations(narration: str, k: int = 2) -> list[str]:
                      if term.casefold() not in embedded]
     for term in [*boost, *event_terms, *proper, *safe_entities, *concrete]:
         term = re.sub(r"\s+", " ", str(term)).strip(" ,.;:")
-        if scenes_stage._representation_rejection_reason(term, "entity"):
+        if _representation_rejection_reason(term, "entity"):
             continue
         if len(term.split()) == 1:
             term = PT_EN.get(_strip_acc(term.lower()), term)

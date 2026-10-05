@@ -93,3 +93,18 @@ integral será executada antes do commit.
 
 Validação integral após G47: **904 passaram em 176,06 s**; `compileall` e
 `git diff --check` passaram.
+
+## Continuação G48 — classificação e validação compartilhadas
+
+`Chapter.from_dict` e `visual_context.py` dependiam de helpers privados em
+`scenes.py`. Classificação de tipo visual foi extraída para
+`scene_visual_type.py`; normalização/rejeição de representações foi extraída
+para `scene_representations.py`. Planner local/LLM, enrichment e projeção
+histórica compartilham as mesmas regras sem chamar o módulo planner. O
+classificador segue reexportado por `scenes.py` para compatibilidade.
+
+Focados de contratos, planner local/LLM e enrichment: **80 passaram em 0,31 s**.
+A suíte completa será executada antes do commit.
+
+Validação integral após G48: **904 passaram em 187,69 s**; `compileall` e
+`git diff --check` passaram.

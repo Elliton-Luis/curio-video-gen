@@ -84,7 +84,7 @@ def attach_video_context(scenes, topic: str, target=None) -> tuple[SemanticScene
             # attached. History topics classify scenes with no explicit
             # date/event too, and a process verb must not force science.
             if scene.visual_type != "typographic":
-                from .scenes import classify_visual_type
+                from .scene_visual_type import classify_visual_type
                 contextual_type = classify_visual_type(f"{scene.narration} {topic}")
                 if contextual_type == "historical_art":
                     updates["visual_type"] = contextual_type

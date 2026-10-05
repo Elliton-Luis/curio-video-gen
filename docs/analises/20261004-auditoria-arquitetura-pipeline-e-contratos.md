@@ -508,3 +508,7 @@ O novo `run_render_stage` possuía entrada com muitos argumentos posicionais, fr
 ## G47 — transição para standby sob owner de mídia
 
 Quando nenhuma seleção tinha asset, `_run_pipeline` criava instruções para mídia manual, salvava sources/relatório e escrevia o metadata `standby-no-media`. G47 moveu esses efeitos para `pipeline_media.prepare_media_standby`, que exige `MediaStageResult` com zero assets e contagem de cenas positiva, persiste os mesmos artefatos e devolve `MediaStandby`; o coordenador apenas emite o status e propaga a exceção. O schema parcial e os caminhos/arquivos seguem compatíveis.
+
+## G48 — regras de cena compartilhadas sem importar o planner
+
+A fronteira nova de G42 ainda tinha dependência conceitual: `Chapter.from_dict` chamava helpers privados em `scenes.py`, e `visual_context.py` importava o classificador do planner. A classificação determinística de tipo visual agora vive em `scene_visual_type.py`; normalização/rejeição de representações vive em `scene_representations.py`. Planner, enrichment e projeção consomem esses owners compartilhados. `scenes.py` mantém somente o reexport do classificador para compatibilidade de import antigo. A regra e sua proveniência não foram alteradas.

@@ -184,7 +184,9 @@ e o MP4 final só é reutilizado quando o áudio usado nele continua vigente.
 O planejamento visual e suas métricas recebem `SemanticScene[]` e
 `TimelineSpan[]` separados; `Chapter` vive em
 `stages/scene_projection.py` como projeção de compatibilidade para metadata e
-formatos externos; `stages/scenes.py` mantém apenas reexport legado.
+formatos externos; `stages/scenes.py` mantém apenas reexport legado. Classificação de tipo visual
+e normalização de representações ficam em módulos compartilhados por planner,
+enrichment e projeção histórica.
 Aquisição por provider e mídia manual recebem somente `SemanticScene`; reuse
 consulta a mesma intenção tipada, sem adaptadores de Chapter.
 A seleção vazia é tratada por `pipeline_media.prepare_media_standby`, que

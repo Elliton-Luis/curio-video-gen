@@ -189,10 +189,11 @@ class Chapter:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Chapter":
-        from .scenes import (
+        from .scene_representations import (
             _coerce_representations, _rejected_representations,
-            _validate_query_list, classify_visual_type,
+            _validate_query_list,
         )
+        from .scene_visual_type import classify_visual_type
         vtype = str(d.get("visual_type", "") or "").strip().lower()
         narration = str(d.get("narration", ""))
         if vtype not in VISUAL_TYPES:
