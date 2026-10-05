@@ -818,6 +818,6 @@ Projeto sem manifesto tem proveniência desconhecida: roteiro/título são
 preservados como entradas legadas, sem atribuir-lhes uma assinatura inventada.
 
 Regressões cobrem inputs atuais, mudança de pesquisa, título ligado a script
-antigo, manifesto v1, edição manual e artefatos legados sem manifesto. 13 testes
-focados passaram; suíte integral: **908 testes em 173,69 s**; compileall e diff
+antigo, manifesto v1, edição manual e artefatos legados sem manifesto. 14 testes
+focados passaram; suíte integral: **909 testes em 192,93 s**; compileall e diff
 check passaram. Mudança em `pipeline_script.py` e `script_artifacts.py`.

@@ -1,5 +1,6 @@
 import json
 import os
+from copy import deepcopy
 
 from curio.config import CurioConfig
 from curio.project_paths import video_paths
@@ -8,6 +9,8 @@ from curio.pipeline_script import (_script_input_hash, _title_input_hash,
 from curio.script_artifacts import (ScriptArtifactsManifest, read_manifest,
                                     text_identity, write_manifest)
 from curio.stages.script import ScriptArtifact, TitleArtifact
+from curio.stages.entity import TargetEntity
+from curio.stages.research import ResearchSource
 
 
 def test_changed_provided_script_explicitly_invalidates_downstream_audio(
@@ -315,3 +318,46 @@ def test_unmanifested_legacy_title_is_preserved_as_editorial_input(
 
     assert result.title.text == "Title edited by a person?"
     assert read_manifest(paths.script_manifest_json).title_origin == "legacy"
+
+
+def test_script_input_identity_tracks_each_semantic_and_generation_input():
+    cfg = CurioConfig()
+    base = _script_input_hash(
+        "idea", cfg, "research", TargetEntity(name="Subject"),
+        [ResearchSource("Source", "https://example.test/source", "evidence")],
+        "genre directive")
+
+    changed_cfg = deepcopy(cfg)
+    changed_cfg.language = "en-US"
+    changed_duration = deepcopy(cfg)
+    changed_duration.duration_target += 1
+    changed_model = deepcopy(cfg)
+    changed_model.nvidia_model = "different/model"
+    variants = [
+        ("different idea", cfg, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+        ("idea", cfg, "different research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+        ("idea", cfg, "research", TargetEntity(name="Other subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+        ("idea", cfg, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Other source", "https://example.test/other", "evidence")],
+         "genre directive"),
+        ("idea", cfg, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "different directive"),
+        ("idea", changed_cfg, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+        ("idea", changed_duration, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+        ("idea", changed_model, "research", TargetEntity(name="Subject"),
+         [ResearchSource("Source", "https://example.test/source", "evidence")],
+         "genre directive"),
+    ]
+
+    assert all(_script_input_hash(*variant) != base for variant in variants)
