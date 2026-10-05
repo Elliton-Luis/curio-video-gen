@@ -233,3 +233,6 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-evaluation-evidence-snapshot.md` — G67 (`833df32`): evidência de scoring imutável em `CandidateEvaluation`, com projeção independente para seleção.
 - `relatorios/20261005-selected-media-snapshot.md` — G68 (`0e62a18`): snapshots imutáveis de assets/rows selecionados, projeção JSON compatível e adaptação explícita para revisão.
 - `relatorios/20261005-cross-scene-reuse-typed-donor.md` — G69 (`1d1335f`): fluxo de reuso cross-scene mantém `SelectedAsset` tipado até selecionar o doador.
+# Continuidade
+
+- [Continuação da refatoração arquitetural](CONTINUACAO-REFATORACAO.md) — estado de handoff, invariantes e ponto de retomada após G97/G98.
