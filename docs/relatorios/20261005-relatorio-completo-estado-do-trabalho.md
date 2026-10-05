@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G94 e métricas até F14.
-**Estado:** trabalho incompleto. G80–G94 e F4–F14 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G95 e métricas até F14.
+**Estado:** trabalho incompleto. G80–G95 e F4–F14 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -13,8 +13,8 @@ altera `src/curio/media/render_usage.py`, `src/curio/pipeline_render.py` e
 suíte completa passou com 1009 testes após a mudança. Este relatório registra
 o fechamento documental dessa alteração.
 
-> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G94
-> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`, `38b892e`, `60703ae`) foram
+> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G95
+> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`, `38b892e`, `60703ae`, `3978670`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -147,6 +147,7 @@ hashes e diffs.
 | `8daa29f` | Nomeia identidades dos assets associados ao segmento sem afirmar que foram decodificados pelo FFmpeg (F14). |
 | `38b892e` | Aplica prioridade de providers por cena a partir do `VisualPlan` individual (G93). |
 | `60703ae` | Passa à busca os mesmos `VisualPlan` e `SearchPlan` usados no preparo por cena (G94). |
+| `3978670` | Preserva nomes próprios ingleses com conectores na resolução heurística sem LLM (G95). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -360,11 +361,11 @@ pixels aparecem no MP4. Esse delta ficou limitado a
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F14 parciais. | Requests, lifecycle timers, profile por suboperação e validação dos frames após FFmpeg permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G94 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G95 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G94/F14. Não representam
+Os status são os registrados na auditoria e neste relatório até G95/F14. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -631,6 +632,35 @@ Arquivos: `src/curio/stages/visual.py`,
 passaram. Sem geração real nesta fase. Ver
 [relatório G94](20261005-canonical-scene-search-plans.md).
 
+## G95 — nome de evento preservado no fallback local (`3978670`)
+
+O replay `g94-mohacs-local`, com as chaves LLM vazias no processo, persistiu
+`target_entity.target=Battle`; as três fontes aceitas eram o artigo genérico
+“Battle”, “Battle of Battle Hill” e “Battle Royale”. `_capitalized_spans()`
+separava o conector `of` e fazia a palavra inicial ganhar como entidade. G95
+passou a preservar conectores ingleses em blocos de nomes compostos e removeu o
+regex `_CAP`, comprovadamente sem consumidores.
+
+O replay `g95-mohacs-local`, com o mesmo roteiro e fallback local, resolveu
+`Battle of Mohacs`, selecionou fontes específicas e deixou o grounding sem
+alerta. Assets: 3 reais únicos em 4 cenas, zero reusos e um sintético; mídia
+66,43 s, total 105,75 s. A inspeção identificou uma gravura de batalha otomana
+de 1687 colocada numa cena sobre 1526, então a especificidade de período ainda
+falha. Antes da mudança, foram 2 reais (um mapa correto e um monumento de
+Leipzig incorreto), 2 sintéticos, 61,67 s de mídia e 100,52 s totais.
+
+O replay científico `g94-m87-local` cobriu 3/3 cenas com IDs/hashes únicos e
+zero reuso/sintético, mas inspeção mostra duas imagens do M87 de composição
+quase igual. Ambas as execuções tiveram `nvidia.calls=0`. No relatório de G95
+estão os paths dos assets, queries, contagens e detalhes dos dois replays.
+Métricas também mostraram `provider_search_calls` incluindo Met/AIC e
+`provider_requests` omitindo esses nomes; definição canônica de requests ainda
+precisa de fase própria. O replay não certifica aquisição histórica resolvida.
+
+17 focados depois da remoção do regex morto; suíte completa: **1012 em 175,13
+s**; compileall e diff check aprovados. Ver
+[relatório G95](20261005-english-entity-connectors-and-real-runs.md).
+
 ## F9 — projeção única das métricas de seleção (`ed34825`)
 
 `consumption.media` agora projeta contagens de asset real, único, reutilizado,
@@ -740,6 +770,7 @@ passaram. Não houve geração real. Consulte
 - [`G92 — projeções de rejeição tipadas`](20261005-typed-rejection-projections.md)
 - [`G93 — prioridade de providers por cena`](20261005-provider-priority-per-scene.md)
 - [`G94 — planos canônicos na busca por cena`](20261005-canonical-scene-search-plans.md)
+- [`G95 — conectores ingleses e execuções reais`](20261005-english-entity-connectors-and-real-runs.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)

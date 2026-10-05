@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G94/F14.
+**Escopo:** auditoria documentada e migrações incrementais até G95/F14.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -116,6 +116,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `8daa29f` | Usa `segment_asset_ids` para identificar assets associados ao segmento sem afirmar decodificação (F14). |
 | `38b892e` | Aplica a ordem de providers calculada para o plano de cada cena sem mesclá-la globalmente (G93). |
 | `60703ae` | Passa o `VisualPlan` e o `SearchPlan` canônicos à busca de cena e valida sua identidade (G94). |
+| `3978670` | Agrupa conectores ingleses em nomes próprios heurísticos; impede que o substantivo genérico inicial se torne entidade alvo (G95). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -269,7 +270,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F14 parciais. | F6 torna a coleção de tempos imutável; F7 preserva como null a duração histórica irrecuperável; F8 unifica o total live; F9 unifica a projeção dos totais de seleção; F10 classifica retries por operação; F11 separa timeout de bloqueio por provider; F12 distingue os dois caches; F13 compara seleção com timeline; F14 registra paths passados ao renderer. Decodificação/pixels, requests, lifecycle timers e profile por suboperação permanecem. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G94 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89–G91 preservam avaliações/rejeições/outcomes tipados; G92 centraliza suas projeções e contagens; G93 aplica prioridade de providers por cena; G94 faz a busca consumir os planos canônicos. `visual.py` ainda coordena busca/aquisição/fallback; mappings permanecem nas fronteiras persistidas. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G95 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89–G91 preservam avaliações/rejeições/outcomes tipados; G92 centraliza suas projeções e contagens; G93 aplica prioridade de providers por cena; G94 faz a busca consumir os planos canônicos; G95 corrige uma heurística genérica de entidade, mas mostrou falha histórica por período e métricas de provider divergentes. `visual.py` ainda coordena busca/aquisição/fallback; mappings permanecem nas fronteiras persistidas. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -1059,3 +1060,22 @@ dos dois contratos. Os testes focados passaram (138); suíte completa: **1011 em
 189,64 s**; compileall e diff check passaram. Formato persistido, queries e
 seleção não mudaram. Não houve geração real. Ver
 [relatório G94](20261005-canonical-scene-search-plans.md).
+
+## G95 — conectores ingleses no alvo heurístico (`3978670`)
+
+Um replay sem LLM provou que `Battle of Mohacs 1526` era reduzido a `Battle`
+porque `_capitalized_spans()` separava conectores ingleses. `entity.py` agora
+preserva `of`, `the` e `and` entre nomes capitalizados; `_CAP`, sem
+consumidores, foi removido. Regressões cobrem `Battle of Mohacs` e `Battle of
+the Bulge`. 17 testes focados de entidade e **1012 integrais em 175,13 s**
+passaram, assim como compileall e diff check.
+
+Execuções reais sem LLM: antes, pesquisa aceitou fontes genéricas sobre
+“Battle”; depois, aceitou fontes específicas de Mohács e grounding passou.
+Cobertura histórica mudou de 2/4 para 3/4 cenas com mídia real, mas a inspeção
+encontrou gravura de outra batalha de 1687 numa cena de 1526. A ciência M87
+teve 3/3 cenas reais e únicas por ID/hash, mas duas imagens têm composição
+quase idêntica. O campo `provider_search_calls` inclui Met/AIC, enquanto
+`provider_requests` os omite; definição canônica continua pendente. Não se
+considera a validação editorial ou de performance concluída. Veja
+[relatório G95](20261005-english-entity-connectors-and-real-runs.md).
