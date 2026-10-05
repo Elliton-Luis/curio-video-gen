@@ -14,6 +14,8 @@ descrições marcadas como baseline são históricas, não o fluxo atual.
 No checkout atual, scene-plan e seleção de mídia têm manifestos de input e
 resultados de cena validam a coerência de asset/decision antes de seguir para
 timeline, fontes e render; rows persistidos ainda mantêm o schema de projeto.
+`run_pipeline` e `finalize_project` isolam a configuração mutável por execução,
+para preferências de áudio lidas do projeto não alterarem o estado da TUI/queue.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

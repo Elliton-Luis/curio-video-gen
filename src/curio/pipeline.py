@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -280,6 +281,9 @@ def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
                  max_images: int = 1,
                  visual_overlap: float | None = None,
                  genre: str | None = None, on_event=None) -> dict:
+    # Per-project audio requests and finalize policy may adjust scalars; never
+    # let those adjustments leak into a TUI/queue caller's shared config.
+    cfg = deepcopy(cfg)
     genre_key = (genre if genre is not None else cfg.genre) or ""
     run_slug, paths = _resolve_paths(cfg.out_dir, slug, idea, genre_key,
                                      force)
@@ -978,6 +982,7 @@ def iter_projects(out_dir: str) -> list[tuple[str, str]]:
 def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                      force: bool = False, on_progress=None,
                      on_event=None) -> dict:
+    cfg = deepcopy(cfg)
     slug, paths = _paths_for_slug(cfg.out_dir, slug)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     log_path = os.path.join(paths.root, "logs", f"finalize-{stamp}.jsonl")

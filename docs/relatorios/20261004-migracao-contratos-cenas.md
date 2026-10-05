@@ -399,3 +399,13 @@ compartilhar estado geral da execução.
 Testes diretos cobrem fallback proporcional, resultado imutável e rejeição de
 tempos inválidos; integração/TTS focados passaram (**26 em 143,41 s**).
 Revalidar com a suíte completa no gate final.
+
+## G5: execution config cannot leak back to the UI
+
+`_apply_audio_request` aplica as preferências salvas de um projeto mutando
+`CurioConfig`, e `finalize_project` também ajusta campos para aquele fluxo.
+Ambos podiam alterar o objeto que TUI/queue pretendiam reutilizar. As APIs
+públicas `run_pipeline` e `finalize_project` agora fazem uma cópia profunda no
+limite da execução antes de qualquer política local; configurações/arquivos do
+projeto continuam sendo lidos e salvos da mesma forma. Testes unitários e
+integração passaram (**10 em 37,12 s**).
