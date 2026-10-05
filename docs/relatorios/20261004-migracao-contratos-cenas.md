@@ -796,3 +796,28 @@ Teste reproduz shortlist com duas identidades e uma seleção real final. 23
 testes de métricas/funnel/uso passaram; suíte integral: **901 testes em
 188,67 s**; compileall e diff check passaram. Alteração segue no commit de
 código em `3c163fa`.
+
+## E7: cache de roteiro depende de identidade de inputs
+
+O manifesto anterior guardava hash do roteiro produzido e do roteiro usado
+para produzir o título, mas o estágio aceitava qualquer roteiro gerado intacto
+sem comparar pesquisa, tópico, diretiva, idioma, duração ou rota/modelo atual.
+Também não validava `title_script_sha256` ao carregar um título. Assim, o cache
+podia congelar roteiro após mudança de contexto ou título após mudança do
+roteiro.
+
+`script/artifacts.json` agora usa schema 2 e inclui hashes dos inputs de roteiro
+e título. A identidade de roteiro cobre ideia, prompt de pesquisa, alvo/fontes,
+diretiva, contexto da entidade, idioma, duração, políticas/prompts e rotas/modelos
+disponíveis. A de título cobre roteiro atual, ideia, idioma, rota e prompt. O
+manifesto contém apenas hashes dos valores e não inclui credenciais. Cache
+gerado só é aceito com assinatura correspondente; título exige também vínculo
+com o hash do roteiro atual. Texto explicitamente fornecido/editado continua
+protegido. Manifestos v1 são lidos; saída gerada sem assinatura é regenerada.
+Projeto sem manifesto tem proveniência desconhecida: roteiro/título são
+preservados como entradas legadas, sem atribuir-lhes uma assinatura inventada.
+
+Regressões cobrem inputs atuais, mudança de pesquisa, título ligado a script
+antigo, manifesto v1, edição manual e artefatos legados sem manifesto. 13 testes
+focados passaram; suíte integral: **908 testes em 173,69 s**; compileall e diff
+check passaram. Mudança em `pipeline_script.py` e `script_artifacts.py`.

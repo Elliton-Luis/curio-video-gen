@@ -8,11 +8,18 @@ import os
 import re
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def text_identity(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def input_identity(value: object) -> str:
+    """Hash deterministic inputs to a generated project artifact."""
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":"))
+    return text_identity(encoded)
 
 
 @dataclass(frozen=True)
@@ -22,6 +29,8 @@ class ScriptArtifactsManifest:
     title_sha256: str
     title_origin: str
     title_script_sha256: str | None
+    script_input_sha256: str | None = None
+    title_input_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for value in (self.script_sha256, self.title_sha256):
@@ -30,6 +39,9 @@ class ScriptArtifactsManifest:
         if self.title_script_sha256 is not None and not _is_sha256(
                 self.title_script_sha256):
             raise ValueError("title source script hash must be SHA-256")
+        for value in (self.script_input_sha256, self.title_input_sha256):
+            if value is not None and not _is_sha256(value):
+                raise ValueError("script input hashes must be SHA-256")
         if not self.script_origin.strip() or not self.title_origin.strip():
             raise ValueError("script and title origins are required")
 
@@ -37,15 +49,17 @@ class ScriptArtifactsManifest:
         return {
             "schema_version": SCHEMA_VERSION,
             "script": {"sha256": self.script_sha256,
-                       "origin": self.script_origin},
+                       "origin": self.script_origin,
+                       "input_sha256": self.script_input_sha256},
             "title": {"sha256": self.title_sha256,
                       "origin": self.title_origin,
-                      "script_sha256": self.title_script_sha256},
+                      "script_sha256": self.title_script_sha256,
+                      "input_sha256": self.title_input_sha256},
         }
 
     @classmethod
     def from_dict(cls, value: object) -> "ScriptArtifactsManifest":
-        if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
+        if not isinstance(value, dict) or value.get("schema_version") not in {1, SCHEMA_VERSION}:
             raise ValueError("unsupported script artifacts manifest")
         script, title = value.get("script"), value.get("title")
         if not isinstance(script, dict) or not isinstance(title, dict):
@@ -55,7 +69,9 @@ class ScriptArtifactsManifest:
             script_origin=_required_str(script, "origin"),
             title_sha256=_required_str(title, "sha256"),
             title_origin=_required_str(title, "origin"),
-            title_script_sha256=title.get("script_sha256"))
+            title_script_sha256=title.get("script_sha256"),
+            script_input_sha256=script.get("input_sha256"),
+            title_input_sha256=title.get("input_sha256"))
 
 
 def read_manifest(path: str) -> ScriptArtifactsManifest | None:

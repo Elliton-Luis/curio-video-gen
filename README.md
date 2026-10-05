@@ -118,7 +118,7 @@ malformado falha no limite do estágio sem side effects.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
-integral mais recente tem 901 testes aprovados. Geração local de ciência após a correção
+integral mais recente tem 908 testes aprovados. Geração local de ciência após a correção
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.
@@ -126,6 +126,7 @@ O tempo de mídia subiu para 129 s, com 20 retries e 4 timeouts do Wikimedia.
 `consumption.media.shortlist_assets_unique` conta candidatos encaminhados para
 download; `real_scene_assets_unique` segue a seleção final e coincide com
 `visual_report.unique_assets`. `selected_unique` permanece alias compatível.
+O manifesto de roteiro schema 2 também assina inputs de roteiro e título: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e
 etimologia; `ResearchStageResult` contém apenas status, prompt e duração da
