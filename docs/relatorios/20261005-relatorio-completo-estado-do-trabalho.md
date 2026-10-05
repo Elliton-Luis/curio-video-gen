@@ -26,19 +26,24 @@ o fechamento documental dessa alteração.
 > foi executado. A implementação posterior dessa investigação consta em F15
 > abaixo.
 
+> **Atualização I1:** um rerender de projeto científico real preservou os
+> hashes da seleção persistida, registrou zero requests/queries e passou
+> `verify` 8/8. Detalhes e limites estão em
+> [I1](20261005-rerender-runtime-no-search.md).
+
 ## Estado exato do trabalho retomado
 
-O último commit de implementação observado é `b9e6ff1` (`fix: count provider
-API request attempts`), fase F15. Ele sucede o snapshot documental
-`a06be6e`, a correção G95 `3978670`, os planos canônicos G94
-`60703ae`, a prioridade de providers por cena G93 `38b892e` e a
-proveniência até render `8daa29f`. O worktree estava limpo após F15.
+O último commit de implementação é `b9e6ff1` (`fix: count provider API
+request attempts`), fase F15; os registros documentais posteriores são
+`8420ab4`, `c519528` e o relatório I1 deste estado. O último commit de
+implementação sucede G95 `3978670`, G94 `60703ae`, G93 `38b892e` e a
+proveniência até render `8daa29f`.
 
 O projeto está executável e as migrações já commitadas passaram suas suítes
 conforme registradas por fase. O resultado integral mais recente documentado é
 **1014 testes aprovados em 182,23 s**, mais `compileall` e `git diff --check`,
-após F15. Não foi executada uma suíte durante esta atualização documental;
-1014 é o último resultado conhecido.
+após F15. I1 não altera código: rerender real e `verify` passaram como
+validação runtime separada, sem nova suíte.
 
 ### O que estava sendo investigado na etapa de mídia
 
@@ -92,7 +97,8 @@ Não concluído: extração do coordenador editorial ainda concentrado em
 `visual.py`; ownership global de estado/cache/metadata; simplificação dos
 caminhos compatíveis internos restantes; profile comparável de performance;
 execuções reais finais em pelo menos dois domínios após as últimas mudanças;
-validação explícita de rerender, cache, falha de providers e fallback sem LLM;
+validação de rerender após troca manual de asset, cache frio, falha combinada
+de providers e fallback LLM;
 inspeção editorial e de quase-duplicatas em amostra adequada; fechamento de
 documentação e fases posteriores do plano arquitetural. Estes pontos são
 pendências, não trabalho que tenha sido concluído por passar a suíte.
@@ -487,10 +493,10 @@ seus pixels aparecem no MP4. F15 não altera essa limitação do renderer.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F15 parciais. | Contagem de requests tem contrato por operação, mas falta geração real de confirmação; lifecycle timers, profile de performance e validação dos frames após FFmpeg permanecem incompletos. |
+| F — métricas/estado | F1–F15 parciais. | Contagem de requests foi confirmada em geração e sondagem; lifecycle timers, profile de performance e validação dos frames após FFmpeg permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G95 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
-| I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
+| I — validação/limpeza | Parcial. | Há Mohács real pós-F15, M87 real anterior, fallback local sem LLM e rerender real sem nova busca. Faltam execução de ciência pós-F15, falhas combinadas, rerender após troca manual/cache frio e inspeção editorial maior. |
 
 Os status são os registrados na auditoria e neste relatório até G95/F15. Não representam
 aceite final dos objetivos amplos.
@@ -527,8 +533,10 @@ limitações. O replay determinístico G77 após falha de aquisição continua p
 - Repetir geração real histórica com providers saudáveis e executar replay
   determinístico que exercite G77 após falha técnica, reportando a auditoria
   por query, candidatos, decisões e fallback de cada cena.
-- Validar rerender, cache, falha de LLM/provider e pelo menos dois domínios
-  reais, com inspeção visual dos assets vencedores.
+- Completar validação real de aquisição em dois domínios após F15; o rerender
+  de ciência já foi provado em I1, mas faltam troca manual seguida de rerender,
+  cache frio, falhas combinadas de LLM/provider e inspeção de uma amostra
+  editorial maior.
 - Rodar suíte, compile/check e profile final sobre a revisão final efetivamente
   commitada. Não há evidência de conclusão dessas validações finais.
 
