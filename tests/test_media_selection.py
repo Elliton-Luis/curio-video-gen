@@ -1,9 +1,11 @@
 import pytest
 
 from curio.stages.media_selection import (
+    ReuseCandidate,
     SelectionDecision,
     make_selection_decision,
     prepare_selection_pool,
+    select_reuse_candidate,
 )
 
 
@@ -45,6 +47,24 @@ def test_selected_decision_requires_identity_and_reason():
         SelectionDecision(scene_id=1, status="real", reason="selected")
     with pytest.raises(ValueError, match="explain"):
         SelectionDecision(scene_id=1, status="none")
+
+
+def test_cross_scene_reuse_prefers_scene_relevance_then_nearest_donor():
+    far_strong = ReuseCandidate(1, {"asset": {"asset_id": "strong"}},
+                               topic_relevance=100, scene_relevance=90)
+    near_weaker = ReuseCandidate(4, {"asset": {"asset_id": "near"}},
+                                 topic_relevance=100, scene_relevance=80)
+    near_equal_earlier = ReuseCandidate(
+        3, {"asset": {"asset_id": "earlier"}},
+        topic_relevance=100, scene_relevance=90)
+    near_equal_later = ReuseCandidate(
+        5, {"asset": {"asset_id": "later"}},
+        topic_relevance=100, scene_relevance=90)
+
+    selected = select_reuse_candidate(
+        [far_strong, near_weaker, near_equal_earlier, near_equal_later], 4)
+
+    assert selected is near_equal_earlier
 
 
 def test_cross_scene_reuse_updates_the_selection_contract():

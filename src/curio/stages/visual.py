@@ -49,6 +49,9 @@ from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
 from .media_contracts import Candidate, CandidateRejection
 from .candidate_evaluation import evaluate_generic, evaluate_specific
+from .media_selection import (ReuseCandidate, make_selection_decision,
+                              prepare_selection_pool,
+                              select_reuse_candidate)
 from .scene_contract import SemanticScene
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
@@ -348,7 +351,6 @@ def _search_scene_with_shortcircuit(
         candidates.append(candidate.to_evaluation_input())
 
     from . import scoring
-    from .media_selection import make_selection_decision, prepare_selection_pool
     min_score = scoring.threshold()
 
     def collect(query_list: list[str], limit: int,
@@ -1081,7 +1083,7 @@ def _resolve_reuse_multi(scenes: list[dict],
         scene = by_id.get(cid)
         if scene is None:
             continue
-        eligible = []
+        eligible: list[ReuseCandidate] = []
         from . import scoring
         for donor in have:
             donor_scene = by_id.get(donor["chapter_id"])
@@ -1092,14 +1094,16 @@ def _resolve_reuse_multi(scenes: list[dict],
                 relevance = scoring.semantic_relevance(asset, scene)
                 if (relevance.get("topic_relevance", 0) or 0) > 0 and \
                         (relevance.get("scene_relevance", 0) or 0) >= 25:
-                    eligible.append((donor, entry, relevance))
-        if not eligible:
+                    eligible.append(ReuseCandidate(
+                        donor_scene_id=donor["chapter_id"], entry=entry,
+                        topic_relevance=relevance["topic_relevance"],
+                        scene_relevance=relevance["scene_relevance"]))
+        selected = select_reuse_candidate(eligible, cid)
+        if selected is None:
             continue
-        donor, donor_entry, relevance = min(eligible, key=lambda item: (
-            -item[2]["scene_relevance"],
-            abs(item[0]["chapter_id"] - cid),
-            0 if item[0]["chapter_id"] < cid else 1))
-        nearest = donor
+        donor_entry = selected.entry
+        nearest = next(item for item in have
+                       if item["chapter_id"] == selected.donor_scene_id)
         reuse_reason = "validated_cross_scene_reuse"
         reused_entry = dict(donor_entry, order=0,
                             reuse_reason=reuse_reason)
@@ -1107,7 +1111,6 @@ def _resolve_reuse_multi(scenes: list[dict],
         s["asset"] = s["assets"][0]["asset"]
         s["reused_from"] = nearest["chapter_id"]
         if isinstance(s.get("visual_decision"), dict):
-            from .media_selection import make_selection_decision
             reused_asset = reused_entry.get("asset") or {}
             decision = make_selection_decision(
                 cid, s["assets"], "validated_reuse").to_dict()
@@ -1119,8 +1122,8 @@ def _resolve_reuse_multi(scenes: list[dict],
             s["visual_decision"]["selected"] = {
                 "title": reused_asset.get("title", ""),
                 "provider": reused_asset.get("provider", ""),
-                "topic_relevance": relevance.get("topic_relevance"),
-                "scene_relevance": relevance.get("scene_relevance"),
+                "topic_relevance": selected.topic_relevance,
+                "scene_relevance": selected.scene_relevance,
                 "reason": f"validated topic and scene evidence from scene {nearest['chapter_id']}",
             }
         print(f"AVISO: cena {cid} reusa imagem(ns) da cena "

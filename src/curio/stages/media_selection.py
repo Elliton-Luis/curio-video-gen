@@ -13,6 +13,26 @@ class SelectionPool:
 
 
 @dataclass(frozen=True)
+class ReuseCandidate:
+    donor_scene_id: int
+    entry: dict
+    topic_relevance: float
+    scene_relevance: float
+
+    def __post_init__(self) -> None:
+        if (isinstance(self.donor_scene_id, bool)
+                or not isinstance(self.donor_scene_id, int)
+                or self.donor_scene_id <= 0):
+            raise ValueError("reuse donor scene id must be positive")
+        if not isinstance(self.entry, dict):
+            raise TypeError("reuse candidate entry must be an object")
+        for value in (self.topic_relevance, self.scene_relevance):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not isfinite(value):
+                raise ValueError("reuse relevance must be finite")
+
+
+@dataclass(frozen=True)
 class SelectionDecision:
     scene_id: int
     status: str
@@ -98,6 +118,17 @@ def prepare_selection_pool(ranked: list[dict], asset_uses: dict | None,
             -entry.get("score", 0), bool(entry.get("generic")),
             asset_uses.get(identity_of(entry["asset"]), 0)))
     return SelectionPool(tuple(fresh), tuple(reused))
+
+
+def select_reuse_candidate(candidates: list[ReuseCandidate],
+                           scene_id: int) -> ReuseCandidate | None:
+    """Pick the strongest relevant donor, then the nearest earlier scene."""
+    if not candidates:
+        return None
+    return min(candidates, key=lambda candidate: (
+        -candidate.scene_relevance,
+        abs(candidate.donor_scene_id - scene_id),
+        0 if candidate.donor_scene_id < scene_id else 1))
 
 
 def make_selection_decision(scene_id: int, picked: list[dict],
