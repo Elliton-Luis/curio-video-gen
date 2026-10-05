@@ -593,6 +593,10 @@ class RunMetrics:
                     "provider_requests": dict(self.media_requests_per_provider),
                     "downloads": self.media_downloads,
                     "bytes": self.media_bytes,
+                    "download_cache_hits": self.media_cache_hits,
+                    "download_cache_misses": self.media_cache_misses,
+                    "shared_search_cache_hits": self.media_funnel.get(
+                        "shared_search_hits", 0),
                     "cache_hits": self.media_cache_hits,
                     "cache_misses": self.media_cache_misses,
                     # Selection totals come from the same canonical scene-level

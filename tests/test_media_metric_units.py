@@ -183,6 +183,21 @@ def test_synthetic_asset_metric_has_a_canonical_name_and_public_alias():
     assert media["synth_diagrams"] == media["synthetic_assets"]
 
 
+def test_download_and_shared_search_cache_metrics_have_explicit_units():
+    metrics = RunMetrics("test", "topic", "narration")
+    metrics.media_download(0, cached=True)
+    metrics.media_download(512, cached=False)
+    metrics.media_record_funnel("shared_search_hits", 2)
+
+    media = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+
+    assert media["download_cache_hits"] == 1
+    assert media["download_cache_misses"] == 1
+    assert media["shared_search_cache_hits"] == 2
+    assert media["cache_hits"] == media["download_cache_hits"]
+    assert media["cache_misses"] == media["download_cache_misses"]
+
+
 def test_live_media_result_uses_typed_metrics_input_and_missing_scene_is_unknown():
     import pytest
     from curio.media.selection_metrics import MediaMetricsInput
