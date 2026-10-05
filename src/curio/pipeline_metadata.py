@@ -10,6 +10,7 @@ from .media.selection_result import MediaStageResult
 from .runlog import current_log_path
 from .stages import editorial as editorial_stage
 from .stages.scene_projection import Chapter
+from .stage_timing import StageTimings
 
 
 def typography_report(cfg, genre_key: str = "") -> dict:
@@ -24,13 +25,15 @@ def typography_report(cfg, genre_key: str = "") -> dict:
 def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
                         script_source: str, semantic_scenes, timeline_spans,
                         scenes_source: str, media_result: MediaStageResult,
-                        warnings, stage_times: dict, metrics,
+                        warnings, stage_times: StageTimings, metrics,
                         started: float) -> dict:
     """Build the shared persisted metadata projection for both run modes."""
     scene_ids = tuple(scene.id for scene in semantic_scenes)
     span_ids = tuple(span.scene_id for span in timeline_spans)
     if not isinstance(media_result, MediaStageResult):
         raise TypeError("metadata requires a MediaStageResult")
+    if not isinstance(stage_times, StageTimings):
+        raise TypeError("metadata requires StageTimings")
     media_ids = tuple(scene.scene_id for scene in media_result.scenes)
     if (not scene_ids or len(scene_ids) != len(set(scene_ids))
             or scene_ids != span_ids or scene_ids != media_ids):
@@ -56,7 +59,7 @@ def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "execution_log": current_log_path(),
         "processing_time_seconds": round(time.monotonic() - started, 2),
-        "stage_times": stage_times,
+        "stage_times": stage_times.to_dict(),
         "pipeline_version": "scenes-0.2",
         "visual_report": metrics.media_visual_report(len(chapters)),
         "provider_downloads": metrics.media_download_report(),
@@ -64,7 +67,7 @@ def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
 
 
 def persist_run_metadata(metadata: dict, metadata_path: str, metrics,
-                         stage_times: dict, metrics_dir: str, write_json,
+                         stage_times: StageTimings, metrics_dir: str, write_json,
                          finalize_started: float, run_started: float) -> dict:
     """Persist one consistent project/metrics view after output artifacts exist.
 
@@ -72,11 +75,16 @@ def persist_run_metadata(metadata: dict, metadata_path: str, metrics,
     boundary. Metrics and project metadata share the same stage-time snapshot;
     the project file also records the generated metrics path.
     """
-    stage_times["finalize"] = round(max(0.0, time.monotonic() - finalize_started), 2)
+    if not isinstance(stage_times, StageTimings):
+        raise TypeError("metadata persistence requires StageTimings")
+    stage_times = stage_times.with_stage(
+        "finalize", round(max(0.0, time.monotonic() - finalize_started), 2))
     metadata["processing_time_seconds"] = round(
         max(0.0, time.monotonic() - run_started), 2)
-    metadata["stage_times"] = dict(stage_times)
-    metadata["metrics_file"] = metrics.save(metadata, stage_times, metrics_dir)
+    stage_snapshot = stage_times.to_dict()
+    metadata["stage_times"] = stage_snapshot
+    metadata["metrics_file"] = metrics.save(
+        metadata, stage_snapshot, metrics_dir)
     write_json(metadata_path, metadata)
     return metadata
 
@@ -88,7 +96,7 @@ def build_assisted_run_metadata(*, idea: str, slug: str, cfg,
                                 source_summary: dict, genre: str,
                                 script_mode: bool, max_images: int,
                                 overlap_cap: float, insert_budget: int,
-                                warnings: list[str], stage_times: dict,
+                                warnings: list[str], stage_times: StageTimings,
                                 metrics, started: float, paths) -> dict:
     """Project completed typed stage results into the assisted-run schema."""
     from .pipeline_audio import AudioStageResult

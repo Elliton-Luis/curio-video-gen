@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from . import ffmpeg as ff
 from .stages.scene_contract import SemanticScene
 from .media.selection_result import MediaStageResult
+from .stage_timing import StageTimings
 from .runlog import current_log_path
 from .stages.media_selection import SelectionDecision
 from .media.visual_decision import VisualDecision
@@ -134,12 +135,14 @@ def count_assets(media_scenes: list[dict]) -> int:
 
 
 def prepare_media_standby(idea: str, slug: str, paths, n_scenes: int,
-                         media_result: MediaStageResult, stage_times: dict,
+                         media_result: MediaStageResult, stage_times: StageTimings,
                          warnings: list[str], sources, research_sources,
                          grounding: dict, write_json) -> MediaStandby:
     """Persist the explicit no-media state and prepare the manual-media path."""
     if not isinstance(media_result, MediaStageResult):
         raise TypeError("standby requires a MediaStageResult")
+    if not isinstance(stage_times, StageTimings):
+        raise TypeError("standby requires StageTimings")
     if media_result.selected_asset_count != 0:
         raise ValueError("media standby requires zero selected assets")
     if isinstance(n_scenes, bool) or not isinstance(n_scenes, int) or n_scenes <= 0:
@@ -157,7 +160,7 @@ def prepare_media_standby(idea: str, slug: str, paths, n_scenes: int,
         "media_resolution_source": media_result.source,
         "manual_dir": manual_dir,
         "n_scenes": n_scenes,
-        "stage_times": dict(stage_times),
+        "stage_times": stage_times.to_dict(),
         "warnings": list(warnings),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "execution_log": current_log_path(),

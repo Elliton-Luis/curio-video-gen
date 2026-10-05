@@ -5,6 +5,7 @@ import pytest
 from curio import pipeline_audio
 from curio.stages.scene_contract import SemanticScene, TimelineSpan
 from curio.stages.tts import TTSResult
+from curio.stage_timing import StageTimings
 
 
 def test_audio_stage_returns_its_timings_and_warnings(tmp_path, monkeypatch):
@@ -65,11 +66,11 @@ def test_audio_stage_result_rejects_invalid_timing_contract():
             timeline_spans=(TimelineSpan(1, 1),), words=None,
             audio_duration=1, tts_info={"provider": "test"},
             timed_source="unknown", cue_count=0, subtitles_changed=False,
-            warnings=(), stage_times={})
+            warnings=(), stage_times=StageTimings())
 
 
-def test_audio_stage_result_rejects_invalid_stage_time():
-    with pytest.raises(ValueError, match="stage times"):
+def test_audio_stage_result_rejects_untyped_stage_times():
+    with pytest.raises(TypeError, match="requires StageTimings"):
         pipeline_audio.AudioStageResult(
             timeline_spans=(TimelineSpan(1, 1),), words=None,
             audio_duration=1, tts_info={"provider": "test"},

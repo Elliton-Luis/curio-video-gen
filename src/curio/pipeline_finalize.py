@@ -10,6 +10,7 @@ import time
 
 from . import ffmpeg as ff
 from . import pipeline_metadata as pipeline_metadata_stage
+from .stage_timing import StageTimings
 from . import pipeline_render as pipeline_render_stage
 from . import project_artifacts
 from .audio import composition as audio_composition
@@ -271,7 +272,7 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
         meta["artifacts"]["sfx"] = sfx_path
     if music_asset:
         meta["artifacts"]["music"] = music_asset["path"]
-    stage_times = {"finalize": round(time.monotonic() - started, 2)}
+    stage_times = StageTimings()
     return pipeline_metadata_stage.persist_run_metadata(
         meta, paths.metadata_json, metrics, stage_times, cfg.metrics_dir,
         project_artifacts.write_json, started, started)

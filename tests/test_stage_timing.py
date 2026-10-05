@@ -3,7 +3,7 @@ import pytest
 from curio.pipeline_research import ResearchStageResult
 from curio.pipeline_scenes import SceneStageResult
 from curio.pipeline_script import ScriptStageResult
-from curio.stage_timing import validate_stage_elapsed
+from curio.stage_timing import StageTiming, StageTimings, validate_stage_elapsed
 from curio.stages.research import ResearchResult
 from curio.stages.scene_contract import SemanticScene, TimelineSpan
 from curio.stages.scene_enrichment import SceneEnrichmentResult
@@ -41,3 +41,17 @@ def test_stage_results_share_the_same_elapsed_invariant():
     with pytest.raises(ValueError, match="scene stage elapsed"):
         SceneStageResult((TimelineSpan(1, 1, 0, 1),), "cached",
                          enrichment, False, float("nan"))
+
+
+def test_stage_timings_are_immutable_unique_and_project_to_json_mapping():
+    timings = StageTimings().with_stage("script", 1)
+    combined = timings.merged(StageTimings().with_stage("tts", 2))
+
+    assert dict(combined) == {"script": 1.0, "tts": 2.0}
+    assert timings.to_dict() == {"script": 1.0}
+    with pytest.raises(ValueError, match="already recorded"):
+        timings.with_stage("script", 3)
+    with pytest.raises(ValueError, match="duplicate names"):
+        timings.merged(StageTimings().with_stage("script", 2))
+    with pytest.raises(TypeError, match="immutable tuple"):
+        StageTimings([StageTiming("script", 1)])

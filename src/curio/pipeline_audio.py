@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from . import ffmpeg as ff
-from .stage_timing import validate_stage_elapsed
+from .stage_timing import StageTimings
 from .audio.artifacts import (TTSCacheManifest, legacy_words_match_text,
                               read_tts_manifest, tts_input_signature,
                               words_signature, write_tts_manifest)
@@ -31,7 +31,7 @@ class AudioStageResult:
     cue_count: int
     subtitles_changed: bool
     warnings: tuple[str, ...]
-    stage_times: dict[str, float]
+    stage_times: StageTimings
 
     def __post_init__(self) -> None:
         if any(not isinstance(span, TimelineSpan) for span in self.timeline_spans):
@@ -50,13 +50,8 @@ class AudioStageResult:
         if any(not isinstance(value, str) or not value.strip()
                for value in self.warnings):
             raise ValueError("audio warnings must be non-empty strings")
-        if not isinstance(self.stage_times, dict) or any(
-                not isinstance(key, str) or not key.strip()
-                for key in self.stage_times):
-            raise TypeError("audio stage times must be named durations")
-        object.__setattr__(self, "stage_times", {
-            key: validate_stage_elapsed(value, f"audio stage times ({key})")
-            for key, value in self.stage_times.items()})
+        if not isinstance(self.stage_times, StageTimings):
+            raise TypeError("audio result requires StageTimings")
 
 
 def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...],
@@ -66,7 +61,7 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
     """Run TTS, timing alignment and subtitle generation."""
     start_time = time.monotonic()
     warnings: list[str] = []
-    stage_times: dict[str, float] = {}
+    stage_times = StageTimings()
     emit(4, "Gerando narração")
     words = None
     tts_cached = False
@@ -146,7 +141,8 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
                   provider=tts_info["provider"], voice=tts_info["voice"],
                   duration_seconds=round(audio_duration, 2),
                   cache=tts_info.get("reused", False))
-    stage_times["tts"] = round(time.monotonic() - start_time, 2)
+    stage_times = stage_times.with_stage(
+        "tts", round(time.monotonic() - start_time, 2))
     emit(4, "Gerando narração", "OK")
 
     try:
@@ -188,7 +184,8 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
         print("AVISO: texto das legendas mudou — refazendo o MP4 final "
               "para acompanhar.", file=sys.stderr)
         warnings.append("legendas atualizadas (rebuild do final.mp4)")
-    stage_times["subs"] = round(time.monotonic() - start_time, 2)
+    stage_times = stage_times.with_stage(
+        "subs", round(time.monotonic() - start_time, 2))
     from .runlog import event as run_event
     run_event("result", f"Legendas: {cue_count} cue(s); "
               f"{'WordBoundary' if words and tts_info['provider'] == 'edge-tts' else 'proporcional'}",

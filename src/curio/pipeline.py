@@ -34,6 +34,7 @@ from . import pipeline_script as pipeline_script_stage
 from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
+from .stage_timing import StageTimings
 from .slug import slugify_with_timestamp
 from .slug import unique_slug
 from . import project_paths
@@ -120,7 +121,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
     if not isinstance(pipeline_input, PipelineInput):
         raise TypeError("pipeline core requires PipelineInput")
     started = time.monotonic()
-    stage_times: dict[str, float] = {}
+    stage_times = StageTimings()
     warnings: list[str] = []
     stages = STAGES_HUMAN if narration == "human" else STAGES_AI
     script_mode = pipeline_input.script is not None
@@ -208,7 +209,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
     research_target = research.target
     research_etymology = research.etymology
     research_pack = research_output.prompt
-    stage_times["research"] = research_output.elapsed
+    stage_times = stage_times.with_stage("research", research_output.elapsed)
 
     # [1/6] Roteiro e título: transforma inputs pesquisados em artefatos validados.
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro")
@@ -224,7 +225,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
     grounding = script_result.grounding
     force_after_script = script_result.force_scenes
     warnings.extend(script_result.warnings)
-    stage_times["script"] = script_result.elapsed
+    stage_times = stage_times.with_stage("script", script_result.elapsed)
     emit(1, "Lendo roteiro pronto" if script_mode else "Gerando roteiro", "OK")
 
     # [2/6] Cenas
@@ -246,7 +247,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
     timeline_spans = scene_result.timeline_spans
     scenes_source = scene_result.source
     force_after_script = force_after_script or scene_result.invalidate_media
-    stage_times["scenes"] = scene_result.elapsed
+    stage_times = stage_times.with_stage("scenes", scene_result.elapsed)
     emit(2, "Interpretando cenas", "OK")
 
     # [3/6] Mídia (manual > cache > provedores; zero imagens = standby)
@@ -263,7 +264,8 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
         semantic_scenes, media_result.scenes, sources)
     media_rights_notes = list(provenance.rights_notes)
     credits = list(provenance.credits)
-    stage_times["media"] = round(time.monotonic() - media_t0, 2)
+    stage_times = stage_times.with_stage(
+        "media", round(time.monotonic() - media_t0, 2))
     emit(3, "Buscando mídia",
          "AVISO" if media_result.scenes_without_visual else "OK")
 
@@ -307,7 +309,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
     tts_info = audio_result.tts_info
     subs_changed = audio_result.subtitles_changed
     warnings.extend(audio_result.warnings)
-    stage_times.update(audio_result.stage_times)
+    stage_times = stage_times.merged(audio_result.stage_times)
 
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
         tuple(semantic_scenes), timeline_spans, media_result,
@@ -315,7 +317,8 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, project_artifacts.write_json)
     visual_timeline = timeline_result.entries
-    stage_times["visual_timeline"] = timeline_result.elapsed
+    stage_times = stage_times.with_stage(
+        "visual_timeline", timeline_result.elapsed)
 
     # [6/6] Montagem dinâmica + final
     emit(6, "Montando vídeo")
@@ -337,7 +340,7 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
     video_duration = render_result.duration
     warnings.extend(render_result.warnings)
     credits.extend(render_result.credits)
-    stage_times["render"] = render_result.elapsed
+    stage_times = stage_times.with_stage("render", render_result.elapsed)
     run_event("result", f"Render: {render_info['backend']} / "
               f"{render_info['encoder']}; {video_duration:.1f}s",
               operation="render", backend=render_info["backend"],

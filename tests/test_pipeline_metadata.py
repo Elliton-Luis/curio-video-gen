@@ -2,6 +2,7 @@ from curio import pipeline_metadata
 from curio.media.selection_result import MediaStageResult
 from curio.stages.scene_contract import SemanticScene, TimelineSpan
 from tests.media_test_support import with_selection
+from curio.stage_timing import StageTimings
 
 
 def test_final_metadata_and_metrics_share_finalize_measurement(
@@ -17,10 +18,11 @@ def test_final_metadata_and_metrics_share_finalize_measurement(
             assert metrics_dir == str(tmp_path)
             return str(tmp_path / "metrics.json")
 
-    metadata = {"stage_times": {"script": 1.0}}
+    stage_times = StageTimings().with_stage("script", 1.0)
+    metadata = {"stage_times": stage_times.to_dict()}
     result = pipeline_metadata.persist_run_metadata(
         metadata, str(tmp_path / "metadata.json"), Metrics(),
-        metadata["stage_times"], str(tmp_path),
+        stage_times, str(tmp_path),
         lambda path, value: writes.append((path, value.copy())),
         finalize_started=20.0, run_started=10.0)
 
@@ -50,7 +52,7 @@ def test_base_metadata_projects_legacy_chapters_from_aligned_contracts():
         "project-cache")
     metadata = pipeline_metadata.build_base_metadata(
         "teste", "teste", Cfg(), "Cena de teste.", "fixture",
-        (scene,), (span,), "fixture", media, [], {}, Metrics(), 0)
+        (scene,), (span,), "fixture", media, [], StageTimings(), Metrics(), 0)
     assert metadata["chapters"][0]["id"] == 1
     assert metadata["chapters"][0]["start"] == 2
     assert metadata["chapters"][0]["end"] == 6
@@ -69,7 +71,7 @@ def test_base_metadata_rejects_misaligned_scene_and_timing_batches():
             (TimelineSpan(scene_id=2),), "fixture",
             MediaStageResult.from_rows(
                 [with_selection({"chapter_id": 1, "asset": None})], "provider"),
-            [], {}, object(), 0)
+            [], StageTimings(), object(), 0)
 
 
 def test_base_metadata_rejects_media_selection_for_different_scene():
@@ -86,4 +88,4 @@ def test_base_metadata_rejects_media_selection_for_different_scene():
     with pytest.raises(ValueError, match="metadata scenes, media and spans"):
         pipeline_metadata.build_base_metadata(
             "teste", "teste", Cfg(), "Cena.", "fixture", (scene,),
-            (span,), "fixture", media, [], {}, object(), 0)
+            (span,), "fixture", media, [], StageTimings(), object(), 0)

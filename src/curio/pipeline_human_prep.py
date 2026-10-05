@@ -23,6 +23,7 @@ from .stages import teleprompter as tele_stage
 from .stages import editorial as editorial_stage
 from .stages.scene_projection import Chapter
 from .stages.scene_contract import SemanticScene, TimelineSpan
+from .stage_timing import StageTimings
 
 
 def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
@@ -30,7 +31,7 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                 script_text: str, script_source: str,
                 semantic_scenes: tuple[SemanticScene, ...],
                 scenes_source: str, media_result: MediaStageResult,
-                warnings: list[str], stage_times: dict, started: float,
+                warnings: list[str], stage_times: StageTimings, started: float,
                 emit, metrics, script_mode: bool = False,
                 max_images: int = 1, overlap_cap: float = 0.9,
                 insert_budget: int = 0, genre_key: str = "",
@@ -42,6 +43,8 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                 video_title: str = "", title_source: str = "") -> dict:
     if not isinstance(media_result, MediaStageResult):
         raise TypeError("human preparation requires a MediaStageResult")
+    if not isinstance(stage_times, StageTimings):
+        raise TypeError("human preparation requires StageTimings")
     render_plan = pipeline_render_stage.SceneRenderPlan.from_media_result(
         media_result)
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
@@ -93,7 +96,8 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
             credits=all_credits)
     else:
         source_summary = {}
-    stage_times["timeline"] = round(time.monotonic() - t0, 2)
+    stage_times = stage_times.with_stage(
+        "timeline", round(time.monotonic() - t0, 2))
     emit(4, "Estimando timeline", "OK")
 
     # [5/6] Vídeo silencioso
@@ -113,7 +117,8 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                       paths.silent_mp4,
                       transitions=transition_plan.boundary_durations,
                       kinds=transition_plan.kinds)
-    stage_times["silent"] = round(time.monotonic() - t0, 2)
+    stage_times = stage_times.with_stage(
+        "silent", round(time.monotonic() - t0, 2))
     emit(5, "Montando silencioso", "OK")
 
     # [6/6] Teleprompter (texto grande sobre cópia do silencioso)
@@ -125,7 +130,8 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
     tele_info = render_stage.burn_final(
         paths.silent_mp4, paths.tele_ass, None, paths.tele_mp4,
         cfg, estimated_total)
-    stage_times["teleprompter"] = round(time.monotonic() - t0, 2)
+    stage_times = stage_times.with_stage(
+        "teleprompter", round(time.monotonic() - t0, 2))
     emit(6, "Gerando teleprompter", "OK")
 
     finalize_started = time.monotonic()
