@@ -1105,13 +1105,22 @@ def _resolve_reuse_multi(scenes: list[dict],
             abs(item[0]["chapter_id"] - cid),
             0 if item[0]["chapter_id"] < cid else 1))
         nearest = donor
-        s["assets"] = [dict(entry, order=i)
-                       for i, entry in enumerate(nearest["assets"])]
+        reuse_reason = "validated_cross_scene_reuse"
+        reused_entry = dict(donor_entry, order=0,
+                            reuse_reason=reuse_reason)
+        s["assets"] = [reused_entry]
         s["asset"] = s["assets"][0]["asset"]
         s["reused_from"] = nearest["chapter_id"]
         if isinstance(s.get("visual_decision"), dict):
-            reused_asset = donor_entry.get("asset") or {}
+            from .media_selection import make_selection_decision
+            reused_asset = reused_entry.get("asset") or {}
+            decision = make_selection_decision(
+                cid, s["assets"], "validated_reuse").to_dict()
+            decision["reason"] = (
+                f"validated topic and scene evidence; reused from scene "
+                f"{nearest['chapter_id']} after fresh and synthetic choices")
             s["visual_decision"]["fallback"] = "validated_reuse"
+            s["visual_decision"]["selection"] = decision
             s["visual_decision"]["selected"] = {
                 "title": reused_asset.get("title", ""),
                 "provider": reused_asset.get("provider", ""),

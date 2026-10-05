@@ -45,3 +45,49 @@ def test_selected_decision_requires_identity_and_reason():
         SelectionDecision(scene_id=1, status="real", reason="selected")
     with pytest.raises(ValueError, match="explain"):
         SelectionDecision(scene_id=1, status="none")
+
+
+def test_cross_scene_reuse_updates_the_selection_contract():
+    from curio.pipeline_visual import MediaStageResult
+    from curio.stages.scene_contract import SemanticScene
+    from curio.stages.visual import _resolve_reuse_multi
+
+    scene_context = {"topic": "Ottoman Empire"}
+    scenes = (
+        SemanticScene(1, "The Ottoman Empire used Janissaries.",
+                     event="Ottoman Empire historical map",
+                     video_context=scene_context),
+        SemanticScene(2, "The Ottoman Empire used Janissaries.",
+                     event="Ottoman Empire historical map",
+                     video_context=scene_context),
+    )
+    selected_asset = {
+        "asset_id": "ottoman-map", "provider": "fixture",
+        "title": "Ottoman Empire historical map",
+    }
+    other_asset = {
+        "asset_id": "unrelated", "provider": "fixture",
+        "title": "Unrelated portrait",
+    }
+    media_scenes = [
+        {"chapter_id": 1, "asset": selected_asset, "assets": [
+            {"asset": selected_asset, "score": 88},
+            {"asset": other_asset, "score": 70},
+        ]},
+        {"chapter_id": 2, "asset": None, "assets": [],
+         "visual_decision": {"selection": SelectionDecision(
+             2, "none", reason="no candidate").to_dict()}},
+    ]
+
+    _resolve_reuse_multi(media_scenes, scenes)
+    reused = media_scenes[1]
+    outcome = MediaStageResult(media_scenes, "provider", [], 2, 0, 0)
+
+    assert outcome.real_scenes == 2
+    assert reused["reused_from"] == 1
+    assert [entry["asset"]["asset_id"] for entry in reused["assets"]] == [
+        "ottoman-map"]
+    assert reused["visual_decision"]["selection"]["status"] == "reused"
+    assert reused["visual_decision"]["selection"]["asset_id"] == "ottoman-map"
+    assert reused["visual_decision"]["selection"]["fallback_level"] == (
+        "validated_reuse")
