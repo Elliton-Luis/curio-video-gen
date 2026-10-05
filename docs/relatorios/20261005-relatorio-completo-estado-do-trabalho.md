@@ -20,6 +20,117 @@ o fechamento documental dessa alteração.
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
 > continua incompleta.
 
+> **Atualização de investigação (sem implementação):** após esse registro, foi
+> rastreada a divergência das métricas de requests dos providers Met e AIC.
+> Nenhum arquivo de código foi alterado nesta investigação e nenhum teste novo
+> foi executado. O worktree estava limpo antes da atualização documental.
+
+## Estado exato do trabalho retomado
+
+O histórico de commits permanece a evidência das fases concluídas. O HEAD
+observado antes desta atualização documental era `5a32bd0` (`docs: record
+English entity fallback and real runs`), seguido por `3978670` (correção do
+resolver), `9802201`/`60703ae` (SearchPlan canônico), `29fddbe`/`38b892e`
+(ordenação de providers por cena), `9774430`/`8daa29f` (proveniência até
+render), e demais fases listadas acima. O comando `git status --short` não
+retornou alterações antes desta atualização. Não há evidência nesta sessão de
+commits posteriores a G95/F14.
+
+O projeto está executável e as migrações já commitadas passaram suas suítes
+conforme registradas por fase. O resultado integral mais recente documentado é
+**1012 testes aprovados em 175,13 s**, mais `compileall` e `git diff --check`,
+após G95. Não foi executada uma suíte nesta atualização do relatório; portanto
+1012 é o último resultado conhecido, não uma afirmação de que o código foi
+retestado agora.
+
+### O que estava sendo investigado na etapa de mídia
+
+O objetivo imediato era explicar uma inconsistência observada no replay G95:
+`consumption.media.provider_search_calls` incluía chamadas aos providers Met e
+AIC, enquanto `provider_requests`/`requests_per_provider` não mostrava esses
+providers. A investigação foi de leitura do código e localizou a causa nos
+contadores em `src/curio/media/providers.py`:
+
+- `RunMetrics.media_provider_search()` conta uma invocação do adapter e seu
+  tempo total, incluindo retries/backoff. `media_search()` conta uma tentativa
+  de request de rede; essas métricas representam unidades diferentes por
+  definição documentada em `src/curio/metrics.py`.
+- Wikimedia e a maior parte dos providers incrementam `media_search()` antes
+  das tentativas de request. Met e AIC, em contraste, chamam
+  `_http_get_json()` primeiro e só incrementam `media_search()` depois de uma
+  resposta bem-sucedida. Assim, a falha da request inicial não aparece em
+  `provider_requests` embora a invocação e o tempo do adapter apareçam.
+- Met também consulta `/objects/{id}` para cada ID retornado pela busca, sem
+  incrementar `media_search()` nessas chamadas. Logo, mesmo o caso de sucesso
+  não conta todas as tentativas HTTP do fluxo Met. AIC faz uma request de busca
+  e também incrementa somente depois do sucesso.
+- `_http_get_json()` normaliza exceções em `MediaError`, mas não possui acesso
+  ao nome do provider nem às métricas. A contagem atual é feita manualmente nos
+  adapters, o que permite omissões como essas.
+
+A discrepância não significa que `provider_search_calls` e `provider_requests`
+devam ter o mesmo valor: uma chamada de adapter pode conter zero, uma ou várias
+requests. O problema é que o contador chamado de tentativas de request não
+contabiliza tentativas que falham em Met/AIC e omite requests secundárias do
+Met. A correção ainda não foi implementada. Também não foi decidido/codificado
+se requests de detalhe Met devem ser projetadas como requests de busca,
+metadata ou uma dimensão separada; essa definição deve ser explicitada antes de
+mudar métricas e relatórios de consumo.
+
+### Estado das fases e pendências
+
+Concluído e commitado: G80–G95, F4–F14 e fases anteriores detalhadas neste
+documento. Mais recentemente, G93 corrigiu a precedência global inadequada de
+providers entre cenas; G94 fez a busca consumir os mesmos planos canônicos da
+cena; G95 corrigiu a seleção heurística de entidade inglesa que reduzia
+`Battle of Mohacs 1526` a `Battle`.
+
+Em andamento no momento da parada: investigação da consistência de métricas de
+requests por provider, apenas leitura do código. Nenhuma implementação,
+correção, teste ou commit foi iniciado para essa divergência.
+
+Não concluído: correção/definição canônica de todas as métricas de requests e
+operações de provider; extração do coordenador editorial ainda concentrado em
+`visual.py`; ownership global de estado/cache/metadata; simplificação dos
+caminhos compatíveis internos restantes; profile comparável de performance;
+execuções reais finais em pelo menos dois domínios após as últimas mudanças;
+validação explícita de rerender, cache, falha de providers e fallback sem LLM;
+inspeção editorial e de quase-duplicatas em amostra adequada; fechamento de
+documentação e fases posteriores do plano arquitetural. Estes pontos são
+pendências, não trabalho que tenha sido concluído por passar a suíte.
+
+### Regressões conhecidas ainda abertas
+
+- No replay histórico pós-G95, uma cena sobre Mohács (1526) recebeu uma gravura
+  de outra batalha otomana, datada de 1687. Relevância de tópico passou, mas a
+  correspondência do evento/período falhou editorialmente. Não foi alterado
+  threshold nem corrigido esse caso.
+- A geração científica de M87 selecionou três IDs e hashes distintos, mas duas
+  imagens têm composição quase igual; deduplicação binária não detecta
+  duplicidade perceptual/editorial.
+- O vídeo histórico G95 ainda terminou com uma cena sintética (3/4 mídia real),
+  embora tenha melhorado do baseline anterior. Não se demonstrou esgotamento
+  suficiente de mídia específica em todos os casos.
+- A divergência dos contadores Met/AIC acima afeta a interpretação dos requests
+  observados. Os tempos dos adapters continuam úteis, mas não substituem a
+  contagem confiável das tentativas de rede.
+- `visual.py` continua coordenando muitas decisões e efeitos. A extração das
+  funções técnicas de aquisição não concluiu a separação de responsabilidades
+  editoriais.
+
+### Execuções reais pós-G95 registradas
+
+| Tema/run | Cenas | Reais | Reais únicos | Reusos | Sintéticos | Buscas/tempo de mídia |
+|---|---:|---:|---:|---:|---:|---|
+| Batalha de Mohács, sem LLM | 4 | 3 | 3 | 0 | 1 | 26 queries lógicas; 66,43 s |
+| M87, sem LLM | 3 | 3 | 3 por ID/hash | 0 | 0 | 18 queries lógicas; 27,68 s |
+
+Os detalhes por cena, fontes, seleção e inspeção visual constam em
+[`20261005-english-entity-connectors-and-real-runs.md`](20261005-english-entity-connectors-and-real-runs.md).
+Essas medições são execuções pontuais; não constituem profile pareado nem
+validação final da arquitetura. No caso M87, a composição quase duplicada
+mostra o limite de contar apenas identidade binária.
+
 ## Resumo do estado
 
 O projeto já tinha módulos separados por etapa, mas ainda havia contratos
