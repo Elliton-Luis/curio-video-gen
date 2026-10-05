@@ -438,3 +438,21 @@ com `provider_errors`, portanto a busca continuou corretamente, mas a execução
 não prova exaustão nem disponibilidade do acervo. Suíte integral: **932 testes
 em 181,98 s**; evidência completa em
 `docs/relatorios/20261004-validacao-arquitetural-execucoes-reais.md`.
+
+### Fronteira aberta identificada depois de G37: fallback sintético
+
+No replay científico de quatro cenas, todas usaram o mesmo PNG de diagrama.
+O fluxo atual escolhe meios pela escada de gênero em `visuals.strategies_for`,
+mas o diagrama recebe `subject` e `_diagram_steps(ch)`. O fallback local guardou
+o tópico global em `subject` e não preencheu `visual_entities/context`; as
+representações específicas estão disponíveis em `representations`, mas o
+renderizador não as consome. `render_diagram` forma a chave do cache a partir de
+assunto, passos, idioma e estilo. Com assunto igual e passos vazios, cenas
+diferentes geram a mesma identidade visual.
+
+Isso é uma responsabilidade compartilhada entre a política de fallback e a
+construção do visual; trocar somente a chave por scene ID produziria PNGs
+distintos sem conteúdo distinto. A próxima fase deve fechar um plano de fallback
+semântico por cena, usando apenas elementos já aprovados no contrato visual, e
+decidir quais formas podem representar relações sem inferir causalidade. Até
+essa migração, repetição sintética continua uma limitação conhecida.

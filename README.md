@@ -130,6 +130,9 @@ intenção ou seleção editorial. `visual.py` continua coordenando busca e sele
 `stages/media_search.py` executa queries e entrega `ProviderSearchResult(query, provider, assets, error, cache_hit)`
 tipado em ordem de prioridade; erros e timeouts permanecem visíveis para a
 auditoria, e o módulo não conhece cena, relevância nem fallback editorial.
+Limitação ainda aberta: o plano de fallback sintético não consome as
+representações locais da cena, o que pode colidir chaves do diagrama entre
+cenas; a próxima fase precisa definir esse contrato antes de mudar o renderer.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
