@@ -52,6 +52,7 @@ from .candidate_evaluation import evaluate_generic, evaluate_specific
 from .media_selection import (ReuseCandidate, make_selection_decision,
                               prepare_selection_pool,
                               select_reuse_candidate)
+from .visual_audit import candidate_audit_rows
 from .scene_contract import SemanticScene
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
@@ -788,46 +789,8 @@ def _search_scene_with_shortcircuit(
                     rep.get("level", 0) or 0)
             except (TypeError, ValueError):
                 representation_levels[rep_query] = 0
-    audit_candidates = []
-    for entry in evaluated_entries:
-        detail = entry.get("score_detail", {})
-        selected_item = next((item for item in picked
-            if (item.get("asset", {}).get("provider"),
-                item.get("asset", {}).get("asset_id")) ==
-               ((entry.get("asset") or {}).get("provider"),
-                (entry.get("asset") or {}).get("asset_id"))), None)
-        was_selected = selected_item is not None
-        audit_candidates.append({
-            "title": str((entry.get("asset") or {}).get("title", ""))[:160],
-            "provider": (entry.get("asset") or {}).get("provider", ""),
-            "query": entry.get("query", ""),
-            "query_level": representation_levels.get(
-                entry.get("query", ""), 5 if entry.get("generic") else 3),
-            "topic_relevance": detail.get("topic_relevance"),
-            "scene_relevance": detail.get("scene_relevance"),
-            "score": entry.get("score", 0), "bonus": detail.get("bonus", 0),
-            "clip_score": entry.get("clip_score"),
-            "creator": str((entry.get("asset") or {}).get("author", ""))[:120],
-            "source_url": str((entry.get("asset") or {}).get("source_url", ""))[:300],
-            "date_created": (entry.get("asset") or {}).get("date_created", ""),
-            "media_type": (entry.get("asset") or {}).get("media_type", "image"),
-            "metadata_support": detail.get("metadata_support", 0.0),
-            "topic_evidence": detail.get("topic_evidence", {}),
-            "scene_evidence": detail.get("scene_evidence", {}),
-            "decision": ("selected" if was_selected else
-                         "rejected" if (entry.get("rejection_reason")
-                                        or detail.get("semantic_rejection")
-                                        or entry.get("score", 0) < min_score)
-                         else "not_selected"),
-            "reason": (("reused only after fresh searches and local visual exhausted"
-                        if selected_item and selected_item.get("reuse_reason") else
-                        "selected by scene relevance, topic relevance, then quality")
-                       if was_selected else entry.get("rejection_reason")
-                       or detail.get("semantic_rejection")
-                       or ("score below threshold"
-                           if entry.get("score", 0) < min_score
-                           else "passed gate; ranked below image limit")),
-        })
+    audit_candidates = candidate_audit_rows(
+        evaluated_entries, rejected, picked, representation_levels, min_score)
     decision = {
         "topic": video_context.get("topic", ""),
         "visual_plan": visual_plan.to_dict(),
@@ -881,17 +844,7 @@ def _search_scene_with_shortcircuit(
                      "unexecuted_reason": unexecuted_queries.get(query, "")}
                     for query in queries],
         "providers_consulted": sorted(providers_consulted),
-        "candidates": (audit_candidates + [{"title": item.get("title", ""),
-            "provider": item.get("provider", ""), "query": item.get("query", ""),
-            "topic_relevance": item.get("topic_relevance"),
-            "scene_relevance": item.get("scene_relevance"),
-            "creator": str((item.get("asset") or {}).get("author", ""))[:120],
-            "source_url": str((item.get("asset") or {}).get("source_url", ""))[:300],
-            "date_created": (item.get("asset") or {}).get("date_created", ""),
-            "media_type": (item.get("asset") or {}).get("media_type", "image"),
-            "decision": "rejected", "reason": item.get("reason", "")}
-            for item in rejected if not any(a["title"] == item.get("title")
-                                           for a in audit_candidates)])[:40],
+        "candidates": audit_candidates,
         "selected": (next((item for item in audit_candidates
                            if item["decision"] == "selected"), None)
                      or ({"title": (first or {}).get("title", ""),
