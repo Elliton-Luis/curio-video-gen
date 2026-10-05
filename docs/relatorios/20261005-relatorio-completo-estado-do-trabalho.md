@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G80.
-**Estado:** trabalho incompleto e ativo. G80 foi testado e commitado; fases
+**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G81.
+**Estado:** trabalho incompleto e ativo. G80–G81 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -15,8 +15,10 @@ planejamento, busca, avaliação, seleção, aquisição e persistência. G75–
 extraíram aquisição técnica, unificaram uma tentativa técnica compartilhada,
 corrigiram a continuação da busca contextual após falhas de aquisição,
 melhoraram a auditoria de queries adiadas e separaram tópico de título em
-`from-script`. Cada fase foi commitada e validada incrementalmente. As pendências
-de ownership global, simplificação e validação real permanecem.
+`from-script`. G80 tornou a entrada explícita e G81 removeu uma transição row
+entre a seleção de cena e o agregador de mídia. Cada fase foi commitada e
+validada incrementalmente. As pendências de ownership global, simplificação e
+validação real permanecem.
 
 ## Arquitetura antes das migrações recentes
 
@@ -104,6 +106,7 @@ hashes e diffs.
 | `58f0aea` | Separa tópico e título editorial no fluxo `from-script` (G79). |
 | `900d4ca` | Registra a separação tópico/título e os resultados de execuções reais pós-G78. |
 | `5f3eeb9` | Torna `PipelineInput` obrigatório e migra CLI/TUI/queue e consumidores de teste (G80). |
+| `aa25487` | Mantém `SceneMediaSelection` tipado entre seletor por cena e agregador do estágio de mídia (G81). |
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
 render, metadata e cenas estão enumeradas no relatório de estado e no histórico
@@ -257,11 +260,11 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G80 commitadas. | Simplificar coordenador e limpar caminhos antigos após migração comprovada; auditar decisões semânticas restantes fora da entrada do pipeline. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G81 commitadas. | Simplificar coordenador; terminar migração de auditoria/seleção interna de rows e limpar adapters após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório atualizado até G80. Não representam
+Os status são os registrados na auditoria e no relatório atualizado até G81. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -301,24 +304,25 @@ limitações. O replay determinístico G77 após falha de aquisição continua p
 - Rodar suíte, compile/check e profile final sobre a revisão final efetivamente
   commitada. Não há evidência de conclusão dessas validações finais.
 
-## Estado após G80
+## Estado após G81
 
-O último commit de código é `5f3eeb9`; a mudança e as evidências estão em
-[`G80 — contrato de entrada do pipeline`](20261005-pipeline-input-contract.md).
-`PipelineInput` agora é obrigatório para `run_pipeline` e `_run_pipeline`.
-CLI/TUI/queue e `run_script_pipeline` convertem suas entradas na fronteira.
-Chamadas Python com `str` ou com os parâmetros removidos
+G80 (`5f3eeb9`) tornou `PipelineInput` obrigatório para `run_pipeline` e
+`_run_pipeline`. CLI/TUI/queue e `run_script_pipeline` convertem suas entradas
+na fronteira. Chamadas Python com `str` ou com os parâmetros removidos
 `provided_script`/`display_title` são incompatíveis por decisão arquitetural;
-os comandos, o conteúdo dos projetos e o schema persistido da queue foram
-preservados. O worktree de código está limpo depois do commit G80.
+comandos, conteúdo de projetos e schema persistido da queue foram preservados.
+G81 (`aa25487`) fez o seletor por cena devolver `SceneMediaSelection` e o
+agregador montar `MediaStageResult` sem serializar/recarregar rows entre essas
+funções. `media.json` segue inalterado. O worktree de código está limpo.
 
 ### Testes atuais
 
-G80 teve **64 testes focados** e **960 testes na suíte completa**, todos
-passando. `python -m compileall -q src tests` e `git diff --check` passaram.
-O resultado completo levou 196,40 s. A execução real de mídia não foi repetida,
-pois G80 só altera contrato de entrada e roteamento de valores; as provas reais
-de G79 continuam nos relatórios daquela fase.
+G80 teve **64 testes focados** e **960 testes na suíte completa** em 196,40 s.
+G81 teve **160 testes focados** e **960 testes na suíte completa** em 187,17 s.
+Ambas as fases passaram `python -m compileall -q src tests` e
+`git diff --check`. Não houve geração real de mídia porque G80 altera entrada
+e G81 altera apenas o contrato entre seleção por cena e agregação. As provas
+reais de mídia de G79 continuam nos relatórios daquela fase.
 
 ### Escopo da correção da etapa de mídia
 
@@ -336,9 +340,15 @@ poucos resultados; o replay de buraco negro com NASA apenas teve 3 cenas
 sintéticas e nenhuma candidata. Consulte
 [`G79 — tópico/título e execuções reais`](20261005-topic-title-separation-and-real-runs.md).
 
+G81 não alterou busca nem escolha editorial. Corrigiu uma fronteira: a seleção
+por cena era serializada em row e revalidada pelo agregador imediatamente.
+Agora o helper retorna `SceneMediaSelection` e o agregador cria
+`MediaStageResult` diretamente. Parte da decisão ainda é montada em campos row
+antes de `SceneMediaSelection.from_dict`; essa dívida está no relatório G81.
+
 ## Referências de relatórios
 
-- [`Relatório de arquitetura e estado da migração até G80`](20261005-relatorio-arquitetura-estado-atual.md)
+- [`Relatório de arquitetura e estado da migração até G81`](20261005-relatorio-arquitetura-estado-atual.md)
 - [`Auditoria do pipeline e dos contratos`](../analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 - [`Resultados de execuções reais e limitações`](20261004-validacao-arquitetural-execucoes-reais.md)
 - [`G74 — resultados tipados de aquisição`](20261005-candidate-acquisition-outcomes.md)
@@ -347,5 +357,7 @@ sintéticas e nenhuma candidata. Consulte
 - [`G77 — busca contextual após falha de aquisição`](20261005-generic-search-after-acquisition-failure.md)
 - [`G78 — auditoria de queries adiadas`](20261005-deferred-query-audit-state.md)
 - [`G79 — tópico/título e validação real pós-G78`](20261005-topic-title-separation-and-real-runs.md)
+- [`G80 — contrato explícito de entrada do pipeline`](20261005-pipeline-input-contract.md)
+- [`G81 — seleção tipada por cena`](20261005-scene-selection-typed-boundary.md)
 - [`G80 — contrato explícito de entrada do pipeline`](20261005-pipeline-input-contract.md)
 - [`Inventário de relatórios do projeto`](../README.md)

@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G80.
+**Escopo:** auditoria documentada e migrações incrementais até G81.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -98,6 +98,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `f7eabb0` | Marca queries contextuais não executadas como adiadas e distingue isso de provider sem resultados ou orçamento esgotado (G78). |
 | `58f0aea` | Separa `--topic` de `--title` em `from-script`; tópico alimenta pesquisa/cenas e título fornecido permanece apresentação (G79). |
 | `5f3eeb9` | Introduz `PipelineInput` como contrato obrigatório de entrada; migra CLI/TUI/queue e remove adaptação interna de `str` (G80). |
+| `aa25487` | Faz o seletor por cena devolver `SceneMediaSelection`; `fetch_media_multi` agrega contratos tipados sem reidratar rows (G81). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -135,6 +136,8 @@ relatórios listados em `docs/README.md`.
 - **Seleção:** `SelectionDecision`; distingue asset novo, reuso, sintético e
   ausência, com motivo/fallback validado. `MediaStageResult`/`SceneMediaSelection`
   expõem `MediaAssetSnapshot` e rows aninhadas imutáveis; `to_dict()` é adapter.
+  O seletor por cena e seu agregador passam `SceneMediaSelection` em memória;
+  `media.json` continua sendo a projeção persistida.
   `SelectedAsset` preserva `query`, `query_source` e `representation`; a
   política que cria `SelectionDecision` recebe esse contrato, não reinterpreta
   row JSON.
@@ -248,7 +251,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G80 commitadas; parcial. | G80 torna a entrada explícita, mas `visual.py` ainda compõe tiers, fallback e auditoria; acquisition conserva janela/futures, efeitos de métricas/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G81 commitadas; parcial. | G81 fecha a transição de row por cena para o agregador; `visual.py` ainda compõe busca, tiers, fallback e auditoria. O corpo de seleção ainda monta parte da auditoria em rows antes da fábrica tipada. Coordenadores das demais etapas também precisam convergir/remover adapters temporários. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -336,6 +339,12 @@ G80: entrada/TUI/log/pipeline/cache/TTS/standby: **64 testes focados passaram**;
 suíte completa: **960 passaram** em **196,40 s**. `compileall` e
 `git diff --check` passaram. Sem execução real de mídia porque a fase altera somente o
 contrato de entrada. Ver [relatório G80](20261005-pipeline-input-contract.md).
+
+G81: mídia, seleções e integração da etapa: **160 testes focados passaram**;
+suíte completa: **960 passaram** em **187,17 s**. `compileall` e
+`git diff --check` passaram. Sem geração real de mídia: a fase alterou somente
+o tipo da transição interna. Ver
+[relatório G81](20261005-scene-selection-typed-boundary.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -843,3 +852,16 @@ verbatim e a estrutura é imutável.
 check passaram. A geração real de mídia não foi repetida, pois SearchPlan,
 providers e seleção não mudaram. Detalhes e limites constam no
 [relatório G80](20261005-pipeline-input-contract.md).
+
+## G81 — seleção tipada por cena (`aa25487`)
+
+`_search_scene_with_shortcircuit` agora retorna `SceneMediaSelection`, não
+`list[dict]`. `fetch_media_multi` acumula esses contratos e instancia
+`MediaStageResult` diretamente. O schema persistido `media.json` continua
+inalterado. Testes que inspecionam rows passam pelo adapter explícito de teste,
+que também verifica o tipo retornado.
+
+160 testes focados e 960 testes da suíte passaram; compileall e diff check
+passaram. O corpo de seleção ainda monta parte do payload da decisão antes de
+`SceneMediaSelection.from_dict`; esse limite segue aberto. Ver
+[relatório G81](20261005-scene-selection-typed-boundary.md).

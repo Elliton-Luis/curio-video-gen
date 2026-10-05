@@ -7,8 +7,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G80: arquitetura, contratos, fases, validações, regressões e pendências.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G80: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correção de entrada no pipeline.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G81: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G81: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-scene-selection-typed-boundary.md` — G81: saída tipada por cena e agregação direta em `MediaStageResult`.
 - `relatorios/20261005-pipeline-input-contract.md` — G80: `PipelineInput` obrigatório, migração dos chamadores, compatibilidade alterada e validação.
 - `relatorios/20261005-topic-title-separation-and-real-runs.md` — G79: separa tópico e título no `from-script`, registra suíte, gerações reais história/ciência, queries/providers, inspeção visual e limites pós-G78.
 - `relatorios/20261005-candidate-media-acquisition.md` — G75: extração da aquisição de candidatos, contrato do lote, validação e limites ainda abertos.
