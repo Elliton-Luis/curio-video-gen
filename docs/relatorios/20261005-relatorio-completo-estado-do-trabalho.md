@@ -1,10 +1,12 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G83.
-**Estado:** trabalho incompleto e ativo. G80–G83 foram testados e commitados; fases
-posteriores e validações reais finais seguem pendentes. Este documento não
-certifica a conclusão da refatoração.
+**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G83,
+mais a tentativa G84 ainda não commitada.
+**Estado:** trabalho incompleto. G80–G83 foram testados e commitados. G84 está
+em validação e sem commit; o worktree tem duas alterações de implementação. As
+fases posteriores e validações reais finais seguem pendentes. Este documento
+não certifica a conclusão da refatoração.
 
 ## Resumo do estado
 
@@ -109,6 +111,15 @@ hashes e diffs.
 | `aa25487` | Mantém `SceneMediaSelection` tipado entre seletor por cena e agregador do estágio de mídia (G81). |
 | `1b00689` | Faz `SceneMediaSelection.from_components` criar nova seleção de `SelectedAsset` e `VisualDecision` tipados (G82). |
 | `31f6acf` | Rejeita tipos inválidos nos campos de `PipelineInput` (G83). |
+
+G84 ainda não tem commit: foi iniciada uma extração da aplicação opcional da
+camada CLIP de `visual.py` para `candidate_evaluation.py`. A alteração atual
+envolve somente esses dois arquivos. Ela não cria um contrato de dados novo;
+`apply_clip_layer()` consome e devolve `RankedSelectionCandidate`, preparando
+assets e atualizando a evidência de `CandidateEvaluation` através dos métodos
+tipados existentes. A validação focada passou (104 testes); a suíte completa
+está em execução e seu resultado ainda não foi registrado. Portanto, não contar
+G84 como concluída ou commitada.
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
 render, metadata e cenas estão enumeradas no relatório de estado e no histórico
@@ -262,7 +273,7 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G83 commitadas. | Simplificar coordenador; migrar auditoria aninhada e adapters restantes após comprovar ausência de consumidores. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G83 commitadas; G84 em validação, sem commit. | Confirmar suíte completa de G84; simplificar coordenador; migrar auditoria aninhada e adapters restantes após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
@@ -359,6 +370,52 @@ G82 remove a montagem dessa row do seletor novo: ele passa assets e decisão
 tipados para `from_components`, que centraliza a projeção. A fábrica ainda usa
 validação do contrato e `_row` preserva round-trip; auditorias aninhadas seguem
 em mappings. Consulte o relatório G82.
+
+## Tentativa G84 — camada CLIP na avaliação de candidatos
+
+O worktree atual contém uma extração ainda não commitada. Antes, a função local
+`apply_clip` dentro de `_search_scene_with_shortcircuit()` em `visual.py`
+misturava preparação/download técnico de imagem, validação dimensional,
+execução do score CLIP, atualização imutável da avaliação ranqueada,
+ordenação da shortlist e métricas da camada. A mudança moveu essa operação para
+`apply_clip_layer()` em `candidate_evaluation.py`; `visual.py` passa as listas
+de candidatos específicos e contextuais para essa função. O comportamento e os
+limites atuais foram copiados sem intenção de mudar thresholds ou política
+editorial.
+
+Arquivos modificados no worktree: `src/curio/stages/candidate_evaluation.py`
+e `src/curio/stages/visual.py`. Não há arquivos criados/removidos nem contrato
+persistido novo nesta tentativa. A responsabilidade de scoring/avaliação fica
+mais próxima do módulo que já atualiza `CandidateEvaluation`; download/cache
+continuam usando `media_acquisition`, e `visual.py` continua coordenando tiers,
+shortlists, fallback e seleção.
+
+Validação já observada: os testes focados
+`test_visual_director.py`, `test_media_selection.py`,
+`test_media_waterfall.py`, `test_media_museums.py`, `test_media_funnel.py`,
+`test_visual_query_concepts.py` e `test_candidate_evaluation.py` passaram:
+104 testes em 0,69 s. `compileall` e `git diff --check` passaram antes da
+suíte completa. A execução completa de `pytest -q` terminou com **965 testes
+passando em 195,46 s**. Esse número coincide com a última referência G83; a
+suíte foi executada sobre o worktree que inclui a tentativa G84 não commitada.
+Nenhuma geração real foi executada para G84. A aprovação da suíte não significa
+que a extração tenha sido commitada ou que o objetivo arquitetural amplo esteja
+concluído.
+
+## Estado de versionamento no momento deste relatório
+
+Último commit visível: `9dea7f5 docs: record G83 strict pipeline input`;
+último commit de implementação: `31f6acf fix: reject invalid pipeline input
+types` (G83). G84 não está commitada. Antes da edição deste relatório,
+`git status --short` mostrou somente:
+
+```text
+ M src/curio/stages/candidate_evaluation.py
+ M src/curio/stages/visual.py
+```
+
+Este relatório registra o estado, sem certificar que a alteração de
+implementação G84 tenha sido aceita ou concluída.
 
 ## Referências de relatórios
 
