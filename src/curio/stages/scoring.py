@@ -190,8 +190,13 @@ def semantic_relevance(asset: dict, ch) -> dict:
     for key in ("representations", "visual_entities"):
         values = getattr(ch, key, []) or []
         if key == "representations":
-            scene_phrases.extend(str(getattr(item, "query", ""))
-                                 for item in values)
+            # Entity enrichment adds search anchors to the same normalized
+            # collection, but those anchors describe the video subject, not
+            # what this scene depicts. They must not count as local evidence.
+            scene_phrases.extend(
+                str(getattr(item, "query", "")) for item in values
+                if getattr(item, "source", "") not in
+                {"entity_context", "verified_entity_context"})
         else:
             scene_phrases.extend(values)
     scene_evidence = evidence_for(scene_phrases)

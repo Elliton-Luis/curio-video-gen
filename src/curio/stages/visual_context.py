@@ -271,7 +271,6 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
                 scene, list(dict.fromkeys(queries))[:5], source="entity_context",
                 kind="person" if "portrait" in medium.casefold() else "entity")
             updates["representations"] = scene.representations
-            updates["global_visual_queries"] = _representation_queries(scene)
             updates["forbidden"] = tuple(dict.fromkeys(
                 [*scene.forbidden, *target.forbidden]))
         else:
@@ -289,7 +288,6 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
                     source="verified_entity_context",
                     kind="person" if "portrait" in medium.casefold() else "entity")
                 updates["representations"] = scene.representations
-                updates["global_visual_queries"] = _representation_queries(scene)
             updates["forbidden"] = tuple(dict.fromkeys(
                 [*scene.forbidden, *target.forbidden]))
         replacements[scene.id] = replace(scene, **updates)
@@ -317,10 +315,11 @@ def anchor_local_topic(scenes, idea: str, target=None) -> tuple[SemanticScene, .
     if not anchors:
         return tuple(scenes or ())
     enriched = []
+    primary = str(getattr(target, "name", "") or query).strip()
     for scene in scenes or ():
         context = scene.video_context.to_dict()
         context.setdefault("topic", query)
-        context.setdefault("primary_entities", [query])
+        context.setdefault("primary_entities", [primary])
         context.setdefault("secondary_entities", [])
         context.setdefault("places", [])
         context.setdefault("events", [])

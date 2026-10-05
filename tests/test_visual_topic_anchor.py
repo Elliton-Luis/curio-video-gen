@@ -61,6 +61,36 @@ def test_local_black_hole_rejects_bus_mass():
     assert scoring.base_score(bus, ch)["score"] == 0
 
 
+def test_entity_context_does_not_promote_scene_representations_to_topic_anchor():
+    from curio.stages.entity import TargetEntity
+    from curio.stages.scene_enrichment import enrich_scenes
+
+    narration = "A matéria cai no buraco negro. O jato emerge da galáxia."
+    plan = build_local_semantic_scenes(narration, 2)
+    enriched = enrich_scenes(
+        plan.semantic_scenes, timeline_spans=plan.timeline_spans,
+        topic="M87 black hole Event Horizon Telescope",
+        target=TargetEntity("M87", discriminants=[
+            "black hole", "Event Horizon Telescope"], ambiguous=True,
+            is_entity=True), source="local",
+        planning_mode="deterministic", genre="science")
+
+    assert all(scene.global_visual_queries == ("M87",)
+               for scene in enriched.semantic_scenes)
+    assert all("M87" in [rep.query for rep in scene.representations]
+               for scene in enriched.semantic_scenes)
+    scene = enriched.semantic_scenes[0]
+    generic_black_hole = {"title": "Black hole illustration"}
+    assert not scoring.topic_anchor_matches(generic_black_hole, scene)
+    assert scoring.base_score(generic_black_hole, scene)["score"] == 0
+    m87_homonym = {"title": "M87 Kevlar helmet"}
+    assert scoring.topic_anchor_matches(m87_homonym, scene)
+    detail = scoring.base_score(m87_homonym, scene)
+    assert detail["score"] == 0
+    assert detail["semantic_rejection"] in {
+        "no scene evidence", "insufficient scene metadata evidence"}
+
+
 def test_person_video_keeps_person_portrait_across_local_context_scenes():
     ch = Chapter(id=4, narration="Marco Aurélio liderou campanhas na Armênia.",
                  duration_estimate=6, subject="Armenia", visual_queries=["Armenia", "war"],
