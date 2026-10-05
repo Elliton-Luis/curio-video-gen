@@ -313,10 +313,17 @@ def test_relatorio_vai_para_o_metadata(fetch):
 # --- reutilização: permitida, e agora observável --------------------
 
 def _cena(cid, assets, reused_from=None):
-    return {"chapter_id": cid,
-            "asset": assets[0] if assets else None,
-            "assets": [{"asset": a, "order": i} for i, a in enumerate(assets)],
-            "reused_from": reused_from}
+    from tests.media_test_support import with_selection
+    return with_selection({"chapter_id": cid,
+                           "asset": assets[0] if assets else None,
+                           "assets": [{"asset": a, "order": i}
+                                      for i, a in enumerate(assets)],
+                           "reused_from": reused_from})
+
+
+def _media_result(rows):
+    from curio.media.selection_result import MediaStageResult
+    return MediaStageResult.from_rows(rows, "fixture")
 
 
 def _a(aid, title="t", prov="wikimedia"):
@@ -335,7 +342,7 @@ def test_mesmo_asset_em_duas_cenas_e_registrado():
     from curio.stages import media_selection as selection
     a = _a("Saint_Jerome_in_His_Study", "Saint Jerome in his study")
     scenes = [_cena(1, [a]), _cena(2, [_a("outra")]), _cena(3, [a])]
-    selection.annotate_reuse(scenes)
+    scenes = selection.annotate_reuse(_media_result(scenes)).to_rows()
     reuso = scenes[2]["reuse"]
     assert len(reuso) == 1
     assert reuso[0]["previous_scene"] == 1
@@ -349,7 +356,7 @@ def test_reutilizacao_NAO_e_proibida():
     from curio.stages import media_selection as selection
     a = _a("mesma")
     scenes = [_cena(1, [a]), _cena(2, [a])]
-    selection.annotate_reuse(scenes)
+    scenes = selection.annotate_reuse(_media_result(scenes)).to_rows()
     assert scenes[1]["assets"], "o asset precisa continuar na cena"
     assert scenes[1]["asset"]["asset_id"] == "mesma"
 
@@ -365,7 +372,7 @@ def test_o_motivo_nao_afirma_intencao_editorial():
     from curio.stages import media_selection as selection
     a = _a("mesma")
     scenes = [_cena(1, [a]), _cena(3, [a])]
-    selection.annotate_reuse(scenes)
+    scenes = selection.annotate_reuse(_media_result(scenes)).to_rows()
     r = scenes[1]["reuse"][0]
     assert r["reason"] == "same_top_match"
     assert "thematic" not in r["reason"]
@@ -382,7 +389,7 @@ def test_asset_repetido_tres_vezes_aparece_nas_duas_repeticoes():
     from curio.stages import media_selection as selection
     a = _a("mesma")
     scenes = [_cena(1, [a]), _cena(2, [a]), _cena(3, [a])]
-    selection.annotate_reuse(scenes)
+    scenes = selection.annotate_reuse(_media_result(scenes)).to_rows()
     assert scenes[0]["reuse"] == []
     assert scenes[1]["reuse"][0]["previous_scene"] == 1
     assert scenes[2]["reuse"][0]["previous_scene"] == 1
@@ -393,15 +400,13 @@ def test_cena_sem_repeticao_registra_lista_vazia():
     de 'a anotação não rodou'."""
     from curio.stages import media_selection as selection
     scenes = [_cena(1, [_a("a")]), _cena(2, [_a("b")])]
-    selection.annotate_reuse(scenes)
+    scenes = selection.annotate_reuse(_media_result(scenes)).to_rows()
     assert scenes[0]["reuse"] == [] and scenes[1]["reuse"] == []
 
 
-def test_asset_sem_id_nao_quebra():
-    from curio.stages import media_selection as selection
-    scenes = [_cena(1, [{"title": "sem id"}]), _cena(2, [{"title": "sem id"}])]
-    selection.annotate_reuse(scenes)
-    assert scenes[1]["reuse"] == []
+def test_asset_sem_id_e_rejeitado_no_boundary_tipado():
+    with pytest.raises(ValueError, match="selected visual must include asset identity"):
+        _cena(1, [{"title": "sem id"}])
 
 
 def test_cena_sem_midia_continua_usando_reused_from():
@@ -410,6 +415,6 @@ def test_cena_sem_midia_continua_usando_reused_from():
     from curio.stages import media_selection as selection
     a = _a("so_esta")
     scenes = [_cena(1, [a]), _cena(2, [], reused_from=1)]
-    selection.annotate_reuse(scenes)
+    scenes = selection.annotate_reuse(_media_result(scenes)).to_rows()
     assert scenes[1]["reused_from"] == 1
     assert scenes[1]["reuse"] == []

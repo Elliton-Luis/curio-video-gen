@@ -40,7 +40,9 @@ def _empty_media(chapters, cfg, max_images, metrics=None, genre=""):
     scenes = [with_selection({"chapter_id": c.id, "asset": None,
                               "assets": [], "reused_from": None})
               for c in chapters]
-    return scenes, ["cena sem mídia (mock)"]
+    from curio.media.selection_result import MediaStageResult
+    return MediaStageResult.from_rows(
+        scenes, "provider", ["cena sem mídia (mock)"])
 
 
 def test_standby_sem_imagens(tmp_path):

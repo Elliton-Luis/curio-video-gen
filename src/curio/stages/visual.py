@@ -29,6 +29,7 @@ from collections.abc import Mapping
 import os
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from ..config import CurioConfig
 from ..media.providers import (
@@ -52,6 +53,9 @@ from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 from . import media_acquisition
 from . import media_search
+
+if TYPE_CHECKING:
+    from ..media.selection_result import MediaStageResult
 
 # SearchPlan ordering and provider policy are decided before transport.
 
@@ -744,12 +748,13 @@ def _search_scene_with_shortcircuit(
 
 def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
                       max_images: int = 3,
-                      metrics=None, genre: str = "") -> tuple[list[dict], list[str]]:
+                      metrics=None, genre: str = "") -> MediaStageResult:
     """Acquire candidates for each scene and select using its explicit plans.
 
     Exact queries share provider responses in a per-video in-memory cache;
     downloaded bytes live in the reusable global media cache. This function
-    records project selection separately from both caches.
+    returns the validated stage result; project selection is recorded
+    separately from both caches.
     """
     if any(not isinstance(scene, SemanticScene) for scene in semantic_scenes):
         raise TypeError("media acquisition requires SemanticScene values")
@@ -791,6 +796,9 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)
     
-    resolve_cross_scene_reuse(scenes, semantic_scenes)
-    annotate_reuse(scenes)
-    return scenes, all_warnings
+    from ..media.selection_result import MediaStageResult
+    from .media_selection import annotate_reuse, resolve_cross_scene_reuse
+
+    result = MediaStageResult.from_rows(scenes, "provider", all_warnings)
+    result = resolve_cross_scene_reuse(result, semantic_scenes)
+    return annotate_reuse(result)

@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 from curio.media.artifacts import media_selection_signature, write_manifest
 from curio.pipeline_visual import resolve_media
+from curio.media.selection_result import MediaStageResult
 from curio.stages.scene_projection import Chapter
+from curio.stages.scene_contract import SemanticScene
 from curio.stages.scoring import threshold
 from tests.media_test_support import with_selection
 
@@ -32,6 +34,26 @@ def _write_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
+
+
+def test_visual_acquisition_stage_returns_validated_selection(monkeypatch):
+    from curio.stages import visual
+
+    scene = SemanticScene(1, "Marte tem duas luas.")
+    monkeypatch.setattr(visual, "ordered_providers", lambda *args: [])
+    monkeypatch.setattr(
+        visual, "_search_scene_with_shortcircuit",
+        lambda current, *_args, **_kwargs: ([with_selection({
+            "chapter_id": current.id, "asset": None, "assets": [],
+        })], ["sem asset disponível"]))
+
+    result = visual.fetch_media_multi(
+        [scene], SimpleNamespace(cache_dir="/tmp/curio-test-cache"))
+
+    assert isinstance(result, MediaStageResult)
+    assert result.source == "provider"
+    assert result.warnings == ("sem asset disponível",)
+    assert result.scenes[0].decision.status == "none"
 
 
 def test_resolve_media_consumes_only_cache_with_current_manifest(tmp_path, monkeypatch):
@@ -79,7 +101,7 @@ def test_resolve_media_researches_when_manifest_signature_is_stale(tmp_path, mon
 
     def fetch(*args, **kwargs):
         calls.append((args, kwargs))
-        return selected, ["refresh"]
+        return MediaStageResult.from_rows(selected, "provider", ["refresh"])
 
     monkeypatch.setattr("curio.pipeline_visual.visual_stage.fetch_media_multi", fetch)
 
@@ -123,7 +145,8 @@ def test_invalid_cached_selection_is_audited_and_reacquired(tmp_path, monkeypatc
             "provider": "wikimedia", "reason": "valid provider result"}},
     })]
     monkeypatch.setattr("curio.pipeline_visual.visual_stage.fetch_media_multi",
-                        lambda *args, **kwargs: (fetched, []))
+                        lambda *args, **kwargs: MediaStageResult.from_rows(
+                            fetched, "provider"))
 
     result = resolve_media([scene], SimpleNamespace(), paths, 1, "science",
                            metrics=None, force=False, write_json=_write_json)

@@ -50,12 +50,15 @@ def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
                       operation="media", scenes=len(cached.scenes))
             return _record_selection(cached, metrics)
 
-    selected, acquisition_warnings = visual_stage.fetch_media_multi(
+    result = visual_stage.fetch_media_multi(
         scenes, cfg, max_images, metrics, genre=genre)
-    warnings.extend(acquisition_warnings)
-    result = _MediaStageResult.from_rows(selected, "provider", warnings)
+    if not isinstance(result, _MediaStageResult):
+        raise TypeError("visual stage must return a MediaStageResult")
+    if warnings:
+        result = _MediaStageResult(result.scenes, result.source,
+                                   tuple([*result.warnings, *warnings]))
     _write_selection(paths, result, signature, write_json)
-    for warning in acquisition_warnings[:8]:
+    for warning in result.warnings[:8]:
         run_event("warning", str(warning), operation="media")
     return _record_selection(result, metrics)
 

@@ -172,6 +172,8 @@ G57 removeu o mirror runtime também de `SemanticScene`; o campo JSON e a
 projeção externa `Chapter.visual_queries` seguem derivados para compatibilidade.
 G58 moveu reuso cross-scene e anotação de assets repetidos do coordenador para
 `media_selection.py`, sem alterar critérios nem formato persistido.
+G59 faz a etapa visual devolver `MediaStageResult` validado; pipeline e
+políticas de reuso consomem esse contrato tipado sem uma conversão intermediária.
 O relatório arquitetural com commits, contratos, estado das fases, validações e
 pendências está em [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6

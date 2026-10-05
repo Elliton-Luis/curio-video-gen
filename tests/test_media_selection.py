@@ -134,9 +134,9 @@ def test_cross_scene_reuse_updates_the_selection_contract():
              reason="no candidate").to_dict()}},
     ]
 
-    resolve_cross_scene_reuse(media_scenes, scenes)
-    reused = media_scenes[1]
-    outcome = MediaStageResult.from_rows(media_scenes, "provider")
+    outcome = resolve_cross_scene_reuse(
+        MediaStageResult.from_rows(media_scenes, "provider"), list(scenes))
+    reused = outcome.to_rows()[1]
 
     assert outcome.real_scenes == 2
     assert reused["reused_from"] == 1

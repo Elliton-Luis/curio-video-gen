@@ -14,6 +14,7 @@ from unittest.mock import patch
 from curio.config import CurioConfig
 from curio.pipeline import run_pipeline
 from curio.project_paths import video_paths
+from curio.media.selection_result import MediaStageResult
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
 from curio.stages.script import ScriptArtifact, TitleArtifact
@@ -118,7 +119,8 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
 
     def acquire_media(scenes, _cfg, _max_images, metrics=None, genre=""):
         assert all(isinstance(scene, SemanticScene) for scene in scenes)
-        return _media(scenes, images), []
+        return MediaStageResult.from_rows(
+            _media(scenes, images), "provider")
 
     patches = [
         patch("curio.stages.research.research_topic", return_value=ResearchResult(
