@@ -468,6 +468,13 @@ class RunMetrics:
     # -- saída --
     def to_dict(self, meta: dict, stage_times: dict, metrics_dir: str) -> dict:
         total = round(time.monotonic() - self.started_monotonic, 2)
+        try:
+            total = validate_stage_elapsed(
+                meta.get("processing_time_seconds"), "processing time")
+        except (TypeError, ValueError):
+            # Direct/legacy collector calls may not have a pipeline duration.
+            # Live pipeline metadata is the canonical source when available.
+            pass
         artifacts = (meta.get("artifacts") or {})
 
         def _size(key: str) -> int | None:

@@ -1,6 +1,32 @@
+import pytest
+
 from curio.metrics import RunMetrics
 from curio.stages.media_search import submit_search
 from curio.stages.scene_contract import TimelineSpan
+
+
+@pytest.mark.parametrize("duration", [0, 12.5])
+def test_live_metrics_total_uses_pipeline_processing_duration(
+        duration, monkeypatch, tmp_path):
+    metrics = RunMetrics("test", "idea", "ai")
+    monkeypatch.setattr("curio.metrics.time.monotonic",
+                        lambda: metrics.started_monotonic + 100)
+
+    report = metrics.to_dict(
+        {"processing_time_seconds": duration}, {}, str(tmp_path))
+
+    assert report["time"]["total_seconds"] == duration
+
+
+def test_direct_metrics_total_uses_collector_clock_when_pipeline_duration_unknown(
+        monkeypatch, tmp_path):
+    metrics = RunMetrics("test", "idea", "ai")
+    monkeypatch.setattr("curio.metrics.time.monotonic",
+                        lambda: metrics.started_monotonic + 3.25)
+
+    report = metrics.to_dict({}, {}, str(tmp_path))
+
+    assert report["time"]["total_seconds"] == 3.25
 
 
 def test_search_counters_are_distinct_logical_calls_requests_and_retries():
