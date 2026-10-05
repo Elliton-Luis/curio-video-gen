@@ -76,7 +76,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `31695f3` | Removeu `visual_queries` runtime de `SemanticScene`, preservando projeções legadas (G57). |
 | `9f4e627` | Moveu a resolução e anotação de reuso cross-scene para `media_selection.py` (G58). |
 | `05dc295` | Registrou no relatório de estado o commit G58. |
-| *(G59 desta entrega)* | Fez `fetch_media_multi` retornar `MediaStageResult` e moveu a projeção de rows para a fronteira de persistência. |
+| `e652f64` | Fez `fetch_media_multi` retornar `MediaStageResult` e moveu a projeção de rows para a fronteira de persistência (G59). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
