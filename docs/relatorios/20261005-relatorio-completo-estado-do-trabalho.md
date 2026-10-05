@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G95 e métricas até F14.
-**Estado:** trabalho incompleto. G80–G95 e F4–F14 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G95 e métricas até F15.
+**Estado:** trabalho incompleto. G80–G95 e F4–F15 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -23,25 +23,22 @@ o fechamento documental dessa alteração.
 > **Atualização de investigação (sem implementação):** após esse registro, foi
 > rastreada a divergência das métricas de requests dos providers Met e AIC.
 > Nenhum arquivo de código foi alterado nesta investigação e nenhum teste novo
-> foi executado. O worktree estava limpo antes da atualização documental.
+> foi executado. A implementação posterior dessa investigação consta em F15
+> abaixo.
 
 ## Estado exato do trabalho retomado
 
-O histórico de commits permanece a evidência das fases concluídas. O HEAD
-observado antes desta atualização documental era `5a32bd0` (`docs: record
-English entity fallback and real runs`), seguido por `3978670` (correção do
-resolver), `9802201`/`60703ae` (SearchPlan canônico), `29fddbe`/`38b892e`
-(ordenação de providers por cena), `9774430`/`8daa29f` (proveniência até
-render), e demais fases listadas acima. O comando `git status --short` não
-retornou alterações antes desta atualização. Não há evidência nesta sessão de
-commits posteriores a G95/F14.
+O último commit de implementação observado é `b9e6ff1` (`fix: count provider
+API request attempts`), fase F15. Ele sucede o snapshot documental
+`a06be6e`, a correção G95 `3978670`, os planos canônicos G94
+`60703ae`, a prioridade de providers por cena G93 `38b892e` e a
+proveniência até render `8daa29f`. O worktree estava limpo após F15.
 
 O projeto está executável e as migrações já commitadas passaram suas suítes
 conforme registradas por fase. O resultado integral mais recente documentado é
-**1012 testes aprovados em 175,13 s**, mais `compileall` e `git diff --check`,
-após G95. Não foi executada uma suíte nesta atualização do relatório; portanto
-1012 é o último resultado conhecido, não uma afirmação de que o código foi
-retestado agora.
+**1014 testes aprovados em 182,23 s**, mais `compileall` e `git diff --check`,
+após F15. Não foi executada uma suíte durante esta atualização documental;
+1014 é o último resultado conhecido.
 
 ### O que estava sendo investigado na etapa de mídia
 
@@ -72,25 +69,26 @@ A discrepância não significa que `provider_search_calls` e `provider_requests`
 devam ter o mesmo valor: uma chamada de adapter pode conter zero, uma ou várias
 requests. O problema é que o contador chamado de tentativas de request não
 contabiliza tentativas que falham em Met/AIC e omite requests secundárias do
-Met. A correção ainda não foi implementada. Também não foi decidido/codificado
-se requests de detalhe Met devem ser projetadas como requests de busca,
-metadata ou uma dimensão separada; essa definição deve ser explicitada antes de
-mudar métricas e relatórios de consumo.
+Met. A correção F15 foi implementada: todos esses GETs agora contam antes da
+tentativa, e o total tem breakdown `search`/ `metadata`/ `unknown`.
+Requests auxiliares NASA e requests Unsplash também usam a mesma fronteira.
+O detalhamento segue descrito em
+[`20261005-provider-request-metric-boundary.md`](20261005-provider-request-metric-boundary.md).
 
 ### Estado das fases e pendências
 
-Concluído e commitado: G80–G95, F4–F14 e fases anteriores detalhadas neste
+Concluído e commitado: G80–G95, F4–F15 e fases anteriores detalhadas neste
 documento. Mais recentemente, G93 corrigiu a precedência global inadequada de
 providers entre cenas; G94 fez a busca consumir os mesmos planos canônicos da
 cena; G95 corrigiu a seleção heurística de entidade inglesa que reduzia
-`Battle of Mohacs 1526` a `Battle`.
+`Battle of Mohacs 1526` a `Battle`; F15 centralizou a contagem das requests
+de API que antes eram omitidas por Met/AIC.
 
-Em andamento no momento da parada: investigação da consistência de métricas de
-requests por provider, apenas leitura do código. Nenhuma implementação,
-correção, teste ou commit foi iniciado para essa divergência.
+Em aberto no momento da parada: validar em geração real a decomposição de
+requests por operação e provider após F15. A investigação e correção do defeito
+Met/AIC já estão concluídas e commitadas.
 
-Não concluído: correção/definição canônica de todas as métricas de requests e
-operações de provider; extração do coordenador editorial ainda concentrado em
+Não concluído: extração do coordenador editorial ainda concentrado em
 `visual.py`; ownership global de estado/cache/metadata; simplificação dos
 caminhos compatíveis internos restantes; profile comparável de performance;
 execuções reais finais em pelo menos dois domínios após as últimas mudanças;
@@ -112,8 +110,8 @@ pendências, não trabalho que tenha sido concluído por passar a suíte.
   embora tenha melhorado do baseline anterior. Não se demonstrou esgotamento
   suficiente de mídia específica em todos os casos.
 - A divergência dos contadores Met/AIC acima afeta a interpretação dos requests
-  observados. Os tempos dos adapters continuam úteis, mas não substituem a
-  contagem confiável das tentativas de rede.
+  observados em runs anteriores a F15. F15 corrige a contagem no código, mas
+  ainda não há uma geração real posterior que valide o novo breakdown.
 - `visual.py` continua coordenando muitas decisões e efeitos. A extração das
   funções técnicas de aquisição não concluiu a separação de responsabilidades
   editoriais.
@@ -130,6 +128,17 @@ Os detalhes por cena, fontes, seleção e inspeção visual constam em
 Essas medições são execuções pontuais; não constituem profile pareado nem
 validação final da arquitetura. No caso M87, a composição quase duplicada
 mostra o limite de contar apenas identidade binária.
+
+## F15 — contagem de requests no limite de provider (`b9e6ff1`)
+
+F15 corrige a omissão de tentativas HTTP que falham antes de uma resposta Met ou
+AIC e inclui os lookups de objetos Met e manifests de metadata NASA no total de
+requests. O contrato mantém `provider_search_calls` por invocação do adapter e
+`provider_requests` por tentativa HTTP; o breakdown identifica `search`,
+`metadata` e `unknown`. O campo `searches` permanece alias agregado por
+compatibilidade. A suíte completa passou com **1014 testes em 182,23 s**,
+focados com 40 testes, além de compileall e diff check. Não houve geração real
+após esta mudança. O relatório da fase descreve a cobertura e os limites.
 
 ## Resumo do estado
 
@@ -453,13 +462,12 @@ descritos acima: providers externos podem estar indisponíveis, busca pode
 esgotar candidatos utilizáveis e o coordenador `visual.py` ainda mantém parte
 da orquestração editorial, fallback e efeitos de observabilidade.
 
-O trabalho em andamento quando a implementação foi interrompida era F14, uma
-extensão de proveniência no caminho do render, não uma tentativa de corrigir
-queries, providers, ranking ou seleção de imagens. O commit `8daa29f` renomeou
-`passed_asset_ids` para `segment_asset_ids`: o contrato prova que um arquivo foi
-associado ao segmento, mas não que o FFmpeg decodificou cada input ou que seus
-pixels aparecem no MP4. Esse delta ficou limitado a
-`render_usage.py`, `pipeline_render.py` e `test_pipeline_render_contracts.py`.
+Historicamente, o trabalho estava em F14 quando foi registrado o snapshot
+anterior. Depois, G95 corrigiu o alvo heurístico inglês e F15 corrigiu as
+contagens de requests de API. O commit `8daa29f` renomeou
+`passed_asset_ids` para `segment_asset_ids`: esse contrato prova associação
+do arquivo ao segmento, mas não que o FFmpeg decodificou cada input nem que
+seus pixels aparecem no MP4. F15 não altera essa limitação do renderer.
 
 ## Estado das fases do plano arquitetural
 
@@ -471,12 +479,12 @@ pixels aparecem no MP4. Esse delta ficou limitado a
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F14 parciais. | Requests, lifecycle timers, profile por suboperação e validação dos frames após FFmpeg permanecem incompletos. |
+| F — métricas/estado | F1–F15 parciais. | Contagem de requests tem contrato por operação, mas falta geração real de confirmação; lifecycle timers, profile de performance e validação dos frames após FFmpeg permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G95 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. A execução histórica ainda mostra falsos positivos de período. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G95/F14. Não representam
+Os status são os registrados na auditoria e neste relatório até G95/F15. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -893,4 +901,5 @@ passaram. Não houve geração real. Consulte
 - [`F12 — unidades explícitas de cache`](20261005-media-cache-metric-units.md)
 - [`F13 — reconciliação seleção e timeline`](20261005-selection-render-reconciliation.md)
 - [`F14 — assets dos segmentos visuais`](20261005-renderer-input-asset-usage.md)
+- [`F15 — requests no limite de provider`](20261005-provider-request-metric-boundary.md)
 - [`Inventário de relatórios do projeto`](../README.md)
