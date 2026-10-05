@@ -101,7 +101,7 @@ O payload de `VisualDecision` agora é montado em `stages/visual_audit.py`, a
 partir de `SemanticScene`, planos, coleção de candidatos e decisão de seleção
 validados; `visual.py` não recompõe esse dicionário. A mudança G88 preserva o
 schema persistido e passou com 994 testes. A auditoria arquitetural e os
-relatórios G88–G92/F8–F14 registram as responsabilidades e pendências restantes.
+relatórios G88–G93/F8–F14 registram as responsabilidades e pendências restantes.
 As avaliações semânticas também permanecem como `CandidateEvaluation` imutável
 até a auditoria; o thaw da evidência ocorre somente na projeção JSON. G89 passou
 com 995 testes. G90–G92 mantêm rejeições tipadas até a projeção da auditoria.
@@ -228,7 +228,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G92/F14 está em
+O relatório completo do estado registrado até G93/F14 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6

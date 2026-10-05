@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G92/F14.
+**Escopo:** auditoria documentada e migrações incrementais até G93/F14.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -114,6 +114,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `7bc5c23` | Preserva por cena a proveniência dos assets de segmento, paths ausentes e fallbacks (F14). |
 | `94119e3` | Distingue inputs submetidos a nova codificação de segmentos reutilizados do cache (F14). |
 | `8daa29f` | Usa `segment_asset_ids` para identificar assets associados ao segmento sem afirmar decodificação (F14). |
+| `38b892e` | Aplica a ordem de providers calculada para o plano de cada cena sem mesclá-la globalmente (G93). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -267,7 +268,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F14 parciais. | F6 torna a coleção de tempos imutável; F7 preserva como null a duração histórica irrecuperável; F8 unifica o total live; F9 unifica a projeção dos totais de seleção; F10 classifica retries por operação; F11 separa timeout de bloqueio por provider; F12 distingue os dois caches; F13 compara seleção com timeline; F14 registra paths passados ao renderer. Decodificação/pixels, requests, lifecycle timers e profile por suboperação permanecem. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G92 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89–G91 preservam avaliações/rejeições/outcomes tipados; G92 centraliza suas projeções e contagens. `visual.py` ainda coordena busca/aquisição/fallback; mappings permanecem nas fronteiras persistidas. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G93 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89–G91 preservam avaliações/rejeições/outcomes tipados; G92 centraliza suas projeções e contagens; G93 aplica prioridade de providers por cena. `visual.py` ainda coordena busca/aquisição/fallback; mappings permanecem nas fronteiras persistidas. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -1034,3 +1035,15 @@ derivam de contracts tipados em `visual_audit.py`. `visual.py` não mantém rows
 intermediárias; a projeção JSON só ocorre na saída persistida. 105 focados, 997
 completos em 194,65 s, compileall e diff check passaram. Veja
 [relatório G92](20261005-typed-rejection-projections.md).
+
+## G93 — prioridade de providers por cena (`38b892e`)
+
+`fetch_media_multi()` não mescla mais os providers ordenados de todas as cenas
+em uma lista global. Cada cena passa para o coordenador de busca a ordem
+produzida por `ordered_providers()` a partir de seu próprio `VisualPlan`, para
+que uma cena histórica não imponha a precedência `Met` a uma cena espacial que
+deve priorizar NASA. O teste de regressão verifica duas cenas com prioridades
+distintas e a lista exata recebida por cada busca. 82 testes focados, 1010 na
+suíte completa em 190,57 s, compileall e diff check passaram. Não houve geração
+real; disponibilidade e qualidade atuais dos acervos seguem sem validação.
+Ver [relatório G93](20261005-provider-priority-per-scene.md).
