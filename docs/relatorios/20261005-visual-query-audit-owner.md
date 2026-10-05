@@ -1,6 +1,6 @@
 # G61 — ownership da auditoria por query visual
 
-**Estado:** implementado no working tree; ainda sem commit.
+**Estado:** commitado em `7a568aa` (`refactor: centralize visual query audit`).
 **Escopo:** acumulação e projeção dos dados de auditoria por `SearchQuery`.
 
 ## Problema observado
@@ -44,7 +44,7 @@ planejada.
 - `python -m compileall -q src tests`: passou.
 - `git diff --check`: passou.
 - Geração real: não executada nesta etapa.
-- Commit: nenhum; resultado refere-se ao working tree.
+- Commit: `7a568aa`.
 
 ## Limite restante
 
