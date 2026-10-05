@@ -1,5 +1,3 @@
-from dataclasses import replace
-
 import pytest
 
 from curio.stages.scene_projection import Chapter
@@ -44,13 +42,13 @@ def test_visual_planner_rejects_uncontracted_scene_mapping():
         build_visual_plan({"id": 1, "narration": "A scene."})
 
 
-def test_visual_plan_rejects_query_mirror_that_diverges_from_representations():
+def test_visual_plan_has_one_scene_representation_source_and_legacy_projection():
     scene = SemanticScene(
         id=1, narration="A scene.", representations=(
             VisualRepresentation("Battle of Mohács", kind="event"),))
     plan = build_visual_plan(scene)
-    with pytest.raises(ValueError, match="must mirror representations"):
-        replace(plan, visual_queries=("Ottoman Empire",))
+    assert not hasattr(plan, "visual_queries")
+    assert plan.to_dict()["scene_queries"] == ["Battle of Mohács"]
 
 
 def test_search_query_requires_source_query_and_positive_level():

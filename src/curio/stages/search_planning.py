@@ -49,7 +49,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
         planned.append(SearchQuery(query, source, representation, kind,
                                   used_alias, variant, level, generic))
 
-    ai = list(plan.visual_queries)
+    ai = [representation.query for representation in plan.representations]
     deterministic = plan.planning_mode == "deterministic"
     representations = sorted(
         plan.representations,

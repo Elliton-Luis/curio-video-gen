@@ -25,7 +25,6 @@ class VisualPlan:
     aliases: tuple[Alias, ...]
     primary_entities: tuple[str, ...]
     representations: tuple[VisualRepresentation, ...]
-    visual_queries: tuple[str, ...]
     global_visual_queries: tuple[str, ...]
     subject: str
     subject_aliases: tuple[str, ...]
@@ -51,9 +50,6 @@ class VisualPlan:
         if any(not isinstance(rep, VisualRepresentation)
                for rep in self.representations):
             raise TypeError("visual plan representations must be normalized")
-        expected_queries = tuple(rep.query for rep in self.representations)
-        if self.visual_queries != expected_queries:
-            raise ValueError("visual plan queries must mirror representations")
 
     def to_dict(self) -> dict:
         return {
@@ -69,7 +65,7 @@ class VisualPlan:
                         for a in self.aliases],
             "primary_entities": list(self.primary_entities),
             "representations": [r.to_dict() for r in self.representations],
-            "scene_queries": list(self.visual_queries),
+            "scene_queries": [rep.query for rep in self.representations],
             "global_queries": list(self.global_visual_queries),
             "subject": self.subject,
             "subject_aliases": list(self.subject_aliases),

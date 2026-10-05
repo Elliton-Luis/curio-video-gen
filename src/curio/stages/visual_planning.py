@@ -34,7 +34,6 @@ def build_visual_plan(scene) -> VisualPlan:
         raise TypeError("visual planning requires a SemanticScene")
     context = scene.video_context
     reps = scene.representations
-    visual_queries = tuple(rep.query for rep in reps)
     planning_mode = str(getattr(scene, "planning_mode", "unknown") or "unknown")
     subject = str(getattr(scene, "subject", "") or "")
     subject_aliases = _strings(getattr(scene, "subject_aliases", []))
@@ -44,7 +43,7 @@ def build_visual_plan(scene) -> VisualPlan:
                                 *(alias.value for alias in context.aliases),
                                 str(getattr(scene, "visual_intent", "") or ""),
                                 str(getattr(scene, "visual_intent_structured", "") or ""),
-                                *(rep.query for rep in reps), *visual_queries, subject,
+                                *(rep.query for rep in reps), subject,
                                 *subject_aliases, *visual_entities, *scene_context))
     folded = lexical_context.casefold()
     visual_type = str(getattr(scene, "visual_type", "") or "literal")
@@ -60,7 +59,6 @@ def build_visual_plan(scene) -> VisualPlan:
         aliases=tuple(context.aliases),
         primary_entities=tuple(context.primary_entities),
         representations=reps,
-        visual_queries=visual_queries,
         global_visual_queries=tuple(_strings(
             getattr(scene, "global_visual_queries", []))),
         subject=subject,

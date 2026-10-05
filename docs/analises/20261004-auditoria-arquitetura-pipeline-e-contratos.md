@@ -598,6 +598,15 @@ no estado reused. Scores também são validados no intervalo 0–100. Reuso manu
 de asset sintético reporta estado `reused` (provider preserva `synth`). Ver
 `20261005-selection-decision-invariants.md`.
 
+## G56 — `VisualPlan` usa representações como fonte única
+
+`VisualPlan` continha `representations` e `visual_queries` com os mesmos
+valores, criando uma segunda fonte de busca depois da validação G50. O campo
+runtime foi removido; `SearchPlanner` lê queries diretamente das
+representações. `to_dict()` continua projetando `scene_queries` para o formato
+de auditoria persistido, sem mudar JSON ou ordem. Teste confirma uma única
+fonte interna e a projeção compatível. Ver `20261005-visual-plan-single-source.md`.
+
 Validação pós-G54: `20261005-pos-g54-validacao.md` repete rerenders salvos em
 história e ciência com o código atual e inspeciona os pixels selecionados.
 Compatibilidade e render estão preservados; a falha editorial de Mohács segue
