@@ -1,11 +1,10 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural commitada até G79 e da migração
-de entrada iniciada depois de G79.
-**Estado:** trabalho incompleto e pausado a pedido do usuário. O worktree está
-sujo: a migração `PipelineInput` abaixo não foi testada nem commitada. Este
-documento não certifica a conclusão da refatoração.
+**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G80.
+**Estado:** trabalho incompleto e ativo. G80 foi testado e commitado; fases
+posteriores e validações reais finais seguem pendentes. Este documento não
+certifica a conclusão da refatoração.
 
 ## Resumo do estado
 
@@ -104,10 +103,7 @@ hashes e diffs.
 | `885bf72` | Documenta a auditoria G78. |
 | `58f0aea` | Separa tópico e título editorial no fluxo `from-script` (G79). |
 | `900d4ca` | Registra a separação tópico/título e os resultados de execuções reais pós-G78. |
-
-Depois desses commits começou uma migração local, ainda sem commit, para fazer
-CLI, TUI, queue e o core do pipeline compartilharem `PipelineInput`. A migração
-está incompleta, não validada e não deve ser tratada como fase concluída.
+| `5f3eeb9` | Torna `PipelineInput` obrigatório e migra CLI/TUI/queue e consumidores de teste (G80). |
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
 render, metadata e cenas estão enumeradas no relatório de estado e no histórico
@@ -246,10 +242,9 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 - **Fonte de tópico:** G79 elimina a ambiguidade título/assunto somente em
   `from-script`. AI, TUI e queue continuam usando a mesma string `idea` para
   pesquisa, contexto e outras decisões do pipeline.
-- **Contrato de entrada em andamento:** alterações não commitadas introduzem
-  `PipelineInput` e migram alguns chamadores. Ainda não há validação que prove
-  compatibilidade, comportamento ou cobertura completa; os chamadores Python
-  que passam `str` continuam aceitos por um adapter no `run_pipeline`.
+- **Entrada do pipeline:** G80 exige `PipelineInput` e rejeita `str` no
+  entrypoint. O formato persistido da queue ainda chama o campo de tópico de
+  `idea`; a conversão acontece na fronteira da queue.
 
 ## Estado das fases do plano arquitetural
 
@@ -259,14 +254,14 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | A — modelo semântico | A4a–A4v concluídas no escopo registrado. | Ownership restante de alias/contexto e compatibilidade externa controlada. |
 | B — VisualPlan | B1–B4 concluídas no escopo registrado. | Consolidar políticas de gênero e ganchos sintéticos. |
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
-| D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G79. | Unificar transições de fallback e simplificar o coordenador. |
+| D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G79 commitadas; próxima migração de entrada apenas no worktree. | Testar/fechar `PipelineInput`; separar tópicos AI/TUI/queue; simplificar coordenador e limpar caminhos antigos após migração comprovada. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G80 commitadas. | Simplificar coordenador e limpar caminhos antigos após migração comprovada; auditar decisões semânticas restantes fora da entrada do pipeline. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório atualizado até G79. Não representam
+Os status são os registrados na auditoria e no relatório atualizado até G80. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -306,61 +301,44 @@ limitações. O replay determinístico G77 após falha de aquisição continua p
 - Rodar suíte, compile/check e profile final sobre a revisão final efetivamente
   commitada. Não há evidência de conclusão dessas validações finais.
 
-## Estado exato ao pausar
+## Estado após G80
 
-O último estado commitado é G79: `58f0aea` contém a mudança de código e
-`900d4ca` registra sua documentação e validação real. Os commits anteriores e
-seus resultados constam na tabela acima e nos relatórios por fase.
+O último commit de código é `5f3eeb9`; a mudança e as evidências estão em
+[`G80 — contrato de entrada do pipeline`](20261005-pipeline-input-contract.md).
+`PipelineInput` agora é obrigatório para `run_pipeline` e `_run_pipeline`.
+CLI/TUI/queue e `run_script_pipeline` convertem suas entradas na fronteira.
+Chamadas Python com `str` ou com os parâmetros removidos
+`provided_script`/`display_title` são incompatíveis por decisão arquitetural;
+os comandos, o conteúdo dos projetos e o schema persistido da queue foram
+preservados. O worktree de código está limpo depois do commit G80.
 
-Há seis caminhos alterados no worktree, todos ligados à tentativa seguinte de
-unificar a entrada do pipeline:
+### Testes atuais
 
-| Arquivo | Alteração local não commitada | Estado conhecido |
-|---|---|---|
-| `src/curio/pipeline_input.py` | Novo `PipelineInput(topic, script, display_title)`, dataclass congelada; valida tópico/título não vazios e script não vazio, preservando whitespace do script. | Criado; sem testes próprios registrados. |
-| `src/curio/pipeline.py` | `run_pipeline` aceita contrato ou `str` de compatibilidade; `_run_pipeline` exige `PipelineInput`; tópico alimenta pesquisa, cenas, métricas e paths; script/título seguem pelo contrato. | Alteração incompleta; suíte e testes focados não foram executados após ela. |
-| `src/curio/cli.py` | `cmd_generate` constrói `PipelineInput(topic=idea)`. | Não validado. |
-| `src/curio/tui.py` | Fluxos AI e human constroem `PipelineInput(topic=idea)`. | Não validado; fluxo de roteiro pronto precisa ser checado com seus testes. |
-| `src/curio/queue.py` | Converte `item.idea` persistido para `PipelineInput` ao chamar o pipeline. | Formato persistido segue legado; migração de leitura não foi validada. |
-| `tests/test_tui_script_input.py` | Mocks passam a observar `PipelineInput` e verificam tópico/script/título. | Testes editados, mas não executados após a edição. |
+G80 teve **64 testes focados** e **960 testes na suíte completa**, todos
+passando. `python -m compileall -q src tests` e `git diff --check` passaram.
+O resultado completo levou 196,40 s. A execução real de mídia não foi repetida,
+pois G80 só altera contrato de entrada e roteamento de valores; as provas reais
+de G79 continuam nos relatórios daquela fase.
 
-O único contrato novo nessa tentativa é `PipelineInput`. Nenhum contrato antigo
-foi removido do histórico commitado. O adaptador `str` permanece
-intencionalmente no entrypoint Python; schema da queue segue usando `idea`.
-Ainda é preciso procurar todos os consumidores e mocks de `run_pipeline` e
-`_run_pipeline`, validar chamadas posicionais/nominais, criar testes do
-contrato, executar os testes focados e a suíte, compilar, revisar diff, então
-decidir se a fase está pronta para commit. Nenhum desses passos de validação foi
-confirmado para o estado atual.
+### Escopo da correção da etapa de mídia
 
-### Testes atuais no instante da pausa
+G80 não altera query, provider, scoring, seleção, fallback nem aquisição. A
+causa tratada nesta fase era a ambiguidade do valor de entrada: após G79, apenas
+`from-script` separava assunto de título, enquanto AI/TUI/queue entregavam
+`idea` como string. O contrato novo torna explícito que esse texto é `topic`,
+e carrega roteiro e título em campos próprios. Isso melhora a atribuição de
+responsabilidade e permite ao core não reinterpretar o formato de entrada; não
+prova maior cobertura de mídia nem resolve os resultados reais históricos.
 
-O último resultado commitado de suíte é G79: 953 passaram e 1 foi desmarcado
-por HTTP 429 externo da Wikipédia. Os 36 testes focados de G79 passaram, assim
-como `compileall` e `git diff --check`. Esses resultados precedem as seis
-alterações listadas acima e não validam o worktree atual. Neste estado não há
-resultado de teste atualizado; não se deve afirmar que a suíte atual passa.
-
-### Correção de mídia em andamento antes da pausa
-
-A mudança local não altera a busca de mídia. Ela tenta corrigir a ambiguidade
-de entrada que G79 tratou apenas em `from-script`: antes, os caminhos AI/TUI e
-queue passavam uma string `idea`, e o core usava esse mesmo valor como tópico
-semântico, assunto de pesquisa, base de slug e contexto downstream. O objetivo
-da tentativa era dar nome explícito aos campos de entrada e impedir que o core
-precisasse inferir se o texto era tópico, roteiro ou título editorial.
-
-Essa tentativa não demonstra ainda a separação completa em todos os caminhos,
-nem resolve a falha de cobertura real de mídia. Os dados reais G79 permanecem:
-o replay otomano teve 11 cenas, 1 asset real único e 10 sintéticos, com
-providers Met/AIC/NASA respondendo com erros ou poucos resultados; o replay de
-buraco negro com NASA apenas teve 3 cenas sintéticas e nenhuma candidata. Esses
-resultados e a inspeção visual anterior estão detalhados em
+Os dados reais G79 permanecem: o replay otomano teve 11 cenas, 1 asset real
+único e 10 sintéticos, com providers Met/AIC/NASA respondendo com erros ou
+poucos resultados; o replay de buraco negro com NASA apenas teve 3 cenas
+sintéticas e nenhuma candidata. Consulte
 [`G79 — tópico/título e execuções reais`](20261005-topic-title-separation-and-real-runs.md).
 
 ## Referências de relatórios
 
-- [`Relatório de arquitetura e estado da migração até G79`](20261005-relatorio-arquitetura-estado-atual.md)
+- [`Relatório de arquitetura e estado da migração até G80`](20261005-relatorio-arquitetura-estado-atual.md)
 - [`Auditoria do pipeline e dos contratos`](../analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 - [`Resultados de execuções reais e limitações`](20261004-validacao-arquitetural-execucoes-reais.md)
 - [`G74 — resultados tipados de aquisição`](20261005-candidate-acquisition-outcomes.md)
@@ -369,4 +347,5 @@ resultados e a inspeção visual anterior estão detalhados em
 - [`G77 — busca contextual após falha de aquisição`](20261005-generic-search-after-acquisition-failure.md)
 - [`G78 — auditoria de queries adiadas`](20261005-deferred-query-audit-state.md)
 - [`G79 — tópico/título e validação real pós-G78`](20261005-topic-title-separation-and-real-runs.md)
+- [`G80 — contrato explícito de entrada do pipeline`](20261005-pipeline-input-contract.md)
 - [`Inventário de relatórios do projeto`](../README.md)

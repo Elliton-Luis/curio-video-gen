@@ -208,7 +208,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G79 está em
+O relatório completo do estado registrado até G80 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -221,6 +221,10 @@ download; `real_scene_assets_unique` segue a seleção final e coincide com
 G79 separa assunto de título em `from-script` por `--topic`; a causa, execução
 real e limitações estão em
 [docs/relatorios/20261005-topic-title-separation-and-real-runs.md](docs/relatorios/20261005-topic-title-separation-and-real-runs.md).
+G80 torna `PipelineInput(topic, script, display_title)` obrigatório em
+`run_pipeline`; CLI, TUI, queue e `from-script` entregam dados explícitos, e
+strings diretas passam a falhar. Suíte completa: 960 testes. Ver
+[relatório G80](docs/relatorios/20261005-pipeline-input-contract.md).
 O manifesto de roteiro schema 2 também assina inputs de roteiro e título, incluindo contexto de pesquisa, políticas e rotas: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e

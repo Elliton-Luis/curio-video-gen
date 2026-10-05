@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G79.
+**Escopo:** auditoria documentada e migrações incrementais até G80.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -97,6 +97,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `111995f` | Continua a tier genérica planejada se candidatos específicos falham tecnicamente, antes do fallback sintético/reuso (G77). |
 | `f7eabb0` | Marca queries contextuais não executadas como adiadas e distingue isso de provider sem resultados ou orçamento esgotado (G78). |
 | `58f0aea` | Separa `--topic` de `--title` em `from-script`; tópico alimenta pesquisa/cenas e título fornecido permanece apresentação (G79). |
+| `5f3eeb9` | Introduz `PipelineInput` como contrato obrigatório de entrada; migra CLI/TUI/queue e remove adaptação interna de `str` (G80). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -108,10 +109,13 @@ relatórios listados em `docs/README.md`.
   campo de compatibilidade em `Chapter`.
 - **Contexto global:** `VideoContext`, consumido por planejamento e enrichment;
   aliases verificados e proveniência orientam expansão de busca.
-- **Entrada de `from-script`:** `--topic` é a autoridade para pesquisa e
-  contexto das cenas; `--title` alimenta `TitleArtifact` e metadata editorial.
-  Sem `--topic`, o título também serve de assunto para compatibilidade. Os
-  caminhos AI/TUI/queue ainda usam `idea` como string.
+- **Entrada do pipeline:** `PipelineInput` é a autoridade para tópico,
+  roteiro opcional e título editorial opcional. `run_pipeline` e o core
+  rejeitam texto sem contrato. CLI/TUI/queue e `from-script` constroem esse
+  valor; a queue ainda persiste seu campo legado `idea` e o adapta na leitura.
+  Em `from-script`, `--topic` alimenta pesquisa/cenas e `--title` alimenta
+  `TitleArtifact` e metadata editorial. Sem `--topic`, o título segue como
+  tópico por compatibilidade.
 - **Plano visual:** `VisualPlan`; não carrega narração nem duplica queries.
 - **Busca:** `SearchPlan`/`SearchQuery`; texto, origem, tipo, variante e nível
   são explícitos. O search planner é o dono da geração.
@@ -244,7 +248,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G79 commitadas; parcial. | G79 separa tópico/título somente em `from-script`; `idea` ainda mistura semântica nos caminhos AI/TUI/queue. `visual.py` ainda compõe tiers, fallback e auditoria; acquisition conserva janela/futures, efeitos de métricas/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G80 commitadas; parcial. | G80 torna a entrada explícita, mas `visual.py` ainda compõe tiers, fallback e auditoria; acquisition conserva janela/futures, efeitos de métricas/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -327,6 +331,11 @@ suíte ampla: **953 passaram, 1 desmarcado** por HTTP 429 da Wikipédia em
 **178,70 s**; compileall e diff check passaram. Replays reais otomano e
 científico e controle pós-separação do tópico estão em
 [relatório G79](20261005-topic-title-separation-and-real-runs.md).
+
+G80: entrada/TUI/log/pipeline/cache/TTS/standby: **64 testes focados passaram**;
+suíte completa: **960 passaram** em **196,40 s**. `compileall` e
+`git diff --check` passaram. Sem execução real de mídia porque a fase altera somente o
+contrato de entrada. Ver [relatório G80](20261005-pipeline-input-contract.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -818,3 +827,19 @@ Os assets científicos foram inspecionados visualmente e eram distintos e
 semanticamente relevantes. O detalhamento de queries, providers, candidatos,
 inspeção e tempos está em
 [relatório G79](20261005-topic-title-separation-and-real-runs.md).
+
+## G80 — entrada explícita do pipeline (`5f3eeb9`)
+
+`PipelineInput(topic, script, display_title)` agora é obrigatório em
+`run_pipeline` e `_run_pipeline`. CLI, TUI e queue constroem o contrato; a
+queue mantém o campo persistido legado `idea` e converte esse valor ao entrar
+no pipeline. `run_script_pipeline` também monta o mesmo contrato. Foram
+removidos os parâmetros paralelos `provided_script`/`display_title` do
+entrypoint geral e a adaptação implícita de `str`; chamadores Python precisam
+construir `PipelineInput`. Tópico/título são normalizados, roteiro é preservado
+verbatim e a estrutura é imutável.
+
+64 testes focados e 960 testes da suíte completa passaram; compileall e diff
+check passaram. A geração real de mídia não foi repetida, pois SearchPlan,
+providers e seleção não mudaram. Detalhes e limites constam no
+[relatório G80](20261005-pipeline-input-contract.md).
