@@ -32,6 +32,11 @@ são rejeitadas antes de completar a shortlist. O gate integral após essa fase
 passou com 891 testes. A validação M87 v3 encontrou duas imagens únicas e uma
 cena sintética, mas não a fotografia observacional específica de M87; o
 relatório registra essa limitação e o gargalo de research/provider.
+O layout e a resolução de projetos agora têm dono em `project_paths.py`; CLI,
+TUI e pipeline compartilham `VideoPaths` frozen para projetos legados e
+`genre/slug`. A suíte após essa migração passou com 892 testes. `finalize` e
+geração ainda compartilham o coordenador `pipeline.py`; a auditoria registra
+essa próxima fronteira de extração.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

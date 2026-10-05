@@ -487,3 +487,21 @@ O tempo total foi 159,93 s, dos quais 81,34 s vieram de pesquisa/grounding e
 esse caso conte duplicação como diversidade; o novo run teve apenas uma imagem
 por cena real, então a validação visual de diversidade intrasscene veio do
 teste determinístico.
+
+## G7: project layout tem um dono independente do pipeline
+
+`VideoPaths`, construção de paths, resolução de referência de projeto e
+listagem estavam definidos dentro de `pipeline.py`, apesar de serem consumidos
+por geração, CLI e TUI. Extraí `project_paths.py` como fonte única e tornei
+`VideoPaths` frozen. CLI/TUI e testes passaram a importar o módulo responsável;
+`pipeline.py` usa o contrato por módulo e não reexporta a API anterior. O
+layout no disco, referências `<genre>/<slug>` e projetos legados planos foram
+preservados. A busca por consumidores antigos encontrou um teste de cache TTS
+que ainda acessava `pipeline.video_paths`; migrei esse último consumidor antes
+do gate final.
+
+Focados da fronteira: 24 passaram antes do reforço frozen; 17 focados passaram
+depois. Suíte final: **892 passed em 194,27 s**; compileall e diff check
+passaram. Esta fase retira ownership de projeto do coordenador, mas geração e
+finalize continuam no `pipeline.py`; a extração do fluxo finalize é próxima
+fronteira independente, depois de mapear seus helpers compartilhados.
