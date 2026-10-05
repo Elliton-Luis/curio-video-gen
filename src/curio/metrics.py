@@ -56,6 +56,7 @@ class RunMetrics:
         self.media_deduplication_time = 0.0
         self.media_queries_count = 0
         self.media_requests_per_provider: dict[str, int] = {}
+        self.media_requests_by_provider_operation: dict[str, dict[str, int]] = {}
         self.media_provider_search_calls: dict[str, int] = {}
         self.media_provider_search_durations: dict[str, list[float]] = {}
         self.media_retries_by_provider: dict[str, int] = {}
@@ -148,11 +149,16 @@ class RunMetrics:
         """Compatibility alias for actual provider request attempts."""
         return self.media_requests_per_provider
 
-    def media_search(self, provider: str) -> None:
-        """Record one wire request attempt, including retried attempts."""
+    def media_search(self, provider: str, operation: str = "search") -> None:
+        """Record one provider HTTP attempt; callers identify its API operation."""
+        operation_key = (operation if operation in {"search", "metadata"}
+                         else "unknown")
         with self._lock:
             self.media_requests_per_provider[provider] = (
                 self.media_requests_per_provider.get(provider, 0) + 1)
+            by_operation = self.media_requests_by_provider_operation.setdefault(
+                provider, {"search": 0, "metadata": 0, "unknown": 0})
+            by_operation[operation_key] += 1
 
     def media_provider_search(self, provider: str, elapsed_seconds: float) -> None:
         """Record one adapter invocation; elapsed includes retries/backoff."""
@@ -641,6 +647,9 @@ class RunMetrics:
                     "searches": dict(self.media_searches),
                     "logical_queries": self.media_queries_count,
                     "provider_requests": dict(self.media_requests_per_provider),
+                    "provider_requests_by_operation": {
+                        provider: dict(counts) for provider, counts in
+                        self.media_requests_by_provider_operation.items()},
                     "downloads": self.media_downloads,
                     "bytes": self.media_bytes,
                     "download_cache_hits": self.media_cache_hits,
@@ -687,7 +696,10 @@ class RunMetrics:
                     "deduplication_time": round(self.media_deduplication_time, 2),
                     "queries_count": self.media_queries_count,
                     "requests_per_provider": dict(self.media_requests_per_provider),
-                    # Legacy field was never measured at the HTTP attempt boundary.
+                    "requests_by_provider_operation": {
+                        provider: dict(counts) for provider, counts in
+                        self.media_requests_by_provider_operation.items()},
+                    # Retained for consumers; per-request latency is not measured.
                     "time_per_request": None,
                     "results_received": dict(self.media_results_received),
                     "funnel": dict(self.media_funnel),

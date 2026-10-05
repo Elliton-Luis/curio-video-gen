@@ -184,6 +184,16 @@ def _http_get_json(url: str, headers: dict | None = None,
         raise MediaError(f"busca falhou ({exc})") from exc
 
 
+def _provider_get_json(url: str, provider: str, metrics=None,
+                       operation: str = "search",
+                       headers: dict | None = None,
+                       timeout: int = TIMEOUT):
+    """Count one API request attempt, including failures, then perform GET."""
+    if metrics is not None:
+        metrics.media_search(provider, operation=operation)
+    return _http_get_json(url, headers=headers, timeout=timeout)
+
+
 class WikimediaProvider(MediaProvider):
     """Wikimedia Commons: sem chave, licença documentada por arquivo."""
 
@@ -502,11 +512,10 @@ class UnsplashProvider(MediaProvider):
             "content_filter": "high",
         }
         url = self.API + "?" + urllib.parse.urlencode(params)
-        if metrics is not None:
-            metrics.media_search(self.name)
         try:
-            data = _http_get_json(
-                url, {"Authorization": f"Client-ID {self.key}"})
+            data = _provider_get_json(
+                url, self.name, metrics, headers={
+                    "Authorization": f"Client-ID {self.key}"})
         except MediaError as exc:
             raise MediaError(f"unsplash: {exc}") from exc
         assets = []
@@ -563,10 +572,8 @@ class NASAProvider(MediaProvider):
         params = {"q": query, "media_type": "image",
                   "page_size": str(min(limit, 20))}
         url = self.API + "?" + urllib.parse.urlencode(params)
-        if metrics is not None:
-            metrics.media_search(self.name)
         try:
-            data = _http_get_json(url)
+            data = _provider_get_json(url, self.name, metrics)
         except MediaError as exc:
             raise MediaError(f"nasa: {exc}") from exc
         assets = []
@@ -575,7 +582,7 @@ class NASAProvider(MediaProvider):
             nasa_id = str(info.get("nasa_id", "")).strip()
             if not nasa_id:
                 continue
-            file_url = self._pick_file(item.get("href", ""))
+            file_url = self._pick_file(item.get("href", ""), metrics=metrics)
             if not file_url:
                 continue
             center = str(info.get("center", "")).strip().upper()
@@ -609,12 +616,13 @@ class NASAProvider(MediaProvider):
         return assets
 
     @staticmethod
-    def _pick_file(manifest_url: str) -> str:
+    def _pick_file(manifest_url: str, metrics=None) -> str:
         """Escolhe um JPG do manifesto do item (evita TIFF original gigante)."""
         if not manifest_url:
             return ""
         try:
-            files = _http_get_json(manifest_url)
+            files = _provider_get_json(
+                manifest_url, "nasa", metrics, operation="metadata")
         except MediaError:
             return ""
         if not isinstance(files, list):
@@ -645,17 +653,18 @@ class MetMuseumProvider(MediaProvider):
 
     def search(self, query: str, limit: int = 5, metrics=None) -> list[MediaAsset]:
         try:
-            data = _http_get_json(
-                self.API + "/search?" + urllib.parse.urlencode({"q": query}))
+            data = _provider_get_json(
+                self.API + "/search?" + urllib.parse.urlencode({"q": query}),
+                self.name, metrics)
         except MediaError as exc:
             raise MediaError(f"met: {exc}") from exc
         ids = [i for i in (data.get("objectIDs") or []) if i]
-        if metrics is not None:
-            metrics.media_search(self.name)
         assets = []
         for object_id in ids[:max(1, limit * 2)]:
             try:
-                obj = _http_get_json(f"{self.API}/objects/{object_id}")
+                obj = _provider_get_json(
+                    f"{self.API}/objects/{object_id}", self.name, metrics,
+                    operation="metadata")
             except MediaError:
                 continue  # um objeto falhou: tenta o próximo, nunca aborta
             if not obj.get("isPublicDomain"):
@@ -708,11 +717,11 @@ class ArtInstituteProvider(MediaProvider):
             "page[limit]": str(min(max(1, limit * 2), 20)),
         }
         try:
-            data = _http_get_json(self.API + "?" + urllib.parse.urlencode(params))
+            data = _provider_get_json(
+                self.API + "?" + urllib.parse.urlencode(params),
+                self.name, metrics)
         except MediaError as exc:
             raise MediaError(f"aic: {exc}") from exc
-        if metrics is not None:
-            metrics.media_search(self.name)
         assets = []
         for item in (data.get("data") or [])[:max(1, limit * 2)]:
             if not isinstance(item, dict):

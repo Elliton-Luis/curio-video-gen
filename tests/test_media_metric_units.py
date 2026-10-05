@@ -34,8 +34,10 @@ def test_search_counters_are_distinct_logical_calls_requests_and_retries():
 
     # Legacy output name aliases one mutable provider-request counter.
     metrics.media_search("wikimedia")
+    metrics.media_search("met", operation="metadata")
+    metrics.media_search("met", operation="metadata")
     assert metrics.media_searches is metrics.media_requests_per_provider
-    assert metrics.media_searches == {"wikimedia": 1}
+    assert metrics.media_searches == {"wikimedia": 1, "met": 2}
 
     metrics.media_record_retry("wikimedia", operation="search")
     metrics.media_record_retry("wikimedia", operation="download")
@@ -51,6 +53,13 @@ def test_search_counters_are_distinct_logical_calls_requests_and_retries():
     assert media["retries_by_operation"] == metrics.media_retries_by_operation
     assert media["retries_by_provider_operation"] == (
         metrics.media_retries_by_provider_operation)
+    assert media["provider_requests"] == {"wikimedia": 1, "met": 2}
+    assert media["provider_requests_by_operation"] == {
+        "wikimedia": {"search": 1, "metadata": 0, "unknown": 0},
+        "met": {"search": 0, "metadata": 2, "unknown": 0},
+    }
+    assert media["requests_by_provider_operation"] == (
+        media["provider_requests_by_operation"])
 
 
 def test_provider_search_timing_measures_one_adapter_call():

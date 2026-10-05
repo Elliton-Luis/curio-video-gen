@@ -351,7 +351,11 @@ finalize e rerender usam adaptador nomeado do `media.json` histórico, sem fingi
 que os metadados editoriais legados foram validados. `Chapter` é adaptado ao
 reabrir projetos salvos; não participa da escolha de segmentos no render.
 No consumo de mídia, `logical_queries`, `provider_requests` e
-`provider_search_calls` têm unidades próprias; retries são separados e o tempo
+`provider_search_calls` têm unidades próprias; `provider_requests` conta
+tentativas HTTP de API, inclusive falhas e lookups de metadata, com detalhe em
+`provider_requests_by_operation`/`requests_by_provider_operation` (`search`,
+`metadata`, `unknown`). O nome legado `searches` continua como alias
+agregado. Retries são separados e o tempo
 de adapter inclui seus retries/backoff. `download_durations` mede a cadeia
 remota de cada asset, retries/fallback incluídos; `downloads_time` soma essas
 cadeias e pode exceder tempo de parede quando downloads sobrepõem. A duração

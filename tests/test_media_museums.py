@@ -91,6 +91,42 @@ def test_met_object_failure_does_not_abort_search():
     assert [a.asset_id for a in assets] == ["2"]
 
 
+def test_met_counts_every_search_and_object_request_attempt():
+    prov = P.MetMuseumProvider()
+    metrics = RunMetrics("test", "caesar", "ai")
+
+    def fake_get(url, headers=None, timeout=30):
+        if "/search?" in url:
+            return {"objectIDs": [1, 2]}
+        if url.endswith("/objects/1"):
+            raise P.MediaError("HTTP 500")
+        return _met_object(object_id=2)
+
+    with patch.object(P, "_http_get_json", side_effect=fake_get):
+        assets = prov.search("caesar", limit=5, metrics=metrics)
+
+    media = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+    assert [asset.asset_id for asset in assets] == ["2"]
+    assert media["provider_requests"] == {"met": 3}
+    assert media["provider_requests_by_operation"]["met"] == {
+        "search": 1, "metadata": 2, "unknown": 0}
+
+
+def test_museum_failed_search_request_is_counted_before_error():
+    metrics = RunMetrics("test", "caesar", "ai")
+    prov = P.ArtInstituteProvider()
+
+    with patch.object(P, "_http_get_json",
+                      side_effect=P.MediaError("HTTP 500")):
+        with pytest.raises(P.MediaError, match="aic:"):
+            prov.search("caesar", metrics=metrics)
+
+    media = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+    assert media["provider_requests"] == {"aic": 1}
+    assert media["provider_requests_by_operation"]["aic"] == {
+        "search": 1, "metadata": 0, "unknown": 0}
+
+
 def test_aic_accepts_only_public_domain_with_image_id():
     prov = P.ArtInstituteProvider()
     payload = {"data": [_aic_item(),
