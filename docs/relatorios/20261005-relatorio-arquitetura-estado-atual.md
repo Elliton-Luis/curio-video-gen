@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G71.
+**Escopo:** auditoria documentada e migrações incrementais até G72.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -89,6 +89,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `1d1335f` | Manteve `SelectedAsset` tipado em candidatos de reuso cross-scene até decidir o donor (G69). |
 | `dd19b24` | Introduziu `RankedSelectionCandidate` e tipou `SelectionPool`; CLIP atualiza evidência imutável e auditoria associa rejeições pós-aquisição por identidade (G70). |
 | `d8dace3` | Faz `make_selection_decision` consumir `SelectedAsset` com query, origem e representação tipadas (G71). |
+| `ec61c65` | Mantém os assets escolhidos como `SelectedAsset` até a projeção para auditoria e persistência (G72). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -132,7 +133,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G71
+## Arquivos alterados nas fases G57–G72
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -214,7 +215,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G71 commitadas; parcial. | `visual.py` ainda orquestra várias fases e projeta para rows mutáveis antes do restante do lifecycle de aquisição, dedupe, fallback e persistência; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G72 commitadas; parcial. | `visual.py` ainda orquestra várias fases e projeta candidatos em rows mutáveis durante aquisição; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -271,6 +272,9 @@ Não houve geração real nesta fase.
 G71: **88 testes focados passaram**; a suíte ampla passou com **940 testes e 1
 excluído** por HTTP 429 da Wikipédia em 179,44 s. Compileall e diff check
 passaram. Não houve geração real nesta fase.
+G72: bateria de seleção visual, auditoria, integração/pipeline: **99 testes**;
+suíte ampla: **940 passaram, 1 excluído** por HTTP 429 da Wikipédia em 179,23 s.
+Compileall e diff check passaram; sem geração real.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -624,3 +628,23 @@ mas as rows de candidatos continuam existindo até auditoria e serialização. O
 próximo lifecycle não resolvido segue sendo download/hash/seleção em
 `visual.py`; G71 deixa explícito apenas que a decisão final consome o resultado
 tipado, não a row.
+
+
+## G72 — manter seleção tipada até a projeção (`ec61c65`)
+
+Em G71, o coordenador convertia os rows escolhidos para `SelectedAsset` somente
+no instante de criar `SelectionDecision` e continuava tratando `picked` como
+dict até então. G72 move a fronteira: cada asset real aprovado, fallback
+sintético e reuso tardio passa a entrar em `picked` já como `SelectedAsset`.
+Decisão, nível/razão de fallback, deteção de sintético e query da seleção usam o
+tipo; `to_dict()` ocorre apenas para `candidate_audit_rows` e o retorno no schema
+persistido. O loop pré-seleção continua editando a row transitória porque ainda
+acumula fatos de download, hash, order e reuse reason.
+
+Arquivos: `src/curio/stages/visual.py`. Os 99 testes focados cobrindo seleção,
+direção visual, pipeline e auditoria passaram; a suíte ampla passou com **940
+testes e 1 excluído** por HTTP 429 da Wikipédia em 179,23 s; compileall e diff
+check passaram. Não houve geração real. Esta fase reduz o lifecycle mutável dos
+selecionados; ainda não extrai do coordenador a aquisição dos candidatos nem
+tipa os outcomes de rejeição. Ver o
+[relatório G72](20261005-selected-media-through-boundary.md).
