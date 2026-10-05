@@ -53,12 +53,34 @@ class SelectionDecision:
             raise ValueError("selection decision scene_id must be positive")
         if self.status not in {"real", "reused", "synthetic", "none"}:
             raise ValueError(f"unknown selection status: {self.status}")
-        if self.status != "none" and not self.asset_id:
-            raise ValueError("selected visual must include asset identity")
+        for field_name in ("asset_id", "provider", "query", "query_source",
+                           "representation", "fallback_level", "reuse_reason",
+                           "reason"):
+            if not isinstance(getattr(self, field_name), str):
+                raise TypeError(f"selection decision {field_name} must be text")
+        if not self.fallback_level.strip():
+            raise ValueError("selection decision must declare fallback level")
+        if self.status == "none":
+            if self.asset_id or self.provider or self.reuse_reason:
+                raise ValueError("none selection cannot carry a selected asset")
+        else:
+            if not self.asset_id or not self.provider:
+                raise ValueError("selected visual must include asset identity and provider")
+        if self.status == "reused" and not self.reuse_reason.strip():
+            raise ValueError("reused selection must explain reuse")
+        if self.status != "reused" and self.reuse_reason:
+            raise ValueError("only reused selection may carry reuse reason")
+        if self.status == "synthetic" and self.provider != "synth":
+            raise ValueError("synthetic selection must use synth provider")
+        if self.status in {"real", "reused"} and self.provider == "synth":
+            raise ValueError("real selection cannot use synth provider")
         if not self.reason.strip():
             raise ValueError("selection decision must explain its outcome")
-        if self.score is not None and not isfinite(self.score):
-            raise ValueError("selection score must be finite")
+        if self.score is not None and (
+                isinstance(self.score, bool)
+                or not isinstance(self.score, (int, float))
+                or not isfinite(self.score) or not 0 <= self.score <= 100):
+            raise ValueError("selection score must be finite and within 0..100")
 
     def to_dict(self) -> dict:
         return {
@@ -77,7 +99,7 @@ class SelectionDecision:
 
     @classmethod
     def from_dict(cls, value: dict) -> "SelectionDecision":
-        """Validate the persisted decision at a consumer boundary."""
+        """Load persisted decisions; old records have unknown fallback level."""
         if not isinstance(value, dict):
             raise TypeError("selection decision must be an object")
         scene_id = value.get("scene_id")
@@ -89,6 +111,9 @@ class SelectionDecision:
                 score = float(score)
             except (TypeError, ValueError) as exc:
                 raise ValueError("selection score must be numeric or null") from exc
+        fallback_level = value.get("fallback_level") or "unknown"
+        if not isinstance(fallback_level, str):
+            raise TypeError("selection fallback_level must be text")
         return cls(
             scene_id=scene_id,
             status=str(value.get("status", "")),
@@ -98,7 +123,7 @@ class SelectionDecision:
             query_source=str(value.get("query_source", "")),
             representation=str(value.get("representation", "")),
             score=score,
-            fallback_level=str(value.get("fallback_level", "")),
+            fallback_level=fallback_level,
             reuse_reason=str(value.get("reuse_reason", "")),
             reason=str(value.get("reason", "")),
         )
@@ -180,8 +205,8 @@ def apply_manual_swap(media_rows: list[dict], scene_id: int,
     else:
         target.pop("reused_from", None)
 
-    status = ("synthetic" if provider == "synth" else
-              "reused" if reused_from else "real")
+    status = ("reused" if reused_from else
+              "synthetic" if provider == "synth" else "real")
     score = updated_entry.get("score")
     if score is not None:
         score = float(score)

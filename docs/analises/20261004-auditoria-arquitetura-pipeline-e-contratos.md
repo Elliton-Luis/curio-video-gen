@@ -587,6 +587,17 @@ partições. Isso faz o evaluator declarar um resultado coerente antes de o
 seletor decidir. Não muda scores nem threshold. Ver
 `20261005-evaluation-result-invariants.md`.
 
+## G55 — estados de seleção internamente coerentes
+
+`SelectionDecision` já exigia motivo e identidade selecionada, mas não
+reconciliava status, provider e fallback: era possível persistir uma seleção
+sintética de provider real, ou reuso sem motivo de reuso. O contrato agora
+exige fallback declarado para todos os estados, provider/asset para selecionados,
+`provider=synth` exclusivamente para estado sintético, e `reuse_reason` somente
+no estado reused. Scores também são validados no intervalo 0–100. Reuso manual
+de asset sintético reporta estado `reused` (provider preserva `synth`). Ver
+`20261005-selection-decision-invariants.md`.
+
 Validação pós-G54: `20261005-pos-g54-validacao.md` repete rerenders salvos em
 história e ciência com o código atual e inspeciona os pixels selecionados.
 Compatibilidade e render estão preservados; a falha editorial de Mohács segue

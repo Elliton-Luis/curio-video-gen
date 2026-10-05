@@ -108,6 +108,7 @@ def test_live_media_result_uses_typed_metrics_input_and_missing_scene_is_unknown
             "scene_id": 1, "status": "real", "asset_id": "asset-1",
             "provider": "wikimedia", "reason": "specific visual"}},
     }], "provider")
+    assert result.scenes[0].decision.fallback_level == "unknown"
     metrics = RunMetrics("test", "topic", "ai")
     with pytest.raises(TypeError, match="MediaMetricsInput"):
         metrics.visual_plan((TimelineSpan(1, 2, 0, 2),), [], 2)

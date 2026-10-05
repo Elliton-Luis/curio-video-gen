@@ -64,9 +64,23 @@ def test_selection_decision_explains_all_outcomes(picked, fallback, status):
 
 def test_selected_decision_requires_identity_and_reason():
     with pytest.raises(ValueError, match="asset identity"):
-        SelectionDecision(scene_id=1, status="real", reason="selected")
+        SelectionDecision(scene_id=1, status="real", fallback_level="specific",
+                          reason="selected")
     with pytest.raises(ValueError, match="explain"):
-        SelectionDecision(scene_id=1, status="none")
+        SelectionDecision(scene_id=1, status="none", fallback_level="exhausted")
+
+
+def test_selection_decision_rejects_contradictory_state_and_missing_fallback():
+    with pytest.raises(ValueError, match="declare fallback level"):
+        SelectionDecision(scene_id=1, status="none", reason="no asset")
+    with pytest.raises(ValueError, match="reuse"):
+        SelectionDecision(scene_id=1, status="reused", asset_id="a",
+                          provider="wikimedia", fallback_level="reused",
+                          reason="selected")
+    with pytest.raises(ValueError, match="synth provider"):
+        SelectionDecision(scene_id=1, status="synthetic", asset_id="a",
+                          provider="wikimedia", fallback_level="synthetic",
+                          reason="synthetic")
 
 
 def test_cross_scene_reuse_prefers_scene_relevance_then_nearest_donor():
@@ -116,7 +130,8 @@ def test_cross_scene_reuse_updates_the_selection_contract():
         ]}),
         {"chapter_id": 2, "asset": None, "assets": [],
          "visual_decision": {"selection": SelectionDecision(
-             2, "none", reason="no candidate").to_dict()}},
+             2, "none", fallback_level="exhausted",
+             reason="no candidate").to_dict()}},
     ]
 
     _resolve_reuse_multi(media_scenes, scenes)

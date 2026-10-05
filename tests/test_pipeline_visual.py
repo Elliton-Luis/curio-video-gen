@@ -176,9 +176,10 @@ def test_media_stage_rejects_mismatched_selection_and_asset():
              "asset": {"provider": "wikimedia", "asset_id": "chosen"},
              "assets": [{"asset": {"provider": "wikimedia",
                                      "asset_id": "chosen"}}],
-             "visual_decision": {"selection": {
-                 "scene_id": 2, "status": "real", "asset_id": "chosen",
-                 "provider": "wikimedia", "reason": "selected"}}}
+                 "visual_decision": {"selection": {
+                     "scene_id": 2, "status": "real", "asset_id": "chosen",
+                     "provider": "wikimedia", "fallback_level": "specific",
+                     "reason": "selected"}}}
     with pytest.raises(ValueError, match="another scene"):
         MediaStageResult.from_rows([scene], "provider")
 
@@ -189,6 +190,7 @@ def test_selection_decision_roundtrip_validates_identity():
 
     decision = SelectionDecision(
         scene_id=3, status="real", asset_id="asset-3", provider="met",
+        fallback_level="specific",
         reason="fresh candidate passed gates")
     assert SelectionDecision.from_dict(decision.to_dict()) == decision
     broken = decision.to_dict()
