@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G93 e métricas até F14.
-**Estado:** trabalho incompleto. G80–G93 e F4–F14 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G94 e métricas até F14.
+**Estado:** trabalho incompleto. G80–G94 e F4–F14 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -13,8 +13,8 @@ altera `src/curio/media/render_usage.py`, `src/curio/pipeline_render.py` e
 suíte completa passou com 1009 testes após a mudança. Este relatório registra
 o fechamento documental dessa alteração.
 
-> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G93
-> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`, `38b892e`) foram
+> **Atualização:** F6–F14 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`, `7bc5c23`, `94119e3`, `8daa29f`) e G86–G94
+> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`, `38b892e`, `60703ae`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -146,6 +146,7 @@ hashes e diffs.
 | `94119e3` | Marca segmento visual reutilizado do cache, sem afirmar nova codificação (F14). |
 | `8daa29f` | Nomeia identidades dos assets associados ao segmento sem afirmar que foram decodificados pelo FFmpeg (F14). |
 | `38b892e` | Aplica prioridade de providers por cena a partir do `VisualPlan` individual (G93). |
+| `60703ae` | Passa à busca os mesmos `VisualPlan` e `SearchPlan` usados no preparo por cena (G94). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -359,11 +360,11 @@ pixels aparecem no MP4. Esse delta ficou limitado a
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F14 parciais. | Requests, lifecycle timers, profile por suboperação e validação dos frames após FFmpeg permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G93 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G94 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G93/F14. Não representam
+Os status são os registrados na auditoria e neste relatório até G94/F14. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -613,6 +614,23 @@ passaram. Não houve geração real, então disponibilidade, latência e qualida
 editorial de providers atuais continuam pendentes. Ver
 [relatório G93](20261005-provider-priority-per-scene.md).
 
+## G94 — planos canônicos encaminhados à busca (`60703ae`)
+
+Depois de G93, a prioridade de provider era calculada com um plano, enquanto
+`_search_scene_with_shortcircuit()` reconstruía outro plano para fazer as
+queries. G94 moveu a construção dos dois planos para o loop por cena e passa
+`VisualPlan` e `SearchPlan` ao consumidor. A busca valida seus tipos e rejeita
+planos de outra cena. O mesmo VisualPlan alimenta política de provider e query
+planning; o timer `media_query_generation_time` continua cobrindo ambos.
+Fixtures de teste que chamavam o helper foram atualizadas para fornecer os
+contratos explicitamente.
+
+Arquivos: `src/curio/stages/visual.py`,
+`tests/test_support/media_scene_search.py` e `tests/test_pipeline_visual.py`.
+138 focados, **1011 testes completos em 189,64 s**, compileall e diff check
+passaram. Sem geração real nesta fase. Ver
+[relatório G94](20261005-canonical-scene-search-plans.md).
+
 ## F9 — projeção única das métricas de seleção (`ed34825`)
 
 `consumption.media` agora projeta contagens de asset real, único, reutilizado,
@@ -721,6 +739,7 @@ passaram. Não houve geração real. Consulte
 - [`G91 — outcomes de aquisição tipados`](20261005-typed-acquisition-rejections.md)
 - [`G92 — projeções de rejeição tipadas`](20261005-typed-rejection-projections.md)
 - [`G93 — prioridade de providers por cena`](20261005-provider-priority-per-scene.md)
+- [`G94 — planos canônicos na busca por cena`](20261005-canonical-scene-search-plans.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)

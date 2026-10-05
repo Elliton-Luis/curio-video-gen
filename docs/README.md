@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261005-canonical-scene-search-plans.md` — G94: busca consome os VisualPlan/SearchPlan canônicos da cena; suíte completa: 1011 testes.
 - `relatorios/20261005-provider-priority-per-scene.md` — G93: aplica a prioridade de providers por cena, preservando a política do VisualPlan; suíte completa: 1010 testes.
 - `relatorios/20261005-renderer-input-asset-usage.md` — F14: registra assets associados aos segmentos, ausências e fallbacks por cena; suíte completa: 1009 testes.
 - `relatorios/20261005-selection-render-reconciliation.md` — F13: compara identidade selecionada e identidade usada na timeline; suíte completa: 1006 testes.
@@ -20,8 +21,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-typed-candidate-evaluation-audit.md` — G89: `CandidateEvaluation` permanece tipada até a projeção da auditoria; suíte completa: 995 testes.
 - `relatorios/20261005-visual-decision-audit-owner.md` — G88: `visual_audit.py` valida contratos tipados e monta a decisão visual; suíte completa: 994 testes.
 - `relatorios/20261005-relatorio-parada-e-estado-do-trabalho.md` — snapshot completo do pedido de parada: arquitetura, commits, diff local G88, contratos, testes confirmados/não confirmados, regressões, fases e pendências.
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G93/F14: arquitetura, contratos, fases, validações, regressões e pendências.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G93/F14: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G94/F14: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G94/F14: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
 - `relatorios/20261005-live-metric-total-duration.md` — F8: `processing_time_seconds` é a fonte canônica da duração total live publicada nas métricas.
 - `relatorios/20261005-selection-provenance-owner.md` — G87: seleção classifica esgotamento e nível de fallback de plans e auditoria tipados.
 - `relatorios/20261005-selection-fallback-policy.md` — G86: seleção decide explicitamente a próxima tier contextual, sintética, reuso ou ausência.
