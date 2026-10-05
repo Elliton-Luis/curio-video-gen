@@ -672,3 +672,20 @@ O teste de seleção cobre a precedência por relevância, distância e desempat
 centraliza uma decisão de política, mas não consolida ainda a seleção
 sequencial e o late reuse em um único workflow; aquisição/fallback continuam
 coordenados em `visual.py`.
+
+## G16: projeção de auditoria dos candidatos sai da aquisição
+
+`_search_scene_with_shortcircuit` montava linhas de auditoria de candidatos
+junto da busca, download e escolha. Extraí a projeção pura para
+`visual_audit.candidate_audit_rows`: recebe avaliações, rejeições, seleção,
+níveis de representação e threshold já decididos, e apenas serializa a razão
+observável. Não chama scoring nem modifica candidatos/seleção. A montagem do
+relatório completo por cena continua na coordenação de `visual.py`, que ainda
+agrega resultados de provider e estado de fallback.
+
+Dois testes cobrem seleção/reuso, rejeição semântica, threshold e eliminação
+de linha duplicada. 59 testes focados passaram; a suíte integral passou com
+**896 testes em 176,37 s**; compileall e diff check passaram. Código em
+`155e6af`. O módulo visual ficou 51 linhas menor, mas permanece um coordenador
+grande; esta extração é uma fronteira de responsabilidade, não uma conclusão
+da migração da aquisição.

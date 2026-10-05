@@ -66,6 +66,9 @@ O late reuse agora delega a ordenação de doadores a `media_selection` usando
 evidência semântica já calculada; 894 testes passaram na suíte integral. A
 coordenação dos dois caminhos de reuse e da aquisição/fallback ainda está
 registrada como trabalho arquitetural restante.
+A projeção das decisões de candidatos foi separada para `visual_audit.py`;
+59 testes focados e 896 testes integrais passaram. `visual.py` ainda agrega
+aquisição, seleção e fallback, em migração incremental.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
