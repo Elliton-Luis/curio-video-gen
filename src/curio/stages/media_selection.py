@@ -8,6 +8,8 @@ from dataclasses import dataclass, replace
 from math import isfinite
 from typing import TYPE_CHECKING
 
+from ..media.asset_snapshot import MediaAssetSnapshot
+from .media_contracts import CandidateEvaluation
 from .scene_contract import SemanticScene
 
 if TYPE_CHECKING:
@@ -16,9 +18,79 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class RankedSelectionCandidate:
+    """Typed candidate state between evaluation, optional CLIP, and selection.
+
+    The asset snapshot may include a local path prepared for CLIP; the mutable
+    ``MediaAsset`` used by the download implementation never crosses this
+    contract. JSON rows are projected only when the coordinator enters the
+    remaining legacy acquisition loop.
+    """
+
+    evaluation: CandidateEvaluation
+    asset: MediaAssetSnapshot
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evaluation, CandidateEvaluation):
+            raise TypeError("ranked selection candidate requires CandidateEvaluation")
+        if not self.evaluation.accepted:
+            raise ValueError("ranked selection candidate must have passed evaluation")
+        if not isinstance(self.asset, MediaAssetSnapshot):
+            raise TypeError("ranked selection candidate requires an asset snapshot")
+
+    @classmethod
+    def from_evaluation(cls, evaluation: CandidateEvaluation
+                        ) -> "RankedSelectionCandidate":
+        if not isinstance(evaluation, CandidateEvaluation):
+            raise TypeError("ranked selection requires CandidateEvaluation")
+        return cls(evaluation, evaluation.candidate.asset)
+
+    @property
+    def score(self) -> float:
+        return self.evaluation.score
+
+    @property
+    def generic(self) -> bool:
+        return self.evaluation.candidate.search_query.generic
+
+    @property
+    def order(self) -> int:
+        return self.evaluation.order
+
+    @property
+    def clip_score(self) -> float | None:
+        value = self.evaluation.evidence.get("clip")
+        return float(value) if value is not None else None
+
+    def with_prepared_asset(self, asset: MediaAssetSnapshot
+                            ) -> "RankedSelectionCandidate":
+        return replace(self, asset=asset)
+
+    def with_clip_score(self, clip_score: float, asset: MediaAssetSnapshot
+                        ) -> "RankedSelectionCandidate":
+        return replace(self,
+                       evaluation=self.evaluation.with_clip_score(clip_score),
+                       asset=asset)
+
+    def to_selection_entry(self) -> dict:
+        entry = self.evaluation.to_selection_entry()
+        entry["asset"] = self.asset.to_dict()
+        if self.clip_score is not None:
+            entry["clip_score"] = self.clip_score
+        return entry
+
+
+@dataclass(frozen=True)
 class SelectionPool:
-    fresh: tuple[dict, ...]
-    reused: tuple[dict, ...]
+    fresh: tuple[RankedSelectionCandidate, ...]
+    reused: tuple[RankedSelectionCandidate, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fresh, tuple) or not isinstance(self.reused, tuple):
+            raise TypeError("selection pool members must be tuples")
+        if any(not isinstance(item, RankedSelectionCandidate)
+               for item in (*self.fresh, *self.reused)):
+            raise TypeError("selection pool requires ranked selection candidates")
 
 
 @dataclass(frozen=True)
@@ -238,20 +310,23 @@ def apply_manual_swap(media_rows: list[dict], scene_id: int,
                             reused_from)
 
 
-def prepare_selection_pool(ranked: list[dict], asset_uses: dict | None,
+def prepare_selection_pool(ranked: list[RankedSelectionCandidate],
+                           asset_uses: dict | None,
                            identity_of) -> SelectionPool:
     """Prefer fresh assets without modifying relevance scores or rank."""
+    if any(not isinstance(item, RankedSelectionCandidate) for item in ranked):
+        raise TypeError("selection pool requires ranked selection candidates")
     fresh, reused = [], []
     for entry in ranked:
-        key = identity_of(entry["asset"])
+        key = identity_of(entry.asset.to_dict())
         if asset_uses is not None and key and asset_uses.get(key, 0):
             reused.append(entry)
         else:
             fresh.append(entry)
     if asset_uses is not None:
         fresh.sort(key=lambda entry: (
-            -entry.get("score", 0), bool(entry.get("generic")),
-            asset_uses.get(identity_of(entry["asset"]), 0)))
+            -entry.score, entry.generic,
+            asset_uses.get(identity_of(entry.asset.to_dict()), 0)))
     return SelectionPool(tuple(fresh), tuple(reused))
 
 

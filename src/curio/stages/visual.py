@@ -32,6 +32,7 @@ import time
 from typing import TYPE_CHECKING
 
 from ..config import CurioConfig
+from ..media.asset_snapshot import MediaAssetSnapshot
 from ..media.providers import (
     MediaAsset,
     MediaError,
@@ -46,6 +47,7 @@ from .search_planning import build_search_plan
 from .candidate_evaluation import (describe_technical_rejections,
                                   evaluate_generic, evaluate_specific)
 from .media_selection import (annotate_reuse, make_selection_decision,
+                              RankedSelectionCandidate,
                               prepare_selection_pool, record_asset_usage,
                               resolve_cross_scene_reuse)
 from .media_selection import SelectionDecision
@@ -204,15 +206,18 @@ def _search_scene_with_shortcircuit(
          if not candidate.search_query.generic], ch, min_score)
     if metrics:
         metrics.media_selection_time += time.monotonic() - score_started
+    specific_ranked = [RankedSelectionCandidate.from_evaluation(item)
+                       for item in specific_result.accepted]
     specific = [item.to_selection_entry() for item in specific_result.accepted]
     low_specific = [item.to_selection_entry() for item in specific_result.rejected]
     evaluated_entries = [*specific, *low_specific]
-    fresh_specific = [entry for entry in specific
+    fresh_specific = [entry for entry in specific_ranked
                       if not asset_uses or not asset_uses.get(
-                          _selection_asset_key(entry["asset"]), 0)]
-    deferred_specific = [entry for entry in specific if entry not in fresh_specific]
+                          _selection_asset_key(entry.asset.to_dict()), 0)]
+    deferred_specific = [entry for entry in specific_ranked
+                         if entry not in fresh_specific]
     if fresh_specific:
-        ranked, low = specific, low_specific
+        ranked_candidates, low = specific_ranked, low_specific
     else:
         collection = collector.collect(generic_queries, phase_budget)
         candidates = list(collection.candidates)
@@ -222,44 +227,47 @@ def _search_scene_with_shortcircuit(
              if candidate.search_query.generic], ch, min_score)
         if metrics:
             metrics.media_selection_time += time.monotonic() - score_started
-        ranked = [item.to_selection_entry() for item in generic_result.accepted]
+        ranked_candidates = [RankedSelectionCandidate.from_evaluation(item)
+                             for item in generic_result.accepted]
+        generic_entries = [item.to_selection_entry()
+                           for item in generic_result.accepted]
         low_generic = [item.to_selection_entry() for item in generic_result.rejected]
-        evaluated_entries.extend([*ranked, *low_generic])
+        evaluated_entries.extend([*generic_entries, *low_generic])
         low = low_specific + low_generic
         # Preserve qualified used results solely for the final fallback after
         # fresh contextual results and synthetic visuals have been tried.
-        ranked.extend(deferred_specific)
+        ranked_candidates.extend(deferred_specific)
     collection = collector.snapshot()
     rejected = list(describe_technical_rejections(collection.rejected, ch))
-    if scoring.clip_enabled(cfg) and ranked:
+    if scoring.clip_enabled(cfg) and ranked_candidates:
         status = scoring.clip_status(cfg) or ""
         if "habilitada (" in status:
-            shortlist = ranked[:max(1, min(max_images * 2, 10))]
+            shortlist_size = max(1, min(max_images * 2, 10))
             clip_applied = False
-            for entry in shortlist:
+            for index in range(min(shortlist_size, len(ranked_candidates))):
+                entry = ranked_candidates[index]
                 try:
                     downloaded = media_acquisition.download_media(
-                        MediaAsset.from_dict(entry["asset"]),
+                        MediaAsset.from_dict(entry.asset.to_dict()),
                         cfg.cache_dir, metrics)
                     asset = downloaded.asset
                     if not media_acquisition.downloaded_dimensions_valid(asset):
                         continue
-                    entry["asset"] = asset.to_dict()
+                    asset_snapshot = MediaAssetSnapshot.from_media_asset(asset)
+                    entry = entry.with_prepared_asset(asset_snapshot)
                     clip_score = scoring.clip_score_image(asset.local_path, ch, cfg)
                 except (MediaError, TypeError, OSError):
                     clip_score = None
                 if clip_score is None:
+                    ranked_candidates[index] = entry
                     continue
                 clip_applied = True
-                entry["clip_score"] = round(clip_score, 4)
-                detail = entry.setdefault("score_detail", {})
-                detail["clip"] = round(clip_score, 4)
-                detail["layers"] = list(dict.fromkeys(detail.get("layers", []) + ["clip"]))
-                entry["score"] = round(entry["score"] * 0.8
-                                        + ((clip_score + 1.0) * 50.0) * 0.2, 2)
-            ranked.sort(key=lambda item: (-item["score"],
-                                          -item.get("score_detail", {}).get("scene_relevance", 0),
-                                          item.get("order", 0)))
+                ranked_candidates[index] = entry.with_clip_score(
+                    clip_score, asset_snapshot)
+            ranked_candidates.sort(key=lambda item: (
+                -item.score,
+                -item.evaluation.evidence.get("scene_relevance", 0),
+                item.order))
             if metrics and clip_applied:
                 metrics.media_layers_used["clip"] = metrics.media_layers_used.get("clip", 0) + 1
                 metrics.media_layer_device = scoring.clip_device(cfg)
@@ -281,9 +289,10 @@ def _search_scene_with_shortcircuit(
             metrics.media_record_asset_rejected()
             metrics.media_record_funnel("score_rejected")
     from .visual_beats import asset_key
-    selection_pool = prepare_selection_pool(ranked, asset_uses, _selection_asset_key)
-    ranked = list(selection_pool.fresh)
-    reused_ranked = list(selection_pool.reused)
+    selection_pool = prepare_selection_pool(
+        ranked_candidates, asset_uses, _selection_asset_key)
+    ranked = [item.to_selection_entry() for item in selection_pool.fresh]
+    reused_ranked = [item.to_selection_entry() for item in selection_pool.reused]
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
@@ -346,7 +355,13 @@ def _search_scene_with_shortcircuit(
                 if future is not None:
                     future.cancel()
                 fill_download_window()
-                entry["rejection_reason"] = f"download failed: {exc}"
+                rejection_reason = f"download failed: {exc}"
+                entry["rejection_reason"] = rejection_reason
+                rejected.append({
+                    "title": asset.title, "query": entry["query"],
+                    "reason": rejection_reason, "provider": asset.provider,
+                    "identity": entry.get("identity", ""),
+                })
                 msg = f"cena {ch.id}: download falhou ({exc})"
                 warnings.append(msg)
                 from ..runlog import event as run_event
@@ -365,7 +380,9 @@ def _search_scene_with_shortcircuit(
             warnings.append(msg)
             rejected.append({"title": asset.title, "query": entry["query"],
                              "reason": "resolução/legibilidade após download",
-                             "provider": asset.provider})
+                             "audit_reason": "resolution/legibility after download",
+                             "provider": asset.provider,
+                             "identity": entry.get("identity", "")})
             if metrics:
                 metrics.media_record_asset_rejected()
                 metrics.media_record_rejection("resolução/legibilidade após download")
@@ -382,6 +399,7 @@ def _search_scene_with_shortcircuit(
             rejected.append({"title": asset.title, "query": entry["query"],
                              "reason": "duplicate content hash",
                              "provider": asset.provider,
+                             "identity": entry.get("identity", ""),
                              "content_identity": content_key})
             if metrics:
                 metrics.media_record_asset_rejected()

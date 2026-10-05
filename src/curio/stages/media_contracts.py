@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from types import MappingProxyType
 
@@ -127,6 +127,19 @@ class CandidateEvaluation:
         if self.rejection_reason:
             entry["rejection_reason"] = self.rejection_reason
         return entry
+
+    def with_clip_score(self, clip_score: float) -> "CandidateEvaluation":
+        """Return the score/evidence adjustment from the optional CLIP layer."""
+        if (isinstance(clip_score, bool) or not isinstance(clip_score, (int, float))
+                or not isfinite(clip_score) or not -1.0 <= clip_score <= 1.0):
+            raise ValueError("CLIP score must be finite and within -1..1")
+        rounded = round(float(clip_score), 4)
+        evidence = _json_value(self.evidence)
+        evidence["clip"] = rounded
+        evidence["layers"] = list(dict.fromkeys(
+            [*evidence.get("layers", []), "clip"]))
+        score = round(self.score * 0.8 + ((clip_score + 1.0) * 50.0) * 0.2, 2)
+        return replace(self, score=score, evidence=evidence)
 
 
 @dataclass(frozen=True)

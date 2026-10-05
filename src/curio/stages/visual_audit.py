@@ -188,6 +188,9 @@ def candidate_audit_rows(
     for entry in evaluated_entries:
         detail = entry.get("score_detail", {})
         asset_data = entry.get("asset") or {}
+        lifecycle_rejection = next((item for item in rejected
+            if entry.get("identity")
+            and item.get("identity") == entry.get("identity")), None)
         selected_item = next((item for item in picked
             if (item.get("asset", {}).get("provider"),
                 item.get("asset", {}).get("asset_id")) ==
@@ -196,7 +199,7 @@ def candidate_audit_rows(
         score = entry.get("score", 0)
         semantic_rejection = detail.get("semantic_rejection")
         is_rejected = bool(entry.get("rejection_reason") or semantic_rejection
-                           or score < min_score)
+                           or lifecycle_rejection or score < min_score)
         if was_selected:
             reason = ("reused only after fresh searches and local visual exhausted"
                       if selected_item.get("reuse_reason") else
@@ -204,6 +207,8 @@ def candidate_audit_rows(
             decision = "selected"
         else:
             reason = (entry.get("rejection_reason") or semantic_rejection or
+                      ((lifecycle_rejection or {}).get("audit_reason")
+                       or (lifecycle_rejection or {}).get("reason")) or
                       ("score below threshold" if score < min_score else
                        "passed gate; ranked below image limit"))
             decision = "rejected" if is_rejected else "not_selected"

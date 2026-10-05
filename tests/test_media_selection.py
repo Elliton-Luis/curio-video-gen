@@ -1,6 +1,7 @@
 import pytest
 
 from curio.stages.media_selection import (
+    RankedSelectionCandidate,
     ReuseCandidate,
     SelectionDecision,
     make_selection_decision,
@@ -12,18 +13,63 @@ from tests.media_test_support import with_selection
 
 
 def test_fresh_candidates_are_separated_before_reuse_without_score_penalty():
+    from curio.media.providers import MediaAsset
+    from curio.stages.media_contracts import Candidate, CandidateEvaluation
+    from curio.stages.visual_contracts import SearchQuery
+
     used = {"asset-old": 7}
-    ranked = [
-        {"asset": {"asset_id": "asset-old"}, "score": 95},
-        {"asset": {"asset_id": "asset-new"}, "score": 61},
-    ]
+    def ranked_candidate(asset_id, score):
+        candidate = Candidate(
+            MediaAsset("fixture", asset_id, title=asset_id),
+            SearchQuery("topic portrait", "scene_representation"),
+            f"fixture:{asset_id}")
+        evaluated = CandidateEvaluation(candidate, score, {}, True)
+        return RankedSelectionCandidate.from_evaluation(evaluated)
+
+    ranked = [ranked_candidate("asset-old", 95),
+              ranked_candidate("asset-new", 61)]
 
     pool = prepare_selection_pool(ranked, used,
                                   lambda asset: asset["asset_id"])
 
-    assert [entry["asset"]["asset_id"] for entry in pool.fresh] == ["asset-new"]
-    assert [entry["asset"]["asset_id"] for entry in pool.reused] == ["asset-old"]
-    assert ranked[0]["score"] == 95
+    assert [entry.asset.asset_id for entry in pool.fresh] == ["asset-new"]
+    assert [entry.asset.asset_id for entry in pool.reused] == ["asset-old"]
+    assert ranked[0].score == 95
+
+
+def test_ranked_selection_candidate_keeps_clip_and_prepared_asset_typed():
+    from curio.media.asset_snapshot import MediaAssetSnapshot
+    from curio.media.providers import MediaAsset
+    from curio.stages.media_contracts import Candidate, CandidateEvaluation
+    from curio.stages.visual_contracts import SearchQuery
+
+    candidate = Candidate(
+        MediaAsset("fixture", "portrait", title="Historical portrait"),
+        SearchQuery("historical portrait", "scene_representation"),
+        "fixture:portrait")
+    ranked = RankedSelectionCandidate.from_evaluation(
+        CandidateEvaluation(candidate, 90, {"layers": ["base"]}, True))
+    prepared = MediaAssetSnapshot.from_media_asset(MediaAsset(
+        "fixture", "portrait", title="Historical portrait",
+        local_path="/cache/portrait.jpg"))
+
+    adjusted = ranked.with_clip_score(0.5, prepared)
+
+    assert ranked.asset.local_path == ""
+    assert ranked.score == 90
+    assert adjusted.asset.local_path == "/cache/portrait.jpg"
+    assert adjusted.score == 87.0
+    assert adjusted.evaluation.evidence["clip"] == 0.5
+    assert adjusted.evaluation.evidence["layers"] == ("base", "clip")
+    row = adjusted.to_selection_entry()
+    assert row["clip_score"] == 0.5
+    assert row["score_detail"]["layers"] == ["base", "clip"]
+
+
+def test_selection_pool_rejects_untyped_candidate_rows():
+    with pytest.raises(TypeError, match="ranked selection candidates"):
+        prepare_selection_pool([{"asset": {"asset_id": "legacy"}}], {},
+                               lambda asset: asset.get("asset_id", ""))
 
 
 def test_asset_usage_links_provider_identity_to_downloaded_content_hash():
