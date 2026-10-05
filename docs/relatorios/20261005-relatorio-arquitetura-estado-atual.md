@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G73.
+**Escopo:** auditoria documentada e migrações incrementais até G74.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -91,6 +91,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `d8dace3` | Faz `make_selection_decision` consumir `SelectedAsset` com query, origem e representação tipadas (G71). |
 | `ec61c65` | Mantém os assets escolhidos como `SelectedAsset` até a projeção para auditoria e persistência (G72). |
 | `7b965a1` | Mantém shortlist e reserva de reuso como `RankedSelectionCandidate` até cada tentativa de aquisição (G73). |
+| `57a9a21` | Modela sucesso/falha técnica por candidato como `CandidateAcquisitionOutcome`, com projeções distintas para seleção e auditoria (G74). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -134,7 +135,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G73
+## Arquivos alterados nas fases G57–G74
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -216,7 +217,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G73 commitadas; parcial. | `visual.py` ainda coordena e atualiza row temporária dentro de cada tentativa de aquisição; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G74 commitadas; parcial. | `visual.py` ainda possui o loop concorrente de aquisição e os side effects de metrics/logging; agora cada resultado individual tem contrato. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -279,6 +280,9 @@ Compileall e diff check passaram; sem geração real.
 G73: a mesma bateria de seleção visual/pipeline/auditoria: **99 testes**;
 suíte ampla: **940 passaram, 1 excluído** por HTTP 429 da Wikipédia em 178,02 s.
 Compileall e diff check passaram; sem geração real.
+G74: bateria focada de seleção, auditoria, direção visual e pipeline:
+**100 passaram**; suíte ampla: **941 passaram, 1 excluído** por HTTP 429 da
+Wikipédia em 172,28 s. Compileall e diff check passaram; sem geração real.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -671,3 +675,27 @@ ainda acumula resultado, rejeição e fields finais dentro da tentativa. A próx
 migração deve modelar essas transições para remover a row temporária sem mover
 política editorial para o downloader. Ver o
 [relatório G73](20261005-ranked-pool-through-acquisition.md).
+
+
+## G74 — outcomes explícitos da aquisição (`57a9a21`)
+
+Antes de G74, o loop de `visual.py` guardava o resultado da tentativa alterando a
+row da avaliação: adicionava rejection reason, asset baixado, aquisição, ordem e
+reuse reason. G74 introduz `CandidateAcquisitionOutcome`, congelado, que leva o
+`RankedSelectionCandidate` e `MediaAssetSnapshot` e valida quatro estados:
+selecionado, falha de download, dimensão inválida e conteúdo duplicado. Sucesso
+projeta para `SelectedAsset`; rejeição projeta uma row de auditoria associada à
+identity original do candidato. O coordenador não altera a row avaliada para
+transportar estes resultados.
+
+A bateria de seleção/direção visual/auditoria/pipeline passou com **100 testes**;
+a suíte ampla passou com **941 e 1 excluído** por HTTP 429 externo em **172,28
+s**. Compileall e diff check passaram. Arquivos: novo
+`src/curio/stages/media_acquisition_contracts.py`, `src/curio/stages/visual.py`
+e `tests/test_media_selection.py`. Sem geração real.
+
+G74 não extraiu o loop: `visual.py` segue dono da janela concorrente, retries /
+timeouts propagados pela aquisição, metrics, logging e ordenação. O próximo passo
+é mover a orquestração para um owner claro que consuma esse contrato, sem colocar
+HTTP/FFmpeg no adapter nem mover relevância para acquisition. Ver o
+[relatório G74](20261005-candidate-acquisition-outcomes.md).

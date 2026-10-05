@@ -7,11 +7,12 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — relatório consolidado da refatoração: arquitetura antes/depois, commits G57–G73, contratos, arquivos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — relatório consolidado da refatoração: arquitetura antes/depois, commits G57–G74, contratos, arquivos, fases, validações, regressões e pendências.
 - `relatorios/20261005-ranked-selection-candidate-contract.md` — G70: shortlist/CLIP/SelectionPool tipados, rejeições pós-download vinculadas à auditoria por identidade e limites ainda pendentes.
 - `relatorios/20261005-selection-decision-selected-asset.md` — G71: SelectionDecision consome SelectedAsset tipado, incluindo provenance de query.
 - `relatorios/20261005-selected-media-through-boundary.md` — G72: assets selecionados permanecem tipados até auditoria e persistência; aquisição de candidatos segue pendente.
 - `relatorios/20261005-ranked-pool-through-acquisition.md` — G73: shortlist e reserva de reuso permanecem tipadas até a tentativa individual de aquisição.
+- `relatorios/20261005-candidate-acquisition-outcomes.md` — G74: outcomes explícitos de seleção/falha de download/dimensão/hash e projeções tipadas para seleção e auditoria.
 - `relatorios/20261005-visual-fallback-contract.md` — `VisualFallbackPlan`, renderer sem inferência, política duplicada removida e decisão/métricas alinhadas; G39/G40: 902 testes, G41: 903 testes.
 - `relatorios/20261003-122730_relatorio-falha-chain-llm-cenas.md` — elimina timeout ilimitado, respeita rate limit Groq e recupera cenas locais em ideia automática; suíte 780/780.
 - `relatorios/20261003-121500_relatorio-fallback-cenas-llm.md` — corrige espera NVIDIA sem timeout, limita 429 e preserva geração automática com fallback local; 779 testes passaram.

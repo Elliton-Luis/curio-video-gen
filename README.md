@@ -194,6 +194,7 @@ G70 (`dd19b24`) mantém candidatos ranqueados tipados durante CLIP e `SelectionP
 G71 (`d8dace3`) constrói `SelectionDecision` a partir de `SelectedAsset`, preservando origem e representação da query no contrato.
 G72 (`ec61c65`) mantém resultados selecionados tipados até projetar JSON para auditoria e persistência; candidatos antes da seleção seguem como próxima fronteira.
 G73 (`7b965a1`) mantém as shortlists fresh e reutilizada tipadas até cada candidato entrar na tentativa de aquisição.
+G74 (`57a9a21`) representa sucesso e rejeições de cada tentativa com `CandidateAcquisitionOutcome`, preservando origem, identidade e motivo.
 O relatório arquitetural completo — com estado antes/depois, commits,
 contratos, fases, testes, regressões, etapa de mídia e pendências — está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
