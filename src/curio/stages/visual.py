@@ -568,7 +568,7 @@ def _search_scene_with_shortcircuit(
         asset_dict = entry["asset"]
         if metrics:
             metrics.media_record_funnel("selected")
-            metrics.media_selected_ids.add(asset_key(asset_dict))
+            metrics.media_shortlist_ids.add(asset_key(asset_dict))
         try:
             asset = MediaAsset.from_dict(asset_dict)
         except TypeError:

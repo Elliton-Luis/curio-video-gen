@@ -104,7 +104,9 @@ class RunMetrics:
         self.visual_beat_seconds = 0.0
         self.visual_asset_uses = 0
         self.visual_asset_ids: set[str] = set()
-        self.media_selected_ids: set[str] = set()
+        # Candidates admitted to a per-scene download shortlist. This is not
+        # the final set of real assets assigned to scenes.
+        self.media_shortlist_ids: set[str] = set()
         self.media_available_ids: set[str] = set()
         self.media_available_acquisitions: dict[str, int] = {}
         self.visual_asset_beat_counts: dict[str, int] = {}
@@ -350,8 +352,6 @@ class RunMetrics:
                                    item.get("acquisition", "unknown"))
                     self.media_available_acquisitions[acquisition] = (
                         self.media_available_acquisitions.get(acquisition, 0) + 1)
-                    if asset.get("provider") != "synth":
-                        self.media_selected_ids.add(key)
                     self.visual_asset_details[key] = {
                         "title": asset.get("title", ""),
                         "provider": asset.get("provider", ""),
@@ -529,7 +529,12 @@ class RunMetrics:
                 },
                 "tts": {"calls": list(self.tts_calls)},
                 "media": {
-                    "selected_unique": len(self.media_selected_ids),
+                    "shortlist_assets_unique": len(self.media_shortlist_ids),
+                    # Kept for existing metrics consumers; historically this
+                    # counted shortlist identities, not final selections.
+                    "selected_unique": len(self.media_shortlist_ids),
+                    "real_scene_assets_unique": self.media_unique_assets,
+                    "real_scene_asset_occurrences": self.media_real_asset_occurrences,
                     "selection_attempts": self.media_funnel.get("selected", 0),
                     "available_unique": len(self.media_available_ids),
                     "available_occurrences": sum(self.media_available_acquisitions.values()),

@@ -767,14 +767,32 @@ provider excede o tempo de parede, então não representa duração serial. A
 busca mais completa ficou correta quanto às tentativas, mas não aumentou a
 cobertura real; ainda não está aprovada como resultado final de mídia.
 
-A execução também mostrou duas definições de unicidade: `metadata.visual_report`
-registra 6 assets reais únicos, enquanto `consumption.media.selected_unique`
-registra 12 seleções com identidades (inclui visuais sintéticos/identidades do
-funnel). Até consolidar o contrato, esses campos não são comparáveis; a
-divergência foi registrada para a fase de métricas. `media.json` ainda expõe
-auditoria detalhada dentro de `metadata.json`, não como arquivo separado.
+A execução mostrou que `consumption.media.selected_unique` não era contagem de
+assets finais: o mesmo conjunto era preenchido na shortlist de download e na
+projeção de assets das cenas. Isso explicava 12 contra 6. G21 abaixo separa os
+contadores e mantém o nome antigo como alias temporário; a contagem canônica de
+assets reais finais é a mesma de `visual_report.unique_assets`. `media.json`
+ainda expõe auditoria detalhada dentro de `metadata.json`, não como arquivo
+separado.
 
 Rerender de cópia isolada do projeto `black-hole-lensing`, com providers
 desligados, reutilizou narração/roteiro/legendas persistidos e gerou novo MP4
 sem nova pesquisa. As falhas reais de provider foram observadas no v3; a
 execução foi sem LLM e usou Wikimedia/NASA gratuitos.
+
+## G21: shortlist não é seleção final
+
+`metrics.media_selected_ids` era preenchido duas vezes: primeiro no shortlist
+de candidatos que seguiriam para download e depois ao percorrer assets finais
+atribuídos às cenas. A métrica `consumption.media.selected_unique` misturava
+esses escopos, e a métrica de timeline tinha ainda outro escopo (assets reais e
+sintéticos que chegaram aos beats). A saída agora nomeia o contador inicial
+`shortlist_assets_unique`, mantém `selected_unique` como alias de compatibilidade
+e publica `real_scene_assets_unique` e `real_scene_asset_occurrences` usando o
+contrato canônico de `MediaSelectionStats`/`visual_report`. O caminho de geração
+não altera decisões editoriais.
+
+Teste reproduz shortlist com duas identidades e uma seleção real final. 23
+testes de métricas/funnel/uso passaram; suíte integral: **901 testes em
+188,67 s**; compileall e diff check passaram. Alteração segue no commit de
+documentação/código da fase G21.

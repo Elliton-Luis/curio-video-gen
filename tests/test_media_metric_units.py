@@ -59,3 +59,21 @@ def test_timeline_asset_metrics_are_named_separately_from_real_selection():
         "visual_timeline_assets_reused_across_scenes"]
     assert pipeline["visual_report"]["unique_assets"] == 1  # real media only
     assert pipeline["visual_report"]["reuse_count"] == 1
+
+
+def test_media_metrics_distinguish_download_shortlist_from_final_scene_assets():
+    metrics = RunMetrics("test", "black holes", "ai")
+    metrics.media_shortlist_ids.update({"candidate-a", "candidate-b"})
+    selected = {"provider": "wikimedia", "asset_id": "content-a"}
+    metrics.visual_plan(
+        (TimelineSpan(1, 2, 0, 2),),
+        [{"chapter_id": 1, "asset": selected, "assets": [{"asset": selected}],
+          "visual_decision": {"selection": {"status": "real"}}}],
+        2,
+    )
+    media = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+
+    assert media["shortlist_assets_unique"] == 2
+    assert media["selected_unique"] == media["shortlist_assets_unique"]
+    assert media["real_scene_assets_unique"] == 1
+    assert media["real_scene_asset_occurrences"] == 1
