@@ -266,6 +266,8 @@ Seleções de imagens manuais também registram `SelectionDecision`, incluindo
 quando um arquivo precisou ser reutilizado em rodízio.
 As durações, tipos e assinatura de transições são produzidos juntos em um
 `RenderTransitionPlan`, compartilhado por geração, preparação humana e finalize.
+Cada cena no resultado de mídia precisa carregar uma `SelectionDecision`,
+inclusive cartões sintéticos e cenas sem asset.
 O VisualPlanner não lê narração: representações locais são criadas no estágio
 de planejamento local de cenas, materializadas no contrato e então consumidas
 por VisualPlan/SearchPlan.

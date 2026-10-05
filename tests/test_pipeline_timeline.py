@@ -5,11 +5,13 @@ import pytest
 from curio.media.selection_result import MediaStageResult
 from curio.pipeline_timeline import build_visual_timeline
 from curio.stages.scene_contract import SemanticScene, TimelineSpan
+from tests.media_test_support import with_selection
 
 
 def _selection(scene_id=1):
     return MediaStageResult.from_rows(
-        [{"chapter_id": scene_id, "asset": None, "assets": []}], "provider")
+        [with_selection({"chapter_id": scene_id, "asset": None, "assets": []})],
+        "provider")
 
 
 class _Metrics:

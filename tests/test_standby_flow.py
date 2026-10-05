@@ -14,6 +14,7 @@ from curio.pipeline_media import MediaStandby, manual_media_dir
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter
+from tests.media_test_support import with_selection
 
 
 def _seed_project(out_dir, slug="teste-standby"):
@@ -36,8 +37,9 @@ def _seed_project(out_dir, slug="teste-standby"):
 
 
 def _empty_media(chapters, cfg, max_images, metrics=None, genre=""):
-    scenes = [{"chapter_id": c.id, "asset": None, "assets": [],
-               "reused_from": None} for c in chapters]
+    scenes = [with_selection({"chapter_id": c.id, "asset": None,
+                              "assets": [], "reused_from": None})
+              for c in chapters]
     return scenes, ["cena sem mídia (mock)"]
 
 

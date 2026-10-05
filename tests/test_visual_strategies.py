@@ -45,6 +45,29 @@ def test_historico_nao_cai_em_diagrama_antes_do_cartao():
     assert escada.index("card") < escada.index("diagram")
 
 
+def test_typographic_card_emits_a_complete_selection_decision(monkeypatch, tmp_path):
+    from curio.media.providers import MediaAsset
+    from curio.media.selection_result import MediaStageResult
+    from curio.stages.scene_contract import SemanticScene
+    from curio.stages.visual import _search_scene_with_shortcircuit
+
+    card = MediaAsset(provider="synth", asset_id="card-1", title="Salarium",
+                      local_path=str(tmp_path / "card.png"))
+    monkeypatch.setattr(visuals, "visual_for_scene", lambda *args: card)
+    scene = SemanticScene(1, "A palavra salário vem do latim salarium.",
+                          visual_type="typographic", subject="salarium",
+                          planning_mode="deterministic")
+
+    rows, _ = _search_scene_with_shortcircuit(
+        scene, [], CurioConfig(), 1, None, str(tmp_path))
+    result = MediaStageResult.from_rows(rows, "provider")
+
+    assert result.scenes[0].decision.status == "synthetic"
+    assert result.scenes[0].decision.fallback_level == "typographic_card"
+    assert result.scenes[0].visual_audit["search_exhaustion_reason"] == (
+        "typographic_visual_requires_card")
+
+
 def test_mecanismo_nao_comeca_por_foto():
     escada = visuals.strategies_for(_ch("mechanism"))
     assert "image" not in escada[:1]

@@ -23,6 +23,7 @@ from curio.stages import script as script_stage
 from curio.stages import tts as tts_stage
 from curio.stages import visual as visual_stage, visual_timeline
 from curio.stages.scenes import Chapter
+from tests.media_test_support import with_selection
 
 pytest.importorskip("PIL")
 
@@ -51,7 +52,7 @@ def test_review_rejects_chapter_instead_of_reinterpreting_it():
 def test_review_plan_has_typed_selection_and_explicit_legacy_adapter():
     from curio.media.selection_result import MediaStageResult
 
-    typed = MediaStageResult.from_rows([{
+    typed = MediaStageResult.from_rows([with_selection({
         "chapter_id": 1,
         "asset": {"provider": "wikimedia", "asset_id": "work-1",
                   "title": "Historic work", "local_path": "/tmp/work.jpg"},
@@ -60,7 +61,7 @@ def test_review_plan_has_typed_selection_and_explicit_legacy_adapter():
                                 "local_path": "/tmp/work.jpg"},
                     "score": 81, "query": "historic work"}],
         "rejected": [{"reason": "weak context"}],
-    }], "provider")
+    })], "provider")
     from_selection = review_stage.ReviewMediaPlan.from_media_result(typed)
     from_legacy = review_stage.ReviewMediaPlan.from_persisted_rows([{
         "chapter_id": 1,
@@ -138,7 +139,8 @@ def _mk(tmp_path, n_cenas=4):
                           "width": 480, "height": 854},
                 "query": f"q{k}", "order": k, "score": 60 - k * 10,
                 "strategy": "image"})
-        media.append({"chapter_id": ch.id, "asset": entries[0]["asset"],
+        media.append(with_selection({"chapter_id": ch.id,
+                      "asset": entries[0]["asset"],
                       "assets": entries, "reused_from": None,
                       "rejected": [{"title": "power plant towers",
                                     "query": "q0", "provider": "pixabay",
@@ -146,7 +148,7 @@ def _mk(tmp_path, n_cenas=4):
                                    {"title": "mountain wallpaper 4k",
                                     "query": "q1", "provider": "pixabay",
                                     "reason": "título contém termo bloqueado: 'wallpaper'"}],
-                      "visual_type": ch.visual_type, "strategy": "image"})
+                      "visual_type": ch.visual_type, "strategy": "image"}))
     with open(paths.media_json, "w", encoding="utf-8") as fh:
         json.dump(media, fh, ensure_ascii=False)
 

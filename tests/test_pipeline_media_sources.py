@@ -1,6 +1,7 @@
 from curio.pipeline_media_sources import record_selected_media
 from curio.media.selection_result import MediaStageResult
 from curio.stages.scenes import Chapter
+from tests.media_test_support import with_selection
 
 
 class _Registry:
@@ -22,9 +23,9 @@ def test_selected_asset_provenance_records_credit_and_missing_author_warning():
     registry = _Registry()
 
     selections = MediaStageResult.from_rows(
-        [{"chapter_id": 1,
+        [with_selection({"chapter_id": 1,
           "asset": asset,
-          "assets": [{"asset": asset, "query": "Battle of Mohács"}]}],
+          "assets": [{"asset": asset, "query": "Battle of Mohács"}]})],
         "provider").scenes
     result = record_selected_media(
         [scene], selections,
@@ -48,9 +49,9 @@ def test_unknown_license_is_registered_with_explicit_verification_note():
     registry = _Registry()
 
     selections = MediaStageResult.from_rows(
-        [{"chapter_id": 1,
+        [with_selection({"chapter_id": 1,
           "asset": asset,
-          "assets": [{"asset": asset, "query": "historical object"}]}],
+          "assets": [{"asset": asset, "query": "historical object"}]})],
         "provider").scenes
     result = record_selected_media(
         [scene], selections,

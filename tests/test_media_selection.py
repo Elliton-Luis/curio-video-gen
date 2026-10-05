@@ -8,6 +8,7 @@ from curio.stages.media_selection import (
     record_asset_usage,
     select_reuse_candidate,
 )
+from tests.media_test_support import with_selection
 
 
 def test_fresh_candidates_are_separated_before_reuse_without_score_penalty():
@@ -109,10 +110,10 @@ def test_cross_scene_reuse_updates_the_selection_contract():
         "title": "Unrelated portrait",
     }
     media_scenes = [
-        {"chapter_id": 1, "asset": selected_asset, "assets": [
+        with_selection({"chapter_id": 1, "asset": selected_asset, "assets": [
             {"asset": selected_asset, "score": 88},
             {"asset": other_asset, "score": 70},
-        ]},
+        ]}),
         {"chapter_id": 2, "asset": None, "assets": [],
          "visual_decision": {"selection": SelectionDecision(
              2, "none", reason="no candidate").to_dict()}},
@@ -137,16 +138,15 @@ def test_media_stage_result_uses_typed_scene_selection_and_roundtrips_project_ro
     from curio.media.selection_result import (MediaStageResult,
                                               SceneMediaSelection)
 
-    rows = [{
+    rows = [with_selection({
         "chapter_id": 1,
         "asset": {"provider": "wikimedia", "asset_id": "map-1",
                   "title": "Historical map"},
         "assets": [{"asset": {"provider": "wikimedia", "asset_id": "map-1",
                                 "title": "Historical map"},
                     "query": "historical map", "score": 87.5}],
-        "visual_decision": {"selected": {"asset_id": "map-1"}},
         "extension_field": {"source": "legacy"},
-    }]
+    })]
     result = MediaStageResult.from_rows(rows, "provider")
 
     assert isinstance(result.scenes[0], SceneMediaSelection)
@@ -166,4 +166,15 @@ def test_media_stage_result_rejects_selected_asset_without_identity():
     with pytest.raises(ValueError, match="provider and asset id"):
         MediaStageResult.from_rows(
             [{"chapter_id": 1, "asset": {"provider": "wikimedia"},
-              "assets": []}], "provider")
+              "assets": [],
+              "visual_decision": {"selection": {
+                  "scene_id": 1, "status": "real", "asset_id": "valid",
+                  "provider": "wikimedia", "reason": "fixture"}}}], "provider")
+
+
+def test_media_stage_result_requires_explicit_decision_for_empty_scene():
+    from curio.media.selection_result import MediaStageResult
+
+    with pytest.raises(ValueError, match="explicit selection decision"):
+        MediaStageResult.from_rows(
+            [{"chapter_id": 1, "asset": None, "assets": []}], "provider")

@@ -72,7 +72,7 @@ class SceneMediaSelection:
     scene_id: int
     asset: MediaAsset | None
     assets: tuple[SelectedAsset, ...]
-    decision: SelectionDecision | None
+    decision: SelectionDecision
     reused_from: int | None
     visual_type: str
     strategy: str
@@ -114,23 +114,23 @@ class SceneMediaSelection:
         if raw_decision is not None and not isinstance(raw_decision, dict):
             raise TypeError("visual_decision must be an object")
         decision_data = (raw_decision or {}).get("selection")
-        decision = (SelectionDecision.from_dict(decision_data)
-                    if decision_data is not None else None)
-        if decision is not None:
-            if decision.scene_id != scene_id:
-                raise ValueError("selection decision belongs to another scene")
-            if asset and decision.asset_id and asset.asset_id \
-                    and decision.asset_id != asset.asset_id:
-                raise ValueError("selection decision asset does not match scene")
-            if decision.status == "none" and asset:
-                raise ValueError("empty selection decision has a selected asset")
-            if decision.status != "none" and not asset:
-                raise ValueError("selected decision has no selected asset")
-            if asset and decision.provider and decision.provider != asset.provider:
-                raise ValueError("selection decision provider does not match asset")
-            if asset and ((decision.status == "synthetic")
-                          != (asset.provider == "synth")):
-                raise ValueError("selection decision status does not match asset type")
+        if decision_data is None:
+            raise ValueError("media scene requires an explicit selection decision")
+        decision = SelectionDecision.from_dict(decision_data)
+        if decision.scene_id != scene_id:
+            raise ValueError("selection decision belongs to another scene")
+        if asset and decision.asset_id and asset.asset_id \
+                and decision.asset_id != asset.asset_id:
+            raise ValueError("selection decision asset does not match scene")
+        if decision.status == "none" and asset:
+            raise ValueError("empty selection decision has a selected asset")
+        if decision.status != "none" and not asset:
+            raise ValueError("selected decision has no selected asset")
+        if asset and decision.provider and decision.provider != asset.provider:
+            raise ValueError("selection decision provider does not match asset")
+        if asset and ((decision.status == "synthetic")
+                      != (asset.provider == "synth")):
+            raise ValueError("selection decision status does not match asset type")
 
         reused_from = value.get("reused_from")
         if reused_from is not None and (

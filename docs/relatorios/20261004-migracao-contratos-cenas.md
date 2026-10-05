@@ -1032,3 +1032,21 @@ o plano ao ajustar a duração e ao persistir a assinatura. A política de fade 
 
 18 testes focados de contrato, política e integração passaram. Suíte integral:
 **927 testes em 192,39 s**; `compileall` e `git diff --check` passaram.
+
+## G33: toda cena de mídia explica sua seleção ou ausência
+
+`SceneMediaSelection.decision` era opcional, permitindo que o restante do
+pipeline recebesse cenas sem registrar por que um asset venceu ou por que a
+cena ficou vazia. A exceção de produção era o cartão tipográfico: ele retornava
+direto como sintético antes da criação da decisão comum.
+
+O contrato agora exige `SelectionDecision` para toda cena e mantém os estados
+coerentes com asset/provider. O cartão tipográfico registra intenção e plano,
+status sintético e o motivo editorial para usar o visual local. Fixtures que
+alimentam o contrato agora informam explicitamente a decisão; o boundary não
+infere status para “consertar” dados.
+
+122 testes focados passaram. A primeira execução integral mostrou nove fixtures
+de integração que simulavam providers sem produzir a decisão contratual; após
+migrá-los para decisões explícitas, **929 testes passaram em 197,39 s**.
+`compileall` e `git diff --check` passaram.

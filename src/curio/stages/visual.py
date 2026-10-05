@@ -53,6 +53,7 @@ from .media_selection import (ReuseCandidate, make_selection_decision,
                               prepare_selection_pool,
                               record_asset_usage,
                               select_reuse_candidate)
+from .media_selection import SelectionDecision
 from .visual_audit import candidate_audit_rows
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
@@ -263,6 +264,29 @@ def _search_scene_with_shortcircuit(
                 "rejected": [],
                 "visual_type": vtype,
                 "strategy": "card",
+                "visual_decision": {
+                    "topic": visual_plan.topic,
+                    "visual_plan": visual_plan.to_dict(),
+                    "search_plan": search_plan.to_dict(),
+                    "queries": [],
+                    "providers_consulted": [],
+                    "candidates": [{"title": synth.title,
+                                     "provider": "synth",
+                                     "decision": "selected",
+                                     "reason": "typographic intent is rendered as a card"}],
+                    "selected": {"title": synth.title, "provider": "synth",
+                                 "reason": "typographic intent is rendered as a card"},
+                    "fallback": "card",
+                    "search_exhausted": True,
+                    "search_exhaustion_reason": "typographic_visual_requires_card",
+                    "fallback_level": "synthetic_after_exhaustion",
+                    "selection": SelectionDecision(
+                        scene_id=ch.id, status="synthetic",
+                        asset_id=synth.asset_id, provider="synth",
+                        fallback_level="typographic_card",
+                        reason="typographic visual intent is represented by a local card",
+                    ).to_dict(),
+                },
             }], warnings
 
     candidates: list[dict] = []   # candidatos que passaram nos filtros

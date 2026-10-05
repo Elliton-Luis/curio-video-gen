@@ -6,6 +6,7 @@ from curio.media.artifacts import media_selection_signature, write_manifest
 from curio.pipeline_visual import resolve_media
 from curio.stages.scenes import Chapter
 from curio.stages.scoring import threshold
+from tests.media_test_support import with_selection
 
 
 def _scene():
@@ -39,9 +40,9 @@ def test_resolve_media_consumes_only_cache_with_current_manifest(tmp_path, monke
     image = tmp_path / "diagram.png"
     image.write_bytes(b"visual")
     asset = _asset(image)
-    selected = [{"chapter_id": 1, "asset": asset,
+    selected = [with_selection({"chapter_id": 1, "asset": asset,
                  "assets": [{"asset": asset, "query": "Mars"}],
-                 "visual_decision": {"selected": asset}}]
+                 "visual_decision": {"selected": asset}})]
     signature = media_selection_signature([scene], "science", 1,
                                           ["wikimedia"], threshold())
     with open(paths.media_json, "w", encoding="utf-8") as fh:
@@ -66,9 +67,9 @@ def test_resolve_media_researches_when_manifest_signature_is_stale(tmp_path, mon
     image = tmp_path / "diagram.png"
     image.write_bytes(b"visual")
     asset = _asset(image)
-    selected = [{"chapter_id": 1, "asset": asset,
+    selected = [with_selection({"chapter_id": 1, "asset": asset,
                  "assets": [{"asset": asset, "query": "Mars"}],
-                 "visual_decision": {"selected": asset}}]
+                 "visual_decision": {"selected": asset}})]
     with open(paths.media_json, "w", encoding="utf-8") as fh:
         json.dump(selected, fh)
     write_manifest(paths.media_manifest_json, selected, "old-signature")
@@ -114,13 +115,13 @@ def test_invalid_cached_selection_is_audited_and_reacquired(tmp_path, monkeypatc
                         lambda *args, **kwargs: events.append((args, kwargs)))
     valid_asset = {"provider": "wikimedia", "asset_id": "fresh-asset",
                    "title": "Fresh", "local_path": str(image)}
-    fetched = [{
+    fetched = [with_selection({
         "chapter_id": 1, "asset": valid_asset,
         "assets": [{"asset": valid_asset, "query": "Mars"}],
         "visual_decision": {"selection": {
             "scene_id": 1, "status": "real", "asset_id": "fresh-asset",
             "provider": "wikimedia", "reason": "valid provider result"}},
-    }]
+    })]
     monkeypatch.setattr("curio.pipeline_visual.visual_stage.fetch_media_multi",
                         lambda *args, **kwargs: (fetched, []))
 
@@ -144,12 +145,12 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
         media_record_scene_decision=lambda scene_id, decision:
             decisions.append((scene_id, decision)))
     scenes = [
-        {"chapter_id": 1, "asset": {"provider": "wikimedia", "asset_id": "real"},
+        with_selection({"chapter_id": 1, "asset": {"provider": "wikimedia", "asset_id": "real"},
          "assets": [{"asset": {"provider": "wikimedia", "asset_id": "real"}}],
-         "visual_decision": {"state": "real"}},
-        {"chapter_id": 2, "asset": {"provider": "synth", "asset_id": "synthetic"},
-         "assets": [{"asset": {"provider": "synth", "asset_id": "synthetic"}}]},
-        {"chapter_id": 3, "asset": None, "assets": []},
+         "visual_decision": {"state": "real"}}),
+        with_selection({"chapter_id": 2, "asset": {"provider": "synth", "asset_id": "synthetic"},
+         "assets": [{"asset": {"provider": "synth", "asset_id": "synthetic"}}]}),
+        with_selection({"chapter_id": 3, "asset": None, "assets": []}),
     ]
 
     from curio.media.selection_result import MediaStageResult
@@ -158,7 +159,9 @@ def test_media_stage_counts_real_synthetic_and_missing_separately(monkeypatch):
 
     assert (result.real_scenes, result.synthetic_scenes,
             result.scenes_without_visual) == (1, 1, 1)
-    assert decisions == [(1, {"state": "real"})]
+    assert [scene_id for scene_id, _decision in decisions] == [1, 2, 3]
+    assert [decision["selection"]["status"] for _, decision in decisions] == [
+        "real", "synthetic", "none"]
     summary = events[-1][1]
     assert summary["scenes_with_real_asset"] == 1
     assert summary["synthetic_scenes"] == 1

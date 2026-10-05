@@ -21,6 +21,7 @@ from curio.stages.scenes import Chapter
 from curio.stages.scene_contract import ScenePlanResult
 from curio.stages.scene_contract import SemanticScene
 from curio.stages.tts import TTSResult
+from tests.media_test_support import with_selection
 
 SCRIPT = (
     "Marte leva 687 dias para dar uma volta completa no Sol. "
@@ -90,10 +91,10 @@ def _media(chapters, paths):
                 "download_url": f"https://p.io/{k}.jpg",
                 "width": 2000, "height": 2000, "kind": "image",
                 "local_path": paths[k], "rights_status": "clear"}
-    return [{"chapter_id": c.id, "asset": asset(0),
+    return [with_selection({"chapter_id": c.id, "asset": asset(0),
              "assets": [{"asset": asset(k), "query": f"q{k}", "order": k}
                         for k in range(3)],
-             "reused_from": None} for c in chapters]
+             "reused_from": None}) for c in chapters]
 
 
 def _run(tmp_path, narration="ai", scene_error=None, **over):

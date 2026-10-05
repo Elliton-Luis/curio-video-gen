@@ -11,15 +11,16 @@ from curio.pipeline_render import (
 )
 from curio.stages.scene_contract import SemanticScene
 from curio.stages.scene_contract import TimelineSpan
+from tests.media_test_support import with_selection
 
 
 def test_render_plan_projects_validated_media_selection():
-    result = MediaStageResult.from_rows([{
+    result = MediaStageResult.from_rows([with_selection({
         "chapter_id": 1,
         "asset": {"provider": "wikimedia", "asset_id": "map-1",
                   "local_path": "/cache/map.jpg", "kind": "image"},
         "assets": [],
-    }], "provider")
+    })], "provider")
 
     plan = SceneRenderPlan.from_media_result(result)
 
