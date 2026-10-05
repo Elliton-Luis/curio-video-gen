@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G77.
+**Escopo:** auditoria documentada e migrações incrementais até G78.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -95,6 +95,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `c4ef8c5` | Extrai tentativas de aquisição dos candidatos ranqueados para `media_candidate_acquisition.py`; fallback editorial permanece em `visual.py` (G75). |
 | `b87ba98` | Unifica download/cache/validação dimensional dos caminhos fresh e reuse por `TechnicalAcquisitionAttempt` (G76). |
 | `111995f` | Continua a tier genérica planejada se candidatos específicos falham tecnicamente, antes do fallback sintético/reuso (G77). |
+| `f7eabb0` | Marca queries contextuais não executadas como adiadas e distingue isso de provider sem resultados ou orçamento esgotado (G78). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -218,6 +219,9 @@ G77 (`111995f`) altera `src/curio/stages/visual.py`,
 `src/curio/stages/media_candidate_acquisition.py` e
 `tests/test_visual_director.py`: busca contextual/genérica passa a ser
 executada depois da tier específica quando a aquisição não preenche os slots.
+G78 (`f7eabb0`) altera `src/curio/stages/scene_candidate_search.py`,
+`src/curio/stages/visual_audit.py` e os testes de coleta/auditoria; queries
+genéricas começam como `tier_not_reached` e limpam essa marca ao iniciar.
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
@@ -235,7 +239,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G77 commitadas; parcial. | `visual.py` ainda compõe tiers, fallback e auditoria; acquisition conserva janela/futures, effects de metrics/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G78 commitadas; parcial. | `visual.py` ainda compõe tiers, fallback e auditoria; acquisition conserva janela/futures, effects de metrics/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -310,6 +314,9 @@ real. Ver [relatório G76](20261005-shared-technical-acquisition-attempt.md).
 G77: **90 focados**; suíte ampla: **946 passaram, 1 desmarcado** por HTTP 429
 da Wikipédia em **197,04 s**. Compileall e diff check passaram; sem geração
 real. Ver [relatório G77](20261005-generic-search-after-acquisition-failure.md).
+G78: **53 focados**; suíte ampla: **948 passaram, 1 desmarcado** por HTTP 429
+da Wikipédia em **181,85 s**. Compileall e diff check passaram; sem geração
+real. Ver [relatório G78](20261005-deferred-query-audit-state.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -768,3 +775,16 @@ SearchPlan; auditoria registra as duas tiers e suas rejeições.
 HTTP 429 em 197,04 s. Compileall e diff check passaram. Sem geração real. O
 limite global de candidatos pode ainda deixar queries contextuais sem execução,
 caso em que a auditoria deve indicar busca incompleta. Ver [relatório G77](20261005-generic-search-after-acquisition-failure.md).
+
+## G78 — estado de execução de query adiada (`f7eabb0`)
+
+G78 faz o collector inicializar queries genéricas com
+`unexecuted_reason="tier_not_reached"` e limpar o motivo ao começar a consultá-las.
+A auditoria diferencia `not_consulted`, `not_consulted_budget_exhausted`,
+`consulted` e `abandoned_duplicates`. Isso impede que uma query aguardando sua
+tier pareça uma chamada executada sem resultados.
+
+53 focados; suíte ampla: 948 passaram e 1 foi desmarcado por HTTP 429 em
+181,85 s. Compileall e diff check passaram; sem geração real. Consultas
+específicas ainda não iniciadas não recebem motivo porque o caminho atual sempre
+as envia primeiro. Ver [relatório G78](20261005-deferred-query-audit-state.md).

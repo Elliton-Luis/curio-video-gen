@@ -202,6 +202,9 @@ reuse sob `TechnicalAcquisitionAttempt`, preservando o tratamento editorial de
 cada caminho.
 G77 (`111995f`) consulta a tier contextual planejada se candidatos específicos
 passam scoring, mas não produzem mídia utilizável após aquisição.
+G78 (`f7eabb0`) registra como `not_consulted` a query contextual enquanto sua
+tier não foi alcançada, em vez de sugerir que providers foram consultados sem
+resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
