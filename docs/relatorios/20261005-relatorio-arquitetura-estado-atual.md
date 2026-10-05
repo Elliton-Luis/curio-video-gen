@@ -77,7 +77,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `9f4e627` | Moveu a resolução e anotação de reuso cross-scene para `media_selection.py` (G58). |
 | `05dc295` | Registrou no relatório de estado o commit G58. |
 | `e652f64` | Fez `fetch_media_multi` retornar `MediaStageResult` e moveu a projeção de rows para a fronteira de persistência (G59). |
-| *(G60 desta entrega)* | Moveu atualizações de reuse e sua projeção compatível para métodos do contrato `SceneMediaSelection`. |
+| `a7cabe0` | Moveu atualizações de reuse e sua projeção compatível para métodos do contrato `SceneMediaSelection` (G60). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
