@@ -24,7 +24,6 @@ quando seu manifesto corresponde aos inputs semânticos e à política atual.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import sys
 import time
 from typing import TYPE_CHECKING
@@ -409,23 +408,11 @@ def _search_scene_with_shortcircuit(
 
     first = picked[0].asset.to_dict() if picked else None
     scene_rejected = rejected[:REJECTED_KEPT]
-    video_context = dict(getattr(ch, "video_context", {}) or {})
-    representation_levels = {}
-    representation_kinds = {}
-    for rep in (getattr(ch, "representations", []) or []):
-        if isinstance(rep, Mapping):
-            rep_query = str(rep.get("query", ""))
-            representation_kinds[rep_query] = str(rep.get("kind", "related"))
-            try:
-                representation_levels[rep_query] = int(
-                    rep.get("level", 0) or 0)
-            except (TypeError, ValueError):
-                representation_levels[rep_query] = 0
     picked_rows = [entry.to_dict() for entry in picked]
     audit_candidates = candidate_audit_rows(
-        evaluated_entries, rejected, picked_rows, representation_levels, min_score)
+        evaluated_entries, rejected, picked_rows, visual_plan, min_score)
     decision = {
-        "topic": video_context.get("topic", ""),
+        "topic": visual_plan.topic,
         "visual_plan": visual_plan.to_dict(),
         "fallback_plan": (fallback_plan.to_dict()
                           if synthetic and "fallback_plan" in locals() else None),
@@ -439,11 +426,9 @@ def _search_scene_with_shortcircuit(
         "primary_entity": getattr(ch, "primary_entity", "") or getattr(ch, "subject", ""),
         "representations": [rep.to_dict() for rep in visual_plan.representations],
         "representations_discarded": getattr(ch, "representation_rejections", []) or [],
-        "aliases": list(video_context.get("aliases", []) or []),
+        "aliases": [alias.value for alias in visual_plan.aliases],
         "queries": search_query_audit_rows(
-            search_plan, collection.query_audit, rejected, representation_levels,
-            representation_kinds,
-            list(video_context.get("aliases", []) or [])),
+            search_plan, collection.query_audit, rejected, visual_plan),
         "providers_consulted": list(collection.providers_consulted),
         "candidates": audit_candidates,
         "selected": (next((item for item in audit_candidates
@@ -484,7 +469,9 @@ def _search_scene_with_shortcircuit(
                            "synthetic_after_exhaustion"
                            if (first or {}).get("provider") == "synth" else
                            "reused" if picked and picked[0].reuse_reason else
-                           "specific" if picked and picked[0].query in representation_levels
+                           "specific" if picked and any(
+                               rep.query == picked[0].query
+                               for rep in visual_plan.representations)
                            else "representation_or_media_variant" if picked else "exhausted"),
     }
     selection = make_selection_decision(

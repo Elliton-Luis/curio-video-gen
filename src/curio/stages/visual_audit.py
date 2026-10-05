@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from collections.abc import Mapping
 
-from .visual_contracts import SearchPlan, SearchQuery
+from .visual_contracts import SearchPlan, SearchQuery, VisualPlan
 
 
 @dataclass
@@ -112,8 +112,7 @@ class SearchQueryAudit:
             raise TypeError("query audit unexecuted reason must be text")
 
     def to_row(self, query: SearchQuery, *, rejected_candidates_total: int,
-               representations: list[str], representation_kinds: dict[str, str],
-               aliases: list[object]) -> dict:
+               visual_plan: VisualPlan) -> dict:
         outcome = ("duplicates_only" if self.duplicates_only else
                    "rejected" if self.rejected else
                    "eligible" if self.eligible else "empty_or_unavailable")
@@ -123,8 +122,11 @@ class SearchQueryAudit:
                   "abandoned_duplicates" if self.duplicates_only else
                   "consulted" if self.providers else "no_provider_results")
         matching_representations = [
-            representation for representation in representations
-            if representation.casefold() in query.query.casefold()]
+            representation.query for representation in visual_plan.representations
+            if representation.query.casefold() in query.query.casefold()]
+        representation_kinds = {representation.query: representation.kind
+                                for representation in visual_plan.representations}
+        aliases = [alias.value for alias in visual_plan.aliases]
         return {
             "query": query.query,
             "source": query.source,
@@ -156,11 +158,14 @@ class SearchQueryAudit:
 
 def search_query_audit_rows(
         plan: SearchPlan, states: Mapping[str, SearchQueryAudit],
-        rejected: list[dict], representation_levels: dict[str, int],
-        representation_kinds: dict[str, str], aliases: list[object]) -> list[dict]:
+        rejected: list[dict], visual_plan: VisualPlan) -> list[dict]:
     """Project query states in SearchPlan order, preserving their provenance."""
     if not isinstance(plan, SearchPlan):
         raise TypeError("query audit requires a SearchPlan")
+    if not isinstance(visual_plan, VisualPlan):
+        raise TypeError("query audit requires a VisualPlan")
+    if plan.scene_id != visual_plan.scene_id:
+        raise ValueError("query audit plans must belong to the same scene")
     if not isinstance(states, Mapping) or any(
             not isinstance(state, SearchQueryAudit) for state in states.values()):
         raise TypeError("query audit projection requires immutable audit states")
@@ -171,9 +176,7 @@ def search_query_audit_rows(
         query,
         rejected_candidates_total=sum(
             item.get("query") == query.query for item in rejected),
-        representations=list(representation_levels),
-        representation_kinds=representation_kinds,
-        aliases=aliases,
+        visual_plan=visual_plan,
     ) for query in plan.queries]
 
 
@@ -181,10 +184,14 @@ def candidate_audit_rows(
     evaluated_entries: list[dict],
     rejected: list[dict],
     picked: list[dict],
-    representation_levels: dict[str, int],
+    visual_plan: VisualPlan,
     min_score: float,
 ) -> list[dict]:
     """Project evaluation outcomes without changing selection or candidates."""
+    if not isinstance(visual_plan, VisualPlan):
+        raise TypeError("candidate audit requires a VisualPlan")
+    representation_levels = {rep.query: rep.level
+                             for rep in visual_plan.representations}
     rows = []
     for entry in evaluated_entries:
         detail = entry.get("score_detail", {})

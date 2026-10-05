@@ -6,7 +6,22 @@ from curio.stages.visual_audit import (
     candidate_audit_rows,
     search_query_audit_rows,
 )
+from curio.stages.scene_projection import Chapter
 from curio.stages.visual_contracts import SearchPlan, SearchQuery
+from curio.stages.visual_planning import build_visual_plan
+
+
+def _visual_plan(scene_id=1, representations=(), aliases=()):
+    chapter = Chapter.from_dict({
+        "id": scene_id,
+        "narration": "A historical scene.",
+        "visual_type": "historical_art",
+        "representations": [
+            {"query": query, "kind": kind, "level": level}
+            for query, kind, level in representations],
+        "video_context": {"topic": "Ottoman Empire", "aliases": list(aliases)},
+    })
+    return build_visual_plan(chapter.semantic_scene())
 
 
 def test_candidate_audit_projects_selected_reused_and_rejected_reasons():
@@ -25,7 +40,8 @@ def test_candidate_audit_projects_selected_reused_and_rejected_reasons():
 
     rows = candidate_audit_rows(
         evaluated, [{"title": "Portrait", "reason": "technical gate"}],
-        picked, {"Ottoman map": 2}, min_score=50)
+        picked, _visual_plan(representations=(
+            ("Ottoman map", "map", 2),)), min_score=50)
 
     assert rows[0]["decision"] == "selected"
     assert rows[0]["reason"] == "reused only after fresh searches and local visual exhausted"
@@ -38,7 +54,7 @@ def test_candidate_audit_projects_selected_reused_and_rejected_reasons():
 def test_candidate_audit_marks_below_threshold_without_semantic_reason():
     rows = candidate_audit_rows(
         [{"query": "Ottoman map", "score": 12, "asset": {"title": "Map"}}],
-        [], [], {}, min_score=50)
+        [], [], _visual_plan(), min_score=50)
 
     assert rows == [{
         "title": "Map", "provider": "", "query": "Ottoman map", "query_level": 3,
@@ -67,8 +83,9 @@ def test_query_audit_projects_provider_results_and_search_provenance():
     rows = search_query_audit_rows(
         SearchPlan(4, (query,)), {query.query: state.snapshot()},
         [{"query": query.query}],
-        {"Battle of Mohács": 2}, {"Battle of Mohács": "event"},
-        ["Ottoman Empire"])
+            _visual_plan(scene_id=4, representations=(
+            ("Battle of Mohács", "event", 2),),
+            aliases=("Ottoman Empire",)))
 
     assert rows == [{
         "query": query.query,
@@ -109,7 +126,7 @@ def test_query_audit_distinguishes_duplicate_only_and_budget_exhaustion():
         SearchPlan(1, (duplicate_query, budget_query)),
         {duplicate_query.query: duplicate.snapshot(),
          budget_query.query: budget.snapshot()},
-        [], {}, {}, [])
+        [], _visual_plan(scene_id=1))
 
     assert (rows[0]["outcome"], rows[0]["status"]) == (
         "duplicates_only", "abandoned_duplicates")
@@ -123,7 +140,8 @@ def test_query_audit_reports_deferred_tier_as_not_consulted():
     deferred = QueryAuditAccumulator(unexecuted_reason="tier_not_reached")
 
     row = search_query_audit_rows(
-        SearchPlan(1, (query,)), {query.query: deferred.snapshot()}, [], {}, {}, [])[0]
+        SearchPlan(1, (query,)), {query.query: deferred.snapshot()}, [],
+        _visual_plan(scene_id=1))[0]
 
     assert row["status"] == "not_consulted"
     assert row["unexecuted_reason"] == "tier_not_reached"
@@ -149,4 +167,12 @@ def test_query_audit_requires_state_for_each_planned_query():
     plan = SearchPlan(1, (
         SearchQuery("French Revolution", "scene_representation"),))
     with pytest.raises(ValueError, match="must match SearchPlan"):
-        search_query_audit_rows(plan, {}, [], {}, {}, [])
+        search_query_audit_rows(plan, {}, [], _visual_plan(scene_id=1))
+
+
+def test_query_audit_rejects_visual_plan_for_another_scene():
+    query = SearchQuery("French Revolution", "scene_representation")
+    with pytest.raises(ValueError, match="same scene"):
+        search_query_audit_rows(
+            SearchPlan(1, (query,)), {query.query: SearchQueryAudit()}, [],
+            _visual_plan(scene_id=2))
