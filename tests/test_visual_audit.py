@@ -4,6 +4,8 @@ from curio.media.asset_snapshot import MediaAssetSnapshot
 from curio.media.selection_result import SelectedAsset
 from curio.stages.media_contracts import (
     Candidate, CandidateEvaluation, CandidateRejection)
+from curio.stages.media_acquisition_contracts import CandidateAcquisitionOutcome
+from curio.stages.media_selection import RankedSelectionCandidate
 from curio.stages.visual_audit import (
     QueryAuditAccumulator,
     SearchQueryAudit,
@@ -111,6 +113,7 @@ def test_scene_visual_decision_builder_owns_audit_projection():
         scene=scene, visual_plan=visual_plan, search_plan=search_plan,
         collection=collection, evaluations=(evaluation,), rejected=[],
         technical_rejections=(),
+        acquisition_rejections=(),
         picked=(picked,), min_score=40, fallback_plan=None, strategy="image")
     row = decision.to_dict()
 
@@ -164,6 +167,24 @@ def test_candidate_audit_projects_typed_technical_rejection():
         "source_url": "", "date_created": "", "media_type": "image",
         "decision": "rejected", "reason": "blocked technical term",
     }]
+
+
+def test_candidate_audit_projects_typed_acquisition_failure():
+    evaluation = _evaluation(
+        "Ottoman map", 82,
+        {"asset_id": "map", "title": "Map", "provider": "wikimedia"},
+        {"topic_relevance": 80, "scene_relevance": 70}, accepted=True)
+    outcome = CandidateAcquisitionOutcome(
+        RankedSelectionCandidate.from_evaluation(evaluation),
+        evaluation.candidate.asset, "download_failed", rejection_stage="download",
+        reason="network unavailable")
+
+    rows = candidate_audit_rows(
+        (evaluation,), [], (), _visual_plan(), min_score=50,
+        acquisition_rejections=(outcome,))
+
+    assert rows[0]["decision"] == "rejected"
+    assert rows[0]["reason"] == "network unavailable"
 
 
 def test_query_audit_projects_provider_results_and_search_provenance():

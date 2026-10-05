@@ -199,8 +199,11 @@ def candidate_audit_rows(
     visual_plan: VisualPlan,
     min_score: float,
     technical_rejections: tuple[CandidateRejection, ...] = (),
+    acquisition_rejections: tuple[object, ...] = (),
 ) -> list[dict]:
     """Project evaluation outcomes without changing selection or candidates."""
+    from .media_acquisition_contracts import CandidateAcquisitionOutcome
+
     if not isinstance(visual_plan, VisualPlan):
         raise TypeError("candidate audit requires a VisualPlan")
     if not isinstance(evaluations, tuple) or any(
@@ -216,6 +219,14 @@ def candidate_audit_rows(
             not isinstance(item, CandidateRejection)
             for item in technical_rejections):
         raise TypeError("candidate audit requires typed technical rejections")
+    if (not isinstance(acquisition_rejections, tuple)
+            or any(not isinstance(item, CandidateAcquisitionOutcome)
+                   or item.disposition == "selected"
+                   for item in acquisition_rejections)):
+        raise TypeError("candidate audit requires rejected acquisition outcomes")
+    acquisition_rows = [item.to_rejection_row()
+                        for item in acquisition_rejections]
+    rejection_rows = [*rejected, *acquisition_rows]
     representation_levels = {rep.query: rep.level
                              for rep in visual_plan.representations}
     rows = []
@@ -223,7 +234,7 @@ def candidate_audit_rows(
         candidate = evaluation.candidate
         asset = candidate.asset
         detail = evaluation.evidence_dict()
-        lifecycle_rejection = next((item for item in rejected
+        lifecycle_rejection = next((item for item in rejection_rows
             if item.get("identity") == candidate.identity), None)
         technical_rejection = next((item for item in technical_rejections
             if item.candidate.identity == candidate.identity), None)
@@ -284,7 +295,7 @@ def candidate_audit_rows(
         "media_type": (item.get("asset") or {}).get("media_type", "image"),
         "decision": "rejected",
         "reason": item.get("reason", ""),
-    } for item in rejected if not any(
+    } for item in rejection_rows if not any(
         row["title"] == item.get("title") for row in rows))
     rows.extend({
         "title": item.candidate.asset.title,
@@ -311,6 +322,7 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
                                 evaluations: tuple[CandidateEvaluation, ...],
                                 rejected: list[dict],
                                 technical_rejections: tuple[CandidateRejection, ...],
+                                acquisition_rejections: tuple[object, ...],
                                 picked: tuple["SelectedAsset", ...],
                                 min_score: float,
                                 fallback_plan: "VisualFallbackPlan | None",
@@ -342,6 +354,8 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
     if (not isinstance(picked, tuple)
             or any(not isinstance(item, SelectedAsset) for item in picked)):
         raise TypeError("visual audit requires selected asset values")
+    from .media_acquisition_contracts import CandidateAcquisitionOutcome
+
     if (not isinstance(evaluations, tuple)
             or any(not isinstance(item, CandidateEvaluation)
                    for item in evaluations)
@@ -349,7 +363,11 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
             or any(not isinstance(item, dict) for item in rejected)
             or not isinstance(technical_rejections, tuple)
             or any(not isinstance(item, CandidateRejection)
-                   for item in technical_rejections)):
+                   for item in technical_rejections)
+            or not isinstance(acquisition_rejections, tuple)
+            or any(not isinstance(item, CandidateAcquisitionOutcome)
+                   or item.disposition == "selected"
+                   for item in acquisition_rejections)):
         raise TypeError("visual audit requires typed evaluations/rejections")
     if (isinstance(min_score, bool) or not isinstance(min_score, (int, float))
             or not isfinite(min_score) or not 0 <= min_score <= 100):
@@ -369,9 +387,11 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
 
     candidates = candidate_audit_rows(
         evaluations, rejected, picked, visual_plan, min_score,
-        technical_rejections)
+        technical_rejections, acquisition_rejections)
     query_rejections = [*rejected,
-                        *(item.to_dict() for item in technical_rejections)]
+                        *(item.to_dict() for item in technical_rejections),
+                        *(item.to_rejection_row()
+                          for item in acquisition_rejections)]
     first = picked[0] if picked else None
     synthetic = bool(first and first.asset.provider == "synth")
     selected = next((item for item in candidates

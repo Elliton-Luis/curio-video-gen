@@ -233,6 +233,7 @@ def _search_scene_with_shortcircuit(
     technical_rejections = list(
         describe_technical_rejections(collection.rejected, ch))
     rejected = []
+    acquisition_rejections = []
     ranked_candidates = apply_clip_layer(
         ranked_candidates, ch, cfg, metrics, max_images)
 
@@ -284,8 +285,7 @@ def _search_scene_with_shortcircuit(
         ch.id, ranked, max_images, cfg.cache_dir, metrics, asset_uses)
     picked: list[SelectedAsset] = [
         outcome.to_selected_asset() for outcome in acquisition_batch.selected]
-    rejected.extend(outcome.to_rejection_row()
-                    for outcome in acquisition_batch.rejected)
+    acquisition_rejections.extend(acquisition_batch.rejected)
     warnings.extend(acquisition_batch.warnings)
 
     # Generic/context representations are the next search tier, not an excuse
@@ -317,6 +317,9 @@ def _search_scene_with_shortcircuit(
             item.candidate.identity for item in technical_rejections}
         previous_rejection_ids.update(
             row.get("identity") for row in rejected)
+        previous_rejection_ids.update(
+            item.candidate.evaluation.candidate.identity
+            for item in acquisition_rejections)
         collection = collector.snapshot()
         additional_technical_rejections = describe_technical_rejections(
             collection.rejected, ch)
@@ -349,8 +352,7 @@ def _search_scene_with_shortcircuit(
                 metrics, asset_uses, selected_order_start=len(picked))
             picked.extend(outcome.to_selected_asset()
                           for outcome in generic_batch.selected)
-            rejected.extend(outcome.to_rejection_row()
-                            for outcome in generic_batch.rejected)
+            acquisition_rejections.extend(generic_batch.rejected)
             warnings.extend(generic_batch.warnings)
             ranked.extend(generic_fresh)
 
@@ -434,7 +436,10 @@ def _search_scene_with_shortcircuit(
               cache_hits=cache_hits, strategy=strategy_used)
 
     technical_rejection_rows = [item.to_dict() for item in technical_rejections]
-    all_rejected_rows = [*rejected, *technical_rejection_rows]
+    acquisition_rejection_rows = [item.to_rejection_row()
+                                  for item in acquisition_rejections]
+    all_rejected_rows = [*rejected, *technical_rejection_rows,
+                         *acquisition_rejection_rows]
     scene_rejected = all_rejected_rows[:REJECTED_KEPT]
     selection_provenance = describe_selection_provenance(
         tuple(picked), visual_plan, search_plan, collection.query_audit)
@@ -445,6 +450,7 @@ def _search_scene_with_shortcircuit(
         scene=ch, visual_plan=visual_plan, search_plan=search_plan,
         collection=collection, evaluations=tuple(evaluations),
         rejected=rejected, technical_rejections=tuple(technical_rejections),
+        acquisition_rejections=tuple(acquisition_rejections),
         picked=tuple(picked), min_score=min_score,
         fallback_plan=(fallback_plan
                        if synthetic and "fallback_plan" in locals() else None),
