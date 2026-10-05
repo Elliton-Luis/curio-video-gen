@@ -1,12 +1,12 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G92 e métricas até F12.
-**Estado:** trabalho incompleto. G80–G92 e F4–F12 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G92 e métricas até F13.
+**Estado:** trabalho incompleto. G80–G92 e F4–F13 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F12 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`) e G86–G92
+> **Atualização:** F6–F13 (`11022b2`, `254f48f`, `b0b272e`, `ed34825`, `1054c8a`, `4ee2506`, `9d86d4e`, `50ba36d`) e G86–G92
 > (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
@@ -134,6 +134,7 @@ hashes e diffs.
 | `1054c8a` | Classifica retries de mídia por operação e provider, mantendo o total agregado (F10). |
 | `4ee2506` | Separa expiração real de busca de bloqueio de provider por rate limit/acesso negado (F11). |
 | `9d86d4e` | Distingue cache de bytes e cache de resultados de busca no schema de métricas (F12). |
+| `50ba36d` | Compara assets selecionados com a timeline e preserva reconciliação unknown no backfill (F13). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -300,8 +301,10 @@ aliases explícitos. F10 separa retries de busca e download sem alterar os
 campos agregados; F11 evita contar bloqueio de provider como timeout. A fase de
 métricas continua parcial: definições canônicas globais para requests/timing,
 backfill de contadores históricos,
-timers adicionais, profile por suboperação e conciliação seleção-render seguem
-pendentes. Ver [relatório F9](20261005-selection-metrics-single-projection.md).
+timers adicionais, profile por suboperação e confirmação dos frames após render
+seguem pendentes. F13 compara seleção com a timeline planejada; ver
+[relatório F9](20261005-selection-metrics-single-projection.md) e
+[relatório F13](20261005-selection-render-reconciliation.md).
 
 ## Trabalho de mídia: escopo e ponto exato
 
@@ -339,12 +342,12 @@ query, provider, ranking ou seleção de imagem.
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F12 parciais. | Requests, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F13 parciais. | Requests, lifecycle timers, profile por suboperação e conciliação dos frames após FFmpeg permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G92 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallback e métricas; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G92/F12. Não representam
+Os status são os registrados na auditoria e neste relatório até G92/F13. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -610,6 +613,16 @@ mede resultados de provider reutilizados durante a geração. `cache_hits` e
 21 focados e **1003 completos em 178,60 s**, compileall e diff check passaram.
 Ver [relatório F12](20261005-media-cache-metric-units.md).
 
+## F13 — reconciliação de seleção e timeline (`50ba36d`)
+
+`selection_render_reconciliation` mede a interseção, assets selecionados sem uso
+na timeline, IDs da timeline ausentes na seleção e cobertura por identidade.
+O campo só é observado com seleção e timeline conhecidas; backfill sem arquivo
+recebe `None`, não uma lista vazia que gere falso zero. 41 focados e **1006
+testes completos em 192,03 s** passaram; compileall e diff check passaram. A
+métrica confirma planejamento visual, não a presença dos pixels no vídeo final.
+Ver [relatório F13](20261005-selection-render-reconciliation.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -665,4 +678,5 @@ passaram. Não houve geração real. Consulte
 - [`F10 — retries por operação`](20261005-media-retry-operation-metrics.md)
 - [`F11 — timeout e falhas de provider`](20261005-media-timeout-error-separation.md)
 - [`F12 — unidades explícitas de cache`](20261005-media-cache-metric-units.md)
+- [`F13 — reconciliação seleção e timeline`](20261005-selection-render-reconciliation.md)
 - [`Inventário de relatórios do projeto`](../README.md)
