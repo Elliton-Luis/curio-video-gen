@@ -40,3 +40,14 @@ def test_evaluator_rejects_untyped_dict_candidate():
                     subject="Julius Caesar")
     with pytest.raises(TypeError, match="requires Candidate values"):
         evaluate_specific([{"query": "Julius Caesar"}], scene, threshold=34)
+
+
+def test_evaluation_batch_rejects_partition_that_disagrees_with_decision():
+    import pytest
+
+    scene = Chapter(1, "Julius Caesar led the campaign.", 5,
+                    subject="Julius Caesar")
+    result = evaluate_specific([_entry("portrait", "Julius Caesar bust")],
+                               scene, threshold=34)
+    with pytest.raises(ValueError, match="rejected partition is inconsistent"):
+        type(result)((), (result.accepted[0],))

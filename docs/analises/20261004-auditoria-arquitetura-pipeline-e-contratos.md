@@ -577,3 +577,12 @@ resultados `CandidateEvaluation` apontam para o mesmo candidato original. A
 conversão reversa sem consumidores foi removida. A saída dict para seleção
 permanece adaptador no limite já usado pelo seletor/persistência. Ver
 `20261005-candidate-evaluation-boundary.md`.
+
+## G54 — invariantes do resultado de avaliação
+
+`Candidate`, `CandidateEvaluation` e `EvaluationBatch` agora validam seus
+limites locais: asset/query/identity tipados, score finito dentro de 0–100,
+rejeição com motivo, partições tuple tipadas e nenhum candidato nas duas
+partições. Isso faz o evaluator declarar um resultado coerente antes de o
+seletor decidir. Não muda scores nem threshold. Ver
+`20261005-evaluation-result-invariants.md`.
