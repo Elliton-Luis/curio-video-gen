@@ -147,6 +147,7 @@ def test_visual_render_usage_records_paths_passed_and_unavailable_assets(
     assert result.scenes[0].unavailable_asset_ids == (missing_key,)
     assert result.scenes[0].omitted_asset_ids == (missing_key,)
     assert result.scenes[0].fallback_used is False
+    assert result.scenes[0].segment_reused is False
     assert metrics.to_dict({}, {}, "metrics")["pipeline"][
         "visual_render_usage"] == result.to_dict()
 
@@ -175,6 +176,7 @@ def test_visual_render_usage_marks_synthetic_fallback_when_no_file_is_usable(
     assert usage.passed_asset_ids == ()
     assert usage.unavailable_asset_ids == ("fixture:missing",)
     assert usage.fallback_used is True
+    assert usage.segment_reused is False
 
 
 def test_primary_asset_render_usage_covers_legacy_non_timeline_path(
@@ -213,6 +215,8 @@ def test_primary_asset_render_usage_covers_legacy_non_timeline_path(
 
     assert result.scenes[0].passed_asset_ids == (asset_key(rows[0]["asset"]),)
     assert result.scenes[0].fallback_used is False
+    assert result.scenes[0].segment_reused is False
     assert result.scenes[1].unavailable_asset_ids == (
         asset_key(rows[1]["asset"]),)
     assert result.scenes[1].fallback_used is True
+    assert result.scenes[1].segment_reused is False

@@ -13,6 +13,7 @@ class VisualRenderSceneUsage:
     unavailable_asset_ids: tuple[str, ...]
     omitted_asset_ids: tuple[str, ...]
     fallback_used: bool
+    segment_reused: bool
 
     def __post_init__(self) -> None:
         if isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int) \
@@ -35,8 +36,9 @@ class VisualRenderSceneUsage:
             raise ValueError("render usage asset cannot be passed and unavailable")
         if set(self.omitted_asset_ids) != requested - set(self.passed_asset_ids):
             raise ValueError("render usage omitted IDs must match unpassed IDs")
-        if not isinstance(self.fallback_used, bool):
-            raise TypeError("render usage fallback flag must be boolean")
+        if (not isinstance(self.fallback_used, bool)
+                or not isinstance(self.segment_reused, bool)):
+            raise TypeError("render usage flags must be boolean")
         if self.fallback_used != (not self.passed_asset_ids):
             raise ValueError("render usage fallback must match passed asset IDs")
 
@@ -48,6 +50,7 @@ class VisualRenderSceneUsage:
             "unavailable_asset_ids": list(self.unavailable_asset_ids),
             "omitted_asset_ids": list(self.omitted_asset_ids),
             "fallback_used": self.fallback_used,
+            "segment_reused": self.segment_reused,
         }
 
 

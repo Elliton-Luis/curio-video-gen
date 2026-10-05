@@ -176,23 +176,23 @@ def _segment_identity(assets: list[RenderAsset], cfg: CurioConfig,
 
 def _scene_segment(scene_id: int, asset: RenderAsset | None, idea: str,
                    duration: float, paths, cfg: CurioConfig,
-                   variant: int) -> str:
+                   variant: int) -> tuple[str, bool]:
     identity = _segment_identity([asset] if asset else [], cfg, variant)
     segment = os.path.join(paths.root, "render", "segments",
                            f"scene{scene_id}_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(segment):
-        return segment
+        return segment, True
     os.makedirs(os.path.dirname(segment), exist_ok=True)
     if asset and asset.local_path:
         local = asset.local_path
         if os.path.isfile(local):
             if asset.kind == "video":
                 return render_stage.render_video_segment(
-                    local, duration, segment, cfg)
-            return render_stage.render_image_segment(local, duration, segment,
-                                                     cfg, variant)
-    return render_stage.render_fallback_segment(
-        duration, segment, cfg, render_stage._wrap_title(idea))
+                    local, duration, segment, cfg), False
+            return (render_stage.render_image_segment(
+                local, duration, segment, cfg, variant), False)
+    return (render_stage.render_fallback_segment(
+        duration, segment, cfg, render_stage._wrap_title(idea)), False)
 
 
 def _visual_segment(trecho: dict, idea: str, duration: float,
@@ -229,14 +229,16 @@ def _visual_segment(trecho: dict, idea: str, duration: float,
                            f"scene{trecho['chapter_id']}_visual_{identity}_{duration:.1f}s.mp4")
     if os.path.isfile(segment):
         rendered_segment = segment
+        segment_reused = True
     else:
         os.makedirs(os.path.dirname(segment), exist_ok=True)
         if len(backgrounds) >= 2 or len(images) >= 2:
             rendered_segment = render_stage.render_collage_segment(
                 images, duration, segment, cfg, variant, backgrounds=backgrounds)
+            segment_reused = False
         else:
             asset = passed[0] if passed else None
-            rendered_segment = _scene_segment(
+            rendered_segment, segment_reused = _scene_segment(
                 int(trecho["chapter_id"]),
                 RenderAsset.from_media_dict(
                     {"local_path": asset["local_path"],
@@ -249,7 +251,8 @@ def _visual_segment(trecho: dict, idea: str, duration: float,
         passed_asset_ids=tuple(sorted(passed_ids)),
         unavailable_asset_ids=tuple(sorted(requested_ids - available_ids)),
         omitted_asset_ids=tuple(sorted(requested_ids - passed_ids)),
-        fallback_used=not passed_ids)
+        fallback_used=not passed_ids,
+        segment_reused=segment_reused)
     return rendered_segment, usage
 
 
@@ -272,15 +275,17 @@ def build_silent(semantic_scenes: tuple[SemanticScene, ...],
                          and os.path.isfile(asset.local_path))
         passed_ids = requested_ids if available else ()
         duration = round(max(0.5, span.end - span.start), 1)
-        segments.append(_scene_segment(scene.id, asset, idea, duration,
-                                       paths, cfg, variant=index))
+        segment, segment_reused = _scene_segment(
+            scene.id, asset, idea, duration, paths, cfg, variant=index)
+        segments.append(segment)
         scene_usage.append(VisualRenderSceneUsage(
             scene_id=scene.id,
             requested_asset_ids=requested_ids,
             passed_asset_ids=passed_ids,
             unavailable_asset_ids=requested_ids if not available else (),
             omitted_asset_ids=requested_ids if not available else (),
-            fallback_used=not available))
+            fallback_used=not available,
+            segment_reused=segment_reused))
     output = (render_stage.concat_with_transitions(
         segments, out_path, cfg, transitions, kinds)
         if transitions else render_stage.concat_copy(segments, out_path, cfg))
