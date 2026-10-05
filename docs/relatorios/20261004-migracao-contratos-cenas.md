@@ -548,3 +548,32 @@ passou com **892 testes em 195,38 s**. Compileall e diff check passaram. Código
 em `2934469`. A próxima extração de finalize já pode ler/escrever artefatos sem
 importar o coordenador; ainda será necessário mapear contratos de render,
 transcrição e logging.
+
+## G10: o workflow de finalize tem módulo e entrada próprios
+
+`pipeline.py` mantinha junto à geração o fluxo de áudio humano: validação de
+inputs, transcrição/cache, legendas, ajuste de duração do silencioso,
+composição de áudio, render e metadata. O wrapper público também era usado por
+CLI/TUI e precisava conservar clonagem de config, resolução de projeto,
+RunLog e eventos de falha/conclusão.
+
+Extraí o workflow para `pipeline_finalize.run_finalize`. A fronteira recebe o
+slug, o áudio, a configuração local e `VideoPaths` já resolvido; usa os owners
+de `project_artifacts`, `audio.composition`, render, transcrição e metadata.
+`pipeline.finalize_project` permanece a API externa e agora só resolve o
+projeto, abre o log, delega e fecha eventos. Removi `_finalize_project` e um
+wrapper legado sem consumidores que a extração havia copiado. Também movi a
+resolução da fonte de título para `pipeline_render` e a projeção de tipografia
+para `pipeline_metadata`; os testes importam esses módulos diretamente.
+
+`pipeline.py` caiu de 1.054 para 739 linhas; `pipeline_finalize.py` concentra
+299 linhas do workflow humano. Na primeira suíte integral, dois testes ainda
+dependiam de aliases privados de pesquisa/subtitle no pipeline; foram
+migrados para `pipeline_research`, `stages.subs` e `stages.render`. Depois da
+migração, **892 testes passaram em 173,98 s**. Após remover o wrapper morto,
+25 testes focados de finalização, TTS e isolamento passaram em 150,41 s;
+compileall e diff check passaram. Código em `bbd06b3`.
+
+Rerender/finalize preserva o contrato de CLI/TUI e usa os mesmos arquivos em
+disco. A coordenação da geração IA/humana e o workflow visual extenso continuam
+no pipeline; separar finalize não conclui a simplificação do coordenador.

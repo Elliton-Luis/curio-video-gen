@@ -44,6 +44,11 @@ do coordenador. O gate integral após essa fronteira ficou em 892 testes
 Leitura de texto/JSON e escrita JSON dos projetos também foram centralizadas em
 `project_artifacts.py` e os helpers duplicados do pipeline foram removidos;
 após essa fase, 892 testes passaram em 195,38 s.
+O workflow de áudio humano agora está em `pipeline_finalize.py`; a API
+`finalize_project` continua no coordenador como boundary de config, paths e
+RunLog. `pipeline.py` caiu de 1.054 para 739 linhas. Gate integral: 892 testes
+passaram em 173,98 s; após remover o wrapper interno sem consumidores, 25
+testes focados passaram em 150,41 s.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
