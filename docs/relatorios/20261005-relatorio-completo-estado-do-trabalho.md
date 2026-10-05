@@ -1,26 +1,22 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural no repositório, incluindo a
-fronteira de aquisição de mídia em andamento.  
+**Escopo:** estado da refatoração arquitetural no repositório até G78.
 **Estado:** trabalho incompleto. Este documento registra evidências disponíveis
-e não certifica a conclusão da refatoração.
+e não certifica a conclusão da refatoração. O worktree estava limpo após o
+commit documental G78 (`885bf72`).
 
 ## Resumo do estado
 
 O projeto já tinha módulos separados por etapa, mas ainda havia contratos
 internos representados por mappings mutáveis e dados semanticamente duplicados.
 As migrações recentes vêm mantendo valores tipados por mais tempo entre
-planejamento, busca, avaliação, seleção e persistência. Até G74, essas mudanças
-foram commitadas e validadas incrementalmente. A aquisição técnica ainda era
-orquestrada em `visual.py`.
-
-Na tentativa seguinte, começou-se a extrair esse loop para
-`src/curio/stages/media_candidate_acquisition.py`. O arquivo aparece no
-worktree como não rastreado, sem commit e sem validação registrada. Portanto,
-essa extração não é uma fase concluída. O estado Git observado ao preparar este
-relatório contém apenas esse arquivo não rastreado; não há outras alterações
-locais reportadas por `git status --short`.
+planejamento, busca, avaliação, seleção, aquisição e persistência. G75–G78
+extraíram aquisição técnica, unificaram uma tentativa técnica compartilhada,
+corrigiram a continuação da busca contextual após falhas de aquisição e
+melhoraram a auditoria de queries adiadas. Cada fase foi commitada e validada
+incrementalmente. As pendências de ownership global, simplificação e validação
+real permanecem.
 
 ## Arquitetura antes das migrações recentes
 
@@ -97,6 +93,14 @@ hashes e diffs.
 | `f8e7fb9` | Documenta a fronteira tipada de candidatos. |
 | `57a9a21` | Introduz resultados tipados de sucesso/falha de aquisição por candidato. |
 | `a5d36ed` | Documenta os resultados tipados de aquisição. |
+| `c4ef8c5` | Extrai tentativas de aquisição dos candidatos ranqueados para `media_candidate_acquisition.py`; fallback editorial permanece em `visual.py` (G75). |
+| `1649f49` | Documenta a extração G75. |
+| `b87ba98` | Compartilha download/cache/validação dimensional dos caminhos fresh e reuse via `TechnicalAcquisitionAttempt` (G76). |
+| `57a767b` | Documenta a tentativa técnica compartilhada G76. |
+| `111995f` | Continua a busca contextual planejada quando candidatos específicos passam scoring, mas falham na aquisição (G77). |
+| `11a7fff` | Documenta a busca contextual após falha de aquisição. |
+| `f7eabb0` | Audita queries contextuais adiadas e diferencia adiamento, consulta e orçamento esgotado (G78). |
+| `885bf72` | Documenta a auditoria G78. |
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
 render, metadata e cenas estão enumeradas no relatório de estado e no histórico
@@ -150,20 +154,30 @@ espelhos runtime duplicados de queries em cenas/planos em fases anteriores; a
 serialização legada foi mantida como projeção. Compatibilidade interna e
 adapters ainda existem onde a migração não terminou.
 
-### Tentativa não concluída após G74
+### G75–G78: aquisição, continuação da busca e auditoria
 
-`src/curio/stages/media_candidate_acquisition.py` está presente como arquivo
-não rastreado. A intenção era extrair de `visual.py` as tentativas concorrentes
-de aquisição dos candidatos ranqueados e o fallback de reuso tardio, fazendo a
-nova etapa devolver um lote de `CandidateAcquisitionOutcome` tipados. O
-coordenador visual continuaria decidindo a sequência editorial (asset novo,
-fallback sintético e, por último, reuso), e `media_acquisition` continuaria
-responsável pelos detalhes técnicos de cache/download.
+G75 criou `src/curio/stages/media_candidate_acquisition.py` e moveu para esse
+módulo a execução concorrente de tentativas técnicas nos candidatos ranqueados.
+O lote `CandidateAcquisitionBatch` contém outcomes imutáveis; `visual.py`
+continua dono da ordem editorial fresh → sintético → reuso. Métricas/logging e
+consulta de uso cross-scene ainda atravessam fronteiras e seguem como dívida.
 
-Essa tentativa não tem commit, não aparece nos relatórios de fase concluída e
-não possui resultados de testes associados. Não há contrato de módulo
-`CandidateAcquisitionBatch` certificado. O arquivo pendente não foi incluído
-como parte concluída da arquitetura nem teve suas alterações desfeitas.
+G76 introduziu `TechnicalAcquisitionAttempt` para compartilhar download/cache e
+validação dimensional entre aquisição fresh e reuse. A classificação editorial
+dos resultados continua distinta.
+
+G77 corrigiu uma parada prematura: se candidatos específicos passam scoring,
+mas falham no download/validação, a tier contextual/genérica planejada agora
+pode ser consultada para preencher vagas, usando os mesmos gates e mantendo a
+ordem da seleção. Isso corrige a transição de busca após falha técnica; não
+demonstra que todos os providers estejam saudáveis nem que a cobertura real seja
+suficiente.
+
+G78 marca explicitamente queries contextuais ainda não executadas como
+`not_consulted`, distinguindo-as de consultas sem resultados ou bloqueadas por
+orçamento. Ainda há uma limitação documentada: a razão detalhada cobre as
+queries contextuais adiadas; queries específicas são sempre iniciadas pelo
+fluxo atual.
 
 ## Testes e validações atuais registradas
 
@@ -172,15 +186,14 @@ depois, 89 testes focados passaram. G71: 940 passaram, 1 desmarcado, suíte em
 179,44 s; 88 focados. G72: 940 passaram, 1 desmarcado, em 179,23 s; 99
 focados. G73: 940 passaram, 1 desmarcado, em 178,02 s; 99 focados. G74: 100
 focados passaram; na suíte ampla, 941 passaram e 1 foi desmarcado após HTTP
-429 da API real da Wikipédia, em 172,28 s. Para as fases commitadas também
-foram registrados `python -m compileall -q src tests` e `git diff --check`
-passando.
+429 da API real da Wikipédia, em 172,28 s. G75 teve 102 focados e suíte ampla
+com 943 passando/1 desmarcado; G76 teve 103 focados e 944/1; G77 teve 90
+focados e 946/1; G78 teve 53 focados e 948/1. Em G75–G78 também passaram
+`python -m compileall -q src tests` e `git diff --check`.
 
-Esses números refletem a validação disponível de cada fase, não uma única
-execução atual de toda a suíte depois de qualquer código não commitado. A
-tentativa G75 (arquivo não rastreado) não foi validada. As falhas/deseleções
-dependentes de rede não demonstram defeito do contrato, mas deixam esse caminho
-externo sem prova determinística.
+Esses números refletem execuções separadas por fase, não uma única execução
+após todas as mudanças. O teste excluído depende da API real da Wikipédia; as
+falhas/deseleções externas deixam esses caminhos de rede sem prova determinística.
 
 ## Regressões e problemas conhecidos
 
@@ -202,9 +215,16 @@ externo sem prova determinística.
 - **Provas e2e restantes:** falha simultânea de LLM e provider, fallback local
   com o mesmo contrato, cache de decisão, rerender após mudança de seleção e
   maior amostra de inspeção visual precisam de validação adicional.
-- **Aquisição:** G74 tipou o resultado por candidato, mas não extraiu a
-  orquestração concorrente. O arquivo não rastreado da tentativa seguinte não
-  pode ser considerado correção comprovada.
+- **Aquisição:** G75 extraiu a orquestração técnica e G76 compartilhou o
+  download/validação. O coordenador ainda concentra decisões editoriais e
+  efeitos de métricas/logging; a extração não encerrou esse ownership.
+- **Busca após falha técnica:** G77 cobre a regressão em que candidatos
+  específicos passam scoring e falham na aquisição. Continua faltando validar
+  em geração real com providers saudáveis e demonstrar queries executadas até
+  esgotamento razoável.
+- **Auditoria de query:** G78 distingue tier contextual adiada da consulta
+  efetiva; reasons equivalentes para queries específicas não executadas não
+  fazem parte do comportamento atual porque elas são iniciadas pelo fluxo.
 
 ## Estado das fases do plano arquitetural
 
@@ -214,29 +234,23 @@ externo sem prova determinística.
 | A — modelo semântico | A4a–A4v concluídas no escopo registrado. | Ownership restante de alias/contexto e compatibilidade externa controlada. |
 | B — VisualPlan | B1–B4 concluídas no escopo registrado. | Consolidar políticas de gênero e ganchos sintéticos. |
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
-| D — candidato/avaliação/seleção | D1–D4 e partes da convergência concluídas até G74. | Unificar transições de fallback e simplificar o coordenador. |
+| D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G78. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5, G7–G74 commitadas. | Extrair loop de aquisição; limpar caminhos antigos após migração comprovada. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5, G7–G78 commitadas. | Simplificar coordenador e limpar caminhos antigos após migração comprovada. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório G74. Não representam
+Os status são os registrados na auditoria e no relatório atualizado até G78. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
 
-O trabalho imediatamente anterior ao pedido de relatório era uma extração de
-responsabilidade, não uma alteração de relevância ou de critérios editoriais.
-Em G74, o coordenador ainda mutava `dict` de candidato durante download para
-anotar falhas, dimensões inválidas, hash duplicado, identidade final, ordem de
-seleção e motivo de reuso. G74 substituiu esse canal implícito por
-`CandidateAcquisitionOutcome`, ligado ao candidato ranqueado e ao snapshot do
-asset, com projeções separadas para seleção e rejeição/auditoria.
-
-A próxima tentativa pretendia mover o loop de downloads concorrentes e
-tratamento técnico para `media_candidate_acquisition.py`, retornando resultados
-tipados a `visual.py`. O objetivo era tornar explícita a transição:
+O problema arquitetural que levou às fases recentes era o acoplamento entre
+busca editorial e aquisição técnica. G74 substituiu mutações implícitas em
+`dict` por `CandidateAcquisitionOutcome`. G75 moveu as tentativas concorrentes
+para `media_candidate_acquisition.py`; G76 unificou a operação técnica
+compartilhada. A transição passou a ser:
 
 ```text
 RankedSelectionCandidate
@@ -245,25 +259,22 @@ RankedSelectionCandidate
   → SelectedAsset ou row de rejeição/auditoria
 ```
 
-O coordenador manteria a ordem de decisão editorial já acordada: buscar asset
-novo elegível por representações/providers, tentar fallback sintético adequado
-e considerar asset anterior somente como último fallback. A extração não deveria
-afrouxar gates, tornar o sintético dominante, mudar providers, reescrever
-queries nem introduzir serviços pagos/LLM por cena. A tentativa parou antes da
-integração, execução dos testes e commit; portanto não há resultado “depois” para
-essa extração.
+Depois, G77 corrigiu a parada prematura quando a busca específica retorna
+candidato elegível que falha durante aquisição: a tier contextual planejada
+continua antes dos fallbacks posteriores. G78 tornou visível quando essa tier
+foi adiada. Os gates, a política de reuso, os providers existentes e a ausência
+de chamadas pagas/LLM por cena foram preservados. Há regressões unitárias e
+validação ampla por fase, mas ainda não há validação real pós-G78.
 
 ## Incompleto para considerar a refatoração encerrada
 
-- Validar ou descartar a extração pendente em uma etapa futura explicitamente
-  retomada; a tentativa atual não foi integrada nem testada.
 - Terminar as fases E–I conforme critérios da auditoria, incluindo ownership
   canônico para métricas/estado e simplificação dos coordenadores.
 - Resolver e testar os falsos positivos semânticos históricos sem reduzir
   thresholds nem esconder falhas de provider.
-- Executar geração real histórica após recuperação/controle da saúde de
-  providers, reportando queries, providers, resultados, rejeições, winners,
-  únicos, reusos, sintéticos e esgotamento da busca por cena.
+- Executar geração real histórica após G77/G78 e com providers saudáveis,
+  reportando queries, providers, resultados, rejeições, winners, únicos,
+  reusos, sintéticos e esgotamento da busca por cena.
 - Validar rerender, cache, falha de LLM/provider e pelo menos dois domínios
   reais, com inspeção visual dos assets vencedores.
 - Rodar suíte, compile/check e profile final sobre a revisão final efetivamente
@@ -271,8 +282,12 @@ essa extração.
 
 ## Referências de relatórios
 
-- [`Relatório de arquitetura e estado da migração até G74`](20261005-relatorio-arquitetura-estado-atual.md)
+- [`Relatório de arquitetura e estado da migração até G78`](20261005-relatorio-arquitetura-estado-atual.md)
 - [`Auditoria do pipeline e dos contratos`](../analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 - [`Resultados de execuções reais e limitações`](20261004-validacao-arquitetural-execucoes-reais.md)
 - [`G74 — resultados tipados de aquisição`](20261005-candidate-acquisition-outcomes.md)
+- [`G75 — aquisição de candidatos`](20261005-candidate-media-acquisition.md)
+- [`G76 — tentativa técnica compartilhada`](20261005-shared-technical-acquisition-attempt.md)
+- [`G77 — busca contextual após falha de aquisição`](20261005-generic-search-after-acquisition-failure.md)
+- [`G78 — auditoria de queries adiadas`](20261005-deferred-query-audit-state.md)
 - [`Inventário de relatórios do projeto`](../README.md)
