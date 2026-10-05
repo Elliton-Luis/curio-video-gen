@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G85.
-**Estado:** trabalho incompleto. G80–G85 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G85 e métricas até F4.
+**Estado:** trabalho incompleto. G80–G85 e F4 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -111,6 +111,7 @@ hashes e diffs.
 | `31f6acf` | Rejeita tipos inválidos nos campos de `PipelineInput` (G83). |
 | `bc131b9` | Move aplicação da camada CLIP e reranqueamento para `candidate_evaluation.py` (G84). |
 | `8ae6616` | Faz auditoria de query/candidato consumir provenance do `VisualPlan` e rejeitar plano de cena divergente (G85). |
+| `11ac1f3` | Mede a etapa de timeline visual em `VisualTimelineResult` e agrega duração explícita nos stage times (F4). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -264,7 +265,7 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
+| F — métricas/estado | F1–F4 parciais. | Lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G85 commitadas. | Simplificar coordenador; migrar campos restantes da auditoria final e adapters após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
@@ -368,6 +369,8 @@ G84 extraiu `apply_clip_layer()` de `visual.py` para
 G85 fez os projetores de auditoria consumirem `VisualPlan`, removendo a
 reconstrução paralela de levels, kinds e aliases no coordenador e validando
 que os planos pertençam à mesma cena. O formato persistido foi preservado.
+F4 mede o estágio de timeline visual e registra `stage_times["visual_timeline"]`;
+isso fecha apenas um dos timers ausentes.
 
 ## G84 — camada CLIP na avaliação de candidatos (`bc131b9`)
 
@@ -420,6 +423,16 @@ Compileall e diff check passaram. Não houve geração real porque a mudança
 somente moveu a fonte de dados da auditoria. Ver
 [relatório G85](20261005-visual-audit-from-visual-plan.md).
 
+## F4 — duração explícita da timeline visual (`11ac1f3`)
+
+`VisualTimelineResult` inclui duração validada, medida desde o início do estágio
+até a atualização das métricas. `pipeline.py` agrega essa duração como
+`stage_times["visual_timeline"]`. Isso acrescenta observabilidade de uma etapa
+sem alterar timers existentes. Focados: **16 passaram**; suíte integral:
+**967 passaram em 191,41 s**. Compileall e diff check passaram. Não houve
+geração real. F4 não conclui os lifecycle timers ou profile requerido na Fase H;
+ver [relatório F4](20261005-visual-timeline-stage-timing.md).
+
 ## Referências de relatórios
 
 - [`Relatório de arquitetura e estado da migração até G85`](20261005-relatorio-arquitetura-estado-atual.md)
@@ -437,4 +450,5 @@ somente moveu a fonte de dados da auditoria. Ver
 - [`G83 — tipos estritos no contrato de entrada`](20261005-pipeline-input-strict-types.md)
 - [`G84 — camada CLIP na avaliação de candidatos`](20261005-clip-layer-candidate-evaluation.md)
 - [`G85 — auditoria visual baseada no VisualPlan`](20261005-visual-audit-from-visual-plan.md)
+- [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`Inventário de relatórios do projeto`](../README.md)

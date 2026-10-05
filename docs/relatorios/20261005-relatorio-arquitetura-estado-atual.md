@@ -255,7 +255,7 @@ relatório e os relatórios G57–G70.
 | C — SearchPlan | C1 concluída. | Replays reais para saúde/qualidade de providers. |
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
-| F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
+| F — métricas/estado | F1–F4 parciais. | Definições canônicas, unknown/null consistente, lifecycle timers, profile por suboperação e reconciliação seleção-render. |
 | G — simplificação do pipeline | G1, G3–G5 e G7–G85 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 move a origem da provenance auditada para `VisualPlan`. `visual.py` ainda compõe busca, tiers, fallback e parte da auditoria final. Rows aninhadas e adapters de leitura/reuso permanecem. Coordenadores das demais etapas precisam convergir/remover adapters após prova de ausência de consumidores. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
@@ -373,6 +373,12 @@ G85: auditoria visual, coleta de candidatos, diretor visual e contratos:
 em **197,08 s**. `compileall` e `git diff --check` passaram. Sem geração real;
 foram preservados os campos JSON. Ver
 [relatório G85](20261005-visual-audit-from-visual-plan.md).
+
+F4: timeline visual/integração/metadata: **16 testes focados passaram**;
+suíte completa: **967 passaram em 191,41 s**. `compileall` e
+`git diff --check` passaram. Foi adicionada duração explícita à etapa; sem
+profile de geração real. Ver
+[relatório F4](20261005-visual-timeline-stage-timing.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -931,3 +937,11 @@ SearchPlan e VisualPlan de cenas diferentes. O coordenador não
 reconstrói mais esses valores a partir de contextos paralelos. 66 testes
 focados e 966 completos passaram; consulte
 [relatório G85](20261005-visual-audit-from-visual-plan.md).
+
+## F4 — duração do estágio de timeline visual (`11ac1f3`)
+
+`VisualTimelineResult.elapsed` é medido dentro do stage, validado e agregado em
+`stage_times["visual_timeline"]`. É uma chave aditiva no formato atual; ainda
+não há profile comparativo nem reconciliação completa entre mídia selecionada
+e render. A suíte completa passou com 967 testes; veja
+[relatório F4](20261005-visual-timeline-stage-timing.md).
