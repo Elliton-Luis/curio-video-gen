@@ -176,7 +176,8 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-selection-decision-invariants.md` — G55: estado, provider, fallback e justificativa de reuso coerentes.
 - `relatorios/20261005-visual-plan-single-source.md` — G56: `representations` é a única fonte de queries no `VisualPlan`; o JSON persistido segue compatível.
 - `relatorios/20261005-semantic-scene-single-source.md` — G57: uma fonte runtime para queries visuais, com serialização e projeção legadas derivadas.
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural completo, commits, contratos, fases, validações e pendências até G60.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — relatório arquitetural completo: estado antes/depois, commits, contratos, fases, testes, regressões, pendências e etapa de mídia; atualizado até G61 (working tree, sem commit).
 - `relatorios/20261005-cross-scene-reuse-owner.md` — G58: política de reuso entre cenas movida do coordenador visual para `media_selection.py`.
 - `relatorios/20261005-media-stage-typed-output.md` — G59: aquisição visual retorna `MediaStageResult` validado e reuso transforma a saída tipada.
 - `relatorios/20261005-selection-contract-reuse-updates.md` — G60: `SceneMediaSelection` é owner das alterações de reuso e da projeção validada.
+- `relatorios/20261005-visual-query-audit-owner.md` — G61: auditoria por query visual agrupada em `SearchQueryAudit`; mudança local ainda sem commit.

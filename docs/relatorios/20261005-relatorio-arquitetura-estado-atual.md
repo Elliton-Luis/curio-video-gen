@@ -1,7 +1,8 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G58.
+**Escopo:** auditoria documentada e migrações incrementais até G60, mais o
+estado não commitado de G61 no working tree.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -78,6 +79,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `05dc295` | Registrou no relatório de estado o commit G58. |
 | `e652f64` | Fez `fetch_media_multi` retornar `MediaStageResult` e moveu a projeção de rows para a fronteira de persistência (G59). |
 | `a7cabe0` | Moveu atualizações de reuse e sua projeção compatível para métodos do contrato `SceneMediaSelection` (G60). |
+| **G61 (sem commit)** | Agrupou fatos da auditoria por query em `SearchQueryAudit` e centralizou a projeção ordenada por `SearchPlan` em `visual_audit.py`; alteração ainda no working tree. |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -105,7 +107,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G60
+## Arquivos alterados nas fases G57–G61
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -120,6 +122,13 @@ Implementação G59: `src/curio/stages/visual.py`,
 Implementação G60: `src/curio/media/selection_result.py` e
 `src/curio/stages/media_selection.py`.
 
+G61 (não commitado): `src/curio/stages/visual.py`,
+`src/curio/stages/visual_audit.py` e `tests/test_visual_audit.py`. A mudança
+substitui dicts/sets paralelos para fatos de auditoria por query por um registro
+`SearchQueryAudit`, e deixa `visual_audit.py` projetar estados na ordem do
+`SearchPlan`. O coordenador ainda executa busca/aquisição; G61 não conclui sua
+extração.
+
 Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 `test_visual_model.py`, `test_visual_context.py`, `test_visual_director.py`,
 `test_visual_asset_usage.py`, `test_visual_topic_anchor.py` e
@@ -127,7 +136,8 @@ Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 `tests/test_media_selection.py` (G58); `tests/test_media_diag.py`,
 `tests/test_media_selection.py`, `tests/test_pipeline_integration.py`,
 `tests/test_pipeline_visual.py` e `tests/test_standby_flow.py` (G59);
-`tests/test_media_selection.py` (G60).
+`tests/test_media_selection.py` (G60); `tests/test_visual_audit.py` (G61,
+preservando os dois testes anteriores e adicionando três casos).
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
@@ -144,7 +154,7 @@ relatório e os relatórios G57–G60.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G60 registradas; parcial. | `visual.py` ainda coordena busca/aquisição; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G60 commitadas; G61 está no working tree, sem commit; parcial. | `visual.py` ainda coordena execução de busca/aquisição; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -163,6 +173,11 @@ G60: **46 testes focados passaram**; suíte integral: **915 passaram em
 187,94 s**. Uma
 execução integral de G57 anterior à correção dos testes foi interrompida em
 640 passados e não é usada como prova.
+
+G61 (working tree, sem commit): **132 testes focados passaram** e a suíte
+integral passou com **918 testes em 180,48 s**. Também passaram
+`python -m compileall -q src tests` e `git diff --check` após a implementação.
+Esses gates descrevem o estado local testado; não certificam um commit.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -199,5 +214,38 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G60 passam os gates registrados, mas auditoria integral, ownership único de
-todas as decisões e validação final permanecem objetivos abertos.
+G57–G60 passam os gates registrados. G61 passou os gates no working tree, mas
+segue sem commit. Auditoria integral, ownership único de todas as decisões e
+validação final permanecem objetivos abertos.
+
+## G61 — ownership da auditoria por query (não commitado)
+
+Antes desta mudança, `visual.py` reunia para cada query resultados, duplicatas,
+rejeições, elegibilidade, providers, erros, estado de execução e contadores em
+mappings e conjuntos paralelos. A montagem da linha de auditoria também era
+responsabilidade do coordenador. Isso tornava possível que a busca continuasse
+correta, mas que o relatório divergisse ou perdesse proveniência ao se alterar
+um dos acumuladores.
+
+A mudança local introduz `SearchQueryAudit` em
+`src/curio/stages/visual_audit.py`, com métodos explícitos para registrar
+resultados, erros, duplicatas, rejeições, elegibilidade e queries não
+executadas. `search_query_audit_rows()` verifica que há estado para exatamente
+as queries do `SearchPlan` e projeta as linhas na ordem do plano. `visual.py`
+agora coordena requests e atualiza esses registros, sem os antigos containers
+paralelos para os mesmos fatos. `candidate_audit_rows()` continua responsável
+pela projeção da auditoria dos candidatos.
+
+Arquivos no working tree: `src/curio/stages/visual.py`,
+`src/curio/stages/visual_audit.py` e `tests/test_visual_audit.py`. Os testes
+adicionados cobrem proveniência por provider, resultados/erros, duplicata,
+rejeição e elegibilidade; distinção entre somente duplicatas e query não
+executada por orçamento; e rejeição de plano sem estado correspondente. Os
+dois testes anteriores de auditoria de candidatos foram preservados.
+
+Esta é uma extração da responsabilidade de acumular e projetar auditoria, não
+uma nova política de busca. Não altera queries, ordem de providers, gates,
+scoring, seleção, fallback nem comportamento editorial. A busca e aquisição
+continuam orquestradas em `visual.py`, portanto esse ownership ainda é
+incompleto. Não foi executada nova geração real nesta etapa. Commit: nenhum;
+o código G61 permanece não commitado.

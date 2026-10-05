@@ -176,8 +176,11 @@ G59 faz a etapa visual devolver `MediaStageResult` validado; pipeline e
 políticas de reuso consomem esse contrato tipado sem uma conversão intermediária.
 G60 transfere atualizações de reuso e projeção compatível para o contrato
 `SceneMediaSelection`, que revalida a seleção alterada.
-O relatório arquitetural com commits, contratos, estado das fases, validações e
-pendências está em [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
+G61 agrupa localmente a auditoria por query em `SearchQueryAudit` e centraliza
+sua projeção pela ordem de `SearchPlan`; essa mudança ainda não foi commitada.
+O relatório arquitetural completo — com estado antes/depois, commits,
+contratos, fases, testes, regressões, etapa de mídia e pendências — está em
+[docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.
