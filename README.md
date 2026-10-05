@@ -72,6 +72,9 @@ aquisição, seleção e fallback, em migração incremental.
 A prioridade por cena agora pertence a `media_provider_policy.py` e consome
 `VisualPlan` já pronto; os providers históricos/científicos mantiveram a ordem
 anterior. Após essa fase, 896 testes passaram na suíte integral.
+O workflow de preparação com narração humana agora pertence a
+`pipeline_human_prep.py`; a integração humana e a suíte completa passaram
+(896 testes). `pipeline.py` ainda coordena a geração assistida.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

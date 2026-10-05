@@ -703,3 +703,21 @@ Os testes de museus e providers agora usam o módulo dono e continuam cobrindo
 prioridade histórica, prioridade-base e Unsplash ao final. 73 testes focados
 passaram; a suíte integral passou com **896 testes em 175,70 s**; compileall e
 diff check passaram. Código em `4fc4bf3`.
+
+## G18: preparação para narração humana sai do coordenador
+
+`pipeline._human_prep` concentrava a timeline estimada, composição de eventos
+de áudio, persistência de fontes, render silencioso, teleprompter e metadata.
+Extraí o workflow completo para `pipeline_human_prep.prepare_human_project`.
+`pipeline.py` mantém a decisão de encaminhar a narração humana e passa os
+resultados explícitos das etapas anteriores; o novo módulo consome os owners
+de timeline, áudio, render e metadata. A assinatura funcional e os artefatos
+persistidos foram preservados. A extração expôs uma dependência implícita do
+seletor de áudio no coordenador; ela foi declarada no módulo novo e os testes
+humanos voltaram a passar.
+
+Os testes de integração de human prep/finalize, timeline, TUI e standby
+passaram após corrigir essa dependência; a suíte integral passou com **896
+testes em 177,84 s**. Compileall, diff check e varredura de imports sem uso
+passaram. Código em `4b3bb27`; `pipeline.py` foi reduzido em cerca de 150
+linhas. Ainda coordena a geração assistida principal.
