@@ -99,7 +99,8 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
     monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
     for candidate in assets.values():
         candidate.local_path = str(tmp_path / f"{candidate.asset_id}.jpg")
-        (tmp_path / f"{candidate.asset_id}.jpg").write_bytes(b"image")
+        (tmp_path / f"{candidate.asset_id}.jpg").write_bytes(
+            candidate.asset_id.encode())
     uses = {}
     selected = []
     for chapter in chapters:
@@ -130,7 +131,8 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
     synth = MediaAsset(provider="synth", asset_id="local", title="Local visual",
                        local_path="", width=1200, height=900)
     monkeypatch.setattr("curio.stages.visuals.visual_for_scene", lambda *args: synth)
-    uses = {"fixture:only": 1}
+    from curio.media.identity import asset_identity
+    uses = {asset_identity(asset.to_dict()): 1}
     result, _ = visual._search_scene_with_shortcircuit(
         chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
         asset_uses=uses)

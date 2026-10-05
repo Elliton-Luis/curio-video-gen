@@ -276,12 +276,8 @@ def _provider_priority_order(cfg: CurioConfig, ch=None,
 
 def _selection_asset_key(asset: dict) -> str:
     """Identity shared across providers when they expose the same source."""
-    source = str(asset.get("source_url") or "")
-    source = source.split("?", 1)[0].rstrip("/").casefold()
-    if source:
-        return f"url:{source}"
-    from .visual_beats import asset_key
-    return asset_key(asset)
+    from ..media.identity import asset_identity
+    return asset_identity(asset)
 
 
 def _search_scene_with_shortcircuit(
@@ -630,6 +626,7 @@ def _search_scene_with_shortcircuit(
             str(getattr(ch, "visual_type", "") or "literal"))
 
     picked: list[dict] = []
+    scene_content_seen: set[str] = set()
     download_window = min(max(1, MAX_CONCURRENT_DOWNLOADS), max(1, max_images))
     download_futures: dict[int, object] = {}
     next_download = 0
@@ -698,6 +695,21 @@ def _search_scene_with_shortcircuit(
                 metrics.media_record_rejection("resolução/legibilidade após download")
                 metrics.media_record_funnel("post_download_rejected")
             continue
+        content_key = _selection_asset_key(asset.to_dict())
+        if (content_key.startswith("sha256:")
+                and (content_key in scene_content_seen
+                     or (asset_uses is not None
+                         and asset_uses.get(content_key, 0)))):
+            entry["rejection_reason"] = "duplicate content hash"
+            rejected.append({"title": asset.title, "query": entry["query"],
+                             "reason": "duplicate content hash",
+                             "provider": asset.provider,
+                             "content_identity": content_key})
+            if metrics:
+                metrics.media_record_asset_rejected()
+                metrics.media_record_rejection("duplicate content hash")
+                metrics.media_record_funnel("duplicate_content_hash")
+            continue
         asset.used_in = f"cena {ch.id}"
         if not asset.rights_status:
             asset.rights_status = classify_rights(asset.license or "",
@@ -725,6 +737,8 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_score(entry["score"])
         picked.append(entry)
+        if content_key.startswith("sha256:"):
+            scene_content_seen.add(content_key)
         if asset_uses is not None:
             key = _selection_asset_key(entry["asset"])
             if asset_uses.get(key, 0):

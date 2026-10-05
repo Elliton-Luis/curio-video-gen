@@ -84,13 +84,11 @@ def test_selected_asset_downloads_use_bounded_pool(tmp_path, monkeypatch):
     import threading
 
     barrier = threading.Barrier(2)
-    path = str(tmp_path / "parallel.jpg")
-    with open(path, "wb") as fh:
-        fh.write(b"x" * 20000)
-
     def download(asset, *_args, **_kwargs):
         barrier.wait(timeout=2)
-        asset.local_path = path
+        path = tmp_path / f"{asset.asset_id}.jpg"
+        path.write_bytes(asset.asset_id.encode() * 20000)
+        asset.local_path = str(path)
         return asset
 
     monkeypatch.setattr(V, "download_asset", download)

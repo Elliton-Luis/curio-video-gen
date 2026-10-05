@@ -30,12 +30,9 @@ def average_seconds(beats: list[dict]) -> float | None:
 
 
 def asset_key(asset: dict) -> str:
-    """Stable content identity across providers, with scoped-ID fallback."""
-    source = str(asset.get("source_url") or "").split("?", 1)[0].rstrip("/").casefold()
-    if source:
-        return f"url:{source}"
-    return ((f"{asset['provider']}:" if asset.get("provider") else "") + str(asset["asset_id"])
-            if asset.get("asset_id") else str(asset.get("local_path") or ""))
+    """Stable content identity across providers, with URL/ID fallbacks."""
+    from ..media.identity import asset_identity
+    return asset_identity(asset)
 
 
 def bind_assets(beats: list[dict], assets: list[dict], start: float) -> list[dict]:

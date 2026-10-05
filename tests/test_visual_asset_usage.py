@@ -38,7 +38,7 @@ def test_selection_uses_fresh_eligible_candidates_across_scenes(monkeypatch, tmp
     assets = []
     for i in range(4):
         path = tmp_path / f"{i}.png"
-        path.write_bytes(b"fixture")
+        path.write_bytes(f"fixture-{i}".encode())
         assets.append(MediaAsset(provider="fixture", asset_id=str(i), title="Rome statue",
                                  local_path=str(path), download_url=f"https://fixture.test/{i}.png",
                                  license="CC0", width=2000, height=2000))
@@ -61,6 +61,53 @@ def test_selection_uses_fresh_eligible_candidates_across_scenes(monkeypatch, tmp
 def test_provider_ids_do_not_collide():
     assert asset_key({"provider": "one", "asset_id": "1"}) != asset_key({
         "provider": "two", "asset_id": "1"})
+
+
+def test_downloaded_identical_bytes_share_identity_across_providers(tmp_path):
+    from curio.media.identity import asset_identity
+    first_path = tmp_path / "first.bin"
+    second_path = tmp_path / "second.bin"
+    first_path.write_bytes(b"same image bytes")
+    second_path.write_bytes(b"same image bytes")
+    first = {"provider": "one", "asset_id": "1", "local_path": str(first_path),
+             "source_url": "https://example.test/one"}
+    second = {"provider": "two", "asset_id": "2", "local_path": str(second_path),
+              "source_url": "https://example.test/two"}
+
+    assert asset_identity(first) == asset_identity(second)
+    assert asset_identity(first).startswith("sha256:")
+
+
+def test_selection_skips_identical_download_and_keeps_searching(tmp_path, monkeypatch):
+    from curio.media.providers import MediaAsset
+    assets = []
+    for name, content in (("one", b"identical"), ("duplicate", b"identical"),
+                          ("other", b"different")):
+        path = tmp_path / f"{name}.jpg"
+        path.write_bytes(content)
+        assets.append(MediaAsset(
+            provider="fixture", asset_id=name, title="Rome statue",
+            local_path=str(path), source_url=f"https://fixture.test/{name}",
+            download_url=f"https://fixture.test/{name}.jpg", license="CC0",
+            width=2000, height=2000))
+
+    class Provider:
+        name = "fixture"
+
+        def search(self, *args, **kwargs):
+            return assets
+
+    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
+    patch_search_plan(monkeypatch, visual, ["rome statue"])
+    result, _ = visual._search_scene_with_shortcircuit(
+        Chapter(1, "Rome statue", 8, subject="Rome"), [Provider()],
+        CurioConfig(), 2, None, str(tmp_path), asset_uses={})
+
+    selected = result[0]["assets"]
+    assert len(selected) == 2
+    assert {entry["asset"]["asset_id"] for entry in selected} == {"one", "other"}
+    assert any(item["reason"] == "duplicate content hash"
+               for item in result[0]["rejected"])
 
 
 def test_real_render_switches_all_backgrounds(tmp_path):
