@@ -53,6 +53,9 @@ O tratamento de roteiro fornecido também saiu de `stages/visual.py` para
 `stages/script_input.py`, que agora é o owner da leitura literal, contagem por
 pacing e validação da divisão. A suíte após essa fase passou com 892 testes
 em 195,33 s.
+O builder de beats, inserções, backgrounds e SFX foi movido de `visual.py`
+para `visual_timeline.py`; o rebuild não importa mais aquisição de mídia. A
+suíte após essa mudança passou com 892 testes em 178,13 s.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já

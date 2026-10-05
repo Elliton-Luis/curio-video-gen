@@ -567,7 +567,7 @@ resolução da fonte de título para `pipeline_render` e a projeção de tipogra
 para `pipeline_metadata`; os testes importam esses módulos diretamente.
 
 `pipeline.py` caiu de 1.054 para 739 linhas; `pipeline_finalize.py` concentra
-299 linhas do workflow humano. Na primeira suíte integral, dois testes ainda
+275 linhas do workflow humano. Na primeira suíte integral, dois testes ainda
 dependiam de aliases privados de pesquisa/subtitle no pipeline; foram
 migrados para `pipeline_research`, `stages.subs` e `stages.render`. Depois da
 migração, **892 testes passaram em 173,98 s**. Após remover o wrapper morto,
@@ -595,5 +595,26 @@ validação mantém a normalização histórica de comparação.
 91 testes focados passaram; a suíte integral passou com **892 testes em
 195,33 s**, compileall e diff check aprovados. Código em `39a36d8`. `visual.py`
 caiu de 1.290 para 1.238 linhas; ainda conserva a aquisição e uma função de
-construção de timeline visual, que será avaliada como próxima fronteira sem
+construção de timeline visual, que foi avaliada na fase seguinte sem
 misturar decisões de aquisição com geometria temporal.
+
+## G12: timeline visual passa a ter o módulo dono
+
+`stages/visual.py` ainda implementava `build_visual_timeline`, embora essa
+função organize beats, distribua imagens, trate inserções e atribua SFX —
+responsabilidade de timeline. Ela dependia de helpers já pertencentes a
+`visual_timeline.py`; o módulo temporal, por sua vez, importava `visual.py`
+dinamicamente para o rerender, formando um ciclo conceitual e de import.
+
+Movi o builder e sua validação de entrada para `stages/visual_timeline.py`.
+`pipeline_timeline.py` agora chama o dono temporal diretamente; o rebuild usa
+a função local, sem import tardio de aquisição. Testes de inserções, uso de
+assets, review e pipeline foram migrados ao novo owner. Removi de `visual.py`
+imports temporais que ficaram mortos.
+
+64 testes focados passaram; a suíte integral passou com **892 testes em
+178,13 s**, além de compileall e diff check. Código em `c238f02`. `visual.py`
+caiu para 1.123 linhas e `visual_timeline.py` está com 386. Aquisição ainda é
+um módulo grande, mas agora seu escopo exclui entrada de roteiro e geometria
+temporal; a próxima análise deve mapear subresponsabilidades internas de
+aquisição sem mover gates ou fallback por tamanho.
