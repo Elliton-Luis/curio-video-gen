@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G64.
+**Escopo:** auditoria documentada e migrações incrementais até G65.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -82,6 +82,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `a51c06d` | Extraiu coleta e gates técnicos de candidatos por cena para `SceneCandidateCollector` (G62). |
 | `73f6e6c` | Validou a decisão visual persistida e centralizou updates de seleção/reuso em `VisualDecision` (G63). |
 | `519c1fa` | Substituiu o payload genérico interno por campos nomeados e imutáveis em `VisualDecision`, mantendo adaptadores JSON compatíveis (G64). |
+| `28e4799` | Separou o acumulador mutável de auditoria por query do snapshot imutável emitido pela coleta (G65). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -104,6 +105,7 @@ relatórios listados em `docs/README.md`.
   ausência, com motivo/fallback validado.
 - **Auditoria da decisão visual:** `VisualDecision` contém `SelectionDecision`
   tipada, valida campos conhecidos e mantém as extensões legadas na projeção.
+- **Auditoria de busca:** `QueryAuditAccumulator` acumula fatos mutáveis dentro da aquisição; `SearchQueryAudit` e a tabela da `SceneCandidateCollection` são snapshots imutáveis, projetados no JSON existente.
 - **Tempo:** `TimelineSpan` e contratos temporais; cenas semânticas não devem
   carregar duração ou timestamps de render.
 - **Persistência:** `Chapter` e artefatos antigos continuam formato de projeto
@@ -111,7 +113,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G64
+## Arquivos alterados nas fases G57–G65
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -163,9 +165,13 @@ G63 (`73f6e6c`): `src/curio/media/visual_decision.py`,
 G64 (`519c1fa`): `src/curio/media/visual_decision.py` e
 `tests/test_visual_decision.py`.
 
+G65 (`28e4799`): `src/curio/stages/visual_audit.py`,
+`src/curio/stages/scene_candidate_search.py`, `tests/test_visual_audit.py` e
+`tests/test_scene_candidate_search.py`.
+
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G64.
+relatório e os relatórios G57–G65.
 
 
 ## Estado das fases
@@ -179,7 +185,7 @@ relatório e os relatórios G57–G64.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G64 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G65 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -213,6 +219,9 @@ passaram. `python -m compileall -q src tests` e `git diff --check` passaram.
 G64: **31 testes focados passaram**; suíte: **930 passaram, 1 excluído** por
 HTTP 429 da API real da Wikipédia. `python -m compileall -q src tests` e
 `git diff --check` passaram. Não houve nova geração real nesta fase.
+G65: **21 testes focados passaram**; suíte ampla: **932 passaram, 1 excluído**
+pelo HTTP 429 da API real da Wikipédia, em 177,87 s. Compileall e diff check
+passaram. Não houve geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -249,7 +258,7 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G64 passam os gates registrados. Auditoria integral, ownership único de
+G57–G65 passam os gates registrados. Auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
@@ -388,3 +397,28 @@ G64 não reexecutou aquisição histórica nem inspecionou assets, portanto não
 apresenta contagem atual de cenas/assets como validação da busca. Os resultados
 históricos disponíveis e suas limitações estão nos relatórios de execução
 listados em `docs/README.md`.
+
+
+## G65 — snapshot imutável da auditoria por query (`28e4799`)
+
+Antes da mudança, `SceneCandidateCollection` era frozen e a tabela externa de
+auditoria era um proxy, mas cada valor continuava sendo um `SearchQueryAudit`
+mutável. O consumidor conseguia alterar fatos de provider/resultados após a
+aquisição; uma instância construída diretamente também podia reter um mapping
+externo mutável. Isso enfraquecia o snapshot entre aquisição e projeção.
+
+G65 separa `QueryAuditAccumulator`, mutável dentro da coleta, de
+`SearchQueryAudit`, um snapshot frozen com escalares e tuplas.
+`SceneCandidateCollection.__post_init__` copia e congela o mapping fornecido e
+valida o tipo dos snapshots. `search_query_audit_rows()` passa a aceitar apenas
+estados imutáveis e continua projetando o schema JSON existente.
+
+Arquivos: `src/curio/stages/visual_audit.py`,
+`src/curio/stages/scene_candidate_search.py`, `tests/test_visual_audit.py` e
+`tests/test_scene_candidate_search.py`. Os testes verificam campos/provider
+imutáveis, isolamento do snapshot enquanto o acumulador avança, congelamento da
+tabela externa e projeção compatível. Foram 21 testes focados e 932 testes
+passaram na suíte ampla, com `test_standby_sem_imagens` excluído por HTTP 429
+da API da Wikipédia; compileall e diff check passaram. Não houve geração real nem
+mudança na estratégia de busca, providers, gates, scoring, seleção ou fallback.
+Commit: `28e4799`.

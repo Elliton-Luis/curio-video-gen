@@ -184,3 +184,4 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-scene-candidate-collector.md` — G62 (`a51c06d`): coleta de candidatos tipada separada do coordenador, com gates técnicos e auditoria de query preservados.
 - `relatorios/20261005-visual-decision-contract.md` — G63 (`73f6e6c`): validação do envelope `visual_decision`, mutações tipadas de seleção/reuso e preservação do schema JSON.
 - `relatorios/20261005-visual-decision-fields.md` — G64 (`519c1fa`): campos nomeados e imutáveis no contrato de decisão visual, projeção compatível e validação.
+- `relatorios/20261005-query-audit-snapshot.md` — G65 (`28e4799`): separa fatos de auditoria mutáveis durante a busca do snapshot imutável entregue à avaliação/projeção.
