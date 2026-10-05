@@ -304,8 +304,8 @@ def test_relatorio_vai_para_o_metadata(fetch):
     partir do pacote instalado — não de "src/curio/pipeline.py", que só
     existe se o pytest rodar a partir da raiz do repositório.
     """
-    import curio.pipeline as PL
-    src = Path(PL.__file__).read_text(encoding="utf-8")
+    import curio.pipeline_metadata as PM
+    src = Path(PM.__file__).read_text(encoding="utf-8")
     assert "provider_downloads" in src, "o relatório precisa ir para o metadata"
     assert 'metrics.media_download_report()' in src
 
