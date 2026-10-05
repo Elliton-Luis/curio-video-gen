@@ -1,6 +1,7 @@
 import pytest
 
 from curio.stages.visual_audit import (
+    QueryAuditAccumulator,
     SearchQueryAudit,
     candidate_audit_rows,
     search_query_audit_rows,
@@ -55,7 +56,7 @@ def test_query_audit_projects_provider_results_and_search_provenance():
         "representation_variant", representation="Battle of Mohács",
         representation_kind="event", alias="Ottoman Empire",
         variant="engraving", level=2)
-    state = SearchQueryAudit()
+    state = QueryAuditAccumulator()
     state.set_providers(["wikimedia", "met"])
     state.record_error("met", "timeout")
     state.record_result("wikimedia", 3)
@@ -64,7 +65,7 @@ def test_query_audit_projects_provider_results_and_search_provenance():
     state.record_eligible()
 
     rows = search_query_audit_rows(
-        SearchPlan(4, (query,)), {query.query: state},
+        SearchPlan(4, (query,)), {query.query: state.snapshot()},
         [{"query": query.query}],
         {"Battle of Mohács": 2}, {"Battle of Mohács": "event"},
         ["Ottoman Empire"])
@@ -97,22 +98,39 @@ def test_query_audit_projects_provider_results_and_search_provenance():
 def test_query_audit_distinguishes_duplicate_only_and_budget_exhaustion():
     duplicate_query = SearchQuery("Battle of Mohács", "scene_representation")
     budget_query = SearchQuery("Mohács painting", "representation_variant")
-    duplicate = SearchQueryAudit()
+    duplicate = QueryAuditAccumulator()
     duplicate.set_providers(["wikimedia"])
     duplicate.record_duplicate()
     duplicate.mark_duplicates_only()
-    budget = SearchQueryAudit()
+    budget = QueryAuditAccumulator()
     budget.mark_unexecuted("scene_candidate_budget")
 
     rows = search_query_audit_rows(
         SearchPlan(1, (duplicate_query, budget_query)),
-        {duplicate_query.query: duplicate, budget_query.query: budget},
+        {duplicate_query.query: duplicate.snapshot(),
+         budget_query.query: budget.snapshot()},
         [], {}, {}, [])
 
     assert (rows[0]["outcome"], rows[0]["status"]) == (
         "duplicates_only", "abandoned_duplicates")
     assert rows[1]["status"] == "not_consulted_budget_exhausted"
     assert rows[1]["unexecuted_reason"] == "scene_candidate_budget"
+
+
+def test_query_audit_snapshot_is_immutable_and_preserves_provider_facts():
+    accumulator = QueryAuditAccumulator()
+    accumulator.set_providers(["wikimedia"])
+    accumulator.record_result("wikimedia", 2)
+    snapshot = accumulator.snapshot()
+
+    with pytest.raises((AttributeError, TypeError)):
+        snapshot.results = 99
+    with pytest.raises((AttributeError, TypeError)):
+        snapshot.providers += ("met",)
+    accumulator.record_result("wikimedia", 1)
+
+    assert snapshot.results == 2
+    assert snapshot.results_by_provider == (("wikimedia", 2),)
 
 
 def test_query_audit_requires_state_for_each_planned_query():

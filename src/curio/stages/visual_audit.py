@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 
 from .visual_contracts import SearchPlan, SearchQuery
 
 
 @dataclass
-class SearchQueryAudit:
-    """Mutable facts collected for one planned query, before projection."""
+class QueryAuditAccumulator:
+    """Mutable facts collected for one query inside the acquisition owner."""
 
     results: int = 0
     duplicates: int = 0
@@ -52,6 +53,63 @@ class SearchQueryAudit:
         if not reason.strip():
             raise ValueError("unexecuted query requires a reason")
         self.unexecuted_reason = reason
+
+    def snapshot(self) -> "SearchQueryAudit":
+        """Freeze the collected facts before exposing them to another stage."""
+        return SearchQueryAudit(
+            results=self.results, duplicates=self.duplicates,
+            rejected=self.rejected, eligible=self.eligible,
+            providers=tuple(self.providers),
+            results_by_provider=tuple(self.results_by_provider.items()),
+            provider_errors=tuple(self.provider_errors.items()),
+            unavailable=self.unavailable,
+            duplicates_only=self.duplicates_only,
+            unexecuted_reason=self.unexecuted_reason)
+
+
+@dataclass(frozen=True)
+class SearchQueryAudit:
+    """Immutable query facts emitted by candidate collection."""
+
+    results: int = 0
+    duplicates: int = 0
+    rejected: int = 0
+    eligible: int = 0
+    providers: tuple[str, ...] = ()
+    results_by_provider: tuple[tuple[str, int], ...] = ()
+    provider_errors: tuple[tuple[str, str], ...] = ()
+    unavailable: bool = False
+    duplicates_only: bool = False
+    unexecuted_reason: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("results", "duplicates", "rejected", "eligible"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"query audit {name} must be a nonnegative integer")
+        if not isinstance(self.providers, tuple) or any(
+                not isinstance(provider, str) or not provider.strip()
+                for provider in self.providers):
+            raise TypeError("query audit providers must be immutable names")
+        if len(self.providers) != len(set(self.providers)):
+            raise ValueError("query audit providers must be unique")
+        for name in ("results_by_provider", "provider_errors"):
+            items = getattr(self, name)
+            if not isinstance(items, tuple) or any(
+                    not isinstance(item, tuple) or len(item) != 2
+                    or not isinstance(item[0], str) for item in items):
+                raise TypeError(f"query audit {name} must be immutable pairs")
+        if any(isinstance(count, bool) or not isinstance(count, int) or count < 0
+               for _provider, count in self.results_by_provider):
+            raise ValueError("query audit provider result counts must be nonnegative")
+        if any(not isinstance(error, str)
+               for _provider, error in self.provider_errors):
+            raise TypeError("query audit provider errors must be text")
+        if not isinstance(self.unavailable, bool) or not isinstance(
+                self.duplicates_only, bool):
+            raise TypeError("query audit flags must be boolean")
+        if not isinstance(self.unexecuted_reason, str):
+            raise TypeError("query audit unexecuted reason must be text")
 
     def to_row(self, query: SearchQuery, *, rejected_candidates_total: int,
                representations: list[str], representation_kinds: dict[str, str],
@@ -96,12 +154,15 @@ class SearchQueryAudit:
 
 
 def search_query_audit_rows(
-        plan: SearchPlan, states: dict[str, SearchQueryAudit],
+        plan: SearchPlan, states: Mapping[str, SearchQueryAudit],
         rejected: list[dict], representation_levels: dict[str, int],
         representation_kinds: dict[str, str], aliases: list[object]) -> list[dict]:
     """Project query states in SearchPlan order, preserving their provenance."""
     if not isinstance(plan, SearchPlan):
         raise TypeError("query audit requires a SearchPlan")
+    if not isinstance(states, Mapping) or any(
+            not isinstance(state, SearchQueryAudit) for state in states.values()):
+        raise TypeError("query audit projection requires immutable audit states")
     planned_queries = {query.query for query in plan.queries}
     if set(states) != planned_queries:
         raise ValueError("query audit states must match SearchPlan queries")

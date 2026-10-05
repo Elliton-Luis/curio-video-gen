@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -68,6 +69,8 @@ def test_candidate_collection_deduplicates_across_planned_queries(monkeypatch):
     assert result.providers_consulted == ("wikimedia",)
     with pytest.raises(TypeError):
         result.query_audit[plan.queries[0].query] = SearchQueryAudit()
+    with pytest.raises((AttributeError, TypeError)):
+        duplicate.duplicates = 0
 
 
 def test_candidate_collection_snapshots_audit_before_next_query_batch(monkeypatch):
@@ -77,6 +80,19 @@ def test_candidate_collection_snapshots_audit_before_next_query_batch(monkeypatc
     collector.collect([plan.queries[1].query], 10)
 
     assert first.query_audit[plan.queries[1].query].results == 0
+
+
+def test_candidate_collection_freezes_caller_supplied_audit_mapping(monkeypatch):
+    collector, plan = _collector(monkeypatch)
+    result = collector.collect([plan.queries[0].query], 10)
+    supplied = dict(result.query_audit)
+
+    copied = replace(result, query_audit=supplied)
+    supplied.clear()
+
+    assert set(copied.query_audit) == {query.query for query in plan.queries}
+    with pytest.raises(TypeError):
+        copied.query_audit[plan.queries[0].query] = SearchQueryAudit()
 
 
 def test_candidate_collection_marks_queries_skipped_by_scene_budget(monkeypatch):

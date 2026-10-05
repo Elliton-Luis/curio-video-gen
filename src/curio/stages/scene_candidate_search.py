@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
-from copy import deepcopy
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -13,7 +12,7 @@ from ..media.providers import MediaAsset, MediaProvider, classify_rights
 from . import media_rules, media_search
 from .media_contracts import Candidate, CandidateRejection
 from .media_provider_policy import ordered_providers
-from .visual_audit import SearchQueryAudit
+from .visual_audit import QueryAuditAccumulator, SearchQueryAudit
 from .visual_contracts import SearchPlan, VisualPlan
 
 
@@ -52,7 +51,9 @@ class SceneCandidateCollection:
             raise ValueError("candidate collection must audit every planned query")
         if any(not isinstance(item, SearchQueryAudit)
                for item in self.query_audit.values()):
-            raise TypeError("candidate collection audit must use SearchQueryAudit")
+            raise TypeError("candidate collection audit must use immutable SearchQueryAudit")
+        object.__setattr__(self, "query_audit",
+                           MappingProxyType(dict(self.query_audit)))
         all_candidates = (*self.candidates,
                           *(item.candidate for item in self.rejected))
         if any(item.search_query.query not in self.query_audit
@@ -98,7 +99,8 @@ class SceneCandidateCollector:
         self.seen_ids: set[str] = set()
         self.providers_consulted: set[str] = set()
         self.query_audit = {
-            query.query: SearchQueryAudit() for query in search_plan.queries}
+            query.query: QueryAuditAccumulator()
+            for query in search_plan.queries}
         self.search_query_by_text = {
             query.query: query for query in search_plan.queries}
 
@@ -175,7 +177,8 @@ class SceneCandidateCollector:
         return SceneCandidateCollection(
             tuple(self.candidates), tuple(self.rejected),
             tuple(sorted(self.providers_consulted)),
-            MappingProxyType(deepcopy(self.query_audit)),
+            MappingProxyType({query: audit.snapshot()
+                              for query, audit in self.query_audit.items()}),
             tuple(query.query for query in self.search_plan.queries))
 
     def _consider(self, asset: MediaAsset, query: str) -> None:
