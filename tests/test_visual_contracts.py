@@ -6,6 +6,7 @@ from curio.stages.scene_projection import Chapter
 from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.scene_local_planning import (
     local_visual_representations, recover_legacy_chapters)
+from curio.stages.visual_contracts import SearchPlan, SearchQuery
 from curio.stages.visual_planning import build_visual_plan
 from curio.stages.search_planning import build_search_plan
 
@@ -50,6 +51,23 @@ def test_visual_plan_rejects_query_mirror_that_diverges_from_representations():
     plan = build_visual_plan(scene)
     with pytest.raises(ValueError, match="must mirror representations"):
         replace(plan, visual_queries=("Ottoman Empire",))
+
+
+def test_search_query_requires_source_query_and_positive_level():
+    with pytest.raises(ValueError, match="source is required"):
+        SearchQuery("Battle of Mohács", "")
+    with pytest.raises(ValueError, match="level must be positive"):
+        SearchQuery("Battle of Mohács", "scene_representation", level=0)
+    with pytest.raises(ValueError, match="text is required"):
+        SearchQuery("  ", "scene_representation")
+
+
+def test_search_plan_rejects_duplicate_or_untyped_queries():
+    query = SearchQuery("Battle of Mohács", "scene_representation")
+    with pytest.raises(ValueError, match="must be unique"):
+        SearchPlan(1, (query, query))
+    with pytest.raises(TypeError, match="tuple of SearchQuery"):
+        SearchPlan(1, ({"query": "Battle of Mohács"},))
 
 
 def test_legacy_recovery_is_explicit_and_semantic_projection_is_passive():

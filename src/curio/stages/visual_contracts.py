@@ -189,6 +189,24 @@ class SearchQuery:
     level: int = 1
     generic: bool = False
 
+    def __post_init__(self) -> None:
+        for field_name in ("query", "source", "representation",
+                           "representation_kind", "alias", "variant"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str):
+                raise TypeError(f"search query {field_name} must be text")
+        if not self.query.strip():
+            raise ValueError("search query text is required")
+        if not self.source.strip():
+            raise ValueError("search query source is required")
+        if not self.variant.strip():
+            raise ValueError("search query variant is required")
+        if (isinstance(self.level, bool) or not isinstance(self.level, int)
+                or self.level <= 0):
+            raise ValueError("search query level must be positive")
+        if not isinstance(self.generic, bool):
+            raise TypeError("search query generic flag must be boolean")
+
     def to_dict(self) -> dict:
         return {
             "query": self.query,
@@ -206,6 +224,17 @@ class SearchQuery:
 class SearchPlan:
     scene_id: int
     queries: tuple[SearchQuery, ...]
+
+    def __post_init__(self) -> None:
+        if (isinstance(self.scene_id, bool) or not isinstance(self.scene_id, int)
+                or self.scene_id <= 0):
+            raise ValueError("search plan scene_id must be positive")
+        if not isinstance(self.queries, tuple) or any(
+                not isinstance(query, SearchQuery) for query in self.queries):
+            raise TypeError("search plan queries must be a tuple of SearchQuery")
+        keys = [query.query.casefold() for query in self.queries]
+        if len(keys) != len(set(keys)):
+            raise ValueError("search plan queries must be unique")
 
     @property
     def generic_queries(self) -> frozenset[str]:

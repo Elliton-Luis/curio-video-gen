@@ -555,3 +555,13 @@ dependiam da avaliação de candidatos. Ambos agora consomem a função
 compartilhada em `textnorm`; a regra de tokenização e seu comportamento ficam
 inalterados. G51 tem validação focada e integral registrada em
 `20261005-shared-tokenization-owner.md`.
+
+## G52 — plano de busca rejeita queries inválidas ou duplicadas
+
+`SearchQuery` e `SearchPlan` eram dataclasses sem validação, embora sejam a
+fronteira imediata de aquisição. Um query vazio/sem provenance, nível inválido,
+item improvisado ou duplicata podia chegar ao executor sem falha no produtor.
+Agora cada query exige texto, source, variant e nível positivo; o plano exige
+id válido, tupla tipada e queries únicas (case-insensitive). Busca vazia segue
+permitida para cenas que não geram mídia. A validação não traduz nem completa
+dados. Ver `20261005-search-plan-invariants.md`.
