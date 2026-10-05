@@ -84,5 +84,15 @@ def test_paths_for_slug_e_iter_projects(tmp_path):
         raise AssertionError("devia levantar FileNotFoundError")
 
 
+def test_video_paths_is_immutable_contract(tmp_path):
+    from dataclasses import FrozenInstanceError
+    import pytest
+    from curio.project_paths import video_paths
+
+    paths = video_paths(str(tmp_path), "video")
+    with pytest.raises(FrozenInstanceError):
+        paths.root = "moved"
+
+
 def test_slugify_base_intacto():
     assert slugify("De onde veio a palavra salário?") == "de-onde-veio-a-palavra-salario"

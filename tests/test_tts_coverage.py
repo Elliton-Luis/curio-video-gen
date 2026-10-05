@@ -296,4 +296,5 @@ def test_pipeline_reusa_cache_integro(tmp_path, monkeypatch):
     meta = pipe.run_pipeline("ideia teste", cfg, slug=slug, max_images=1)
     assert meta["tts_reused"] is True
     assert meta["audio_duration"] == 30.0
-    assert os.path.isfile(pipe.video_paths(out_dir, slug).tts_manifest_json)
+    from curio.project_paths import video_paths
+    assert os.path.isfile(video_paths(out_dir, slug).tts_manifest_json)

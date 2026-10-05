@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .slug import find_project_root, project_dir
 
 
-@dataclass
+@dataclass(frozen=True)
 class VideoPaths:
     root: str
     script_txt: str
