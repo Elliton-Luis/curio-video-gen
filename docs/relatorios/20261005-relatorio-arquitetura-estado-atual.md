@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G66.
+**Escopo:** auditoria documentada e migrações incrementais até G67.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -84,6 +84,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `519c1fa` | Substituiu o payload genérico interno por campos nomeados e imutáveis em `VisualDecision`, mantendo adaptadores JSON compatíveis (G64). |
 | `28e4799` | Separou o acumulador mutável de auditoria por query do snapshot imutável emitido pela coleta (G65). |
 | `8bed5ec` | Fez `Candidate` capturar `ProviderAssetSnapshot` imutável, preservando `MediaAsset` mutável no lifecycle de aquisição (G66). |
+| `833df32` | Congelou recursivamente evidência de `CandidateEvaluation` e manteve a projeção para seleção como cópia independente (G67). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -103,7 +104,8 @@ relatórios listados em `docs/README.md`.
   download/cache e atualizações pós-seleção. Provider normaliza resposta e não
   decide relevância editorial.
 - **Avaliação:** `CandidateEvaluation`/`EvaluationBatch`; reporta score e
-  rejeições, sem gerar query ou decidir fallback editorial.
+  rejeições com evidência JSON recursivamente imutável, sem gerar query ou
+  decidir fallback editorial. `to_selection_entry()` projeta cópia editável.
 - **Seleção:** `SelectionDecision`; distingue asset novo, reuso, sintético e
   ausência, com motivo/fallback validado.
 - **Auditoria da decisão visual:** `VisualDecision` contém `SelectionDecision`
@@ -116,7 +118,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G66
+## Arquivos alterados nas fases G57–G67
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -173,11 +175,12 @@ G65 (`28e4799`): `src/curio/stages/visual_audit.py`,
 `tests/test_scene_candidate_search.py`.
 
 G66 (`8bed5ec`): `src/curio/stages/media_contracts.py` e
-`tests/test_media_contracts.py`.
+`tests/test_media_contracts.py`. G67 (`833df32`) também altera esses dois
+arquivos; adiciona freeze/thaw recursivo para a evidência de avaliação.
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G66.
+relatório e os relatórios G57–G67.
 
 
 ## Estado das fases
@@ -191,7 +194,7 @@ relatório e os relatórios G57–G66.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G66 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G67 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -231,6 +234,9 @@ passaram. Não houve geração real nesta fase.
 G66: **55 testes focados passaram**; suíte ampla: **933 passaram, 1 excluído**
 pelo HTTP 429 da API da Wikipédia, em 177,65 s. Compileall e diff check
 passaram. Não houve geração real nesta fase.
+G67: **28 testes focados passaram**; suíte ampla: **934 passaram, 1 excluído**
+pelo HTTP 429 da API da Wikipédia, em 179,60 s. Compileall e diff check
+passaram. Não houve geração real nesta fase.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -267,7 +273,7 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G66 passam os gates registrados. Auditoria integral, ownership único de
+G57–G67 passam os gates registrados. Auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
@@ -455,3 +461,22 @@ de título/tags/caminho local e imutabilidade do snapshot, preservando acesso
 compatível à avaliação. **55 testes focados** passaram; a suíte ampla passou com
 **933 testes e 1 excluído** por HTTP 429 da API externa. `compileall` e diff check
 passaram. Não houve geração real. Commit: `8bed5ec`.
+
+
+## G67 — evidência imutável da avaliação (`833df32`)
+
+A avaliação era `frozen`, mas retinha `evidence` como `Mapping` arbitrário.
+Como o scorer inclui mappings e listas nested, um consumidor podia alterar a
+evidência depois da decisão. G67 congela a árvore recursivamente no
+`CandidateEvaluation.__post_init__` (mappings para proxies de leitura e
+sequências para tuplas). `to_selection_entry()` transforma esse snapshot em
+dicts/listas independentes para a etapa seguinte; mutations editoriais locais
+não propagam de volta para a avaliação.
+
+Arquivos: `src/curio/stages/media_contracts.py` e
+`tests/test_media_contracts.py`. Regressão confirma isolamento quando o mapping
+de origem é alterado, impede mutações nested e verifica que a projeção tem a
+forma JSON/listas esperada e não compartilha memória. **28 testes focados** e
+**934 testes da suíte ampla** passaram; um teste externo foi excluído por HTTP
+429 da Wikipédia. Compileall e diff check passaram. Não houve geração real.
+Commit: `833df32`.

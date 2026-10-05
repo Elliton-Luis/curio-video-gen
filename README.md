@@ -187,6 +187,7 @@ G64 (`519c1fa`) substitui o payload genérico por campos nomeados e
 imutáveis, preservando round-trip do formato salvo e extensões legadas.
 G65 (`28e4799`) separa o acumulador mutável da auditoria por query do snapshot imutável entregue pela coleta de candidatos.
 G66 (`8bed5ec`) faz `Candidate` capturar um `ProviderAssetSnapshot` imutável; `MediaAsset` segue mutável no ciclo técnico de download.
+G67 (`833df32`) congela recursivamente a evidência em `CandidateEvaluation` e projeta uma cópia independente para seleção.
 O relatório arquitetural completo — com estado antes/depois, commits,
 contratos, fases, testes, regressões, etapa de mídia e pendências — está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).

@@ -186,3 +186,4 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-visual-decision-fields.md` — G64 (`519c1fa`): campos nomeados e imutáveis no contrato de decisão visual, projeção compatível e validação.
 - `relatorios/20261005-query-audit-snapshot.md` — G65 (`28e4799`): separa fatos de auditoria mutáveis durante a busca do snapshot imutável entregue à avaliação/projeção.
 - `relatorios/20261005-provider-asset-snapshot.md` — G66 (`8bed5ec`): imutabilidade do retrato retornado pelo provider em `Candidate`, preservando a mutabilidade posterior de aquisição.
+- `relatorios/20261005-evaluation-evidence-snapshot.md` — G67 (`833df32`): evidência de scoring imutável em `CandidateEvaluation`, com projeção independente para seleção.
