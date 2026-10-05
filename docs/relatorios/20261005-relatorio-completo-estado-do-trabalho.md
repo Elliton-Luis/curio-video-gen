@@ -1,8 +1,8 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G84.
-**Estado:** trabalho incompleto. G80–G84 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural e das migrações incrementais até G85.
+**Estado:** trabalho incompleto. G80–G85 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
@@ -110,6 +110,7 @@ hashes e diffs.
 | `1b00689` | Faz `SceneMediaSelection.from_components` criar nova seleção de `SelectedAsset` e `VisualDecision` tipados (G82). |
 | `31f6acf` | Rejeita tipos inválidos nos campos de `PipelineInput` (G83). |
 | `bc131b9` | Move aplicação da camada CLIP e reranqueamento para `candidate_evaluation.py` (G84). |
+| `8ae6616` | Faz auditoria de query/candidato consumir provenance do `VisualPlan` e rejeitar plano de cena divergente (G85). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -264,11 +265,11 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, `unknown/null` e conciliação seleção-render. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G84 commitadas. | Simplificar coordenador; migrar auditoria aninhada e adapters restantes após comprovar ausência de consumidores. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G85 commitadas. | Simplificar coordenador; migrar campos restantes da auditoria final e adapters após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório atualizado até G84. Não representam
+Os status são os registrados na auditoria e no relatório atualizado até G85. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -362,6 +363,12 @@ tipados para `from_components`, que centraliza a projeção. A fábrica ainda us
 validação do contrato e `_row` preserva round-trip; auditorias aninhadas seguem
 em mappings. Consulte o relatório G82.
 
+G84 extraiu `apply_clip_layer()` de `visual.py` para
+`candidate_evaluation.py`, mantendo download e cache delegados à aquisição.
+G85 fez os projetores de auditoria consumirem `VisualPlan`, removendo a
+reconstrução paralela de levels, kinds e aliases no coordenador e validando
+que os planos pertençam à mesma cena. O formato persistido foi preservado.
+
 ## G84 — camada CLIP na avaliação de candidatos (`bc131b9`)
 
 Antes, a função local
@@ -399,9 +406,23 @@ sem commit; este relatório corrige aquele registro. A alteração está
 commitada e a suíte passou, mas isso não certifica a conclusão da refatoração
 arquitetural ampla.
 
+## G85 — auditoria visual deriva provenance do VisualPlan (`8ae6616`)
+
+Antes, `visual.py` remontava níveis e tipos de representação de `ch` e buscava
+aliases em `video_context`, apesar de esses fatos já pertencerem a `VisualPlan`.
+`search_query_audit_rows()` e `candidate_audit_rows()` agora recebem esse plano
+validado; a primeira também rejeita plano de busca e visual de cenas diferentes.
+Os mesmos campos da auditoria persistida são projetados, sem schema change.
+
+Foram alterados `visual.py`, `visual_audit.py` e `tests/test_visual_audit.py`.
+**66 focados** passaram; a suíte completa passou com **966 testes em 197,08 s**.
+Compileall e diff check passaram. Não houve geração real porque a mudança
+somente moveu a fonte de dados da auditoria. Ver
+[relatório G85](20261005-visual-audit-from-visual-plan.md).
+
 ## Referências de relatórios
 
-- [`Relatório de arquitetura e estado da migração até G84`](20261005-relatorio-arquitetura-estado-atual.md)
+- [`Relatório de arquitetura e estado da migração até G85`](20261005-relatorio-arquitetura-estado-atual.md)
 - [`Auditoria do pipeline e dos contratos`](../analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md)
 - [`Resultados de execuções reais e limitações`](20261004-validacao-arquitetural-execucoes-reais.md)
 - [`G74 — resultados tipados de aquisição`](20261005-candidate-acquisition-outcomes.md)
@@ -415,4 +436,5 @@ arquitetural ampla.
 - [`G82 — seleção criada de componentes tipados`](20261005-scene-selection-from-components.md)
 - [`G83 — tipos estritos no contrato de entrada`](20261005-pipeline-input-strict-types.md)
 - [`G84 — camada CLIP na avaliação de candidatos`](20261005-clip-layer-candidate-evaluation.md)
+- [`G85 — auditoria visual baseada no VisualPlan`](20261005-visual-audit-from-visual-plan.md)
 - [`Inventário de relatórios do projeto`](../README.md)

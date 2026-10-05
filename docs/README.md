@@ -7,8 +7,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G84: arquitetura, contratos, fases, validações, regressões e pendências.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G84: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G85: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G85: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-visual-audit-from-visual-plan.md` — G85: projeção de auditoria usa o `VisualPlan` como fonte de provenance.
 - `relatorios/20261005-clip-layer-candidate-evaluation.md` — G84: move CLIP reranking de `visual.py` para o owner de avaliação de candidatos.
 - `relatorios/20261005-pipeline-input-strict-types.md` — G83: rejeita tipos inválidos no contrato `PipelineInput`.
 - `relatorios/20261005-scene-selection-from-components.md` — G82: fábrica central de `SceneMediaSelection` a partir de valores tipados.
