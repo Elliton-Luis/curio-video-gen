@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G88/F8.
+**Escopo:** auditoria documentada e migrações incrementais até G89/F8.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -259,7 +259,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F8 parciais. | F6 torna a coleção de tempos imutável; F7 preserva como null a duração histórica irrecuperável; F8 unifica o total live entre metadata e métricas. Definições canônicas para demais campos, lifecycle timers, profile por suboperação e reconciliação seleção-render permanecem. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G88 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`. `visual.py` ainda coordena coleta, avaliação e aquisição. Rows aninhadas e adapters de leitura/reuso permanecem. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G89 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89 mantém avaliações tipadas até a auditoria. `visual.py` ainda coordena coleta, avaliação e aquisição; rejeições técnicas ainda são rows. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -990,3 +990,14 @@ Não houve geração real, pois a alteração move ownership e não muda a sele�
 Rows de candidatos/rejeições e a orquestração maior de mídia continuam como
 fronteiras abertas. Consulte
 [relatório G88](20261005-visual-decision-audit-owner.md).
+
+## G89 — avaliação permanece tipada na auditoria (`087c96e`)
+
+`CandidateEvaluation` deixou de ser convertido em rows dentro do coordenador
+apenas para a auditoria. `candidate_audit_rows()` consome evaluations e assets
+selecionados tipados; `evidence_dict()` faz thaw recursivo exclusivamente na
+projeção compatível. Um primeiro gate revelou 34 erros de integração devido a
+`MappingProxyType` chegar ao `deepcopy` do adapter `VisualDecision`; corrigida a
+projeção, passaram 71 focados e 995 testes integrais em 178,95 s, mais compileall
+e diff check. A migração de rejeições técnicas para dados tipados ainda está
+pendente. Ver [relatório G89](20261005-typed-candidate-evaluation-audit.md).

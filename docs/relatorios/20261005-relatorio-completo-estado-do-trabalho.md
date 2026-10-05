@@ -1,13 +1,13 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G88 e métricas até F8.
-**Estado:** trabalho incompleto. G80–G87 e F4–F8 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G89 e métricas até F8.
+**Estado:** trabalho incompleto. G80–G89 e F4–F8 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G88
-> (`4b0b4e7`, `412a8b1`, `c5424b5`) foram
+> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G89
+> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -125,6 +125,7 @@ hashes e diffs.
 | `4b0b4e7` | Centraliza a decisão pura da próxima tier da seleção visual em `media_selection.py` (G86). |
 | `412a8b1` | Faz `media_selection.py` classificar exaustão, motivo e fallback a partir de plans e auditoria tipados (G87). |
 | `c5424b5` | Move montagem e validação do payload `VisualDecision` para `visual_audit.py` (G88). |
+| `087c96e` | Mantém `CandidateEvaluation` tipada até a projeção da auditoria visual (G89). |
 | `b0b272e` | Faz a métrica live de duração total consumir o elapsed canônico do pipeline (F8). |
 
 
@@ -327,11 +328,11 @@ query, provider, ranking ou seleção de imagem.
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F8 parciais. | Definições canônicas para demais campos, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G88 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e outros campos de auditoria; extrair ownership por decisões, não por mera movimentação de código. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G89 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e outros campos de auditoria; rejeições técnicas ainda chegam à auditoria como rows. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G88/F8. Não representam
+Os status são os registrados na auditoria e neste relatório até G89/F8. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -521,6 +522,18 @@ e diff check passaram. Ainda restam rows de candidatos/rejeições nessa frontei
 e a orquestração de busca/aquisição em `visual.py`. Ver
 [relatório G88](20261005-visual-decision-audit-owner.md).
 
+## G89 — avaliações tipadas até a auditoria (`087c96e`)
+
+`CandidateEvaluation` e `SelectedAsset` agora permanecem tipados até
+`candidate_audit_rows()`. As conversões em rows foram removidas do caminho de
+avaliações e score rejections; `evidence_dict()` descongela evidência apenas na
+projeção. A primeira suíte integral desta fase encontrou 34 falhas porque
+`MappingProxyType` aninhado não passa pelo `deepcopy` de `VisualDecision`; o
+thaw recursivo explícito corrigiu a fronteira. Depois da correção: 71 testes
+focados, 995 completos em 178,95 s, compileall e diff check aprovados. Rows de
+rejeição técnica ainda permanecem. Consulte
+[relatório G89](20261005-typed-candidate-evaluation-audit.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -563,6 +576,7 @@ passaram. Não houve geração real. Consulte
 - [`G86 — política explícita da próxima tier de mídia`](20261005-selection-fallback-policy.md)
 - [`G87 — ownership da provenance de seleção`](20261005-selection-provenance-owner.md)
 - [`G88 — ownership da decisão visual`](20261005-visual-decision-audit-owner.md)
+- [`G89 — avaliações tipadas na auditoria`](20261005-typed-candidate-evaluation-audit.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)
