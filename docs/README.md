@@ -7,13 +7,14 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261005-typed-rejection-projections.md` — G92: rows e totais por query derivam de outcomes tipados; suíte completa: 997 testes.
 - `relatorios/20261005-typed-acquisition-rejections.md` — G91: outcomes rejeitados permanecem tipados até a auditoria; suíte completa: 997 testes.
 - `relatorios/20261005-typed-technical-rejections.md` — G90: rejeições de gates técnicos permanecem tipadas até a auditoria; suíte completa: 996 testes.
 - `relatorios/20261005-typed-candidate-evaluation-audit.md` — G89: `CandidateEvaluation` permanece tipada até a projeção da auditoria; suíte completa: 995 testes.
 - `relatorios/20261005-visual-decision-audit-owner.md` — G88: `visual_audit.py` valida contratos tipados e monta a decisão visual; suíte completa: 994 testes.
 - `relatorios/20261005-relatorio-parada-e-estado-do-trabalho.md` — snapshot completo do pedido de parada: arquitetura, commits, diff local G88, contratos, testes confirmados/não confirmados, regressões, fases e pendências.
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G91/F8: arquitetura, contratos, fases, validações, regressões e pendências.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G91/F8: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G92/F8: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G92/F8: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
 - `relatorios/20261005-live-metric-total-duration.md` — F8: `processing_time_seconds` é a fonte canônica da duração total live publicada nas métricas.
 - `relatorios/20261005-selection-provenance-owner.md` — G87: seleção classifica esgotamento e nível de fallback de plans e auditoria tipados.
 - `relatorios/20261005-selection-fallback-policy.md` — G86: seleção decide explicitamente a próxima tier contextual, sintética, reuso ou ausência.

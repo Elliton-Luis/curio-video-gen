@@ -1,13 +1,13 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G91 e métricas até F8.
-**Estado:** trabalho incompleto. G80–G91 e F4–F8 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G92 e métricas até F8.
+**Estado:** trabalho incompleto. G80–G92 e F4–F8 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G91
-> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`) foram
+> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G92
+> (`4b0b4e7`, `412a8b1`, `c5424b5`, `087c96e`, `f0a9622`, `e187697`, `6191b8b`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -128,6 +128,7 @@ hashes e diffs.
 | `087c96e` | Mantém `CandidateEvaluation` tipada até a projeção da auditoria visual (G89). |
 | `f0a9622` | Preserva `CandidateRejection` tipada até a projeção da auditoria (G90). |
 | `e187697` | Mantém resultados de aquisição rejeitados tipados até a auditoria (G91). |
+| `6191b8b` | Projeta rejeições e totais de query diretamente de outcomes tipados (G92). |
 | `b0b272e` | Faz a métrica live de duração total consumir o elapsed canônico do pipeline (F8). |
 
 
@@ -330,11 +331,11 @@ query, provider, ranking ou seleção de imagem.
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F8 parciais. | Definições canônicas para demais campos, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G91 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e fallback; rows persistidas e transições restantes de auditoria ainda precisam de contrato/owner comum. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G92 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallback e métricas; fronteiras persistidas ainda usam mappings por compatibilidade. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G91/F8. Não representam
+Os status são os registrados na auditoria e neste relatório até G92/F8. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -555,6 +556,15 @@ serialização. Os focados passaram com 90; suíte completa: 997 em 195,03 s;
 compileall e diff check passaram. O schema externo segue com mappings. Veja
 [relatório G91](20261005-typed-acquisition-rejections.md).
 
+## G92 — projeções de rejeição derivadas de outcomes tipados (`6191b8b`)
+
+`visual.py` deixou de fabricar e acumular rejection rows como estado
+intermediário. `visual_audit` projeta rows de persistência e calcula contagens
+por query a partir de avaliações, rejeições técnicas e outcomes de aquisição
+tipados. Os focados passaram com 105, suíte completa com 997 em 194,65 s,
+compileall e diff check passaram. A lista persistida ainda é mapping na
+fronteira externa. Ver [relatório G92](20261005-typed-rejection-projections.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -600,6 +610,7 @@ passaram. Não houve geração real. Consulte
 - [`G89 — avaliações tipadas na auditoria`](20261005-typed-candidate-evaluation-audit.md)
 - [`G90 — rejeições técnicas tipadas`](20261005-typed-technical-rejections.md)
 - [`G91 — outcomes de aquisição tipados`](20261005-typed-acquisition-rejections.md)
+- [`G92 — projeções de rejeição tipadas`](20261005-typed-rejection-projections.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)

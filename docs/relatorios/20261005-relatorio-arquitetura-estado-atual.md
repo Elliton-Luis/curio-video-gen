@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G91/F8.
+**Escopo:** auditoria documentada e migrações incrementais até G92/F8.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -259,7 +259,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F8 parciais. | F6 torna a coleção de tempos imutável; F7 preserva como null a duração histórica irrecuperável; F8 unifica o total live entre metadata e métricas. Definições canônicas para demais campos, lifecycle timers, profile por suboperação e reconciliação seleção-render permanecem. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G91 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89 mantém avaliações tipadas; G90 preserva rejeições técnicas; G91 mantém outcomes de aquisição tipados até a auditoria. `visual.py` ainda coordena coleta e fallback; mappings permanecem nas fronteiras persistidas. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G92 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`; G89–G91 preservam avaliações/rejeições/outcomes tipados; G92 centraliza suas projeções e contagens. `visual.py` ainda coordena busca/aquisição/fallback; mappings permanecem nas fronteiras persistidas. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -1018,3 +1018,11 @@ rows só são projetadas para auditoria e compatibilidade persistida. O formato 
 projeto não mudou. 90 focados, 997 completos em 195,03 s, compileall e diff
 check passaram. Ver
 [relatório G91](20261005-typed-acquisition-rejections.md).
+
+## G92 — projeções de rejeição (`6191b8b`)
+
+Rows de score/gate/aquisição e contagem de candidatos rejeitados por query agora
+derivam de contracts tipados em `visual_audit.py`. `visual.py` não mantém rows
+intermediárias; a projeção JSON só ocorre na saída persistida. 105 focados, 997
+completos em 194,65 s, compileall e diff check passaram. Veja
+[relatório G92](20261005-typed-rejection-projections.md).
