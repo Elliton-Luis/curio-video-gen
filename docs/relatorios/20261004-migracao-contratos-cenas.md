@@ -846,3 +846,24 @@ validação de identidade/decisão e registro de direitos a partir do contrato.
 `compileall` e `git diff --check` passaram. O contrato não muda escolha editorial,
 cache nem fallback. Próxima migração: consumidores de timeline/render e metadata,
 um limite por fase.
+
+## G23: timeline recebe seleção validada
+
+O coordenador projetava `MediaStageResult` de volta para rows antes de chamar a
+timeline. Isso permitia chamada direta com mídia fora de alinhamento com as cenas,
+e duplicava a obrigação de lembrar a estrutura esperada. O fluxo human-pending
+também entregava rows à mesma API.
+
+`pipeline_timeline.build_visual_timeline` agora requer `MediaStageResult` e
+verifica que IDs de cena, seleção e spans estejam na mesma ordem. O fluxo assistido
+passa o resultado tipado; `pipeline_human_prep` recebe o mesmo contrato e só cria a
+projeção para os consumidores ainda legados de render/metadata. A conversão para
+rows usada pelo algoritmo visual e pelas métricas fica dentro do owner da timeline.
+O formato `visual.json` e a ordenação editorial permanecem inalterados.
+
+Regressões cobrem contrato obrigatório, IDs desalinhados, timeline desativada e
+persistência do mesmo plano; integração assistida, fontes e revisão passaram
+(49 focados). Suíte integral: **912 testes em 179,68 s**; compileall e diff check
+passaram.
+Próximo limite: remover `media_scenes` dicts dos consumidores de metadata/render
+ou fechar adapters explícitos para seus formatos persistidos.

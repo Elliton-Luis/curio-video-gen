@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .media.selection_result import MediaStageResult
 from .stages import visual_timeline as visual_timeline_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
 from .stages.visual_beats import BEAT_SECONDS
@@ -18,20 +19,24 @@ class VisualTimelineResult:
 
 def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
                           timeline_spans: tuple[TimelineSpan, ...],
-                          media_scenes: list[dict], paths, slug: str,
+                          media_result: MediaStageResult, paths, slug: str,
                           overlap_cap: float, sfx: bool, insertions: int,
                           insert_style: str, insert_gain_db: int,
                           enabled: bool, metrics, write_json) -> VisualTimelineResult:
     """Build/persist the optional overlay plan and update its metric projection."""
+    if not isinstance(media_result, MediaStageResult):
+        raise TypeError("visual timeline requires a MediaStageResult")
     scene_ids = tuple(scene.id for scene in semantic_scenes)
     span_ids = tuple(span.scene_id for span in timeline_spans)
+    media_ids = tuple(scene.scene_id for scene in media_result.scenes)
     if enabled and (not scene_ids or len(scene_ids) != len(set(scene_ids))
-                    or scene_ids != span_ids):
-        raise ValueError("visual timeline scenes and spans are misaligned")
+                    or scene_ids != span_ids or scene_ids != media_ids):
+        raise ValueError("visual timeline scenes, media and spans are misaligned")
+    media_rows = media_result.to_rows()
     entries = []
     if enabled:
         entries = visual_timeline_stage.build_visual_timeline(
-            semantic_scenes, timeline_spans, media_scenes,
+            semantic_scenes, timeline_spans, media_rows,
             overlap_cap, seed=slug, sfx=sfx,
             insertions=insertions, insert_style=insert_style,
             insert_gain_db=insert_gain_db)
@@ -43,7 +48,7 @@ def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],
                   f"(estilo {insert_style}).")
     else:
         count = 0
-    metrics.visual_plan(timeline_spans, media_scenes, BEAT_SECONDS, entries)
+    metrics.visual_plan(timeline_spans, media_rows, BEAT_SECONDS, entries)
     return VisualTimelineResult(entries, count, enabled)
 
 

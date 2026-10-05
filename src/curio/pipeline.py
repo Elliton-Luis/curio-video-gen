@@ -289,7 +289,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     if narration == "human":
         return pipeline_human_prep.prepare_human_project(
             idea, slug, cfg, paths, script_text, script_source,
-            tuple(semantic_scenes), scenes_source, media_scenes, warnings,
+            tuple(semantic_scenes), scenes_source, media_result, warnings,
             stage_times, started, emit, metrics,
             script_mode=script_mode, max_images=max_images,
             overlap_cap=overlap_cap,
@@ -324,7 +324,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     stage_times.update(audio_result.stage_times)
 
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
-        tuple(semantic_scenes), timeline_spans, media_scenes,
+        tuple(semantic_scenes), timeline_spans, media_result,
         paths, slug, overlap_cap, cfg.visual_sfx,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, project_artifacts.write_json)

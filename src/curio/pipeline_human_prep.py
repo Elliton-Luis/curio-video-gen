@@ -10,6 +10,7 @@ from .audio import composition as audio_composition
 from .audio import selection as audio_selection
 from .audio.library import audio_seed
 from .config import CurioConfig
+from .media.selection_result import MediaStageResult
 from . import pipeline_media_sources as pipeline_media_sources_stage
 from . import pipeline_metadata as pipeline_metadata_stage
 from . import pipeline_render as pipeline_render_stage
@@ -28,7 +29,7 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                 paths: project_paths.VideoPaths,
                 script_text: str, script_source: str,
                 semantic_scenes: tuple[SemanticScene, ...],
-                scenes_source: str, media_scenes: list[dict],
+                scenes_source: str, media_result: MediaStageResult,
                 warnings: list[str], stage_times: dict, started: float,
                 emit, metrics, script_mode: bool = False,
                 max_images: int = 1, overlap_cap: float = 0.9,
@@ -40,6 +41,9 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                 source_registry=None, research_sources=(), grounding=None,
                 media_rights_notes=(), credits=(),
                 video_title: str = "", title_source: str = "") -> dict:
+    if not isinstance(media_result, MediaStageResult):
+        raise TypeError("human preparation requires a MediaStageResult")
+    media_scenes = media_result.to_rows()
     # [4/6] Timeline estimada por WPM (só para leitura — nunca sincronia final)
     t0 = time.monotonic()
     emit(4, "Estimando timeline")
@@ -58,7 +62,7 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
         scene, timing=span).to_dict()
         for scene, span in zip(semantic_scenes, timeline_spans)])
     timeline_result = pipeline_timeline_stage.build_visual_timeline(
-        semantic_scenes, timeline_spans, media_scenes,
+        semantic_scenes, timeline_spans, media_result,
         paths, slug, overlap_cap, cfg.visual_sfx,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, project_artifacts.write_json)
