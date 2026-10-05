@@ -208,7 +208,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G86/F7 está em
+O relatório completo do estado registrado até G87/F7 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
@@ -261,6 +261,10 @@ G86 move para `media_selection.py` a decisão da próxima tier visual
 (representação contextual, sintético, reuso ou ausência). `visual.py` executa a
 ação retornada. Suíte completa: 986 testes; ver
 [relatório G86](docs/relatorios/20261005-selection-fallback-policy.md).
+G87 também move para o owner de seleção a classificação de busca esgotada,
+razão e fallback, exigindo `VisualPlan`, `SearchPlan` e auditoria alinhados.
+Suíte completa: 990 testes; ver
+[relatório G87](docs/relatorios/20261005-selection-provenance-owner.md).
 O manifesto de roteiro schema 2 também assina inputs de roteiro e título, incluindo contexto de pesquisa, políticas e rotas: cache gerado stale é invalidado, título verifica o roteiro de origem, e edições/projetos legados sem proveniência são preservados explicitamente.
 Ver [relatório de migração e validação](docs/relatorios/20261004-migracao-contratos-cenas.md).
 `ResearchResult` é a fonte única para target, fontes, rejeições, consultas e

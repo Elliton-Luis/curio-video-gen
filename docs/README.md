@@ -7,8 +7,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G86/F7: arquitetura, contratos, fases, validações, regressões e pendências.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G86/F7: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G87/F7: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G87/F7: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-selection-provenance-owner.md` — G87: seleção classifica esgotamento e nível de fallback de plans e auditoria tipados.
 - `relatorios/20261005-selection-fallback-policy.md` — G86: seleção decide explicitamente a próxima tier contextual, sintética, reuso ou ausência.
 - `relatorios/20261005-backfill-unknown-total-duration.md` — F7: backfill mantém duração total como desconhecida quando não existe medida explícita.
 - `relatorios/20261005-stage-timings-immutable-contract.md` — F6: acumulador imutável para tempos de etapa e projeção dict na persistência.

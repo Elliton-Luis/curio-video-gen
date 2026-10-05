@@ -1,12 +1,13 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G86 e métricas até F7.
-**Estado:** trabalho incompleto. G80–G86 e F4–F7 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G87 e métricas até F7.
+**Estado:** trabalho incompleto. G80–G87 e F4–F7 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6 (`11022b2`), F7 (`254f48f`) e G86 (`4b0b4e7`) foram
+> **Atualização:** F6 (`11022b2`), F7 (`254f48f`) e G86–G87 (`4b0b4e7`,
+> `412a8b1`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -122,6 +123,7 @@ hashes e diffs.
 | `11022b2` | Substitui o acumulador mutável por `StageTimings` imutável; dict fica na projeção persistida (F6). |
 | `254f48f` | Mantém duração total desconhecida como `null` em backfill sem valor total explícito (F7). |
 | `4b0b4e7` | Centraliza a decisão pura da próxima tier da seleção visual em `media_selection.py` (G86). |
+| `412a8b1` | Faz `media_selection.py` classificar exaustão, motivo e fallback a partir de plans e auditoria tipados (G87). |
 
 
 As fases anteriores G57–G69 e as migrações anteriores de pesquisa, áudio,
@@ -323,11 +325,11 @@ query, provider, ranking ou seleção de imagem.
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F7 parciais. | Definições canônicas para demais campos, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G86 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição, fallbacks e auditoria; extrair transições com contratos sem duplicar política. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G87 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e outros campos de auditoria; extrair ownership por decisões, não por mera movimentação de código. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G86/F7. Não representam
+Os status são os registrados na auditoria e neste relatório até G87/F7. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -489,6 +491,15 @@ editorial permanecem. 89 focados passaram; a suíte completa passou com 986
 testes. A extração não remove o restante da orquestração de `visual.py`. Ver
 [relatório G86](20261005-selection-fallback-policy.md).
 
+## G87 — ownership da provenance de seleção (`412a8b1`)
+
+`describe_selection_provenance()` em `media_selection.py` deriva motivo de
+exaustão e nível de fallback a partir de `SelectedAsset`, `VisualPlan`,
+`SearchPlan` e auditoria completa por query. O coordenador deixa de reinterpretar
+esses dados. Não há mudança no schema de `media.json`. 98 focados e 990 testes
+completos passaram. Ver
+[relatório G87](20261005-selection-provenance-owner.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -529,6 +540,7 @@ passaram. Não houve geração real. Consulte
 - [`G84 — camada CLIP na avaliação de candidatos`](20261005-clip-layer-candidate-evaluation.md)
 - [`G85 — auditoria visual baseada no VisualPlan`](20261005-visual-audit-from-visual-plan.md)
 - [`G86 — política explícita da próxima tier de mídia`](20261005-selection-fallback-policy.md)
+- [`G87 — ownership da provenance de seleção`](20261005-selection-provenance-owner.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)
