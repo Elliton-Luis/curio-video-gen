@@ -2,7 +2,8 @@ import pytest
 
 from curio.media.asset_snapshot import MediaAssetSnapshot
 from curio.media.selection_result import SelectedAsset
-from curio.stages.media_contracts import Candidate, CandidateEvaluation
+from curio.stages.media_contracts import (
+    Candidate, CandidateEvaluation, CandidateRejection)
 from curio.stages.visual_audit import (
     QueryAuditAccumulator,
     SearchQueryAudit,
@@ -109,6 +110,7 @@ def test_scene_visual_decision_builder_owns_audit_projection():
         selection=selection, selection_provenance=provenance,
         scene=scene, visual_plan=visual_plan, search_plan=search_plan,
         collection=collection, evaluations=(evaluation,), rejected=[],
+        technical_rejections=(),
         picked=(picked,), min_score=40, fallback_plan=None, strategy="image")
     row = decision.to_dict()
 
@@ -141,6 +143,27 @@ def test_candidate_audit_rejects_untyped_evaluation_rows():
     with pytest.raises(TypeError, match="CandidateEvaluation"):
         candidate_audit_rows([{"query": "Ottoman map"}], [], (),
                              _visual_plan(), min_score=50)
+
+
+def test_candidate_audit_projects_typed_technical_rejection():
+    evaluation = _evaluation(
+        "Ottoman map", 0,
+        {"asset_id": "map", "title": "Map", "provider": "wikimedia"},
+        {}, accepted=True)
+    rejection = CandidateRejection(
+        evaluation.candidate, "blocked technical term", "technical_gate",
+        {"topic_relevance": 80, "scene_relevance": 12})
+
+    rows = candidate_audit_rows(
+        (), [], (), _visual_plan(), min_score=50,
+        technical_rejections=(rejection,))
+
+    assert rows == [{
+        "title": "Map", "provider": "wikimedia", "query": "Ottoman map",
+        "topic_relevance": 80, "scene_relevance": 12, "creator": "",
+        "source_url": "", "date_created": "", "media_type": "image",
+        "decision": "rejected", "reason": "blocked technical term",
+    }]
 
 
 def test_query_audit_projects_provider_results_and_search_provenance():

@@ -134,13 +134,16 @@ def evaluate_generic(candidates: list[Candidate], scene,
 
 
 def describe_technical_rejections(
-        rejected: tuple[CandidateRejection, ...], scene) -> tuple[dict, ...]:
-    """Add semantic evidence to technical rejections without changing gates."""
+        rejected: tuple[CandidateRejection, ...], scene
+        ) -> tuple[CandidateRejection, ...]:
+    """Attach semantic evidence without projecting technical rejections."""
     if not isinstance(rejected, tuple) or any(
             not isinstance(item, CandidateRejection) for item in rejected):
         raise TypeError("technical rejection evidence requires CandidateRejection values")
-    return tuple({**item.to_dict(), **scoring.semantic_relevance(
-        item.candidate.asset.to_dict(), scene)} for item in rejected)
+    return tuple(CandidateRejection(
+        item.candidate, item.reason, item.stage,
+        scoring.semantic_relevance(item.candidate.asset.to_dict(), scene))
+        for item in rejected)
 
 
 def _scoring_entries(candidates: list[Candidate], *, generic: bool

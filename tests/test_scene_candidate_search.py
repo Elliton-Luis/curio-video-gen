@@ -147,5 +147,5 @@ def test_technical_gate_rejections_stay_typed_until_evidence_projection(monkeypa
 
     assert result.candidates == ()
     assert result.rejected[0].reason == "sem URL de download"
-    assert descriptions[0]["stage"] == "technical_gate"
-    assert "topic_relevance" in descriptions[0]
+    assert descriptions[0].stage == "technical_gate"
+    assert "topic_relevance" in descriptions[0].evidence

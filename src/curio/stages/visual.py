@@ -230,7 +230,9 @@ def _search_scene_with_shortcircuit(
         # fresh contextual results and synthetic visuals have been tried.
         ranked_candidates.extend(deferred_specific)
     collection = collector.snapshot()
-    rejected = list(describe_technical_rejections(collection.rejected, ch))
+    technical_rejections = list(
+        describe_technical_rejections(collection.rejected, ch))
+    rejected = []
     ranked_candidates = apply_clip_layer(
         ranked_candidates, ch, cfg, metrics, max_images)
 
@@ -263,9 +265,12 @@ def _search_scene_with_shortcircuit(
     if metrics:
         metrics.media_record_selection(len(candidates), len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
-    for rej in rejected:
+    for rej in technical_rejections:
         if metrics:
-            metrics.media_record_rejection(rej["reason"])
+            metrics.media_record_rejection(rej.reason)
+    for row in rejected:
+        if metrics:
+            metrics.media_record_rejection(row["reason"])
     # A estratégia da cena é registrada mesmo quando ela dá certo: o
     # relatório precisa mostrar a distribuição (item 20), e um diagrama
     # não pode ser contado como falha.
@@ -308,12 +313,17 @@ def _search_scene_with_shortcircuit(
         evaluations.extend((*generic_result.accepted, *generic_result.rejected))
         append_low_rejections(generic_low)
 
-        previous_rejection_ids = {row.get("identity") for row in rejected}
+        previous_rejection_ids = {
+            item.candidate.identity for item in technical_rejections}
+        previous_rejection_ids.update(
+            row.get("identity") for row in rejected)
         collection = collector.snapshot()
         additional_technical_rejections = describe_technical_rejections(
             collection.rejected, ch)
-        rejected.extend(row for row in additional_technical_rejections
-                        if row.get("identity") not in previous_rejection_ids)
+        new_technical_rejections = tuple(
+            item for item in additional_technical_rejections
+            if item.candidate.identity not in previous_rejection_ids)
+        technical_rejections = list(additional_technical_rejections)
         candidates = list(collection.candidates)
 
         generic_pool = prepare_selection_pool(
@@ -323,9 +333,9 @@ def _search_scene_with_shortcircuit(
         if metrics:
             metrics.media_record_selection(len(generic_candidates), len(generic_fresh))
             metrics.media_record_funnel("above_threshold", len(generic_fresh))
-        for row in additional_technical_rejections:
-            if row.get("identity") not in previous_rejection_ids and metrics:
-                metrics.media_record_rejection(row["reason"])
+        for item in new_technical_rejections:
+            if metrics:
+                metrics.media_record_rejection(item.reason)
         for evaluation in generic_low:
             if metrics:
                 metrics.media_record_rejection(
@@ -395,7 +405,8 @@ def _search_scene_with_shortcircuit(
     if not picked:
         msg = (f"cena {ch.id}: sem imagem adequada "
                f"({', '.join(queries[:3]) or 'sem consultas'})"
-               + (f" — {len(rejected)} candidato(s) rejeitados" if rejected else "")
+               + (f" — {len(rejected) + len(technical_rejections)} candidato(s) rejeitados"
+                  if rejected or technical_rejections else "")
                + " — vai usar estratégia visual alternativa")
         warnings.append(msg)
         from ..runlog import event as run_event
@@ -422,7 +433,9 @@ def _search_scene_with_shortcircuit(
               selected=len(picked), downloaded=downloads,
               cache_hits=cache_hits, strategy=strategy_used)
 
-    scene_rejected = rejected[:REJECTED_KEPT]
+    technical_rejection_rows = [item.to_dict() for item in technical_rejections]
+    all_rejected_rows = [*rejected, *technical_rejection_rows]
+    scene_rejected = all_rejected_rows[:REJECTED_KEPT]
     selection_provenance = describe_selection_provenance(
         tuple(picked), visual_plan, search_plan, collection.query_audit)
     selection = make_selection_decision(
@@ -431,7 +444,8 @@ def _search_scene_with_shortcircuit(
         selection=selection, selection_provenance=selection_provenance,
         scene=ch, visual_plan=visual_plan, search_plan=search_plan,
         collection=collection, evaluations=tuple(evaluations),
-        rejected=rejected, picked=tuple(picked), min_score=min_score,
+        rejected=rejected, technical_rejections=tuple(technical_rejections),
+        picked=tuple(picked), min_score=min_score,
         fallback_plan=(fallback_plan
                        if synthetic and "fallback_plan" in locals() else None),
         strategy=strategy_used)

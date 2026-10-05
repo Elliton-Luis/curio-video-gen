@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from math import isfinite
 from types import MappingProxyType
 
@@ -75,9 +75,21 @@ class CandidateRejection:
     candidate: Candidate
     reason: str
     stage: str
+    evidence: Mapping = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.candidate, Candidate):
+            raise TypeError("candidate rejection requires a Candidate")
+        if not isinstance(self.reason, str) or not self.reason.strip():
+            raise ValueError("candidate rejection requires a reason")
+        if not isinstance(self.stage, str) or not self.stage.strip():
+            raise ValueError("candidate rejection requires a stage")
+        if not isinstance(self.evidence, Mapping):
+            raise TypeError("candidate rejection evidence must be an object")
+        object.__setattr__(self, "evidence", _freeze_mapping(self.evidence))
 
     def to_dict(self) -> dict:
-        return {
+        row = {
             "title": self.candidate.asset.title,
             "provider": self.candidate.asset.provider,
             "query": self.candidate.search_query.query,
@@ -86,6 +98,8 @@ class CandidateRejection:
             "reason": self.reason,
             "stage": self.stage,
         }
+        row.update(_json_value(self.evidence))
+        return row
 
 
 @dataclass(frozen=True)
