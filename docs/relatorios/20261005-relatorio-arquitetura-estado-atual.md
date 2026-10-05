@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G72.
+**Escopo:** auditoria documentada e migrações incrementais até G73.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -90,6 +90,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `dd19b24` | Introduziu `RankedSelectionCandidate` e tipou `SelectionPool`; CLIP atualiza evidência imutável e auditoria associa rejeições pós-aquisição por identidade (G70). |
 | `d8dace3` | Faz `make_selection_decision` consumir `SelectedAsset` com query, origem e representação tipadas (G71). |
 | `ec61c65` | Mantém os assets escolhidos como `SelectedAsset` até a projeção para auditoria e persistência (G72). |
+| `7b965a1` | Mantém shortlist e reserva de reuso como `RankedSelectionCandidate` até cada tentativa de aquisição (G73). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -133,7 +134,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G72
+## Arquivos alterados nas fases G57–G73
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -215,7 +216,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G72 commitadas; parcial. | `visual.py` ainda orquestra várias fases e projeta candidatos em rows mutáveis durante aquisição; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G73 commitadas; parcial. | `visual.py` ainda coordena e atualiza row temporária dentro de cada tentativa de aquisição; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -274,6 +275,9 @@ excluído** por HTTP 429 da Wikipédia em 179,44 s. Compileall e diff check
 passaram. Não houve geração real nesta fase.
 G72: bateria de seleção visual, auditoria, integração/pipeline: **99 testes**;
 suíte ampla: **940 passaram, 1 excluído** por HTTP 429 da Wikipédia em 179,23 s.
+Compileall e diff check passaram; sem geração real.
+G73: a mesma bateria de seleção visual/pipeline/auditoria: **99 testes**;
+suíte ampla: **940 passaram, 1 excluído** por HTTP 429 da Wikipédia em 178,02 s.
 Compileall e diff check passaram; sem geração real.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
@@ -648,3 +652,22 @@ check passaram. Não houve geração real. Esta fase reduz o lifecycle mutável 
 selecionados; ainda não extrai do coordenador a aquisição dos candidatos nem
 tipa os outcomes de rejeição. Ver o
 [relatório G72](20261005-selected-media-through-boundary.md).
+
+
+## G73 — shortlist tipada até tentativa de aquisição (`7b965a1`)
+
+G70 tipou `SelectionPool`, mas projetava imediatamente `fresh` e `reused` para
+rows mutáveis. G73 mantém ambas as listas como `RankedSelectionCandidate` até
+cada tentativa de aquisição: o downloader recebe a projeção da asset snapshot e
+a row de avaliação é materializada localmente para a tentativa que atualiza
+estado técnico. A reserva de reuso também ordena por score tipado e só projeta
+a linha no momento de tentar o download.
+
+Arquivos: `src/curio/stages/visual.py`. Bateria focada de seleção, auditoria,
+direção visual e pipeline: **99 passaram**. Suíte ampla: **940 passaram, 1
+excluído** por HTTP 429 da Wikipédia em **178,02 s**. `compileall` e diff check
+passaram; sem geração real. O contrato reduz o alcance da row editável, mas ela
+ainda acumula resultado, rejeição e fields finais dentro da tentativa. A próxima
+migração deve modelar essas transições para remover a row temporária sem mover
+política editorial para o downloader. Ver o
+[relatório G73](20261005-ranked-pool-through-acquisition.md).
