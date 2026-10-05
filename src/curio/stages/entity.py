@@ -289,6 +289,24 @@ def resolve_entity_heuristic(idea: str, language: str = "pt-BR") -> TargetEntity
     portão de relevância aceita a fonte por nome quando não há
     discriminante — e por isso que a proteção real vem da resolução.
     """
+    # Preserve a descriptive noun phrase in a title such as
+    # "Buracos negros: sombras e ondas". Sentence/title capitalization alone
+    # is not evidence that the first token is a proper entity; taking only
+    # that token corrupts every downstream scene and search anchor.
+    lead = re.split(r"[:?!\n]", (idea or "").strip(), maxsplit=1)[0].strip()
+    lead_words = re.findall(r"[A-Za-zÀ-ÿ][\wÀ-ÿ'-]*", lead)
+    first_word = textnorm.fold(lead_words[0]) if lead_words else ""
+    remaining = [word for word in lead_words[1:]
+                 if textnorm.fold(word) not in _CONECTORES]
+    if (len(lead_words) >= 2 and first_word not in _COMUN_INICIAIS
+            and remaining and all(not word[0].isupper() for word in remaining)):
+        topic = " ".join(lead_words)
+        return TargetEntity(
+            name=topic, aliases=[], discriminants=[],
+            search_queries=[topic], forbidden=[], ambiguous=False,
+            is_entity=False, topic_terms=topic_terms_of(topic, language),
+            source="heuristic")
+
     blocos = _capitalized_spans(idea)
     alvo = next((b for b in blocos
                  if _norm_phrase(b) and _norm_phrase(b) not in _CAP_ONLY), "")

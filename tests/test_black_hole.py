@@ -90,6 +90,27 @@ def test_cenas_locais_carregam_vocabulario_em_ingles():
     assert "black hole" in chs[0].visual_queries
 
 
+def test_local_planner_preserva_topico_descritivo_em_queries_contextuais():
+    from curio.stages.entity import resolve_entity_heuristic
+    from curio.stages.scene_enrichment import enrich_scenes
+    from curio.stages.search_planning import build_search_plan
+    from curio.stages.visual_planning import build_visual_plan
+
+    title = "Buracos negros: sombras e ondas"
+    target = resolve_entity_heuristic(title)
+    local = S.build_local_semantic_scenes(
+        "Um buraco negro se forma e possui horizonte de eventos.", 1)
+    enriched = enrich_scenes(
+        local.semantic_scenes, topic=title, target=target, source="local",
+        planning_mode="deterministic")
+    plan = build_visual_plan(enriched.semantic_scenes[0])
+    queries = [item.query for item in build_search_plan(plan, "science").queries]
+
+    assert plan.topic == "Buracos negros"
+    assert "black hole Buracos negros" in queries
+    assert all(query.casefold() != "buracos" for query in queries)
+
+
 def test_busca_prefere_buraco_negro_a_laboratorio(tmp_path, monkeypatch):
     from tests.test_media_waterfall import _FakeProv, _mock_download
     _mock_download(monkeypatch, tmp_path)

@@ -262,6 +262,14 @@ def test_tema_comum_continua_funcionando():
     assert E.source_verdict(erro, alvo)[0] == E.REASON_OFFTOPIC
 
 
+def test_titulo_com_conceito_descritivo_nao_trunca_assunto_no_primeiro_token():
+    alvo = E.resolve_entity_heuristic("Buracos negros: sombras e ondas")
+    assert alvo.name == "Buracos negros"
+    assert alvo.is_entity is False
+    assert alvo.search_queries == ["Buracos negros"]
+    assert {"buracos", "negros"}.issubset(set(alvo.topic_terms))
+
+
 def test_tema_comum_aceita_qualquer_um_dos_termos():
     alvo = E.resolve_entity_heuristic("Como funciona a impressão térmica "
                                       "do recibo?")
