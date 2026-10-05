@@ -12,7 +12,8 @@ import subprocess
 from unittest.mock import patch
 
 from curio.config import CurioConfig
-from curio.pipeline import run_pipeline, video_paths
+from curio.pipeline import run_pipeline
+from curio.project_paths import video_paths
 from curio.stages.research import ResearchResult, ResearchSource
 from curio.stages.entity import TargetEntity
 from curio.stages.script import ScriptArtifact, TitleArtifact
@@ -224,7 +225,7 @@ def test_integracao_completa(tmp_path):
 
 
 def test_falha_no_chain_de_cenas_em_ideia_cai_para_divisao_local(tmp_path):
-    from curio.pipeline import video_paths
+    from curio.project_paths import video_paths
     from curio.stages.nvidia import NvidiaError
     from curio.stages.scenes import _norm
 
@@ -335,7 +336,7 @@ def test_fluxo_humano_guarda_audio_request_para_finalize(tmp_path):
     assert "provider_downloads" in meta
     assert meta["scene_context_enrichment"]["source"] == "mock"
     assert meta["media_resolution_source"] == "provider"
-    from curio.pipeline import video_paths
+    from curio.project_paths import video_paths
     paths = video_paths(out_dir, "teste-integracao", "people")
     assert os.path.isfile(paths.sources_json)
     assert os.path.isfile(paths.sources_report)
@@ -348,7 +349,8 @@ def test_fluxo_humano_guarda_audio_request_para_finalize(tmp_path):
 
 
 def test_finalize_humano_aplica_trilha_salva_no_audio_request(tmp_path, monkeypatch):
-    from curio.pipeline import finalize_project, video_paths
+    from curio.pipeline import finalize_project
+    from curio.project_paths import video_paths
     from curio.stages import transcribe as transcribe_stage
 
     music = tmp_path / "human-final-theme.wav"

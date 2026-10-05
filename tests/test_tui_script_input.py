@@ -1,5 +1,6 @@
 from curio import pipeline, tui
 from curio.config import CurioConfig
+from curio.project_paths import video_paths
 from curio.stages.research import ResearchResult
 
 
@@ -76,6 +77,6 @@ def test_pipeline_persists_supplied_script_verbatim_and_skips_script_generation(
     else:
         raise AssertionError("test did not reach the post-script pipeline stage")
 
-    paths = pipeline.video_paths(cfg.out_dir, "teste-roteiro-colado")
+    paths = video_paths(cfg.out_dir, "teste-roteiro-colado")
     with open(paths.script_txt, encoding="utf-8") as stream:
         assert stream.read() == SCRIPT

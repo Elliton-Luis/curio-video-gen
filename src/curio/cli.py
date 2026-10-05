@@ -23,9 +23,10 @@ from .pipeline import (_apply_audio_request, _audio_events,
                          _mark_audio_used, _narration_with_sfx, _read, _read_json,
                          _transition_mode,
                         _sfx_track_for,
-                        _write_json, finalize_project, iter_projects,
-                        run_pipeline,
-                         run_script_pipeline, _paths_for_slug)
+                        _write_json, finalize_project,
+                         run_pipeline,
+                         run_script_pipeline)
+from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from . import pipeline_render as pipeline_render_stage
 from . import pipeline_media as pipeline_media_stage
 from .stages.scenes import Chapter

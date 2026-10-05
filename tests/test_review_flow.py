@@ -15,7 +15,7 @@ import pytest
 
 from curio.cli import main
 from curio.config import CurioConfig
-from curio.pipeline import video_paths
+from curio.project_paths import video_paths
 from curio.stages import review as review_stage
 from curio.stages import scoring as scoring_stage
 from curio.stages import research as research_stage

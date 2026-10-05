@@ -3,7 +3,7 @@
 import json
 import os
 
-from curio.pipeline import video_paths
+from curio.project_paths import video_paths
 from curio.pipeline_media import (
     MediaStandby,
     count_assets,

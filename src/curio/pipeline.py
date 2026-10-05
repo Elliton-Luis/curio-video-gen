@@ -17,7 +17,6 @@ import shutil
 import sys
 import time
 from copy import deepcopy
-from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from . import ffmpeg as ff
@@ -38,7 +37,8 @@ from .metrics import RunMetrics
 from .runlog import (RunLog, current_log_path, event as run_event,
                      format_exception, set_stage as set_log_stage)
 from .slug import slugify_with_timestamp
-from .slug import find_project_root, project_dir, unique_slug
+from .slug import unique_slug
+from . import project_paths
 from .stages import render as render_stage
 from .stages import research as research_stage
 from .stages import editorial as editorial_stage
@@ -56,71 +56,6 @@ from .stages.scene_contract import SemanticScene, TimelineSpan
 STAGES_AI = ["roteiro", "cenas", "mídia", "narração", "legendas", "montagem"]
 STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
                 "teleprompter"]
-
-
-@dataclass
-class VideoPaths:
-    root: str
-    script_txt: str
-    script_manifest_json: str
-    chapters_json: str
-    scene_plan_json: str
-    scene_plan_manifest_json: str
-    title_txt: str
-    media_json: str
-    media_manifest_json: str
-    sources_json: str
-    sources_report: str
-    contact_sheet: str
-    narration_wav: str
-    words_json: str
-    tts_manifest_json: str
-    research_json: str
-    timeline_json: str
-    visual_json: str
-    subs_srt: str
-    subs_ass: str
-    tele_ass: str
-    tele_mp4: str
-    silent_mp4: str
-    human_wav: str
-    transcription_json: str
-    final_mp4: str
-    metadata_json: str
-
-
-def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
-    root = project_dir(out_dir, genre, slug)
-    return VideoPaths(
-        root=root,
-        script_txt=os.path.join(root, "script", "script.txt"),
-        script_manifest_json=os.path.join(root, "script", "artifacts.json"),
-        chapters_json=os.path.join(root, "script", "chapters.json"),
-        scene_plan_json=os.path.join(root, "script", "scene-plan.json"),
-        scene_plan_manifest_json=os.path.join(
-            root, "script", "scene-plan-manifest.json"),
-        title_txt=os.path.join(root, "script", "title.txt"),
-        media_json=os.path.join(root, "media", "media.json"),
-        media_manifest_json=os.path.join(root, "media", "media-selection.json"),
-        sources_json=os.path.join(root, "sources", "sources.json"),
-        sources_report=os.path.join(root, "sources", "FONTES.md"),
-        contact_sheet=os.path.join(root, "review", "contact_sheet.html"),
-        narration_wav=os.path.join(root, "audio", "narration.wav"),
-        words_json=os.path.join(root, "audio", "words.json"),
-        tts_manifest_json=os.path.join(root, "audio", "tts-manifest.json"),
-        research_json=os.path.join(root, "sources", "research.json"),
-        timeline_json=os.path.join(root, "timeline", "timeline.json"),
-        visual_json=os.path.join(root, "timeline", "visual_timeline.json"),
-        subs_srt=os.path.join(root, "subtitles", "subs.srt"),
-        subs_ass=os.path.join(root, "subtitles", "subs.ass"),
-        tele_ass=os.path.join(root, "teleprompter", "teleprompter.ass"),
-        tele_mp4=os.path.join(root, "teleprompter", "teleprompter.mp4"),
-        silent_mp4=os.path.join(root, "render", "silent.mp4"),
-        human_wav=os.path.join(root, "audio", "human.wav"),
-        transcription_json=os.path.join(root, "audio", "transcription.json"),
-        final_mp4=os.path.join(root, "render", "final.mp4"),
-        metadata_json=os.path.join(root, "metadata.json"),
-    )
 
 
 def _read(path: str) -> str:
@@ -191,7 +126,7 @@ def _typography_report(cfg: CurioConfig, genre_key: str = "") -> dict:
 
 
 def _sfx_track_for(visual_timeline: list[dict], total: float,
-                   paths: VideoPaths) -> str | None:
+                   paths: project_paths.VideoPaths) -> str | None:
     """Gera audio/sfx.wav a partir dos eventos da timeline (ou None)."""
     events = [img["sfx"] for t in visual_timeline for img in t.get("images", [])
               if isinstance(img.get("sfx"), dict)]
@@ -202,7 +137,7 @@ def _sfx_track_for(visual_timeline: list[dict], total: float,
 
 
 def _narration_with_sfx(wav_path: str, sfx_path: str | None, total: float,
-                        paths: VideoPaths) -> str:
+                        paths: project_paths.VideoPaths) -> str:
     """Mistura o SFX na narração (sem tocar seu volume) ou devolve o original."""
     if not sfx_path:
         return wav_path
@@ -260,7 +195,7 @@ def _apply_audio_request(cfg: CurioConfig, audio: dict | None) -> None:
 
 def _resolve_paths(out_dir: str, slug: str | None, idea: str,
                     genre_key: str, force: bool = False,
-                    ) -> tuple[str, VideoPaths]:
+                    ) -> tuple[str, project_paths.VideoPaths]:
     """Slug final + caminhos, com pasta de gênero e anti-colisão.
 
     Sem slug explícito, gera `AAAAMMDD_titulo`; com gênero, a pasta é
@@ -272,7 +207,7 @@ def _resolve_paths(out_dir: str, slug: str | None, idea: str,
         # Só o slug AUTOMÁTICO ganha anti-colisão: slug explícito é
         # endereço exato (retomada de cache/standby/rerun depende disso).
         final = unique_slug(out_dir, genre_key, final, idea)
-    return final, video_paths(out_dir, final, genre_key)
+    return final, project_paths.video_paths(out_dir, final, genre_key)
 
 
 def run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
@@ -766,7 +701,8 @@ def run_script_pipeline(script_text: str, cfg: CurioConfig,
                         on_event=on_event)
 
 
-def _human_prep(idea: str, slug: str, cfg: CurioConfig, paths: VideoPaths,
+def _human_prep(idea: str, slug: str, cfg: CurioConfig,
+                paths: project_paths.VideoPaths,
                 script_text: str, script_source: str,
                 semantic_scenes: tuple[SemanticScene, ...],
                 scenes_source: str, media_scenes: list[dict],
@@ -925,65 +861,11 @@ def _probe_streams(path: str) -> list[dict]:
     return (_json.loads(proc.stdout).get("streams") or [])
 
 
-def _paths_for_slug(out_dir: str, slug: str) -> tuple[str, VideoPaths]:
-    """Caminhos de um projeto existente, no layout novo ou legado.
-
-    Aceita `output/<genero>/<slug>` e `output/<slug>`; sem achar,
-    levanta FileNotFoundError dizendo onde procurou.
-    """
-    root = None
-    if "/" in slug:
-        genre_part, _, slug = slug.partition("/")
-        cand = project_dir(out_dir, genre_part, slug)
-        if os.path.isdir(cand):
-            root = cand
-    else:
-        root = find_project_root(out_dir, slug)
-    if root is None:
-        raise FileNotFoundError(
-            f"projeto '{slug}' não encontrado em {out_dir}/ "
-            f"(nem em {out_dir}/<genero>/{slug}).")
-    genre = ""
-    if os.path.dirname(root) != out_dir:
-        genre = os.path.basename(os.path.dirname(root))
-    return slug, video_paths(out_dir, slug, genre)
-
-
-def iter_projects(out_dir: str) -> list[tuple[str, str]]:
-    """Projetos com metadata.json: [(ref, root)].
-
-    `ref` é `slug` (layout plano legado) ou `<genero>/<slug>` (novo);
-    aceito de volta por `_paths_for_slug` e pelos comandos `--slug`.
-    """
-    found: list[tuple[str, str]] = []
-    try:
-        entries = sorted(os.listdir(out_dir))
-    except OSError:
-        return found
-    for entry in entries:
-        full = os.path.join(out_dir, entry)
-        if not os.path.isdir(full):
-            continue
-        if os.path.isfile(os.path.join(full, "metadata.json")):
-            found.append((entry, full))
-            continue
-        try:
-            subs = sorted(os.listdir(full))
-        except OSError:
-            continue
-        for sub in subs:
-            sub_full = os.path.join(full, sub)
-            if (os.path.isdir(sub_full) and os.path.isfile(
-                    os.path.join(sub_full, "metadata.json"))):
-                found.append((f"{entry}/{sub}", sub_full))
-    return found
-
-
 def finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                      force: bool = False, on_progress=None,
                      on_event=None) -> dict:
     cfg = deepcopy(cfg)
-    slug, paths = _paths_for_slug(cfg.out_dir, slug)
+    slug, paths = project_paths.paths_for_slug(cfg.out_dir, slug)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     log_path = os.path.join(paths.root, "logs", f"finalize-{stamp}.jsonl")
     with RunLog(log_path, slug, on_event) as runlog:
@@ -1008,7 +890,7 @@ def _finalize_project(slug: str, audio_src: str, cfg: CurioConfig,
                       force: bool = False, on_progress=None) -> dict:
     """Une áudio humano ao vídeo silencioso: transcreve, legenda, merge."""
     started = time.monotonic()
-    slug, paths = _paths_for_slug(cfg.out_dir, slug)
+    slug, paths = project_paths.paths_for_slug(cfg.out_dir, slug)
     metrics = RunMetrics(slug, audio_src, "human-finalize")
     for need in (paths.chapters_json, paths.timeline_json, paths.media_json,
                  paths.silent_mp4):

@@ -1,5 +1,5 @@
 from curio.config import CurioConfig
-from curio.pipeline import video_paths
+from curio.project_paths import video_paths
 from curio.pipeline_script import run_script_stage
 from curio.script_artifacts import (ScriptArtifactsManifest, read_manifest,
                                     text_identity, write_manifest)

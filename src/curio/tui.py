@@ -19,7 +19,8 @@ import sys
 from . import verify as verify_mod
 from .config import ALLOWED_INSERT_STYLES as INSERT_STYLES
 from .config import CurioConfig, parse_duration
-from .pipeline import (_paths_for_slug, iter_projects, run_pipeline)
+from .pipeline import run_pipeline
+from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from .pipeline_media import MediaStandby
 from .slug import find_project_root, project_dir, slugify_with_timestamp
 from .tui_terminal import (TUIExit as _TUIExit, ask as _ask,

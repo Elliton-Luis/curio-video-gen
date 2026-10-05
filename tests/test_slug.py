@@ -4,7 +4,8 @@ import json
 import os
 import re
 
-from curio.pipeline import _paths_for_slug, iter_projects, video_paths
+from curio.project_paths import (iter_projects, paths_for_slug as _paths_for_slug,
+                                 video_paths)
 from curio.slug import (find_project_root, project_dir, slugify,
                         slugify_with_timestamp, unique_slug)
 
