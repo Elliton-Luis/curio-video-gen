@@ -5,6 +5,9 @@ from __future__ import annotations
 from copy import deepcopy
 from math import isfinite
 from dataclasses import dataclass
+import sys
+
+from .scene_contract import SemanticScene
 
 
 @dataclass(frozen=True)
@@ -310,3 +313,93 @@ def make_selection_decision(scene_id: int, picked: list[dict],
         reuse_reason=str(entry.get("reuse_reason", "")),
         reason=reason,
     )
+
+
+def annotate_reuse(scenes: list[dict]) -> None:
+    """Record repeated content identities across scene selections."""
+    from ..media.identity import asset_identity
+
+    first_scene: dict[str, int] = {}
+    for scene in scenes:
+        for entry in scene.get("assets") or []:
+            asset = (entry or {}).get("asset") or {}
+            asset_id = str(asset.get("asset_id") or "")
+            if not asset_id:
+                continue
+            identity = asset_identity(asset)
+            if identity in first_scene:
+                scene.setdefault("reuse", []).append({
+                    "asset": asset.get("asset_id", ""),
+                    "title": asset.get("title", "")[:120],
+                    "provider": asset.get("provider", ""),
+                    "previous_scene": first_scene[identity],
+                    "current_scene": scene.get("chapter_id"),
+                    "reason": entry.get("reuse_reason", "same_top_match"),
+                })
+            else:
+                first_scene[identity] = scene.get("chapter_id")
+    for scene in scenes:
+        scene.setdefault("reuse", [])
+
+
+def resolve_cross_scene_reuse(scenes: list[dict],
+                              semantic_scenes: list[SemanticScene]) -> None:
+    """Fill empty scenes only from a semantically qualified selected asset."""
+    have = [scene for scene in scenes if scene["assets"]]
+    by_id = {scene.id: scene for scene in semantic_scenes}
+    if not have or not by_id:
+        return
+    from . import scoring
+
+    for scene_row in scenes:
+        if scene_row["assets"]:
+            continue
+        scene_id = scene_row["chapter_id"]
+        scene = by_id.get(scene_id)
+        if scene is None:
+            continue
+        eligible: list[ReuseCandidate] = []
+        for donor in have:
+            donor_scene = by_id.get(donor["chapter_id"])
+            if donor_scene is None:
+                continue
+            for entry in donor.get("assets", []):
+                asset = entry.get("asset") or {}
+                relevance = scoring.semantic_relevance(asset, scene)
+                if ((relevance.get("topic_relevance", 0) or 0) > 0
+                        and (relevance.get("scene_relevance", 0) or 0) >= 25):
+                    eligible.append(ReuseCandidate(
+                        donor_scene_id=donor["chapter_id"], entry=entry,
+                        topic_relevance=relevance["topic_relevance"],
+                        scene_relevance=relevance["scene_relevance"]))
+        selected = select_reuse_candidate(eligible, scene_id)
+        if selected is None:
+            continue
+        donor_entry = selected.entry
+        donor_row = next(item for item in have
+                         if item["chapter_id"] == selected.donor_scene_id)
+        reuse_reason = "validated_cross_scene_reuse"
+        reused_entry = dict(donor_entry, order=0,
+                            reuse_reason=reuse_reason)
+        scene_row["assets"] = [reused_entry]
+        scene_row["asset"] = scene_row["assets"][0]["asset"]
+        scene_row["reused_from"] = donor_row["chapter_id"]
+        if isinstance(scene_row.get("visual_decision"), dict):
+            reused_asset = reused_entry.get("asset") or {}
+            decision = make_selection_decision(
+                scene_id, scene_row["assets"], "validated_reuse").to_dict()
+            decision["reason"] = (
+                f"validated topic and scene evidence; reused from scene "
+                f"{donor_row['chapter_id']} after fresh and synthetic choices")
+            scene_row["visual_decision"]["fallback"] = "validated_reuse"
+            scene_row["visual_decision"]["selection"] = decision
+            scene_row["visual_decision"]["selected"] = {
+                "title": reused_asset.get("title", ""),
+                "provider": reused_asset.get("provider", ""),
+                "topic_relevance": selected.topic_relevance,
+                "scene_relevance": selected.scene_relevance,
+                "reason": ("validated topic and scene evidence from scene "
+                           f"{donor_row['chapter_id']}"),
+            }
+        print(f"AVISO: cena {scene_id} reusa imagem(ns) da cena "
+              f"{donor_row['chapter_id']} (sem mídia própria).", file=sys.stderr)

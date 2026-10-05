@@ -327,15 +327,15 @@ def test_mesmo_asset_em_duas_cenas_e_registrado():
     """O caso de São Jerônimo: cena 1 e cena 3, mesma pintura.
 
     As duas cenas TINHAM mídia própria — cada uma buscou e o provedor
-    devolveu o mesmo melhor resultado. `_resolve_reuse_multi` não trata
+    devolveu o mesmo melhor resultado. `resolve_cross_scene_reuse` não trata
     esse caso, porque ele só preenche cena vazia, e `reused_from` ficava
     vazio nas duas. Sem registro, a repetição só aparecia comparando o
     media.json à mão.
     """
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     a = _a("Saint_Jerome_in_His_Study", "Saint Jerome in his study")
     scenes = [_cena(1, [a]), _cena(2, [_a("outra")]), _cena(3, [a])]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     reuso = scenes[2]["reuse"]
     assert len(reuso) == 1
     assert reuso[0]["previous_scene"] == 1
@@ -346,10 +346,10 @@ def test_mesmo_asset_em_duas_cenas_e_registrado():
 
 def test_reutilizacao_NAO_e_proibida():
     """A anotação informa; ela não impede."""
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     a = _a("mesma")
     scenes = [_cena(1, [a]), _cena(2, [a])]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     assert scenes[1]["assets"], "o asset precisa continuar na cena"
     assert scenes[1]["asset"]["asset_id"] == "mesma"
 
@@ -362,10 +362,10 @@ def test_o_motivo_nao_afirma_intencao_editorial():
     para o autor decidir; afirmar o motivo seria chamar invenção de
     diagnóstico.
     """
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     a = _a("mesma")
     scenes = [_cena(1, [a]), _cena(3, [a])]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     r = scenes[1]["reuse"][0]
     assert r["reason"] == "same_top_match"
     assert "thematic" not in r["reason"]
@@ -379,10 +379,10 @@ def test_asset_repetido_tres_vezes_aparece_nas_duas_repeticoes():
     imediatamente anterior daria uma cadeia sem origem, e na cena 3 o
     registro diria 2 quando a imagem entrou na 1.
     """
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     a = _a("mesma")
     scenes = [_cena(1, [a]), _cena(2, [a]), _cena(3, [a])]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     assert scenes[0]["reuse"] == []
     assert scenes[1]["reuse"][0]["previous_scene"] == 1
     assert scenes[2]["reuse"][0]["previous_scene"] == 1
@@ -391,25 +391,25 @@ def test_asset_repetido_tres_vezes_aparece_nas_duas_repeticoes():
 def test_cena_sem_repeticao_registra_lista_vazia():
     """O campo existe sempre: ausência de registro precisa ser distinguível
     de 'a anotação não rodou'."""
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     scenes = [_cena(1, [_a("a")]), _cena(2, [_a("b")])]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     assert scenes[0]["reuse"] == [] and scenes[1]["reuse"] == []
 
 
 def test_asset_sem_id_nao_quebra():
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     scenes = [_cena(1, [{"title": "sem id"}]), _cena(2, [{"title": "sem id"}])]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     assert scenes[1]["reuse"] == []
 
 
 def test_cena_sem_midia_continua_usando_reused_from():
     """Os dois mecanismos convivem: `reused_from` é falta de alternativa,
     `reuse` é o mesmo melhor resultado em duas cenas."""
-    from curio.stages import visual as V
+    from curio.stages import media_selection as selection
     a = _a("so_esta")
     scenes = [_cena(1, [a]), _cena(2, [], reused_from=1)]
-    V._annotate_reuse(scenes)
+    selection.annotate_reuse(scenes)
     assert scenes[1]["reused_from"] == 1
     assert scenes[1]["reuse"] == []

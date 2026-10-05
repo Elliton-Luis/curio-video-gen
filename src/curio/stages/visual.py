@@ -43,10 +43,9 @@ from .visual_planning import build_visual_plan
 from .search_planning import build_search_plan
 from .media_contracts import Candidate, CandidateRejection
 from .candidate_evaluation import evaluate_generic, evaluate_specific
-from .media_selection import (ReuseCandidate, make_selection_decision,
-                              prepare_selection_pool,
-                              record_asset_usage,
-                              select_reuse_candidate)
+from .media_selection import (annotate_reuse, make_selection_decision,
+                              prepare_selection_pool, record_asset_usage,
+                              resolve_cross_scene_reuse)
 from .media_selection import SelectionDecision
 from .visual_audit import candidate_audit_rows
 from .media_provider_policy import ordered_providers
@@ -792,112 +791,6 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
         scenes.extend(scene_scenes)
         all_warnings.extend(scene_warnings)
     
-    _resolve_reuse_multi(scenes, semantic_scenes)
-    _annotate_reuse(scenes)
+    resolve_cross_scene_reuse(scenes, semantic_scenes)
+    annotate_reuse(scenes)
     return scenes, all_warnings
-
-
-def _annotate_reuse(scenes: list[dict]) -> None:
-    """Marca no media.json as imagens que aparecem em mais de uma cena.
-
-    A São Jerônimo mostrou o caso que faltava. Duas cenas com midia
-    PRÓPRIA podem receber o mesmo asset_id: cada uma buscou e o provedor
-    devolveu o mesmo melhor resultado. Isso não é o que `_resolve_reuse_
-    multi` trata, e o campo `reused_from` ficava vazio nas duas — o
-    mesmo asset em cenas 1 e 3 só aparecia se alguém fosse comparar o
-    media.json na mão.
-
-    Entradas antigas mantêm `same_top_match`; novas seleções registram
-    `eligible_pool_exhausted` quando faltam candidatas elegíveis inéditas.
-    Não se inventa um motivo `thematic_reuse`. Reuso editorial intencional
-    é uma decisão do autor, e o
-    curio não tem como ler decisão nenhuma nos dados — afirmar
-    "reuso temático" seria inventar o motivo e chamar de diagnóstico. O
-    que o registro entrega é o par de cenas e o asset, para o autor
-    decidir em um segundo se foi intencional.
-    """
-    primeira: dict[str, int] = {}
-    from .visual_beats import asset_key
-    for s in scenes:
-        ids = []
-        for entry in s.get("assets") or []:
-            a = (entry or {}).get("asset") or {}
-            aid = str(a.get("asset_id") or "")
-            if not aid:
-                continue
-            ids.append((asset_key(a), a, entry))
-        for aid, a, entry in ids:
-            if aid in primeira:
-                s.setdefault("reuse", []).append({
-                    "asset": a.get("asset_id", ""),
-                    "title": a.get("title", "")[:120],
-                    "provider": a.get("provider", ""),
-                    "previous_scene": primeira[aid],
-                    "current_scene": s.get("chapter_id"),
-                    "reason": entry.get("reuse_reason", "same_top_match"),
-                })
-            else:
-                primeira[aid] = s.get("chapter_id")
-    for s in scenes:
-        s.setdefault("reuse", [])
-
-
-def _resolve_reuse_multi(scenes: list[dict],
-                          semantic_scenes: list[SemanticScene]) -> None:
-    """Reuse only when donor title proves topic and scene relevance."""
-    have = [s for s in scenes if s["assets"]]
-    by_id = {scene.id: scene for scene in semantic_scenes}
-    if not have or not by_id:
-        return
-    for s in scenes:
-        if s["assets"]:
-            continue
-        cid = s["chapter_id"]
-        scene = by_id.get(cid)
-        if scene is None:
-            continue
-        eligible: list[ReuseCandidate] = []
-        from . import scoring
-        for donor in have:
-            donor_scene = by_id.get(donor["chapter_id"])
-            if donor_scene is None:
-                continue
-            for entry in donor.get("assets", []):
-                asset = entry.get("asset") or {}
-                relevance = scoring.semantic_relevance(asset, scene)
-                if (relevance.get("topic_relevance", 0) or 0) > 0 and \
-                        (relevance.get("scene_relevance", 0) or 0) >= 25:
-                    eligible.append(ReuseCandidate(
-                        donor_scene_id=donor["chapter_id"], entry=entry,
-                        topic_relevance=relevance["topic_relevance"],
-                        scene_relevance=relevance["scene_relevance"]))
-        selected = select_reuse_candidate(eligible, cid)
-        if selected is None:
-            continue
-        donor_entry = selected.entry
-        nearest = next(item for item in have
-                       if item["chapter_id"] == selected.donor_scene_id)
-        reuse_reason = "validated_cross_scene_reuse"
-        reused_entry = dict(donor_entry, order=0,
-                            reuse_reason=reuse_reason)
-        s["assets"] = [reused_entry]
-        s["asset"] = s["assets"][0]["asset"]
-        s["reused_from"] = nearest["chapter_id"]
-        if isinstance(s.get("visual_decision"), dict):
-            reused_asset = reused_entry.get("asset") or {}
-            decision = make_selection_decision(
-                cid, s["assets"], "validated_reuse").to_dict()
-            decision["reason"] = (
-                f"validated topic and scene evidence; reused from scene "
-                f"{nearest['chapter_id']} after fresh and synthetic choices")
-            s["visual_decision"]["fallback"] = "validated_reuse"
-            s["visual_decision"]["selection"] = decision
-            s["visual_decision"]["selected"] = {
-                "title": reused_asset.get("title", ""),
-                "provider": reused_asset.get("provider", ""),
-                "topic_relevance": selected.topic_relevance,
-                "scene_relevance": selected.scene_relevance,
-                "reason": f"validated topic and scene evidence from scene {nearest['chapter_id']}",
-            }
-        print(f"AVISO: cena {cid} reusa imagem(ns) da cena "
-              f"{nearest['chapter_id']} (sem mídia própria).", file=sys.stderr)

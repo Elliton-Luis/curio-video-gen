@@ -104,7 +104,7 @@ def test_cross_scene_reuse_prefers_scene_relevance_then_nearest_donor():
 def test_cross_scene_reuse_updates_the_selection_contract():
     from curio.media.selection_result import MediaStageResult
     from curio.stages.scene_contract import SemanticScene
-    from curio.stages.visual import _resolve_reuse_multi
+    from curio.stages.media_selection import resolve_cross_scene_reuse
 
     scene_context = {"topic": "Ottoman Empire"}
     scenes = (
@@ -134,7 +134,7 @@ def test_cross_scene_reuse_updates_the_selection_contract():
              reason="no candidate").to_dict()}},
     ]
 
-    _resolve_reuse_multi(media_scenes, scenes)
+    resolve_cross_scene_reuse(media_scenes, scenes)
     reused = media_scenes[1]
     outcome = MediaStageResult.from_rows(media_scenes, "provider")
 

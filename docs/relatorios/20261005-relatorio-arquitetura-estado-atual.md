@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
-**Data:** 2026-10-05  
-**Escopo:** auditoria documentada e migrações incrementais até G57.  
+**Data:** 2026-10-05
+**Escopo:** auditoria documentada e migrações incrementais até G58.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -73,7 +73,8 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `063ee9e` | Documentou rerenders reais e inspeção visual pós-G54. |
 | `52fa80b` | Validou estados de `SelectionDecision`. |
 | `bbd49bf` | Removeu query duplicada de `VisualPlan`. |
-| *(G57 desta entrega)* | Removeu `visual_queries` runtime de `SemanticScene`, preservando projeções legadas. |
+| `31695f3` | Removeu `visual_queries` runtime de `SemanticScene`, preservando projeções legadas (G57). |
+| *(G58 desta entrega)* | Moveu a resolução e anotação de reuso cross-scene para `media_selection.py`. |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -101,20 +102,24 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados na fase G57
+## Arquivos alterados nas fases G57–G58
 
-Implementação: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
+Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
 `media_rules.py` e `review.py`.
+
+Implementação G58: `src/curio/stages/visual.py` e
+`src/curio/stages/media_selection.py`.
 
 Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 `test_visual_model.py`, `test_visual_context.py`, `test_visual_director.py`,
 `test_visual_asset_usage.py`, `test_visual_topic_anchor.py` e
-`test_black_hole.py`.
+`test_black_hole.py` (G57); `tests/test_media_diag.py` e
+`tests/test_media_selection.py` (G58).
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e `docs/relatorios/20261005-semantic-scene-single-source.md`.
+relatório e os relatórios G57/G58.
 
 ## Estado das fases
 
@@ -127,7 +132,7 @@ relatório e `docs/relatorios/20261005-semantic-scene-single-source.md`.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G57 registradas; parcial. | `visual.py` ainda coordena partes de aquisição e escolhas; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G58 registradas; parcial. | `visual.py` ainda coordena busca/aquisição; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -137,9 +142,10 @@ indica conclusão parcial, não certificação dos requisitos arquiteturais todo
 ## Testes e validação registrados
 
 G57: **249 testes focados passaram**; suíte integral: **913 passaram em
-205,78 s**; `python -m compileall -q src tests` e `git diff --check` passaram.
-Uma execução integral anterior à correção dos testes foi interrompida em 640
-passados e não é usada como prova.
+205,78 s**. G58: **60 testes focados passaram**; suíte integral: **913
+passaram em 210,52 s**. Em ambas, `python -m compileall -q src tests` e
+`git diff --check` passaram. Uma execução integral de G57 anterior à correção
+dos testes foi interrompida em 640 passados e não é usada como prova.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -176,5 +182,5 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57 passa os gates registrados, mas auditoria integral, ownership único de
+G57 e G58 passam os gates registrados, mas auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
