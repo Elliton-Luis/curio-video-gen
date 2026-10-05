@@ -124,12 +124,15 @@ O `SearchPlanner` prioriza representações de cena sobre contexto amplo, evita
 repetir meio/tópico nas consultas e só inclui fallback de mapa em contexto
 histórico. Um candidato bem pontuado não encerra a busca antes de passar por
 download e validação técnica.
+`stages/media_acquisition.py` é dono do cache/download de bytes, origem da
+aquisição e validação de dimensões reais; ele recebe `MediaAsset` e não conhece
+intenção ou seleção editorial. `visual.py` continua coordenando busca e seleção.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte
 integral histórica daquele relatório tem 909 testes aprovados. As migrações
 incrementais atuais estão no relatório abaixo; a suíte mais recente passou com
-932 testes após as regressões G34/G35 (suíte completa em 181,98 s).
+934 testes após a extração G36 (suíte completa em 178,55 s).
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

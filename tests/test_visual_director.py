@@ -6,7 +6,7 @@ import pytest
 
 from curio.config import CurioConfig
 from curio.media.providers import MediaAsset
-from curio.stages import scenes, scoring, visual
+from curio.stages import media_acquisition, scenes, scoring, visual
 from curio.stages.visual_context import attach_video_context
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -96,7 +96,7 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
         chapter.narration = chapter.event
     patch_search_plan(monkeypatch, visual, lambda plan: [
         "Ottoman Empire map", plan.representations[0].query])
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda *_: True)
     for candidate in assets.values():
         candidate.local_path = str(tmp_path / f"{candidate.asset_id}.jpg")
         (tmp_path / f"{candidate.asset_id}.jpg").write_bytes(
@@ -127,7 +127,7 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
                        "Ottoman Empire map")
     chapter.id = 2
     patch_search_plan(monkeypatch, visual, ["Ottoman Empire map"])
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda *_: True)
     synth = MediaAsset(provider="synth", asset_id="local", title="Local visual",
                        local_path="", width=1200, height=900)
     monkeypatch.setattr("curio.stages.visuals.visual_for_scene", lambda *args: synth)
@@ -367,8 +367,8 @@ def test_scene_funnel_rejects_topic_only_distractor_and_records_reason(
         asset.local_path = str(local)
         return asset
 
-    monkeypatch.setattr(visual, "download_asset", download)
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "download_asset", download)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     monkeypatch.setattr(visual, "SEARCH_TIMEOUT", 2)
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
     metric = RunMetrics("session", "topic", "narration")
@@ -435,8 +435,8 @@ def test_post_download_resolution_failure_is_audited_and_falls_back_safely(
         asset.local_path = str(path)
         return asset
 
-    monkeypatch.setattr(visual, "download_asset", download)
-    monkeypatch.setattr(visual, "_downloaded_dims_ok",
+    monkeypatch.setattr(media_acquisition, "download_asset", download)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid",
                         lambda asset: asset.asset_id != "map")
     output, _ = visual._search_scene_with_shortcircuit(
         ch, [Provider()], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
@@ -485,9 +485,9 @@ def test_end_to_end_funnel_for_known_ambiguous_and_new_topics(
 
     local = tmp_path / "shortlist.jpg"
     local.write_bytes(b"x" * 20000)
-    monkeypatch.setattr(visual, "download_asset",
+    monkeypatch.setattr(media_acquisition, "download_asset",
                         lambda asset, *_args, **_kwargs: _set_local(asset, local))
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
     scenes_out, _ = visual._search_scene_with_shortcircuit(
         ch, [Provider()], cfg, 1, RunMetrics("session", topic, "narration"),
@@ -542,8 +542,8 @@ def test_clip_only_reranks_approved_shortlist(tmp_path, monkeypatch):
         asset.local_path = str(path)
         return asset
 
-    monkeypatch.setattr(visual, "download_asset", download)
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "download_asset", download)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     monkeypatch.setattr(scoring, "clip_enabled", lambda _cfg=None: True)
     monkeypatch.setattr(scoring, "clip_status", lambda _cfg=None: "habilitada (device=cpu)")
     monkeypatch.setattr(scoring, "clip_device", lambda _cfg=None: "cpu")

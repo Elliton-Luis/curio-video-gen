@@ -1100,3 +1100,20 @@ teleprompter 3,72 s. Isso comprova que score alto já não interrompe a árvore
 antes dos gates técnicos, mas não comprova exaustão de mídia porque dois
 providers falharam. Os quatro cards usam o mesmo diagrama sintético cacheado;
 essa repetição visual permanece uma limitação distinta da seleção de mídia real.
+
+## G36: aquisição de bytes separada do diretor
+
+`visual.py` ainda continha concorrência de downloads, detecção de hit no cache,
+download e `ffprobe` para validar dimensões. Essas operações são técnicas e não
+precisam conhecer intenção, score ou política editorial. Foram movidas para
+`stages/media_acquisition.py`, com `DownloadedMedia(asset, origin)` tornando
+explícito se os bytes vieram do cache ou da rede. O módulo também é dono do
+limite de concorrência e timeout de download, cache de dimensões e validação do
+arquivo baixado. O diretor segue responsável por decidir quais candidatos
+baixar e como reagir a falha/rejeição técnica.
+
+Os testes foram migrados do seam privado de `visual.py` para o owner de
+aquisição; os aliases temporários foram removidos. A regressão contratual cobre
+proveniência de cache e arquivo inexistente. Focados: **90 testes passaram em
+1,49 s**. Suíte integral: **934 testes em 178,55 s**; `compileall` e
+`git diff --check` passaram.

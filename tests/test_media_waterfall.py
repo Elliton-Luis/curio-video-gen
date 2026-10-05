@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from curio.media.providers import MediaAsset, MediaError
 from curio.metrics import RunMetrics
 from curio.media.providers import min_dimension as media_rules_min_dimension
-from curio.stages import visual as V
+from curio.stages import media_acquisition, visual as V
 from curio.stages.scenes import Chapter
 from curio.stages.visual_planning import build_visual_plan
 from tests.test_support.search_plan import patch_search_plan, plan_queries
@@ -91,8 +91,8 @@ def test_selected_asset_downloads_use_bounded_pool(tmp_path, monkeypatch):
         asset.local_path = str(path)
         return asset
 
-    monkeypatch.setattr(V, "download_asset", download)
-    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "download_asset", download)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     provider = _FakeProv("pixabay", [
         _asset(aid="bh1", title="water glass close up"),
         _asset(aid="bh2", title="water glass bottle"),
@@ -134,8 +134,8 @@ def test_used_asset_does_not_end_search_before_alternative_representation(
         asset.local_path = str(path)
         return asset
 
-    monkeypatch.setattr(V, "download_asset", download)
-    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "download_asset", download)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     patch_search_plan(monkeypatch, V, lambda plan: (
         ["water glass"] if plan.scene_id == 1 else
         ["water glass", "water glass cup"]))
@@ -197,12 +197,12 @@ def test_ffprobe_dimensions_cache_invalidates_when_file_changes(tmp_path, monkey
         calls.append(1)
         return SimpleNamespace(returncode=0, stdout="1200,1800\n")
 
-    monkeypatch.setattr(V.ff, "run", fake_run)
-    assert V._probe_dims(str(image)) == (1200, 1800)
-    assert V._probe_dims(str(image)) == (1200, 1800)
+    monkeypatch.setattr(media_acquisition.ff, "run", fake_run)
+    assert media_acquisition.probe_dimensions(str(image)) == (1200, 1800)
+    assert media_acquisition.probe_dimensions(str(image)) == (1200, 1800)
     assert len(calls) == 1
     image.write_bytes(b"changed-content")
-    assert V._probe_dims(str(image)) == (1200, 1800)
+    assert media_acquisition.probe_dimensions(str(image)) == (1200, 1800)
     assert len(calls) == 2
 
 
@@ -266,7 +266,7 @@ def _mock_download(monkeypatch, tmp_path):
         cand.local_path = dummy
         return cand
 
-    monkeypatch.setattr(V, "download_asset", _fake)
+    monkeypatch.setattr(media_acquisition, "download_asset", _fake)
 
 
 def test_todos_os_provedores_sao_consultados(tmp_path, monkeypatch):
@@ -368,18 +368,18 @@ def test_download_rejeita_dims_reais_baixas(tmp_path):
     Image.new("RGB", (100, 100), "red").save(small)
     a = _asset(provider="nasa", w=0, h=0)
     a.local_path = small
-    assert V._downloaded_dims_ok(a) is False
+    assert media_acquisition.downloaded_dimensions_valid(a) is False
     big = str(tmp_path / "big.jpg")
     Image.new("RGB", (1200, 1200), "blue").save(big)
     b = _asset(provider="nasa", w=0, h=0)
     b.local_path = big
-    assert V._downloaded_dims_ok(b) is True
+    assert media_acquisition.downloaded_dimensions_valid(b) is True
     assert (b.width, b.height) == (1200, 1200)
 
 
 def test_provider_search_not_reused_between_video_runs(tmp_path, monkeypatch):
     _mock_download(monkeypatch, tmp_path)
-    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     patch_search_plan(monkeypatch, V, ["water glass"])
     provider = _FakeProv("pixabay", [_asset(aid="fresh", title="water glass bottle")])
     ch = _ch(("water glass",), "A water glass.", subject="water glass",

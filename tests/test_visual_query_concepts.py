@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from curio.stages.entity import TargetEntity
 from curio.stages.scenes import Chapter, build_local_semantic_scenes, classify_visual_type
 from curio.stages.scene_enrichment import enrich_scenes
-from curio.stages import visual
+from curio.stages import media_acquisition, visual
 from curio.stages.scene_local_planning import local_visual_representations
 from tests.test_support.search_plan import patch_search_plan, plan_queries
 
@@ -131,9 +131,9 @@ def test_search_continues_after_topic_only_candidate(tmp_path, monkeypatch):
     provider = Provider()
     image = tmp_path / "winner.jpg"
     image.write_bytes(b"x" * 20000)
-    monkeypatch.setattr(visual, "download_asset",
+    monkeypatch.setattr(media_acquisition, "download_asset",
                         lambda asset, *_a, **_kw: _attach(asset, image))
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda _asset: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda _asset: True)
     patch_search_plan(monkeypatch, visual,
                       ["Ottoman Empire historical map",
                        "Battle of Mohacs Ottoman Empire"])
@@ -181,9 +181,9 @@ def test_search_does_not_stop_before_download_and_dimension_validation(
     provider = Provider()
     image = tmp_path / "asset.jpg"
     image.write_bytes(b"x" * 20000)
-    monkeypatch.setattr(visual, "download_asset",
+    monkeypatch.setattr(media_acquisition, "download_asset",
                         lambda asset, *_a, **_kw: _attach(asset, image))
-    monkeypatch.setattr(visual, "_downloaded_dims_ok",
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid",
                         lambda asset: asset.asset_id != "low-res")
     patch_search_plan(monkeypatch, visual,
                       ["Battle of Mohacs painting", "Battle of Mohacs 1526"])

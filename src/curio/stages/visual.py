@@ -26,22 +26,17 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
-import functools
 from collections.abc import Mapping
 import os
-import re
 import sys
 import time
 
-from .. import ffmpeg as ff
 from ..config import CurioConfig
-from ..media import download_asset
 from ..media.providers import (
     MediaAsset,
     MediaError,
     MediaProvider,
     classify_rights,
-    min_dimension,
 )
 from . import media_rules
 from .visual_contracts import VisualPlan
@@ -57,16 +52,13 @@ from .media_selection import SelectionDecision
 from .visual_audit import candidate_audit_rows
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
+from . import media_acquisition
 
 # Limites de concorrência para busca/baixa de mídia (configuráveis via env)
 MAX_CONCURRENT_SEARCHES = int(os.environ.get("CURIO_MAX_CONCURRENT_SEARCHES", "3"))
-MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("CURIO_MAX_CONCURRENT_DOWNLOADS", "2"))
 SEARCH_TIMEOUT = float(os.environ.get("CURIO_MEDIA_SEARCH_TIMEOUT", "15.0"))
-DOWNLOAD_TIMEOUT = float(os.environ.get("CURIO_MEDIA_DOWNLOAD_TIMEOUT", "30.0"))
 _SEARCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=max(1, MAX_CONCURRENT_SEARCHES), thread_name_prefix="curio-search")
-_DOWNLOAD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
-    max_workers=max(1, MAX_CONCURRENT_DOWNLOADS), thread_name_prefix="curio-download")
 
 # Hierarquia de provedores (ordem de prioridade). Do mais específico para
 # o mais genérico: primeiro os bancos de foto com chave, depois os acervos
@@ -119,72 +111,10 @@ def _search_with_timeout(provider_obj, query: str, timeout: float,
         raise MediaError(f"{provider_obj.name}: busca timeout ({timeout}s)") from exc
 
 
-def _submit_download(asset: MediaAsset, cache_dir: str, metrics=None):
-    """Submit one download while preserving execution log context."""
-    context = contextvars.copy_context()
-    return _DOWNLOAD_EXECUTOR.submit(context.run, _download_with_origin,
-                                     asset, cache_dir, metrics)
-
-
-def _download_with_origin(asset: MediaAsset, cache_dir: str, metrics=None):
-    """Download one asset and report whether bytes came from local cache."""
-    from ..media.cache import _safe_ext
-    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", asset.asset_id) or "asset"
-    path = os.path.join(cache_dir, "media", asset.provider,
-                        safe_id + _safe_ext(asset.download_url))
-    cached = os.path.isfile(path) and os.path.isfile(path + ".json")
-    result = download_asset(asset, cache_dir, metrics)
-    return result, "cache" if cached else "download"
-
-
 # O gate de metadados é `media_rules.asset_gate_reason`: era a terceira
 # cópia da mesma regra, e a única que devolvia booleano — o que jogava fora
 # a informação que o autor precisa ("por que a cena ficou sem foto").
 _validate_asset_for = media_rules.asset_gate_reason
-
-
-def _probe_dims(path: str) -> tuple[int, int]:
-    """Dimensões reais via ffprobe; cache por caminho, tamanho e mtime."""
-    try:
-        stat = os.stat(path)
-    except OSError:
-        return 0, 0
-    return _probe_dims_cached(path, stat.st_size, stat.st_mtime_ns)
-
-
-@functools.lru_cache(maxsize=512)
-def _probe_dims_cached(path: str, size: int,
-                       mtime_ns: int) -> tuple[int, int]:
-    """Cache invalida quando imagem muda; evita repetir subprocesso ffprobe."""
-    _ = size, mtime_ns
-    try:
-        proc = ff.run([ff.FFPROBE, "-v", "error", "-select_streams", "v:0",
-                       "-show_entries", "stream=width,height",
-                       "-of", "csv=p=0", path])
-        if proc.returncode == 0:
-            w, h = proc.stdout.strip().split(",")[:2]
-            return int(w), int(h)
-    except (OSError, ValueError):
-        pass
-    return 0, 0
-
-
-def _downloaded_dims_ok(asset: MediaAsset) -> bool:
-    """Confere arquivo real pós-download; atualiza o asset (p/ o cache)."""
-    try:
-        size = os.path.getsize(asset.local_path)
-    except OSError:
-        return False
-    if size <= 10000:
-        return False
-    asset.size_bytes = max(asset.size_bytes, size)
-    if asset.width > 0 and asset.height > 0:
-        return True  # já validado nos metadados
-    w, h = _probe_dims(asset.local_path)
-    if w <= 0 or h <= 0:
-        return False  # ilegível: o render quebraria depois
-    asset.width, asset.height = w, h
-    return min(w, h) >= min_dimension()
 
 
 def _selection_asset_key(asset: dict) -> str:
@@ -482,9 +412,11 @@ def _search_scene_with_shortcircuit(
             clip_applied = False
             for entry in shortlist:
                 try:
-                    asset = download_asset(MediaAsset.from_dict(entry["asset"]),
-                                           cfg.cache_dir, metrics)
-                    if not _downloaded_dims_ok(asset):
+                    downloaded = media_acquisition.download_media(
+                        MediaAsset.from_dict(entry["asset"]),
+                        cfg.cache_dir, metrics)
+                    asset = downloaded.asset
+                    if not media_acquisition.downloaded_dimensions_valid(asset):
                         continue
                     entry["asset"] = asset.to_dict()
                     clip_score = scoring.clip_score_image(asset.local_path, ch, cfg)
@@ -541,7 +473,8 @@ def _search_scene_with_shortcircuit(
 
     picked: list[dict] = []
     scene_content_seen: set[str] = set()
-    download_window = min(max(1, MAX_CONCURRENT_DOWNLOADS), max(1, max_images))
+    download_window = min(max(1, media_acquisition.MAX_CONCURRENT_DOWNLOADS),
+                          max(1, max_images))
     download_futures: dict[int, object] = {}
     next_download = 0
 
@@ -556,7 +489,7 @@ def _search_scene_with_shortcircuit(
                 continue
             if candidate.local_path and os.path.isfile(candidate.local_path):
                 continue
-            download_futures[index] = _submit_download(
+            download_futures[index] = media_acquisition.submit_download(
                 candidate, cfg.cache_dir, metrics)
 
     fill_download_window()
@@ -577,8 +510,11 @@ def _search_scene_with_shortcircuit(
             future = download_futures.pop(rank_index, None)
             try:
                 if future is None:
-                    future = _submit_download(asset, cfg.cache_dir, metrics)
-                asset, acquisition = future.result(timeout=DOWNLOAD_TIMEOUT)
+                    future = media_acquisition.submit_download(
+                        asset, cfg.cache_dir, metrics)
+                downloaded = future.result(
+                    timeout=media_acquisition.DOWNLOAD_TIMEOUT)
+                asset, acquisition = downloaded.asset, downloaded.origin
                 fill_download_window()
             except (MediaError, concurrent.futures.TimeoutError) as exc:
                 if future is not None:
@@ -596,7 +532,7 @@ def _search_scene_with_shortcircuit(
                 if metrics:
                     metrics.media_record_funnel("download_failed")
                 continue
-        if not _downloaded_dims_ok(asset):
+        if not media_acquisition.downloaded_dimensions_valid(asset):
             entry["rejection_reason"] = "resolution/legibility after download"
             msg = (f"cena {ch.id}: '{asset.title[:50]}' rejeitado após "
                    f"download (resolução insuficiente ou ilegível)")
@@ -700,12 +636,15 @@ def _search_scene_with_shortcircuit(
             asset = MediaAsset.from_dict(entry["asset"])
             try:
                 if not (asset.local_path and os.path.isfile(asset.local_path)):
-                    asset, acquisition = download_asset(asset, cfg.cache_dir, metrics)
+                    downloaded = media_acquisition.submit_download(
+                        asset, cfg.cache_dir, metrics).result(
+                            timeout=media_acquisition.DOWNLOAD_TIMEOUT)
+                    asset, acquisition = downloaded.asset, downloaded.origin
                 else:
                     acquisition = "cache"
-            except MediaError:
+            except (MediaError, concurrent.futures.TimeoutError):
                 continue
-            if not _downloaded_dims_ok(asset):
+            if not media_acquisition.downloaded_dimensions_valid(asset):
                 continue
             asset.used_in = f"cena {ch.id}"
             entry = dict(entry, asset=asset.to_dict(), acquisition=acquisition,

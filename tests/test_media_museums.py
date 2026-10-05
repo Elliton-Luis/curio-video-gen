@@ -7,7 +7,7 @@ import pytest
 from curio.config import CurioConfig
 from curio.media import providers as P
 from curio.metrics import RunMetrics
-from curio.stages import scoring, visual
+from curio.stages import media_acquisition, scoring, visual
 from curio.stages.media_provider_policy import ordered_providers
 from curio.stages.scenes import Chapter
 from curio.stages.visual_planning import build_visual_plan
@@ -154,7 +154,7 @@ def test_museum_search_runs_again_but_download_bytes_are_reused(monkeypatch, tmp
 
     patch_search_plan(monkeypatch, visual, ["julius caesar"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda asset: True)
     class Museum:
         name = "met"
         calls = 0
@@ -199,7 +199,7 @@ def test_museum_failure_falls_through_to_next_provider(monkeypatch, tmp_path):
 
     patch_search_plan(monkeypatch, visual, ["julius caesar"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda asset: True)
     from curio.media import cache
     monkeypatch.setattr(cache, "_fetch",
                         lambda url, provider="", metrics=None: b"fixture")
@@ -228,7 +228,7 @@ def test_museum_assets_join_scoring_dedup_and_cache(monkeypatch, tmp_path):
 
     patch_search_plan(monkeypatch, visual, ["julius caesar"])
     monkeypatch.setattr(scoring, "threshold", lambda: 34)
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda asset: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda asset: True)
     from curio.media import cache
     downloads = []
     monkeypatch.setattr(cache, "_fetch",

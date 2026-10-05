@@ -2,7 +2,7 @@ import subprocess
 
 from curio.config import CurioConfig
 from curio.metrics import RunMetrics
-from curio.stages import visual, visual_timeline, render
+from curio.stages import media_acquisition, visual, visual_timeline, render
 from curio.stages.scenes import Chapter
 from curio.stages.visual_beats import asset_key
 from tests.test_support.search_plan import patch_search_plan
@@ -47,7 +47,7 @@ def test_selection_uses_fresh_eligible_candidates_across_scenes(monkeypatch, tmp
         name = "fixture"
         def search(self, *args, **kwargs):
             return assets
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *args: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda *args: True)
     patch_search_plan(monkeypatch, visual, ["rome statue"])
     uses = {}
     picked = []
@@ -98,7 +98,7 @@ def test_selection_skips_identical_download_and_keeps_searching(tmp_path, monkey
         def search(self, *args, **kwargs):
             return assets
 
-    monkeypatch.setattr(visual, "_downloaded_dims_ok", lambda *_: True)
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda *_: True)
     patch_search_plan(monkeypatch, visual, ["rome statue"])
     result, _ = visual._search_scene_with_shortcircuit(
         Chapter(1, "Rome statue", 8, subject="Rome"), [Provider()],
