@@ -300,7 +300,6 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             transition_mode=audio_composition.transition_mode(cfg),
             genre_profile=editorial_stage.summary(perfil),
             scene_context_enrichment=enrichment.to_dict(),
-            media_source=media_result.source,
             source_registry=sources,
             research_sources=research_sources,
             grounding=grounding,
@@ -426,8 +425,8 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     finalize_started = time.monotonic()
     metadata = pipeline_metadata_stage.build_base_metadata(
         idea, slug, cfg, script_text, script_source,
-        tuple(semantic_scenes), timeline_spans, scenes_source, media_scenes,
-        warnings, stage_times, metrics, media_result.source, started)
+        tuple(semantic_scenes), timeline_spans, scenes_source, media_result,
+        warnings, stage_times, metrics, started)
     metadata.update({
         "genre": genre_key,
         "scene_context_enrichment": enrichment.to_dict(),

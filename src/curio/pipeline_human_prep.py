@@ -37,7 +37,6 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
                 transition_mode: str = "auto",
                 genre_profile: dict | None = None,
                 scene_context_enrichment: dict | None = None,
-                media_source: str = "unknown",
                 source_registry=None, research_sources=(), grounding=None,
                 media_rights_notes=(), credits=(),
                 video_title: str = "", title_source: str = "") -> dict:
@@ -129,8 +128,8 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
     finalize_started = time.monotonic()
     metadata = pipeline_metadata_stage.build_base_metadata(
         idea, slug, cfg, script_text, script_source, semantic_scenes,
-        timeline_spans, scenes_source, media_scenes, warnings, stage_times,
-        metrics, media_source, started)
+        timeline_spans, scenes_source, media_result, warnings, stage_times,
+        metrics, started)
     metadata.update({
         "genre": genre_key,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),

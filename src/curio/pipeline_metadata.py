@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
+from .media.selection_result import MediaStageResult
 from .runlog import current_log_path
 from .stages.scenes import Chapter
 
@@ -20,17 +21,21 @@ def typography_report(cfg, genre_key: str = "") -> dict:
 
 def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
                         script_source: str, semantic_scenes, timeline_spans,
-                        scenes_source: str, media_scenes, warnings,
-                        stage_times: dict, metrics, media_source: str,
+                        scenes_source: str, media_result: MediaStageResult,
+                        warnings, stage_times: dict, metrics,
                         started: float) -> dict:
     """Build the shared persisted metadata projection for both run modes."""
     scene_ids = tuple(scene.id for scene in semantic_scenes)
     span_ids = tuple(span.scene_id for span in timeline_spans)
+    if not isinstance(media_result, MediaStageResult):
+        raise TypeError("metadata requires a MediaStageResult")
+    media_ids = tuple(scene.scene_id for scene in media_result.scenes)
     if (not scene_ids or len(scene_ids) != len(set(scene_ids))
-            or scene_ids != span_ids):
-        raise ValueError("metadata scenes and spans are misaligned")
+            or scene_ids != span_ids or scene_ids != media_ids):
+        raise ValueError("metadata scenes, media and spans are misaligned")
     chapters = [Chapter.from_semantic_scene(scene, timing=span)
                 for scene, span in zip(semantic_scenes, timeline_spans)]
+    media_rows = media_result.to_rows()
     return {
         "title": idea.strip(),
         "input": idea,
@@ -40,8 +45,8 @@ def build_base_metadata(idea: str, slug: str, cfg, script_text: str,
         "script_chars": len(script_text),
         "scenes_source": scenes_source,
         "chapters": [chapter.to_dict() for chapter in chapters],
-        "media": media_scenes,
-        "media_resolution_source": media_source,
+        "media": media_rows,
+        "media_resolution_source": media_result.source,
         "warnings": warnings,
         "width": cfg.width,
         "height": cfg.height,

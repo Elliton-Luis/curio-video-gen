@@ -231,7 +231,9 @@ avisos explícitos; o mesmo componente persiste `sources.json` e `FONTES.md` nos
 modos assistido e `human-pending`, para que mídia, pesquisa e créditos tenham a
 mesma trilha editorial nos dois fluxos.
 `pipeline_metadata.py` monta os campos base comuns de geração humana/assistida
-e fecha persistência de geração e finalize: mede o estágio `finalize`, grava a
+consumindo `MediaStageResult`, valida os mesmos IDs de cena/span e deriva dele a
+origem da seleção; só o owner persiste a projeção `media` histórica. Ele fecha
+persistência de geração e finalize: mede o estágio `finalize`, grava a
 mesma tabela de tempos no metadata e no arquivo de métricas, e mantém
 `metrics_file` no metadata persistido. O coordenador compõe campos específicos
 de cada modo.

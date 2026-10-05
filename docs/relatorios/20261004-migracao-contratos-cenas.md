@@ -890,5 +890,21 @@ renderer agora faz conversão explícita apenas para calcular cache. Rodada apó
 correção: 53 testes focados passaram. Suíte integral: **918 testes em 181,07 s**;
 21 testes do contrato/cache de render após o ajuste final; compileall e diff check
 passaram.
+
+## G25: metadata consome seleção e origem canônicas
+
+`pipeline_metadata.build_base_metadata` recebia `media_scenes` como rows e um
+`media_source` separado. Assim, persistência podia combinar uma seleção de um
+estágio com a origem informada por outro argumento; também não verificava se os
+IDs de mídia correspondiam às cenas e spans serializados.
+
+O builder agora exige `MediaStageResult`, valida o alinhamento dos três lotes e
+projeta `media.json` apenas ao formar metadata. `media_resolution_source` vem de
+`media_result.source`; o argumento duplicado foi removido também do fluxo
+human-pending. O schema externo do metadata mantém o mesmo formato.
+
+13 testes focados de metadata, pipeline e fontes passaram; regressão adicional
+valida seleção para ID de cena divergente. Testes unitários finais do módulo: 4.
+Suíte integral: **919 testes em 179,16 s**; compileall e diff check passaram.
 Próximo limite: remover `media_scenes` dicts dos consumidores de metadata/render
 ou fechar adapters explícitos para seus formatos persistidos.
