@@ -1,10 +1,15 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G85 e métricas até F5.
-**Estado:** trabalho incompleto. G80–G85 e F4–F5 foram testados e commitados; fases
+**Escopo:** estado da refatoração arquitetural até G85 e métricas até F6.
+**Estado:** trabalho incompleto. G80–G85 e F4–F6 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
+
+> **Atualização:** F6 foi implementada e commitada em `11022b2`. A validação
+> completa e a verificação focada posterior constam neste relatório e no
+> [relatório F6](20261005-stage-timings-immutable-contract.md). A refatoração
+> ampla continua incompleta.
 
 ## Resumo do estado
 
@@ -256,6 +261,53 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
   entrypoint. O formato persistido da queue ainda chama o campo de tópico de
   `idea`; a conversão acontece na fronteira da queue.
 
+## F6 — coleção imutável de tempos de etapa (`11022b2`)
+
+F6 substitui a agregação mutável de tempos de etapa por `StageTimings`, uma
+coleção de `StageTiming` imutável, validada e sem nomes duplicados. O pipeline,
+áudio, preparação humana, standby e finalize consomem o contrato. `pipeline_metadata`
+projeta um snapshot dict na fronteira para o schema persistido e para
+`metrics.save()`; métricas históricas continuam em dict. O formato externo não
+muda.
+
+O teste de finalize humano encontrou duas gravações de `finalize`: no produtor e
+na persistência. A coleção passou a ser construída vazia pelo produtor, e
+`persist_run_metadata()` ficou como único owner dessa medição. A suíte completa
+passou com **978 testes em 200,91 s**. Depois de acrescentar validação de tipo
+em preparação humana, foram repetidos os testes de integração, metadata e
+timing: **22 passaram em 36,48 s**. Compileall e `git diff --check` passaram.
+Detalhes e a ressalva sobre a ordem das verificações estão no relatório F6.
+
+F6 fecha o acumulador mutável comum, mas a fase de métricas permanece parcial:
+definições canônicas globais, unknown/null em históricos, timers adicionais,
+profile por suboperação e conciliação seleção-render continuam pendentes.
+
+## Trabalho de mídia: escopo e ponto exato
+
+As fases de mídia desta refatoração não estão tentando introduzir uma nova
+política editorial ou afrouxar os gates. O objetivo arquitetural é tornar
+explícitas as transições já existentes — plano visual e de busca, coleta de
+candidatos, avaliação, aquisição técnica, seleção/reuso, fallback e projeção —
+para que a busca continue após falha técnica e cada decisão possa ser auditada.
+O objetivo funcional anterior que motivou essa arquitetura era impedir que um
+único asset dominasse cenas distintas e garantir que o sistema explore queries
+semânticas adequadas antes de recorrer a sintéticos ou reuso.
+
+O trabalho commitado relevante inclui G75 (extração das tentativas de aquisição
+técnica), G76 (compartilhamento de download/cache/validação), G77 (continuação
+da busca contextual quando aquisição falha), G78 (estado auditável de queries
+contextuais adiadas), G84 (ownership do reranqueamento CLIP na avaliação) e G85
+(proveniência da auditoria a partir do `VisualPlan`). Isso não equivale a uma
+validação real final da cobertura e da qualidade visual. Persistem os riscos
+descritos acima: providers externos podem estar indisponíveis, busca pode
+esgotar candidatos utilizáveis e o coordenador `visual.py` ainda mantém parte
+da orquestração editorial, fallback e efeitos de observabilidade.
+
+No instante da parada não havia patch local de mídia em andamento. A mudança
+local corrente era F6, sobre a fonte canônica e imutável dos tempos de etapa.
+Portanto não se deve interpretar o diff local como tentativa de corrigir uma
+query, provider, ranking ou seleção de imagem.
+
 ## Estado das fases do plano arquitetural
 
 | Fase | Estado registrado | Pendências principais |
@@ -266,12 +318,12 @@ falhas/deseleções externas deixam esses caminhos de rede sem prova determinís
 | C — SearchPlan | C1 concluída. | Replays reais com providers saudáveis e revisão de qualidade. |
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
-| F — métricas/estado | F1–F5 parciais. | Lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
+| F — métricas/estado | F1–F6 parciais. | Definições canônicas, unknown/null, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
 | G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G85 commitadas. | Simplificar coordenador; migrar campos restantes da auditoria final e adapters após comprovar ausência de consumidores. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e no relatório atualizado até G85. Não representam
+Os status são os registrados na auditoria e neste relatório até G85/F6. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -465,4 +517,5 @@ passaram. Não houve geração real. Consulte
 - [`G85 — auditoria visual baseada no VisualPlan`](20261005-visual-audit-from-visual-plan.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
+- [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)
 - [`Inventário de relatórios do projeto`](../README.md)

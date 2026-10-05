@@ -7,8 +7,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G85/F5: arquitetura, contratos, fases, validações, regressões e pendências.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G85/F5: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G85/F6: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo atualizado até G85/F6: arquitetura antes/depois, commits, arquivos/contratos, testes, regressões, fases, pendências e correções de contratos.
+- `relatorios/20261005-stage-timings-immutable-contract.md` — F6: acumulador imutável para tempos de etapa e projeção dict na persistência.
 - `relatorios/20261005-stage-elapsed-contract.md` — F5: definição comum de durações em segundos e validação uniforme nos resultados dos estágios.
 - `relatorios/20261005-visual-timeline-stage-timing.md` — F4: resultado de timeline carrega duração validada e pipeline a agrega nos stage times.
 - `relatorios/20261005-visual-audit-from-visual-plan.md` — G85: projeção de auditoria usa o `VisualPlan` como fonte de provenance.
