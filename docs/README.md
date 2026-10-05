@@ -172,3 +172,4 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-search-plan-invariants.md` — G52: validação de queries e plano antes da aquisição.
 - `relatorios/20261005-candidate-evaluation-boundary.md` — G53: candidato normalizado atravessa aquisição e avaliação sem ser reconstruído de dict.
 - `relatorios/20261005-evaluation-result-invariants.md` — G54: validade e partição coerente de avaliações aceitas/rejeitadas.
+- `relatorios/20261005-pos-g54-validacao.md` — suíte pós-G54, rerenders atuais de história/ciência e inspeção visual sem alegar nova aquisição.

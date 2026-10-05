@@ -586,3 +586,8 @@ rejeição com motivo, partições tuple tipadas e nenhum candidato nas duas
 partições. Isso faz o evaluator declarar um resultado coerente antes de o
 seletor decidir. Não muda scores nem threshold. Ver
 `20261005-evaluation-result-invariants.md`.
+
+Validação pós-G54: `20261005-pos-g54-validacao.md` repete rerenders salvos em
+história e ciência com o código atual e inspeciona os pixels selecionados.
+Compatibilidade e render estão preservados; a falha editorial de Mohács segue
+explícita, e rerender não é contado como busca nova.
