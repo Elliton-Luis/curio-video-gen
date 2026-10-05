@@ -107,7 +107,6 @@ def test_selected_asset_downloads_use_bounded_pool(tmp_path, monkeypatch):
 
 def test_exact_scene_query_reuses_provider_results_within_video(tmp_path, monkeypatch):
     _mock_download(monkeypatch, tmp_path)
-    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
     provider = _FakeProv("pixabay", [_asset(aid="one", title="water glass bottle")])
     shared = {}
     first = _ch(("water glass",), "The water glass is clear.",
@@ -121,6 +120,70 @@ def test_exact_scene_query_reuses_provider_results_within_video(tmp_path, monkey
     V._search_scene_with_shortcircuit(second, [provider], cfg, 1, None,
                                       str(tmp_path), shared_search_cache=shared)
     assert len(provider.calls) == calls_after_first
+
+
+def test_used_asset_does_not_end_search_before_alternative_representation(
+        tmp_path, monkeypatch):
+    from tests.test_support.search_plan import patch_search_plan
+
+    def download(asset, *_args, **_kwargs):
+        path = tmp_path / f"{asset.asset_id}.jpg"
+        payload = (b"same bytes" * 2000 if asset.asset_id in {"same", "copy"}
+                   else asset.asset_id.encode() * 20000)
+        path.write_bytes(payload)
+        asset.local_path = str(path)
+        return asset
+
+    monkeypatch.setattr(V, "download_asset", download)
+    monkeypatch.setattr(V, "_downloaded_dims_ok", lambda _asset: True)
+    patch_search_plan(monkeypatch, V, lambda plan: (
+        ["water glass"] if plan.scene_id == 1 else
+        ["water glass", "water glass cup"]))
+    reused = _asset(aid="same", title="water glass bottle",
+                    url="https://cdn.x/used.jpg")
+    reused.source_url = "https://catalog.test/items/used"
+    duplicate_copy = _asset(aid="copy", title="water glass bottle",
+                            url="https://cdn.other/used.jpg")
+    duplicate_copy.source_url = "https://other-catalog.test/items/used"
+    alternative = _asset(aid="new", title="water glass cup closeup",
+                         url="https://cdn.x/new.jpg")
+    alternative.source_url = "https://catalog.test/items/new"
+
+    class QueryProvider:
+        name = "pixabay"
+
+        def __init__(self):
+            self.calls = []
+            self.first_query_count = 0
+
+        def search(self, query, *_args, **_kwargs):
+            self.calls.append(query)
+            if query == "water glass":
+                self.first_query_count += 1
+                return [reused if self.first_query_count == 1 else duplicate_copy]
+            if query == "water glass cup":
+                return [alternative]
+            return []
+
+    provider = QueryProvider()
+    cfg = SimpleNamespace(cache_dir=str(tmp_path), language="en-US")
+    usage = {}
+    first = _ch(("water glass",), "The water glass is clear.", cid=1,
+                subject="water glass", visual_entities=["water glass"])
+    second = _ch(("water glass",), "The water glass is empty.", cid=2,
+                 subject="water glass", visual_entities=["water glass"])
+
+    V._search_scene_with_shortcircuit(first, [provider], cfg, 1, None,
+                                      str(tmp_path), asset_uses=usage)
+    provider.calls.clear()
+    result, _ = V._search_scene_with_shortcircuit(
+        second, [provider], cfg, 1, None, str(tmp_path), asset_uses=usage)
+
+    assert "water glass cup" in provider.calls
+    assert result[0]["asset"]["asset_id"] == "new"
+    assert result[0]["visual_decision"]["selection"]["status"] == "real"
+    assert any(item.get("reason") == "duplicate content hash"
+               for item in result[0]["visual_decision"]["candidates"])
 
 
 def test_ffprobe_dimensions_cache_invalidates_when_file_changes(tmp_path, monkeypatch):

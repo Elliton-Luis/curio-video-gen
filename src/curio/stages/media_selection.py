@@ -120,6 +120,28 @@ def prepare_selection_pool(ranked: list[dict], asset_uses: dict | None,
     return SelectionPool(tuple(fresh), tuple(reused))
 
 
+def record_asset_usage(asset_uses: dict[str, int] | None,
+                       searched_asset: dict, acquired_asset: dict,
+                       identity_of, *, increment: bool = True) -> None:
+    """Keep provisional provider identity linked to acquired content identity.
+
+    Before download an asset is identified by source URL or provider ID; after
+    download its SHA-256 becomes canonical. Both identities must reflect the
+    same cross-scene usage so search does not mistake a known asset for a new
+    candidate and short-circuit before trying another representation.
+    """
+    if asset_uses is None:
+        return
+    keys = {key for key in (identity_of(searched_asset),
+                            identity_of(acquired_asset)) if key}
+    if not keys:
+        return
+    previous = max((asset_uses.get(key, 0) for key in keys), default=0)
+    usage = previous + 1 if increment else previous
+    for key in keys:
+        asset_uses[key] = max(asset_uses.get(key, 0), usage)
+
+
 def select_reuse_candidate(candidates: list[ReuseCandidate],
                            scene_id: int) -> ReuseCandidate | None:
     """Pick the strongest relevant donor, then the nearest earlier scene."""

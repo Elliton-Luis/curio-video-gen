@@ -5,6 +5,7 @@ from curio.stages.media_selection import (
     SelectionDecision,
     make_selection_decision,
     prepare_selection_pool,
+    record_asset_usage,
     select_reuse_candidate,
 )
 
@@ -22,6 +23,24 @@ def test_fresh_candidates_are_separated_before_reuse_without_score_penalty():
     assert [entry["asset"]["asset_id"] for entry in pool.fresh] == ["asset-new"]
     assert [entry["asset"]["asset_id"] for entry in pool.reused] == ["asset-old"]
     assert ranked[0]["score"] == 95
+
+
+def test_asset_usage_links_provider_identity_to_downloaded_content_hash():
+    usage = {}
+    searched = {"asset_id": "same-id", "provider": "wikimedia",
+                "source_url": "https://commons.wikimedia.org/wiki/File:A"}
+    acquired = {**searched, "local_path": "/tmp/a.jpg"}
+
+    def identity(asset):
+        return "sha256:bytes" if asset.get("local_path") else \
+            "url:" + asset["source_url"]
+
+    record_asset_usage(usage, searched, acquired, identity)
+
+    assert usage == {"url:https://commons.wikimedia.org/wiki/File:A": 1,
+                     "sha256:bytes": 1}
+    record_asset_usage(usage, searched, acquired, identity, increment=False)
+    assert set(usage.values()) == {1}
 
 
 @pytest.mark.parametrize(("picked", "fallback", "status"), [

@@ -51,6 +51,7 @@ from .media_contracts import Candidate, CandidateRejection
 from .candidate_evaluation import evaluate_generic, evaluate_specific
 from .media_selection import (ReuseCandidate, make_selection_decision,
                               prepare_selection_pool,
+                              record_asset_usage,
                               select_reuse_candidate)
 from .visual_audit import candidate_audit_rows
 from .media_provider_policy import ordered_providers
@@ -442,7 +443,12 @@ def _search_scene_with_shortcircuit(
     # strong fresh result proves sufficient. The scene-wide cap prevents an
     # oversized provider response from multiplying downloads without bound.
     phase_budget = max(1, max_images * CANDIDATE_MULTIPLIER)
-    collect(specific_queries, phase_budget, stop_when_proven=True)
+    # Before the first visual there cannot be cross-scene reuse. Later scenes
+    # must finish the bounded specific-query tree: a provider ID/URL can look
+    # new while its bytes duplicate an already selected asset, which is only
+    # discovered after download and SHA-256 identity resolution.
+    collect(specific_queries, phase_budget,
+            stop_when_proven=not bool(asset_uses))
     score_started = time.monotonic()
     specific_result = evaluate_specific(
         [entry for entry in candidates if not entry["generic"]], ch, min_score)
@@ -610,6 +616,8 @@ def _search_scene_with_shortcircuit(
                 and (content_key in scene_content_seen
                      or (asset_uses is not None
                          and asset_uses.get(content_key, 0)))):
+            record_asset_usage(asset_uses, asset_dict, asset.to_dict(),
+                               _selection_asset_key, increment=False)
             entry["rejection_reason"] = "duplicate content hash"
             rejected.append({"title": asset.title, "query": entry["query"],
                              "reason": "duplicate content hash",
@@ -653,7 +661,8 @@ def _search_scene_with_shortcircuit(
             key = _selection_asset_key(entry["asset"])
             if asset_uses.get(key, 0):
                 entry["reuse_reason"] = "eligible_pool_exhausted"
-            asset_uses[key] = asset_uses.get(key, 0) + 1
+            record_asset_usage(asset_uses, asset_dict, entry["asset"],
+                               _selection_asset_key)
         if metrics:
             metrics.media_record_funnel("used_real")
 
@@ -705,7 +714,8 @@ def _search_scene_with_shortcircuit(
                          reuse_reason="fresh_search_and_synthetic_exhausted")
             picked.append(entry)
             key = _selection_asset_key(entry["asset"])
-            asset_uses[key] = asset_uses.get(key, 0) + 1
+            record_asset_usage(asset_uses, entry["asset"], entry["asset"],
+                               _selection_asset_key)
             if metrics:
                 metrics.media_record_funnel("reused_fallback")
             break
