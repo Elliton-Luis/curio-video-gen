@@ -190,6 +190,38 @@ def test_semantic_scene_json_roundtrip_does_not_require_chapter_projection():
                                  "representations": "loose keyword"})
 
 
+def test_semantic_scene_rejects_query_without_canonical_representation():
+    with pytest.raises(ValueError, match="require representations"):
+        SemanticScene(id=1, narration="A scene.",
+                      visual_queries=("loose keyword",))
+
+
+def test_semantic_scene_rejects_query_mirror_that_disagrees_with_representations():
+    representation = VisualRepresentation("Battle of Mohács", kind="event")
+    with pytest.raises(ValueError, match="must mirror representations"):
+        SemanticScene(id=1, narration="A scene.",
+                      representations=(representation,),
+                      visual_queries=("Ottoman Empire",))
+
+
+def test_semantic_scene_cache_boundary_adapts_query_only_legacy_record():
+    scene = SemanticScene.from_dict({
+        "id": 1, "narration": "A historical scene.",
+        "visual_queries": ["Battle of Mohács"],
+    })
+    assert scene.representations == (VisualRepresentation(
+        "Battle of Mohács", source="declared_scene_query"),)
+
+
+def test_semantic_scene_cache_boundary_rejects_conflicting_query_mirror():
+    with pytest.raises(ValueError, match="do not match representations"):
+        SemanticScene.from_dict({
+            "id": 1, "narration": "A historical scene.",
+            "representations": [{"query": "Battle of Mohács"}],
+            "visual_queries": ["Ottoman Empire"],
+        })
+
+
 def test_scene_plan_artifact_keeps_semantics_and_time_separate():
     from curio.stages.scene_contract import TimelineSpan
     from curio.stages.scene_plan_artifact import plan_from_dict, plan_to_dict

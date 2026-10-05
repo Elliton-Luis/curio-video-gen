@@ -1,5 +1,5 @@
 from curio.stages.scene_projection import Chapter
-from curio.stages.scene_contract import SemanticScene
+from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.scene_local_planning import (
     local_visual_representations, recover_legacy_chapters)
 from curio.stages.visual_planning import build_visual_plan
@@ -110,14 +110,14 @@ def test_search_plan_prioritizes_scene_event_and_avoids_repeated_medium():
         id=12, narration="The battle was decisive.",
         visual_type="historical_art", planning_mode="deterministic",
         video_context={"topic": "Ottoman Empire"},
-        representations=[
-            {"query": "Ottoman Empire painting", "kind": "entity", "level": 0,
-             "source": "verified_entity_context"},
-            {"query": "Battle of Mohács", "kind": "event", "level": 1,
-             "source": "local_concrete_phrase"},
-            {"query": "Battle of Mohács 1526", "kind": "event", "level": 1,
-             "source": "local_concrete_phrase"},
-        ])
+        representations=(
+            VisualRepresentation("Ottoman Empire painting", kind="entity", level=0,
+                                 source="verified_entity_context"),
+            VisualRepresentation("Battle of Mohács", kind="event", level=1,
+                                 source="local_concrete_phrase"),
+            VisualRepresentation("Battle of Mohács 1526", kind="event", level=1,
+                                 source="local_concrete_phrase"),
+        ))
 
     queries = [item.query for item in build_search_plan(
         build_visual_plan(scene), "history").queries]
@@ -138,8 +138,9 @@ def test_science_search_never_inherits_historical_map_fallback():
         video_context={"topic": "M87* black hole",
                        "primary_entities": ["M87* black hole"]},
         primary_entity="M87* black hole",
-        representations=[{"query": "event horizon", "kind": "event",
-                          "level": 1, "source": "local_concrete_phrase"}])
+        representations=(VisualRepresentation(
+            "event horizon", kind="event", level=1,
+            source="local_concrete_phrase"),))
 
     queries = [item.query for item in build_search_plan(
         build_visual_plan(scene), "science").queries]

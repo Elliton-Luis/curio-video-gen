@@ -1,12 +1,14 @@
 import pytest
 
-from curio.stages.scene_contract import SemanticScene, TimelineSpan
+from curio.stages.scene_contract import (SemanticScene, TimelineSpan,
+                                         VisualRepresentation)
 from curio.stages.timing import align_word_boundaries, proportional_spans
 
 
 def test_word_alignment_returns_spans_without_mutating_semantic_scene():
     scene = SemanticScene(id=1, narration="um dois tres",
-                          visual_queries=("visual representation",))
+                          representations=(VisualRepresentation(
+                              "visual representation", source="test_fixture"),))
     original = scene.to_dict()
     result = align_word_boundaries(
         (scene,), (TimelineSpan(1, duration_estimate=2.0),),

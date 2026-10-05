@@ -214,13 +214,14 @@ def _local_semantic_scenes(script: str,
                     term, re.I) else "artifact")
             else:
                 kind = "entity"
-            reps.append({"query": term, "kind": kind, "level": 1,
-                         "source": "local_concrete_phrase"})
+            reps.append(VisualRepresentation(
+                query=term, kind=kind, level=1,
+                source="local_concrete_phrase"))
         scenes.append(SemanticScene(
             id=len(scenes) + 1,
             narration=narration,
             source="local",
-            visual_queries=tuple(queries),
+            visual_queries=tuple(rep.query for rep in reps),
             # Topic-level queries are added by enrichment once the canonical
             # video topic is known; local phrases remain scene-specific.
             global_visual_queries=(),
@@ -416,6 +417,8 @@ def _repair_scene_count(scenes: list[SemanticScene], expected: int) -> bool:
             event=left.event or right.event,
             primary_entity=left.primary_entity or right.primary_entity,
             representations=tuple(list(merged.values())[:8]),
+            visual_queries=tuple(rep.query for rep in
+                                 list(merged.values())[:8]),
             global_visual_queries=_combine(
                 left.global_visual_queries, right.global_visual_queries))
         scenes.pop(index + 1)
@@ -604,6 +607,15 @@ def _plan_semantic_rows(script: str, cfg: CurioConfig,
             if not visual_queries and representations:
                 visual_queries = [item["query"] for item in representations[:5]]
                 terms_str = " ".join(visual_queries)
+            normalized_representations = tuple(
+                representation for index, item in enumerate(representations)
+                if (representation := VisualRepresentation.from_value(item, index)))
+            if not normalized_representations and visual_queries:
+                normalized_representations = tuple(VisualRepresentation(
+                    query=query, kind="related", level=index,
+                    source="llm_visual_search_term")
+                    for index, query in enumerate(visual_queries))
+            visual_queries = [rep.query for rep in normalized_representations]
             vtype = str(raw.get("visual_type", "") or "").strip().lower()
             if vtype not in VISUAL_TYPES:
                 # IA sem o campo (prompt antigo) ou valor fora do conjunto:
@@ -623,7 +635,7 @@ def _plan_semantic_rows(script: str, cfg: CurioConfig,
                 event=str(raw.get("event", "") or "").strip(),
                 place=str(raw.get("place", "") or "").strip(),
                 period=str(raw.get("period", "") or "").strip(),
-                representations=tuple(representations),
+                representations=normalized_representations,
                 visual_queries=tuple(visual_queries),
                 global_visual_queries=tuple(visual_queries),
                 text_role=_coerce_text_role(raw.get("text_role")),

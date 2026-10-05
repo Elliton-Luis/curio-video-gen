@@ -166,3 +166,4 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 - `relatorios/20261005-scene-projection-boundary.md` — separa o modelo de compatibilidade `Chapter` do planner de cenas.
 - `relatorios/20261005-pos-g48-validacao-arquitetural.md` — suíte, rerenders atuais e auditoria visual de projetos históricos e científicos após G48.
+- `relatorios/20261005-semantic-scene-query-invariant.md` — G49: representação canônica estrita, mirror de query validado e migração explícita de cache query-only legado.

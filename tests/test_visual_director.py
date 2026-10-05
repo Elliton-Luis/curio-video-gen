@@ -281,10 +281,12 @@ def test_structured_plan_never_adds_narration_keywords_to_queries():
 def test_repair_scene_count_merges_without_losing_narration_or_representations():
     first = scenes.SemanticScene(
         1, "Primeira frase.", subject="same subject",
-        representations=({"query": "first event", "level": 1},))
+        representations=(scenes.VisualRepresentation(
+            "first event", level=1, source="test_fixture"),))
     second = scenes.SemanticScene(
         2, "Segunda frase.", subject="same subject",
-        representations=({"query": "second event", "level": 1},))
+        representations=(scenes.VisualRepresentation(
+            "second event", level=1, source="test_fixture"),))
     third = scenes.SemanticScene(3, "Terceira frase.")
     planned = [first, second, third]
     assert scenes._repair_scene_count(planned, 2)
@@ -300,7 +302,8 @@ def test_scene_count_completion_splits_only_shared_declared_anchor():
     scene = scenes.SemanticScene(
         1, "Marcus Aurelius crossed the Danube. Marcus Aurelius led the army.",
         subject="Marcus Aurelius", primary_entity="Marcus Aurelius",
-        representations=({"query": "Marcus Aurelius", "level": 1},))
+        representations=(scenes.VisualRepresentation(
+            "Marcus Aurelius", level=1, source="test_fixture"),))
     planned = [scene]
     assert scenes._repair_scene_count(planned, 2)
     assert len(planned) == 2

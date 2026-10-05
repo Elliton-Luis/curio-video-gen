@@ -152,6 +152,10 @@ integral histórica daquele relatório tem 909 testes aprovados. As migrações
 incrementais atuais estão no relatório abaixo; G38 passou com 939 testes em
 174,69 s. G39–G40 migraram fallback e renderer para planos explícitos; os
 relatórios registram testes e validação de cada fase.
+G42–G49 continuam a migração de fronteiras: projection, saída tipada de cenas,
+render, metadata, standby, normalização compartilhada e contrato estrito entre
+representações visuais e suas queries; ver auditoria arquitetural e relatórios
+recentes em `docs/README.md`.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

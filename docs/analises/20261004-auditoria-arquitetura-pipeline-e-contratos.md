@@ -516,3 +516,20 @@ A fronteira nova de G42 ainda tinha dependência conceitual: `Chapter.from_dict`
 ## Validação pós-G48 e estado corrente
 
 `docs/relatorios/20261005-pos-g48-validacao-arquitetural.md` registra suíte (904), rerenders atuais de história e ciência e inspeção dos pixels vencedores. Os rerenders respeitaram cache e não buscaram mídia nem rodaram TTS. A seleção continuou sem reuso, mas a cena histórica de Mohács recebeu duas fotos atuais do Parlamento Húngaro; a terceira cena científica recebeu campo profundo Hubble sem evidência visual de lente gravitacional. Precisão editorial segue aberta apesar de identidade/diversidade corretas. A tentativa de rerender do projeto otomano humano foi bloqueada pela ausência esperada de `narration.wav`; a validação foi feita no projeto Mohács que já continha áudio.
+
+## G49 — representação canônica e espelho de query estritos
+
+`SemanticScene.__post_init__` preenchia silenciosamente `representations` a
+partir de `visual_queries` e também aceitava mappings no objeto canônico. Isso
+mascarava produtores que omitiam o contrato ou mantinham os dois campos
+divergentes. Agora o objeto runtime aceita apenas `VisualRepresentation` e
+rejeita queries sem representação ou espelho divergente. Os planners LLM/local
+materializam representações na própria fronteira de produção; reparo de contagem
+atualiza o espelho junto com as representações. `SemanticScene.from_dict` é a
+única fronteira que ainda converte registros query-only de cache antigo,
+marcando `source=declared_scene_query`, e rejeita conflitos persistidos.
+
+Regressões cobrem construção canônica inválida, conflito de espelho, migração
+explícita de cache legado e planner/reparo. Isso transforma divergência interna
+em erro observável sem quebrar leitura dos caches antigos. O relatório
+`20261005-semantic-scene-query-invariant.md` registra validação desta fase.

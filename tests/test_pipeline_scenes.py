@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from curio.pipeline_scenes import run_scene_stage
 from curio.stages.scene_enrichment import SceneEnrichmentResult
 from curio.stages.scene_contract import (ScenePlanResult, SemanticScene,
-                                         TimelineSpan)
+                                         TimelineSpan, VisualRepresentation)
 from curio.stages.scene_plan_artifact import (ScenePlanManifest,
                                               plan_to_dict,
                                               scene_plan_inputs_signature,
@@ -68,7 +68,8 @@ def test_semantic_plan_cache_is_canonical_over_legacy_chapters(tmp_path, monkeyp
     semantic_scene = SemanticScene(
         id=1, narration="The black hole bends light.", source="local",
         planning_mode="deterministic", visual_type="conceptual",
-        subject="black hole", visual_queries=("black hole lensing",))
+        subject="black hole", representations=(VisualRepresentation(
+            "black hole lensing", source="test_fixture"),))
     semantic_cache.write_text(json.dumps(plan_to_dict(ScenePlanResult(
         (semantic_scene,), (TimelineSpan(1, 4),), "local"))), encoding="utf-8")
 

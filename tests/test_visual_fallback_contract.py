@@ -1,6 +1,6 @@
 import pytest
 
-from curio.stages.scene_contract import SemanticScene
+from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.visual_contracts import VisualFallbackPlan
 from curio.stages.visual_fallback_planning import build_visual_fallback_plan
 from curio.stages.visual_planning import build_visual_plan
@@ -13,7 +13,8 @@ def _scene(scene_id, *, visual_type="literal", visual_steps=(), reps=()):
         visual_type=visual_type,
         subject="Ottoman Empire",
         video_context={"topic": "Ottoman Empire"},
-        representations=tuple(reps),
+        representations=tuple(VisualRepresentation.from_value(rep, index)
+                              for index, rep in enumerate(reps)),
         visual_steps=tuple(visual_steps),
     )
 

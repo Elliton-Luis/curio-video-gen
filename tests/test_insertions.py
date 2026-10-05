@@ -224,9 +224,11 @@ def _entry(i, title):
 
 
 def _ch(*queries, narration="cena"):
-    from curio.stages.scene_contract import SemanticScene
+    from curio.stages.scene_contract import SemanticScene, VisualRepresentation
+    representations = tuple(VisualRepresentation(query=query, source="test_fixture")
+                            for query in queries)
     return SemanticScene(id=1, narration=narration,
-                         visual_queries=tuple(queries))
+                         representations=representations)
 
 
 def test_insercao_vence_o_fundo_em_precisao():
@@ -273,7 +275,7 @@ def test_uma_imagem_so_nunca_insere():
 
 
 def test_sem_termos_de_assunto_nao_insere():
-    from curio.stages.scene_contract import SemanticScene
+    from curio.stages.scene_contract import SemanticScene, VisualRepresentation
     ch = SemanticScene(id=1,
                        narration="A narração menciona termodinâmica e sal.")
     entries = [_entry(0, "a"), _entry(1, "b")]
@@ -281,13 +283,15 @@ def test_sem_termos_de_assunto_nao_insere():
 
 
 def test_ordem_visual_nao_reinterpreta_narracao():
-    from curio.stages.scene_contract import SemanticScene
+    from curio.stages.scene_contract import SemanticScene, VisualRepresentation
     first = SemanticScene(id=1, narration="Roma usa sal e conserva alimentos.",
                           subject="Roman food preservation",
-                          visual_queries=("Roman food preservation",))
+                          representations=(VisualRepresentation(
+                              "Roman food preservation", source="test_fixture"),))
     second = SemanticScene(id=1, narration="Buracos negros distorcem a luz.",
                            subject="Roman food preservation",
-                           visual_queries=("Roman food preservation",))
+                           representations=(VisualRepresentation(
+                               "Roman food preservation", source="test_fixture"),))
     assert VT._topic_terms(first) == VT._topic_terms(second)
 
 

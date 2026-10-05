@@ -5,7 +5,7 @@ from curio.stages.scene_projection import Chapter
 from curio.stages import scoring
 from curio.stages.visual_context import fill_missing_context
 from curio.stages.research import ResearchSource
-from curio.stages.scene_contract import SemanticScene
+from curio.stages.scene_contract import SemanticScene, VisualRepresentation
 from curio.stages.visual_context import attach_video_context
 from curio.stages.visual_planning import build_visual_plan
 from curio.stages.search_planning import build_search_plan
@@ -165,9 +165,9 @@ def test_researched_topic_overrides_conflicting_scene_topic_and_unverified_alias
             "topic": "Batalha de Ponta de Gál",
             "aliases": ["Ponta de Gál"],
         },
-        representations=[{
-            "query": "Battle of Mohács 1526", "kind": "event", "level": 1,
-        }],
+        representations=(VisualRepresentation(
+            "Battle of Mohács 1526", kind="event", level=1,
+            source="test_fixture"),),
         visual_intent_structured="Show the Battle of Mohács in 1526",
     )
 

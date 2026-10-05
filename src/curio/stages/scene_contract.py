@@ -241,20 +241,19 @@ class SemanticScene:
                            VideoContext.from_value(self.video_context))
         if self.planning_mode not in {"unknown", "llm", "deterministic"}:
             raise ValueError(f"unknown scene planning_mode: {self.planning_mode}")
-        representations = tuple(
-            rep for index, value in enumerate(self.representations)
-            if (rep := VisualRepresentation.from_value(value, index)))
-        known = {rep.query.casefold() for rep in representations}
-        for query in self.visual_queries:
-            key = query.casefold()
-            if key and key not in known:
-                representations += (VisualRepresentation(
-                    query=query, kind="related", level=len(representations),
-                    source="declared_scene_query"),)
-                known.add(key)
+        if any(not isinstance(rep, VisualRepresentation)
+               for rep in self.representations):
+            raise TypeError("semantic scene representations must be normalized")
+        representations = tuple(self.representations)
+        representation_queries = tuple(rep.query for rep in representations)
+        if self.visual_queries and not representations:
+            raise ValueError(
+                "semantic scene visual_queries require representations")
+        if self.visual_queries and self.visual_queries != representation_queries:
+            raise ValueError(
+                "semantic scene visual_queries must mirror representations")
         object.__setattr__(self, "representations", representations)
-        object.__setattr__(self, "visual_queries",
-                           tuple(rep.query for rep in representations))
+        object.__setattr__(self, "visual_queries", representation_queries)
         object.__setattr__(self, "representation_rejections", tuple(
             dict(item) for item in self.representation_rejections
             if isinstance(item, Mapping)))
@@ -301,6 +300,23 @@ class SemanticScene:
         if any(not isinstance(item, Mapping)
                for item in value.get("representation_rejections", [])):
             raise ValueError("semantic scene representation_rejections must be objects")
+        raw_representations = value.get("representations", ())
+        representations = tuple(
+            representation for index, item in enumerate(raw_representations)
+            if (representation := VisualRepresentation.from_value(item, index)))
+        if len(representations) != len(raw_representations):
+            raise ValueError("semantic scene contains an invalid representation")
+        queries = tuple(value.get("visual_queries", ()))
+        representation_queries = tuple(rep.query for rep in representations)
+        if not representations and queries:
+            representations = tuple(VisualRepresentation(
+                query=query, kind="related", level=index,
+                source="declared_scene_query")
+                for index, query in enumerate(queries))
+            representation_queries = tuple(rep.query for rep in representations)
+        elif queries and queries != representation_queries:
+            raise ValueError(
+                "semantic scene visual_queries do not match representations")
         return cls(
             id=scene_id, narration=narration,
             source=str(value.get("source", "unknown") or "unknown"),
@@ -322,8 +338,8 @@ class SemanticScene:
             period=str(value.get("period", "") or ""),
             text_role=str(value.get("text_role", "") or ""),
             text_language=str(value.get("text_language", "") or ""),
-            representations=tuple(value.get("representations", ())),
-            visual_queries=tuple(value.get("visual_queries", ())),
+            representations=representations,
+            visual_queries=representation_queries,
             global_visual_queries=tuple(value.get("global_visual_queries", ())),
             representation_rejections=tuple(
                 value.get("representation_rejections", ())),
