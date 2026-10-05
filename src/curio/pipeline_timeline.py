@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
 import time
 
 from .media.selection_metrics import MediaMetricsInput
 from .media.selection_result import MediaStageResult
+from .stage_timing import validate_stage_elapsed
 from .stages import visual_timeline as visual_timeline_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
 from .stages.visual_beats import BEAT_SECONDS
@@ -30,10 +30,8 @@ class VisualTimelineResult:
             raise ValueError("visual timeline insertion count must be non-negative")
         if not isinstance(self.enabled, bool):
             raise TypeError("visual timeline enabled must be boolean")
-        if (isinstance(self.elapsed, bool)
-                or not isinstance(self.elapsed, (int, float))
-                or not isfinite(self.elapsed) or self.elapsed < 0):
-            raise ValueError("visual timeline elapsed must be finite and non-negative")
+        object.__setattr__(self, "elapsed",
+                           validate_stage_elapsed(self.elapsed, "visual timeline"))
 
 
 def build_visual_timeline(semantic_scenes: tuple[SemanticScene, ...],

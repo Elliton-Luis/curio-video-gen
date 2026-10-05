@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from . import ffmpeg as ff
+from .stage_timing import validate_stage_elapsed
 from .audio.artifacts import (TTSCacheManifest, legacy_words_match_text,
                               read_tts_manifest, tts_input_signature,
                               words_signature, write_tts_manifest)
@@ -50,10 +51,12 @@ class AudioStageResult:
                for value in self.warnings):
             raise ValueError("audio warnings must be non-empty strings")
         if not isinstance(self.stage_times, dict) or any(
-                not isinstance(key, str) or isinstance(value, bool)
-                or not isinstance(value, (int, float)) or not isfinite(value)
-                or value < 0 for key, value in self.stage_times.items()):
-            raise ValueError("audio stage times must be finite non-negative values")
+                not isinstance(key, str) or not key.strip()
+                for key in self.stage_times):
+            raise TypeError("audio stage times must be named durations")
+        object.__setattr__(self, "stage_times", {
+            key: validate_stage_elapsed(value, f"audio stage times ({key})")
+            for key, value in self.stage_times.items()})
 
 
 def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...],

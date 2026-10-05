@@ -2,6 +2,7 @@ import pytest
 
 from curio.media.selection_result import MediaStageResult
 from curio.pipeline_render import (
+    RenderStageResult,
     RenderStageInput,
     RenderTransitionPlan,
     SceneRenderInput,
@@ -90,3 +91,13 @@ def test_render_stage_input_rejects_misaligned_contracts():
             cfg=CurioConfig(), genre="history", audio_duration=4,
             tts_info={}, subtitles_changed=False, force=False,
             transition_mode="none", visual_config={})
+
+
+def test_render_stage_result_uses_shared_duration_contract():
+    plan = RenderTransitionPlan("history", "auto", (), (), "signature")
+    args = ({}, 1.0, {}, None, None, plan, {}, "visual-signature", (), ())
+    with pytest.raises(TypeError, match="render stage elapsed"):
+        RenderStageResult(*args, elapsed="1")
+    with pytest.raises(ValueError, match="render duration"):
+        RenderStageResult({}, -1, {}, None, None, plan, {}, "visual-signature",
+                          (), (), elapsed=0)

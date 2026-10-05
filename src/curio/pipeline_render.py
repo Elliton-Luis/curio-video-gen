@@ -10,6 +10,7 @@ from math import isfinite
 
 from .config import CurioConfig
 from .media.selection_result import MediaStageResult
+from .stage_timing import validate_stage_elapsed
 from .stages import editorial as editorial_stage
 from .stages import render as render_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
@@ -398,9 +399,12 @@ class RenderStageResult:
             raise TypeError("render transition metadata must be an object")
         if any(not isinstance(item, str) for item in (*self.warnings, *self.credits)):
             raise TypeError("render warnings and credits must be text")
-        if (not self.visual_plan_signature or not isfinite(self.duration)
-                or not isfinite(self.elapsed) or self.duration < 0 or self.elapsed < 0):
+        if not self.visual_plan_signature:
             raise ValueError("render stage result is incomplete")
+        object.__setattr__(self, "duration",
+                           validate_stage_elapsed(self.duration, "render duration"))
+        object.__setattr__(self, "elapsed",
+                           validate_stage_elapsed(self.elapsed, "render stage"))
 
 
 def run_render_stage(request: RenderStageInput) -> RenderStageResult:

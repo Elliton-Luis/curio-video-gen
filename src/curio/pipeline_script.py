@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass
 
 from .runlog import event as run_event
+from .stage_timing import validate_stage_elapsed
 from .script_artifacts import (ScriptArtifactsManifest, read_manifest,
                                input_identity, text_identity, write_manifest)
 from .stages import entity as entity_stage
@@ -31,6 +32,23 @@ class ScriptStageResult:
     force_scenes: bool
     warnings: tuple[str, ...]
     elapsed: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.script, script_stage.ScriptArtifact):
+            raise TypeError("script stage requires a ScriptArtifact")
+        if not isinstance(self.title, script_stage.TitleArtifact):
+            raise TypeError("script stage requires a TitleArtifact")
+        if not isinstance(self.grounding, dict):
+            raise TypeError("script grounding must be an object")
+        if not isinstance(self.script_changed, bool) or not isinstance(
+                self.force_scenes, bool):
+            raise TypeError("script change markers must be booleans")
+        if not isinstance(self.warnings, tuple) or any(
+                not isinstance(value, str) or not value.strip()
+                for value in self.warnings):
+            raise TypeError("script stage warnings must be immutable text")
+        object.__setattr__(self, "elapsed",
+                           validate_stage_elapsed(self.elapsed, "script stage"))
 
 
 def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,

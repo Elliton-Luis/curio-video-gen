@@ -7,16 +7,21 @@ import sys
 from dataclasses import dataclass
 
 from .runlog import event as run_event
+from .stage_timing import validate_stage_elapsed
 from .stages import research as research_stage
 from .stages.research import ResearchSource
 
 
-@dataclass
+@dataclass(frozen=True)
 class ResearchStageResult:
     result: research_stage.ResearchResult
     status: str
     prompt: str
     elapsed: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "elapsed",
+                           validate_stage_elapsed(self.elapsed, "research stage"))
 
 
 def validate_research_result(result) -> research_stage.ResearchResult:

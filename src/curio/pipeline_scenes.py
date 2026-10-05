@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from .config import CurioConfig
 from .runlog import event as run_event
+from .stage_timing import validate_stage_elapsed
 from .stages import nvidia as nvidia_stage
 from .stages import scenes as scenes_stage
 from .stages import script_input as script_input_stage
@@ -42,8 +43,12 @@ class SceneStageResult:
             raise ValueError("scene stage must return unique semantic scenes")
         if tuple(span.scene_id for span in self.timeline_spans) != scene_ids:
             raise ValueError("scene stage spans do not match semantic scenes")
-        if not self.source:
+        if not isinstance(self.source, str) or not self.source.strip():
             raise ValueError("scene stage source is required")
+        if not isinstance(self.invalidate_media, bool):
+            raise TypeError("scene stage invalidate_media must be boolean")
+        object.__setattr__(self, "elapsed",
+                           validate_stage_elapsed(self.elapsed, "scene stage"))
 
 
 def load_chapters(paths) -> list[Chapter]:
