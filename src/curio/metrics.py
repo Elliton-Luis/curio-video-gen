@@ -484,8 +484,12 @@ class RunMetrics:
             except OSError:
                 return None
 
-        media = meta.get("media") or []
         chapters = meta.get("chapters") or []
+        selection_fields = (self.media_selection_stats.visual_report_fields()
+                            if self.media_selection_stats else {})
+        selected_visual_scenes = selection_fields.get("scenes_with_selected_visual")
+        scenes_without_visual = selection_fields.get("sem_visual")
+        reused_scenes = selection_fields.get("scenes_with_reused_asset")
         return {
             "timestamp": self.started_at,
             "slug": self.slug,
@@ -569,9 +573,30 @@ class RunMetrics:
                     "bytes": self.media_bytes,
                     "cache_hits": self.media_cache_hits,
                     "cache_misses": self.media_cache_misses,
-                    "assets": sum(1 for s in media if s.get("asset")),
-                    "fallbacks": sum(1 for s in media if not s.get("asset")),
-                    "reused": sum(1 for s in media if s.get("reused_from")),
+                    # Selection totals come from the same canonical scene-level
+                    # projection as visual_report. Historical names remain
+                    # aliases for metrics JSON consumers.
+                    "assets": selected_visual_scenes,
+                    "fallbacks": scenes_without_visual,
+                    "reused": reused_scenes,
+                    "scenes_with_real_asset": selection_fields.get(
+                        "scenes_with_real_asset"),
+                    "scenes_with_selected_visual": selected_visual_scenes,
+                    "unique_assets": selection_fields.get("unique_assets"),
+                    "real_asset_occurrences": selection_fields.get(
+                        "real_asset_occurrences"),
+                    "reused_assets": selection_fields.get("reused_assets"),
+                    "reuse_count": selection_fields.get("reuse_count"),
+                    "unique_asset_ratio": selection_fields.get(
+                        "unique_asset_ratio"),
+                    "scenes_with_new_asset": selection_fields.get(
+                        "scenes_with_new_asset"),
+                    "scenes_with_reused_asset": reused_scenes,
+                    "synthetic_scenes": selection_fields.get(
+                        "synthetic_scenes"),
+                    "scenes_without_visual": scenes_without_visual,
+                    "scenes_with_unknown_decision": selection_fields.get(
+                        "scenes_with_unknown_decision"),
                     "query_generation_time": round(self.media_query_generation_time, 2),
                     "provider_search_time": {k: round(v, 2) for k, v in self.media_provider_search_time.items()},
                     "provider_search_calls": dict(self.media_provider_search_calls),

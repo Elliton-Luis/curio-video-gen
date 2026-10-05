@@ -161,6 +161,7 @@ class MediaMetricsInput:
 @dataclass(frozen=True)
 class MediaSelectionStats:
     scenes_with_real_asset: int | None
+    scenes_with_selected_visual: int | None
     unique_assets: int | None
     reused_assets: int | None
     reuse_count: int | None
@@ -177,7 +178,7 @@ class MediaSelectionStats:
         if not isinstance(media, MediaMetricsInput):
             raise TypeError("selection statistics require MediaMetricsInput")
         if not media.known:
-            return cls(*(None for _ in range(11)))
+            return cls(*(None for _ in range(12)))
 
         from ..stages.visual_beats import asset_key
 
@@ -230,6 +231,7 @@ class MediaSelectionStats:
         real_scenes = new_scenes + reused_scenes
         return cls(
             scenes_with_real_asset=real_scenes,
+            scenes_with_selected_visual=real_scenes + synthetic_scenes,
             unique_assets=unique_count,
             reused_assets=repeated,
             reuse_count=max(0, occurrence_count - unique_count),
@@ -245,6 +247,8 @@ class MediaSelectionStats:
 
     def visual_report_fields(self) -> dict:
         return {
+            "scenes_with_real_asset": self.scenes_with_real_asset,
+            "scenes_with_selected_visual": self.scenes_with_selected_visual,
             "unique_assets": self.unique_assets,
             "reused_assets": self.reused_assets,
             "reuse_count": self.reuse_count,

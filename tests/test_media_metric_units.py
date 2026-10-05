@@ -110,6 +110,58 @@ def test_media_metrics_distinguish_download_shortlist_from_final_scene_assets():
     assert media["real_scene_asset_occurrences"] == 1
 
 
+def test_consumption_selection_totals_share_canonical_scene_statistics():
+    from curio.media.selection_metrics import MediaMetricsInput
+
+    real = {"provider": "wikimedia", "asset_id": "asset-a"}
+    synthetic = {"provider": "synth", "asset_id": "card"}
+    rows = [
+        {"chapter_id": 1, "asset": real,
+         "visual_decision": {"selection": {"status": "real"}}},
+        {"chapter_id": 2, "asset": real, "reused_from": 1,
+         "visual_decision": {"selection": {"status": "reused"}}},
+        {"chapter_id": 3, "asset": synthetic,
+         "visual_decision": {"selection": {"status": "synthetic"}}},
+        {"chapter_id": 4,
+         "visual_decision": {"selection": {"status": "none"}}},
+        {"chapter_id": 5},
+    ]
+    metrics = RunMetrics("test", "topic", "narration")
+    metrics.visual_plan(
+        tuple(TimelineSpan(i, 2, (i - 1) * 2, i * 2) for i in range(1, 6)),
+        MediaMetricsInput.from_persisted_rows(rows), 2)
+
+    media = metrics.to_dict({"media": rows}, {}, "metrics")["consumption"]["media"]
+
+    assert media["scenes_with_real_asset"] == 2
+    assert media["scenes_with_selected_visual"] == 3
+    assert media["unique_assets"] == 1
+    assert media["real_asset_occurrences"] == 2
+    assert media["reused_assets"] == 1
+    assert media["reuse_count"] == 1
+    assert media["unique_asset_ratio"] == 0.5
+    assert media["scenes_with_new_asset"] == 1
+    assert media["scenes_with_reused_asset"] == 1
+    assert media["synthetic_scenes"] == 1
+    assert media["scenes_without_visual"] == 1
+    assert media["scenes_with_unknown_decision"] == 1
+    assert media["assets"] == media["scenes_with_selected_visual"]
+    assert media["fallbacks"] == media["scenes_without_visual"]
+    assert media["reused"] == media["scenes_with_reused_asset"]
+
+
+def test_selection_metrics_are_unknown_until_visual_selection_is_projected():
+    metrics = RunMetrics("test", "topic", "narration")
+
+    media = metrics.to_dict({"media": [{"chapter_id": 1, "asset": {}}]}, {},
+                            "metrics")["consumption"]["media"]
+
+    assert media["assets"] is None
+    assert media["fallbacks"] is None
+    assert media["reused"] is None
+    assert media["unique_assets"] is None
+
+
 def test_synthetic_asset_metric_has_a_canonical_name_and_public_alias():
     metrics = RunMetrics("test", "topic", "narration")
     metrics.media_record_synthetic_asset()
