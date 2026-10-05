@@ -21,9 +21,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-typed-technical-rejections.md` — G90: rejeições de gates técnicos permanecem tipadas até a auditoria; suíte completa: 996 testes.
 - `relatorios/20261005-typed-candidate-evaluation-audit.md` — G89: `CandidateEvaluation` permanece tipada até a projeção da auditoria; suíte completa: 995 testes.
 - `relatorios/20261005-visual-decision-audit-owner.md` — G88: `visual_audit.py` valida contratos tipados e monta a decisão visual; suíte completa: 994 testes.
-- `relatorios/20261005-relatorio-parada-e-estado-do-trabalho.md` — snapshot completo do pedido de parada: arquitetura, commits, diff local G88, contratos, testes confirmados/não confirmados, regressões, fases e pendências.
+- `relatorios/20261005-relatorio-parada-e-estado-do-trabalho.md` — snapshot histórico da primeira parada (HEAD `bc011bb`, G88 local); substituído pelo relatório consolidado atualizado abaixo.
 - `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — inventário arquitetural e estado consolidado até G95/F14; o estado mais recente e as fases F15/I1 estão no relatório completo abaixo.
-- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório completo até G95/F15: arquitetura, commits, contratos, testes, regressões reais, correção de métricas Met/AIC e pendências ainda abertas.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — relatório consolidado até G95/F15/I2 e HEAD documental `b8eeab0`: arquitetura antes/depois, fases, commits, contratos, testes, regressões, validações reais, o estado exato da investigação de mídia e pendências.
 - `relatorios/20261005-provider-request-metric-boundary.md` — F15: conta todas as tentativas de API Met/AIC/NASA/Unsplash, incluindo falhas e metadata; detalhe por operação; suíte completa: 1014 testes.
 - `relatorios/20261005-rerender-runtime-no-search.md` — I1: rerender de projeto científico real preserva hashes da seleção e registra zero requests/queries; verify 8/8.
 - `relatorios/20261005-ciencia-real-pos-f15.md` — I2: geração M87 pós-F15 com 4 assets únicos e breakdown real search/metadata; registra quase duplicatas visuais e fontes homônimas.

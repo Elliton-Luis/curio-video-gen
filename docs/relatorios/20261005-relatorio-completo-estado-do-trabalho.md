@@ -36,9 +36,19 @@ o fechamento documental dessa alteração.
 > A inspeção encontrou duas imagens quase duplicadas e fontes factuais
 > homônimas irrelevantes; ver [I2](20261005-ciencia-real-pos-f15.md).
 
+> **Estado consolidado após I2:** este é o relatório de referência atualizado
+> até o commit `b8eeab0` (`docs: record post-F15 science acquisition`). O
+> worktree estava limpo antes desta atualização documental. Após I2, iniciou-se
+> uma investigação somente de leitura sobre fontes factuais homônimas de M87
+> (“Capacete M87” e “Zastava M87”). Foram localizados os módulos envolvidos na
+> pesquisa (`research.py`, `research_sources.py`, `entity.py` e
+> `pipeline_research.py`), mas a causa exata não foi confirmada. Nenhum código
+> foi alterado nem teste executado para essa investigação.
+
 ## Estado exato do trabalho retomado
 
-O último commit de implementação é `b9e6ff1` (`fix: count provider API
+O último commit documental antes desta atualização é `b8eeab0`. O último
+commit de implementação é `b9e6ff1` (`fix: count provider API
 request attempts`), fase F15; os registros documentais posteriores são
 `8420ab4`, `c519528`, I1 e I2. O último commit de
 implementação sucede G95 `3978670`, G94 `60703ae`, G93 `38b892e` e a
@@ -84,6 +94,15 @@ tentativa, e o total tem breakdown `search`/ `metadata`/ `unknown`.
 Requests auxiliares NASA e requests Unsplash também usam a mesma fronteira.
 O detalhamento segue descrito em
 [`20261005-provider-request-metric-boundary.md`](20261005-provider-request-metric-boundary.md).
+
+Depois de I2, a investigação de fontes homônimas pretendia rastrear a
+recuperação e aceitação de fontes factuais para explicar por que títulos com
+“M87” bastaram para aceitar páginas sobre capacete e rifle, além de uma
+afirmação de 2019 sem grounding. A análise ainda não chegou à função causal:
+foram identificados os módulos a ler, mas não houve confirmação da causa,
+alteração de código ou teste. Essa pendência pertence à pesquisa factual e não
+foi corrigida pela F15, que trata exclusivamente da contagem de requests HTTP
+de mídia.
 
 ### Estado das fases e pendências
 
@@ -930,4 +949,6 @@ passaram. Não houve geração real. Consulte
 - [`F13 — reconciliação seleção e timeline`](20261005-selection-render-reconciliation.md)
 - [`F14 — assets dos segmentos visuais`](20261005-renderer-input-asset-usage.md)
 - [`F15 — requests no limite de provider`](20261005-provider-request-metric-boundary.md)
+- [`I1 — rerender real sem nova busca`](20261005-rerender-runtime-no-search.md)
+- [`I2 — aquisição científica real pós-F15`](20261005-ciencia-real-pos-f15.md)
 - [`Inventário de relatórios do projeto`](../README.md)
