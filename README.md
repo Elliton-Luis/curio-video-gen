@@ -195,9 +195,14 @@ G71 (`d8dace3`) constrói `SelectionDecision` a partir de `SelectedAsset`, prese
 G72 (`ec61c65`) mantém resultados selecionados tipados até projetar JSON para auditoria e persistência; candidatos antes da seleção seguem como próxima fronteira.
 G73 (`7b965a1`) mantém as shortlists fresh e reutilizada tipadas até cada candidato entrar na tentativa de aquisição.
 G74 (`57a9a21`) representa sucesso e rejeições de cada tentativa com `CandidateAcquisitionOutcome`, preservando origem, identidade e motivo.
-O relatório arquitetural completo — com estado antes/depois, commits,
-contratos, fases, testes, regressões, etapa de mídia e pendências — está em
+G75 (`c4ef8c5`) extrai as tentativas de aquisição de mídia para um owner próprio;
+`visual.py` conserva a política de fallback sintético e reuso.
+O relatório arquitetural com estado, contratos, fases, testes, regressões e
+pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
+O relatório completo do estado registrado até G74 está em
+[docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
+o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

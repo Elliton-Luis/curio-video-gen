@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G74.
+**Escopo:** auditoria documentada e migrações incrementais até G75.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -92,6 +92,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `ec61c65` | Mantém os assets escolhidos como `SelectedAsset` até a projeção para auditoria e persistência (G72). |
 | `7b965a1` | Mantém shortlist e reserva de reuso como `RankedSelectionCandidate` até cada tentativa de aquisição (G73). |
 | `57a9a21` | Modela sucesso/falha técnica por candidato como `CandidateAcquisitionOutcome`, com projeções distintas para seleção e auditoria (G74). |
+| `c4ef8c5` | Extrai tentativas de aquisição dos candidatos ranqueados para `media_candidate_acquisition.py`; fallback editorial permanece em `visual.py` (G75). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -201,6 +202,13 @@ G68 (`0e62a18`): cria `src/curio/media/asset_snapshot.py`; altera
 `test_media_selection.py`. G69 (`1d1335f`) altera `src/curio/stages/media_selection.py`
 e `tests/test_media_selection.py`.
 
+G75 (`c4ef8c5`): `src/curio/stages/media_candidate_acquisition.py` (novo),
+`src/curio/stages/visual.py` e `tests/test_media_selection.py`. O lote
+`CandidateAcquisitionBatch` é imutável; o módulo executa tentativas concorrentes,
+gates técnicos pós-download e outcomes. `visual.py` mantém a ordem de fallback
+fresh → sintético → reuso. A aquisição ainda atualiza métricas/logging e consulta
+uso cross-scene para deduplicação; esses owners seguem como dívida registrada.
+
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
 relatório e os relatórios G57–G70.
@@ -217,7 +225,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G74 commitadas; parcial. | `visual.py` ainda possui o loop concorrente de aquisição e os side effects de metrics/logging; agora cada resultado individual tem contrato. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G75 commitadas; parcial. | `visual.py` ainda possui a política de fallback; acquisition conserva efeitos de metrics/logging e dedupe por uso global. Coordenadores das demais etapas ainda precisam convergir/remover adapters temporários. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -283,6 +291,9 @@ Compileall e diff check passaram; sem geração real.
 G74: bateria focada de seleção, auditoria, direção visual e pipeline:
 **100 passaram**; suíte ampla: **941 passaram, 1 excluído** por HTTP 429 da
 Wikipédia em 172,28 s. Compileall e diff check passaram; sem geração real.
+G75: bateria focada: **102 passaram**; suíte ampla: **943 passaram, 1
+desmarcado** por HTTP 429 da Wikipédia em **171,12 s**. Compileall e diff check
+passaram; sem geração real. Ver [relatório G75](20261005-candidate-media-acquisition.md).
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -699,3 +710,19 @@ timeouts propagados pela aquisição, metrics, logging e ordenação. O próximo
 é mover a orquestração para um owner claro que consuma esse contrato, sem colocar
 HTTP/FFmpeg no adapter nem mover relevância para acquisition. Ver o
 [relatório G74](20261005-candidate-acquisition-outcomes.md).
+
+## G75 — aquisição técnica fora do coordenador visual (`c4ef8c5`)
+
+G75 moveu a tentativa de aquisição dos candidatos fresh e a tentativa tardia
+de reuso para `media_candidate_acquisition.py`. A etapa recebe
+`RankedSelectionCandidate`, executa janela concorrente e gates técnicos e
+retorna `CandidateAcquisitionBatch` com `CandidateAcquisitionOutcome` e avisos
+imutáveis. `visual.py` consome o lote para projetar selecionados/rejeições e
+continua responsável por tentar o fallback sintético antes de delegar reuso.
+Não houve mudança intencional de score, gates, provider, query ou thresholds.
+
+102 testes focados passaram; a suíte ampla passou com 943 e 1 teste externo
+desmarcado por HTTP 429 em 171,12 s. Compileall e diff check passaram. Sem
+geração real. A extração ainda deixa efeitos de métricas/logging e deduplicação
+cross-scene dentro do owner de aquisição; são limites a auditar, não divergências
+que esta fase tenha eliminado. Ver o [relatório G75](20261005-candidate-media-acquisition.md).

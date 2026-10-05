@@ -7,7 +7,9 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — relatório consolidado da refatoração: arquitetura antes/depois, commits G57–G74, contratos, arquivos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — estado arquitetural consolidado até G75: arquitetura, contratos, fases, validações, regressões e pendências.
+- `relatorios/20261005-relatorio-completo-estado-do-trabalho.md` — snapshot detalhado do estado e dos commits até imediatamente antes da extração G75.
+- `relatorios/20261005-candidate-media-acquisition.md` — G75: extração da aquisição de candidatos, contrato do lote, validação e limites ainda abertos.
 - `relatorios/20261005-ranked-selection-candidate-contract.md` — G70: shortlist/CLIP/SelectionPool tipados, rejeições pós-download vinculadas à auditoria por identidade e limites ainda pendentes.
 - `relatorios/20261005-selection-decision-selected-asset.md` — G71: SelectionDecision consome SelectedAsset tipado, incluindo provenance de query.
 - `relatorios/20261005-selected-media-through-boundary.md` — G72: assets selecionados permanecem tipados até auditoria e persistência; aquisição de candidatos segue pendente.
