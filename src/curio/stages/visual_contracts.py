@@ -100,7 +100,7 @@ class VisualFallbackPlan:
     reason: str
 
     def __post_init__(self) -> None:
-        strategies = {"card", "form", "diagram"}
+        strategies = {"form", "diagram"}
         forms = {"spotlight", "definition", "enumeration", "contrast",
                  "quote", "dated"}
         subject_sources = {
@@ -112,7 +112,7 @@ class VisualFallbackPlan:
             raise ValueError(f"unsupported visual fallback strategy: {self.strategy}")
         if self.strategy == "form" and self.form not in forms:
             raise ValueError("form fallback requires a supported form")
-        if self.strategy != "form" and self.form:
+        if self.strategy == "diagram" and self.form:
             raise ValueError("only form fallback may select a form")
         if self.strategy == "diagram" and len(self.steps) < 2:
             raise ValueError("diagram fallback requires at least two declared steps")

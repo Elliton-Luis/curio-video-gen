@@ -140,6 +140,11 @@ valores chegam explícitos no plano. A escada antiga `visuals.LADDERS` e os
 seletores `choose_form`/`visual_for_scene` foram removidos após migrar seus
 testes para os contratos; adapters declaram formas preferidas sem uma segunda
 política paralela de medium.
+O fallback tipográfico registra a mesma estratégia (`form`) no resultado,
+na auditoria, no evento e nas métricas, com nível explícito
+`synthetic_without_search`. Métricas canônicas chamam o total de
+`synthetic_assets`; o campo histórico `synth_diagrams` segue no JSON como
+alias de leitura compatível.
 As regressões arquiteturais mais recentes corrigem a promoção indevida de
 `Buracos` como entidade em títulos descritivos e fazem a busca continuar após
 detectar que um candidato aparentemente novo tem bytes já usados. A suíte

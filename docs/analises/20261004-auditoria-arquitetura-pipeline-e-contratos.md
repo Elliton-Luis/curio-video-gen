@@ -471,3 +471,12 @@ para `VisualFallbackPlan` e os renderers de baixo nível. `render_form` agora
 aceita apenas o plano resolvido, e data, citação, contraste e termos do cartão
 são dados explícitos, não extrações do texto narrado. G40 passou com **902
 testes em 177,45 s** depois da migração dos testes para os contratos.
+
+G41 auditou o caminho tipográfico sem busca e encontrou dois fatos divergentes:
+`strategy=form` no resultado, mas `card` em campos de asset/auditoria/métrica;
+nível de fallback indicando exaustão apesar de nenhum provider consultado. O
+resultado, a auditoria, o evento e as métricas agora usam o `VisualFallbackPlan`
+único (`form`, `synthetic_without_search`, motivo). `synthetic_assets` é o nome
+canônico do contador; `synth_diagrams` permanece apenas como alias público no
+JSON. G41 passou com **903 testes em 178,91 s**. A fase muda somente
+observabilidade, sem alterar bytes ou aquisição.

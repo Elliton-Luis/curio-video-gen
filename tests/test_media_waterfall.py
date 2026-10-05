@@ -337,7 +337,7 @@ def test_synth_diagram_em_cena_mecanistica_sem_nada(tmp_path):
     assert scenes[0]["asset"]["provider"] == "synth"
     assert scenes[0]["asset"]["local_path"].endswith(".png")
     assert os.path.getsize(scenes[0]["asset"]["local_path"]) > 10000
-    assert m.media_synth_diagrams == 1
+    assert m.media_synthetic_assets == 1
     assert not warns  # diagrama resolve: sem fallback
 
 

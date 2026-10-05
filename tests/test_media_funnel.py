@@ -96,8 +96,8 @@ def test_generic_candidate_passes_on_own_terms_after_specifics(monkeypatch, tmp_
 def test_synthetic_percentage_counts_generated_assets_not_scene_type():
     metrics = RunMetrics("fixture", "receipt", "ai")
     metrics.media_record_visual_type("historical_art")
-    metrics.media_record_fallback("card")
-    metrics.media_synth_diagrams = 1
+    metrics.media_record_fallback("form")
+    metrics.media_synthetic_assets = 1
     assert metrics.media_visual_report(1)["gerado_por_codigo_pct"] == 100.0
 
 

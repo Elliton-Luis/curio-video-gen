@@ -75,7 +75,7 @@ class RunMetrics:
         self.media_assets_reused = 0
         self.media_timeouts = 0
         self.media_retries = 0
-        self.media_synth_diagrams = 0
+        self.media_synthetic_assets = 0
         self.media_rights_verify = 0
         self.media_rights_blocked = 0
         # Cenas que terminaram sem nenhum visual (a única falha real).
@@ -238,8 +238,8 @@ class RunMetrics:
     def media_record_asset_rejected(self) -> None:
         self.media_assets_rejected += 1
 
-    def media_record_synth(self) -> None:
-        self.media_synth_diagrams += 1
+    def media_record_synthetic_asset(self) -> None:
+        self.media_synthetic_assets += 1
 
     def media_record_rights(self, status: str) -> None:
         if status == "verify":
@@ -286,7 +286,7 @@ class RunMetrics:
             self.media_low_score += 1
 
     def media_record_fallback(self, strategy: str) -> None:
-        """Cena que trocou de estratégia visual (não encontrou foto boa)."""
+        """Record the synthetic visual strategy selected by the fallback plan."""
         self.media_fallbacks[strategy] = self.media_fallbacks.get(strategy, 0) + 1
 
     def research_query(self) -> None:
@@ -428,7 +428,7 @@ class RunMetrics:
         # estratégia nenhuma. Diagrama e cartão contam como visualizadas.
         stats = self.media_selection_stats
         geradas = (stats.synthetic_scenes if stats and
-                   stats.synthetic_scenes is not None else self.media_synth_diagrams)
+                   stats.synthetic_scenes is not None else self.media_synthetic_assets)
         selection_fields = (stats.visual_report_fields() if stats else {})
         return {
             "cenas": int(n_scenes or 0),
@@ -588,7 +588,9 @@ class RunMetrics:
                     "timeouts": self.media_timeouts,
                     "retries": self.media_retries,
                     "retries_by_provider": dict(self.media_retries_by_provider),
-                    "synth_diagrams": self.media_synth_diagrams,
+                    "synthetic_assets": self.media_synthetic_assets,
+                    # Public metrics key kept for older consumers.
+                    "synth_diagrams": self.media_synthetic_assets,
                     "rights_verify": self.media_rights_verify,
                     "rights_blocked": self.media_rights_blocked,
                 },
@@ -630,7 +632,7 @@ def backfill_from_metadata(slug: str, meta: dict, metrics_dir: str) -> str:
         if strategy and strategy != "image":
             collector.media_record_fallback(strategy)
         if (scene.get("asset") or {}).get("provider") == "synth":
-            collector.media_record_synth()
+            collector.media_record_synthetic_asset()
         decision = scene.get("visual_decision")
         if isinstance(decision, dict):
             collector.media_record_scene_decision(

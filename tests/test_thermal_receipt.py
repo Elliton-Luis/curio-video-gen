@@ -300,9 +300,14 @@ def test_cena_tipografica_nao_busca_foto(tmp_path, monkeypatch):
     assert asset["provider"] == "synth"
     assert "Card" in asset["title"]
     assert scenes[0]["strategy"] == "form"
+    decision = scenes[0]["visual_decision"]
+    assert decision["fallback"] == scenes[0]["strategy"]
+    assert decision["fallback_level"] == "synthetic_without_search"
+    assert decision["fallback_plan"]["strategy"] == scenes[0]["strategy"]
     assert not warns
     assert m.media_visual_types.get("typographic") == 1
-    assert m.media_fallbacks.get("card") == 1
+    assert m.media_fallbacks.get("form") == 1
+    assert m.media_synthetic_assets == 1
 
 
 def test_cartao_mostra_a_cadeia_da_etimologia(tmp_path):

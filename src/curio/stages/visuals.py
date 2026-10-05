@@ -508,6 +508,4 @@ def render_fallback_plan(plan: VisualFallbackPlan, cache_dir: str,
                               cache_dir, language, plan.scene_id, typo)
     if plan.strategy == "form":
         return render_form(plan, cache_dir, language, typo)
-    return render_card(plan.subject, list(plan.card_terms), plan.narration,
-                       cache_dir, language, plan.scene_id, typo=typo,
-                       word_card=plan.visual_type == "typographic")
+    raise ValueError(f"unsupported fallback strategy: {plan.strategy}")

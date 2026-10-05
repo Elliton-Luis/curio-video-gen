@@ -146,17 +146,19 @@ def _search_scene_with_shortcircuit(
                                     fallback_plan.form or fallback_plan.strategy)
             if metrics:
                 metrics.media_record_visual_type(vtype)
-                metrics.media_record_fallback("card")
-                metrics.media_synth_diagrams += 1
+                metrics.media_record_fallback(fallback_plan.strategy)
+                metrics.media_record_synthetic_asset()
             from ..runlog import event as run_event
-            run_event("fallback", f"Cena {ch.id}: card tipográfico",
-                      operation="media", scene=ch.id, strategy="card")
+            run_event("fallback", f"Cena {ch.id}: form tipográfico ({fallback_plan.form})",
+                      operation="media", scene=ch.id,
+                      strategy=fallback_plan.strategy, form=fallback_plan.form,
+                      reason=fallback_plan.reason)
             return [{
                 "chapter_id": ch.id,
                 "asset": synth.to_dict(),
                 "assets": [{"asset": synth.to_dict(), "query": "",
                             "relevance": 0, "order": 0,
-                            "score": 0.0, "strategy": "card"}],
+                            "score": 0.0, "strategy": fallback_plan.strategy}],
                 "reused_from": None,
                 "rejected": [],
                 "visual_type": vtype,
@@ -171,18 +173,18 @@ def _search_scene_with_shortcircuit(
                     "candidates": [{"title": synth.title,
                                      "provider": "synth",
                                      "decision": "selected",
-                                     "reason": "typographic intent is rendered as a card"}],
+                                     "reason": f"typographic intent rendered as {fallback_plan.form}"}],
                     "selected": {"title": synth.title, "provider": "synth",
-                                 "reason": "typographic intent is rendered as a card"},
-                    "fallback": "card",
+                                 "reason": f"typographic intent rendered as {fallback_plan.form}"},
+                    "fallback": fallback_plan.strategy,
                     "search_exhausted": True,
-                    "search_exhaustion_reason": "typographic_visual_requires_card",
-                    "fallback_level": "synthetic_after_exhaustion",
+                    "search_exhaustion_reason": "typographic_visual_requires_synthetic_form",
+                    "fallback_level": "synthetic_without_search",
                     "selection": SelectionDecision(
                         scene_id=ch.id, status="synthetic",
                         asset_id=synth.asset_id, provider="synth",
-                        fallback_level="typographic_card",
-                        reason="typographic visual intent is represented by a local card",
+                        fallback_level="synthetic_without_search",
+                        reason=fallback_plan.reason,
                     ).to_dict(),
                 },
             }], warnings
@@ -561,7 +563,7 @@ def _search_scene_with_shortcircuit(
             strategy_used = fallback_plan.strategy
             if metrics:
                 metrics.media_record_fallback(strategy_used)
-                metrics.media_synth_diagrams += 1
+                metrics.media_record_synthetic_asset()
             from ..runlog import active as run_active
             if not run_active():
                 print(f"cena {ch.id}: sem foto adequada — visual por código "

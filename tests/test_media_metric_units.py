@@ -84,6 +84,16 @@ def test_media_metrics_distinguish_download_shortlist_from_final_scene_assets():
     assert media["real_scene_asset_occurrences"] == 1
 
 
+def test_synthetic_asset_metric_has_a_canonical_name_and_public_alias():
+    metrics = RunMetrics("test", "topic", "narration")
+    metrics.media_record_synthetic_asset()
+
+    media = metrics.to_dict({}, {}, "metrics")["consumption"]["media"]
+
+    assert media["synthetic_assets"] == 1
+    assert media["synth_diagrams"] == media["synthetic_assets"]
+
+
 def test_live_media_result_uses_typed_metrics_input_and_missing_scene_is_unknown():
     import pytest
     from curio.media.selection_metrics import MediaMetricsInput

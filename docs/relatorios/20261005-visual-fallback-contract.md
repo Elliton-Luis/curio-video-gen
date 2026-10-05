@@ -63,3 +63,19 @@ migração arquitetural completa.
 Após G40, uma segunda inspeção M87 mostrou o título da representação aprovada
 `black hole event horizon`, mantendo a narração da cena e sem decidir no
 renderer. O replay visual foi local; não mediu providers nem aquisição real.
+
+## Continuação G41 — decisão e métrica alinhadas
+
+O caminho tipográfico curto registrava `strategy=form`, mas anotava `card` em
+`assets`, `visual_decision.fallback`, eventos e contadores; seu nível também
+dizia `synthetic_after_exhaustion`, embora não houvesse busca. G41 faz todos
+esses campos derivarem do mesmo `VisualFallbackPlan`: estratégia `form`, nível
+`synthetic_without_search` e motivo do plano. O método de métrica agora registra
+um asset sintético genérico; o JSON novo emite `synthetic_assets`. Mantive
+`synth_diagrams` no artefato como alias de compatibilidade externa.
+
+Validação focada G41: 16 testes de fallback, métricas e seleção passaram.
+Suíte integral depois das alterações: **903 testes em 178,91 s**; compileall e
+`git diff --check` também passaram. Esta fase muda apenas coerência interna de
+auditoria/métricas; não exige uma chamada nova a provider para validar, e não
+altera os bytes do asset sintético.
