@@ -505,3 +505,28 @@ depois. Suíte final: **892 passed em 194,27 s**; compileall e diff check
 passaram. Esta fase retira ownership de projeto do coordenador, mas geração e
 finalize continuam no `pipeline.py`; a extração do fluxo finalize é próxima
 fronteira independente, depois de mapear seus helpers compartilhados.
+
+## G8: composição de áudio não pertence ao coordenador de geração
+
+Antes da extração de `finalize_project`, o rastreamento de consumidores mostrou
+que `cli.py` importava sete helpers privados do `pipeline.py` para aplicar a
+configuração de áudio persistida, extrair eventos SFX, decidir fades, compor
+SFX e registrar uso de trilhas. O próprio pipeline também usava esses helpers
+no fluxo IA, fluxo humano e finalize. Isso era uma dependência escondida que
+faria uma extração direta de finalize duplicar ou importar política do
+coordenador.
+
+Movi esses comportamentos para `audio/composition.py`. `pipeline.py` e `cli.py`
+agora dependem do módulo de áudio, e testes passaram a importar a política pelo
+seu dono. A decisão de trilha continua em `audio.selection`; o novo módulo
+coordena composição/efeitos e aplica a escolha já persistida. Os helpers
+privados foram removidos de `pipeline.py` sem manter reexports internos.
+
+Focados: 20 testes de isolamento, render e integração passaram; 3 testes de CLI
+de áudio passaram. A suíte integral passou: **892 testes em 186,96 s**;
+compileall e diff check também passaram. O teste focado inicial detectou que
+os builders SFX ficam em `stages.render`, e o ownership foi ligado ali, sem
+alterar a política. Próximo passo após o gate:
+extrair finalize usando os módulos de composição de áudio e render já donos,
+com `pipeline.py` mantendo apenas a fronteira pública/log e coordenação da
+geração. Código em `91c5f89`.

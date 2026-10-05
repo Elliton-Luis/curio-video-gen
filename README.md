@@ -36,7 +36,11 @@ O layout e a resolução de projetos agora têm dono em `project_paths.py`; CLI,
 TUI e pipeline compartilham `VideoPaths` frozen para projetos legados e
 `genre/slug`. A suíte após essa migração passou com 892 testes. `finalize` e
 geração ainda compartilham o coordenador `pipeline.py`; a auditoria registra
-essa próxima fronteira de extração.
+essa próxima fronteira de extração. As políticas e efeitos de composição de
+áudio foram extraídos para `audio/composition.py`, usados pelo pipeline e CLI;
+a extração de finalize depende agora desse módulo em vez de helpers privados
+do coordenador. O gate integral após essa fronteira ficou em 892 testes
+(186,96 s), com compileall e diff check aprovados.
 
 A migração incremental começou pelos contratos semânticos compartilhados de
 cena, contexto e representação visual; o relatório acompanha as fases já
