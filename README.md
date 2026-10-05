@@ -97,6 +97,11 @@ manifesto compatível é pesquisado novamente; escolhas manuais continuam
 preservadas. O cache é validado como `MediaStageResult` antes do uso; row
 malformado é auditado e causa nova aquisição. `rerender` só consome a seleção
 registrada e não pesquisa mídia.
+O payload de `VisualDecision` agora é montado em `stages/visual_audit.py`, a
+partir de `SemanticScene`, planos, coleção de candidatos e decisão de seleção
+validados; `visual.py` não recompõe esse dicionário. A mudança G88 preserva o
+schema persistido e passou com 994 testes. A auditoria arquitetural e os
+relatórios G88/F8 registram as responsabilidades e pendências restantes.
 As métricas de seleção usam uma projeção canônica em
 `media/selection_metrics.py`: `MediaMetricsInput` é a entrada validada para
 `visual_plan`, criada diretamente do `MediaStageResult` ao vivo ou por adaptador
@@ -208,7 +213,7 @@ resultados.
 O relatório arquitetural com estado, contratos, fases, testes, regressões e
 pendências está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).
-O relatório completo do estado registrado até G87/F8 está em
+O relatório completo do estado registrado até G88/F8 está em
 [docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md](docs/relatorios/20261005-relatorio-completo-estado-do-trabalho.md);
 o relatório de G75 registra a extração e sua validação.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6

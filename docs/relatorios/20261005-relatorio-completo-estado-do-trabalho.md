@@ -1,13 +1,13 @@
 # Relatório completo do estado do trabalho — Curio
 
 **Data:** 2026-10-05  
-**Escopo:** estado da refatoração arquitetural até G87 e métricas até F8.
+**Escopo:** estado da refatoração arquitetural até G88 e métricas até F8.
 **Estado:** trabalho incompleto. G80–G87 e F4–F8 foram testados e commitados; fases
 posteriores e validações reais finais seguem pendentes. Este documento não
 certifica a conclusão da refatoração.
 
-> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G87
-> (`4b0b4e7`, `412a8b1`) foram
+> **Atualização:** F6–F8 (`11022b2`, `254f48f`, `b0b272e`) e G86–G88
+> (`4b0b4e7`, `412a8b1`, `c5424b5`) foram
 > implementadas e commitadas. Validações e limites constam neste relatório e nos
 > [relatórios F6](20261005-stage-timings-immutable-contract.md) e
 > [F7](20261005-backfill-unknown-total-duration.md). A refatoração ampla
@@ -124,6 +124,7 @@ hashes e diffs.
 | `254f48f` | Mantém duração total desconhecida como `null` em backfill sem valor total explícito (F7). |
 | `4b0b4e7` | Centraliza a decisão pura da próxima tier da seleção visual em `media_selection.py` (G86). |
 | `412a8b1` | Faz `media_selection.py` classificar exaustão, motivo e fallback a partir de plans e auditoria tipados (G87). |
+| `c5424b5` | Move montagem e validação do payload `VisualDecision` para `visual_audit.py` (G88). |
 | `b0b272e` | Faz a métrica live de duração total consumir o elapsed canônico do pipeline (F8). |
 
 
@@ -326,11 +327,11 @@ query, provider, ranking ou seleção de imagem.
 | D — candidato/avaliação/seleção | D1–D4 e convergência parcial até G80. | Unificar transições de fallback e simplificar o coordenador. |
 | E — cache/artifact lifecycle | Parcial; E1–E7/E6 conforme inventário. | Lifecycle unificado e fronteiras restantes de rows. |
 | F — métricas/estado | F1–F8 parciais. | Definições canônicas para demais campos, lifecycle timers, profile por suboperação e conciliação seleção-render permanecem incompletos. |
-| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G87 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e outros campos de auditoria; extrair ownership por decisões, não por mera movimentação de código. |
+| G — simplificação do pipeline | Parcial; G1, G3–G5 e G7–G88 commitadas. | `visual.py` ainda coordena coleta, avaliação, aquisição e outros campos de auditoria; extrair ownership por decisões, não por mera movimentação de código. |
 | H — performance | Pendente. | Profile por planejamento, request/retry, download, dedupe, scoring e fallback. |
 | I — validação/limpeza | Parcial. | Mais temas reais, fallback sem LLM, falhas, cache/rerender e inspeção visual. |
 
-Os status são os registrados na auditoria e neste relatório até G87/F8. Não representam
+Os status são os registrados na auditoria e neste relatório até G88/F8. Não representam
 aceite final dos objetivos amplos.
 
 ## O que estava sendo tentado corrigir na etapa de mídia
@@ -509,6 +510,17 @@ somente chamadas diretas/legadas sem esse campo. Testes cobrem zero medido,
 duração positiva, fallback e backfill unknown. 24 focados e 993 completos
 passaram. Ver [relatório F8](20261005-live-metric-total-duration.md).
 
+## G88 — ownership da montagem da decisão visual (`c5424b5`)
+
+`visual_audit.build_scene_visual_decision()` recebe os contratos tipados da cena,
+dos planos, da coleta e da seleção; valida suas identidades e coerência antes de
+projetar `VisualDecision`. `visual.py` deixa de montar inline o payload de
+auditoria. O schema persistido e a política editorial ficam iguais. A suíte
+focada passou com 9 testes e a completa com 994 testes em 185,22 s; compileall
+e diff check passaram. Ainda restam rows de candidatos/rejeições nessa fronteira
+e a orquestração de busca/aquisição em `visual.py`. Ver
+[relatório G88](20261005-visual-decision-audit-owner.md).
+
 ## F4 — duração explícita da timeline visual (`11ac1f3`)
 
 `VisualTimelineResult` inclui duração validada, medida desde o início do estágio
@@ -550,6 +562,7 @@ passaram. Não houve geração real. Consulte
 - [`G85 — auditoria visual baseada no VisualPlan`](20261005-visual-audit-from-visual-plan.md)
 - [`G86 — política explícita da próxima tier de mídia`](20261005-selection-fallback-policy.md)
 - [`G87 — ownership da provenance de seleção`](20261005-selection-provenance-owner.md)
+- [`G88 — ownership da decisão visual`](20261005-visual-decision-audit-owner.md)
 - [`F4 — duração do estágio de timeline visual`](20261005-visual-timeline-stage-timing.md)
 - [`F5 — contrato compartilhado de duração de estágio`](20261005-stage-elapsed-contract.md)
 - [`F6 — coleção imutável de tempos de etapa`](20261005-stage-timings-immutable-contract.md)

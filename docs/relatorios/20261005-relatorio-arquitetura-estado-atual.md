@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G87/F8.
+**Escopo:** auditoria documentada e migrações incrementais até G88/F8.
 **Estado:** em andamento; este relatório não certifica a conclusão da
 refatoração integral.
 
@@ -259,7 +259,7 @@ relatório e os relatórios G57–G70.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F8 parciais. | F6 torna a coleção de tempos imutável; F7 preserva como null a duração histórica irrecuperável; F8 unifica o total live entre metadata e métricas. Definições canônicas para demais campos, lifecycle timers, profile por suboperação e reconciliação seleção-render permanecem. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G87 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance. `visual.py` ainda coordena coleta, avaliação, aquisição e outras partes da auditoria. Rows aninhadas e adapters de leitura/reuso permanecem. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G88 commitadas; parcial. | G84 move CLIP reranking para `candidate_evaluation.py`; G85 deriva provenance de `VisualPlan`; G86 centraliza a próxima tier; G87 centraliza a classificação final da provenance; G88 move a montagem de `VisualDecision` para `visual_audit.py`. `visual.py` ainda coordena coleta, avaliação e aquisição. Rows aninhadas e adapters de leitura/reuso permanecem. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -979,3 +979,14 @@ negativa e é usada pelos resultados de pesquisa, roteiro, cenas, áudio, render
 e timeline. Booleanos e valores inválidos falham antes de chegar ao metadata.
 48 focados e 977 testes completos passaram; veja
 [relatório F5](20261005-stage-elapsed-contract.md).
+
+## G88 — owner da montagem de `VisualDecision` (`c5424b5`)
+
+O coordenador não projeta mais manualmente o dicionário final de auditoria.
+`visual_audit.build_scene_visual_decision()` combina os planos e decisões
+tipados, valida identidade/coerência e cria o mesmo contrato persistido.
+Foram aprovados 9 testes focados, 994 testes completos, compileall e diff check.
+Não houve geração real, pois a alteração move ownership e não muda a seleção.
+Rows de candidatos/rejeições e a orquestração maior de mídia continuam como
+fronteiras abertas. Consulte
+[relatório G88](20261005-visual-decision-audit-owner.md).
