@@ -38,6 +38,7 @@ from ..media.providers import (
     MediaProvider,
     classify_rights,
 )
+from ..media.visual_decision import VisualDecision
 from . import media_rules
 from .visual_contracts import VisualPlan
 from .visual_planning import build_visual_plan
@@ -144,6 +145,25 @@ def _search_scene_with_shortcircuit(
                 metrics.media_record_visual_type(vtype)
                 metrics.media_record_fallback(fallback_plan.strategy)
                 metrics.media_record_synthetic_asset()
+            reason = f"typographic intent rendered as {fallback_plan.form}"
+            selection = SelectionDecision(
+                scene_id=ch.id, status="synthetic", asset_id=synth.asset_id,
+                provider="synth", fallback_level="synthetic_without_search",
+                reason=fallback_plan.reason)
+            visual_decision = VisualDecision.create(
+                selection, topic=visual_plan.topic,
+                visual_plan=visual_plan.to_dict(),
+                fallback_plan=fallback_plan.to_dict(),
+                search_plan=search_plan.to_dict(), queries=[],
+                providers_consulted=[],
+                candidates=[{"title": synth.title, "provider": "synth",
+                             "decision": "selected", "reason": reason}],
+                selected={"title": synth.title, "provider": "synth",
+                          "reason": reason},
+                fallback=fallback_plan.strategy, search_exhausted=True,
+                search_exhaustion_reason=(
+                    "typographic_visual_requires_synthetic_form"),
+                fallback_level="synthetic_without_search")
             from ..runlog import event as run_event
             run_event("fallback", f"Cena {ch.id}: form tipográfico ({fallback_plan.form})",
                       operation="media", scene=ch.id,
@@ -159,30 +179,7 @@ def _search_scene_with_shortcircuit(
                 "rejected": [],
                 "visual_type": vtype,
                 "strategy": fallback_plan.strategy,
-                "visual_decision": {
-                    "topic": visual_plan.topic,
-                    "visual_plan": visual_plan.to_dict(),
-                    "fallback_plan": fallback_plan.to_dict(),
-                    "search_plan": search_plan.to_dict(),
-                    "queries": [],
-                    "providers_consulted": [],
-                    "candidates": [{"title": synth.title,
-                                     "provider": "synth",
-                                     "decision": "selected",
-                                     "reason": f"typographic intent rendered as {fallback_plan.form}"}],
-                    "selected": {"title": synth.title, "provider": "synth",
-                                 "reason": f"typographic intent rendered as {fallback_plan.form}"},
-                    "fallback": fallback_plan.strategy,
-                    "search_exhausted": True,
-                    "search_exhaustion_reason": "typographic_visual_requires_synthetic_form",
-                    "fallback_level": "synthetic_without_search",
-                    "selection": SelectionDecision(
-                        scene_id=ch.id, status="synthetic",
-                        asset_id=synth.asset_id, provider="synth",
-                        fallback_level="synthetic_without_search",
-                        reason=fallback_plan.reason,
-                    ).to_dict(),
-                },
+                "visual_decision": visual_decision.to_dict(),
             }], warnings
 
     from . import scoring
@@ -593,8 +590,9 @@ def _search_scene_with_shortcircuit(
                            "specific" if picked and picked[0].get("query") in representation_levels
                            else "representation_or_media_variant" if picked else "exhausted"),
     }
-    decision["selection"] = make_selection_decision(
-        ch.id, picked, decision["fallback_level"]).to_dict()
+    selection = make_selection_decision(
+        ch.id, picked, decision["fallback_level"])
+    decision = VisualDecision.create(selection, **decision).to_dict()
     return [{
         "chapter_id": ch.id,
         "asset": first,

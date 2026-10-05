@@ -229,9 +229,9 @@ def apply_manual_swap(media_rows: list[dict], scene_id: int,
     audit = target.get("visual_decision") or {}
     if not isinstance(audit, dict):
         raise TypeError("manual swap visual decision must be an object")
-    audit = deepcopy(audit)
-    audit["selection"] = decision.to_dict()
-    target["visual_decision"] = audit
+    from ..media.visual_decision import VisualDecision
+    target["visual_decision"] = VisualDecision.create(
+        decision, payload=audit).to_dict()
     return ManualSwapResult(rows, scene_id, deepcopy(asset), previous_id,
                             reused_from)
 

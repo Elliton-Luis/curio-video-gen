@@ -10,6 +10,7 @@ from .stages.scene_contract import SemanticScene
 from .media.selection_result import MediaStageResult
 from .runlog import current_log_path
 from .stages.media_selection import SelectionDecision
+from .media.visual_decision import VisualDecision
 
 MANUAL_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
@@ -97,26 +98,26 @@ def manual_media_scenes(semantic_scenes: list[SemanticScene],
             reason=("user supplied manual image" if not reused else
                     f"user supplied image reused from scene {donor}"),
         )
+        visual_decision = VisualDecision.create(
+            selection,
+            topic=scene.video_context.topic,
+            visual_intent=(scene.visual_intent_structured or scene.visual_intent),
+            entities=list(scene.visual_entities),
+            primary_entity=scene.primary_entity or scene.subject,
+            representations=[rep.to_dict() for rep in scene.representations],
+            queries=[],
+            providers_consulted=[],
+            candidates=[{"title": asset["title"], "provider": "manual",
+                         "decision": "selected",
+                         "reason": "asset supplied by user"}],
+            selected={"title": asset["title"], "provider": "manual",
+                      "reason": "asset supplied by user"},
+            fallback="manual",
+        )
         scenes.append({"chapter_id": scene.id, "asset": asset,
                        "assets": [{"asset": asset, "query": "manual",
                                     "relevance": 100, "order": 0}],
-                       "visual_decision": {
-                           "topic": scene.video_context.topic,
-                           "visual_intent": (scene.visual_intent_structured
-                                             or scene.visual_intent),
-                           "entities": list(scene.visual_entities),
-                           "primary_entity": scene.primary_entity or scene.subject,
-                           "representations": [rep.to_dict()
-                                               for rep in scene.representations],
-                           "queries": [], "providers_consulted": [],
-                           "candidates": [{"title": asset["title"],
-                               "provider": "manual", "decision": "selected",
-                               "reason": "asset supplied by user"}],
-                           "selected": {"title": asset["title"], "provider": "manual",
-                                        "reason": "asset supplied by user"},
-                           "fallback": "manual",
-                           "selection": selection.to_dict(),
-                       },
+                       "visual_decision": visual_decision.to_dict(),
                        "reused_from": donor if reused else None})
     return scenes
 

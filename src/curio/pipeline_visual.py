@@ -71,7 +71,7 @@ def _record_selection(result: _MediaStageResult, metrics) -> _MediaStageResult:
         provider = scene.asset.provider if scene.asset is not None else ""
         if metrics and scene.visual_audit:
             metrics.media_record_scene_decision(
-                scene.scene_id, scene.visual_audit)
+                scene.scene_id, scene.visual_audit.to_dict())
         synthetic = provider == "synth"
         run_event(
             "fallback" if synthetic or not provider else "result",

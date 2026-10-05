@@ -13,6 +13,7 @@ from math import isfinite
 
 from .providers import MediaAsset
 from ..stages.media_selection import SelectionDecision
+from .visual_decision import VisualDecision
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,7 @@ class SceneMediaSelection:
     strategy: str
     rejected: tuple[dict, ...]
     reuse: tuple[dict, ...]
-    visual_audit: dict
+    visual_audit: VisualDecision
     _row: dict = field(repr=False, compare=False)
 
     @classmethod
@@ -113,10 +114,10 @@ class SceneMediaSelection:
         raw_decision = value.get("visual_decision")
         if raw_decision is not None and not isinstance(raw_decision, dict):
             raise TypeError("visual_decision must be an object")
-        decision_data = (raw_decision or {}).get("selection")
-        if decision_data is None:
+        if raw_decision is None:
             raise ValueError("media scene requires an explicit selection decision")
-        decision = SelectionDecision.from_dict(decision_data)
+        visual_audit = VisualDecision.from_dict(raw_decision)
+        decision = visual_audit.selection
         if decision.scene_id != scene_id:
             raise ValueError("selection decision belongs to another scene")
         if asset and decision.asset_id and asset.asset_id \
@@ -151,7 +152,7 @@ class SceneMediaSelection:
             scene_id=scene_id, asset=asset, assets=entries, decision=decision,
             reused_from=reused_from, visual_type=visual_type, strategy=strategy,
             rejected=tuple(deepcopy(rejected)), reuse=tuple(deepcopy(reuse)),
-            visual_audit=deepcopy(raw_decision or {}), _row=deepcopy(value))
+            visual_audit=visual_audit, _row=deepcopy(value))
 
     def to_dict(self) -> dict:
         """Return the original project row without schema expansion."""
@@ -187,18 +188,18 @@ class SceneMediaSelection:
         row["assets"] = [asset.to_dict()]
         row["asset"] = asset.asset.to_dict()
         row["reused_from"] = donor_scene_id
-        audit = row.get("visual_decision")
-        if isinstance(audit, dict):
-            audit["fallback"] = "validated_reuse"
-            audit["selection"] = decision.to_dict()
-            audit["selected"] = {
+        audit = self.visual_audit.with_selection(
+            decision,
+            fallback="validated_reuse",
+            selected={
                 "title": asset.asset.title,
                 "provider": asset.asset.provider,
                 "topic_relevance": topic_relevance,
                 "scene_relevance": scene_relevance,
                 "reason": ("validated topic and scene evidence from scene "
                            f"{donor_scene_id}"),
-            }
+            })
+        row["visual_decision"] = audit.to_dict()
         return SceneMediaSelection.from_dict(row)
 
 
