@@ -171,25 +171,27 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
             visual_timeline = visual_timeline_stage.retime_visual_timeline(
                 visual_timeline, timeline_spans)
             project_artifacts.write_json(paths.visual_json, visual_timeline)
+            render_transition_plan = pipeline_render_stage.plan_transitions(
+                semantic_scenes, render_spans, project_genre, transition_mode)
             pipeline_render_stage.build_silent_visual(
                                  semantic_scenes, timeline_spans,
                                  visual_timeline, idea, paths,
-                                 cfg, adj, transitions=pipeline_render_stage.genre_transitions(
-                                      semantic_scenes, project_genre, transition_mode),
-                                 kinds=pipeline_render_stage.genre_transition_kinds(
-                                      semantic_scenes, project_genre, transition_mode))
+                                 cfg, adj,
+                                 transitions=render_transition_plan.boundary_durations,
+                                 kinds=render_transition_plan.kinds)
         else:
             last = timeline_spans[-1]
             render_spans = (*timeline_spans[:-1], TimelineSpan(
                 last.scene_id, last.duration_estimate + diff,
                 last.start, last.end + diff))
+            render_transition_plan = pipeline_render_stage.plan_transitions(
+                semantic_scenes, render_spans, project_genre, transition_mode)
             pipeline_render_stage.build_silent(
                            semantic_scenes, render_spans, render_plan,
                            idea, paths,
-                           cfg, adj, transitions=pipeline_render_stage.genre_transitions(
-                               semantic_scenes, project_genre, transition_mode),
-                           kinds=pipeline_render_stage.genre_transition_kinds(
-                               semantic_scenes, project_genre, transition_mode))
+                           cfg, adj,
+                           transitions=render_transition_plan.boundary_durations,
+                           kinds=render_transition_plan.kinds)
         silent = adj
         warnings.append(f"última cena estendida +{diff:.1f}s p/ caber o áudio")
     else:
@@ -219,6 +221,12 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
                                             total, paths)
     video_title = video_title or None
     music_asset = audio_plan.get("music_asset")
+    transition_plan = pipeline_render_stage.plan_transitions(
+        semantic_scenes, timeline_spans, project_genre, transition_mode,
+        {"insertions": cfg.visual_insertions,
+         "insert_style": cfg.visual_insert_style,
+         "insert_gain_db": cfg.visual_insert_gain_db,
+         "visual_sfx": cfg.visual_sfx})
     render_info = render_stage.burn_final(
         silent, paths.subs_ass, human_wav, paths.final_mp4, cfg, total,
         title=video_title,
@@ -248,19 +256,9 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
         "subtitle_source": "whisper",
         "transcription_model": f"faster-whisper/{cfg.whisper_model}",
         "audio": audio_plan["metadata"],
-        "visual_transition_signature": pipeline_render_stage.transition_signature(
-            semantic_scenes, timeline_spans, project_genre, transition_mode,
-            {"insertions": cfg.visual_insertions,
-             "insert_style": cfg.visual_insert_style,
-             "insert_gain_db": cfg.visual_insert_gain_db,
-             "visual_sfx": cfg.visual_sfx}),
-        "visual_transitions": {
-            "genre": project_genre, "mode": transition_mode,
-            "boundary_durations": pipeline_render_stage.genre_transitions(
-                semantic_scenes, project_genre, transition_mode),
-            "final_fade": audio_composition.final_audio_fade(
-                project_genre, transition_mode),
-        },
+        "visual_transition_signature": transition_plan.signature,
+        "visual_transitions": transition_plan.to_dict(
+            audio_composition.final_audio_fade(project_genre, transition_mode)),
         "finalize_warnings": warnings,
         "warnings": sorted(set(meta.get("warnings", []) + warnings)),
         "processing_time_seconds": round(time.monotonic() - started, 2),

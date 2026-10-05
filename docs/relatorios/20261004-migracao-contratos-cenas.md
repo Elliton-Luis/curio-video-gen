@@ -1017,3 +1017,18 @@ as rows pelo `MediaStageResult`, além dos campos persistidos.
 
 20 testes focados de standby, artifacts e pipeline visual passaram. Suíte integral:
 **925 testes em 175,85 s**; compileall e diff check passaram.
+
+## G32: transições de render são uma decisão compartilhada
+
+Geração automática, preparação humana e finalize chamavam separadamente as
+regras de duração/tipo de transição e a geração de assinatura. O render e o
+cache dependiam de decisões equivalentes, mas montadas em lugares diferentes.
+
+`RenderTransitionPlan` agora contém durações, tipos e assinatura derivados de
+uma única entrada validada de cenas/spans/gênero/modo. Geração automática e
+preparação humana usam o mesmo plano para render e metadata; finalize também usa
+o plano ao ajustar a duração e ao persistir a assinatura. A política de fade de
+áudio continua no owner de áudio.
+
+18 testes focados de contrato, política e integração passaram. Suíte integral:
+**927 testes em 192,39 s**; `compileall` e `git diff --check` passaram.

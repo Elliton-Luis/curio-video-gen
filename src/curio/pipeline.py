@@ -344,7 +344,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     visual_plan_signature = hashlib.sha256(
         json.dumps(visual_timeline, sort_keys=True).encode()).hexdigest()
     transition_mode = audio_composition.transition_mode(cfg)
-    transition_sig = pipeline_render_stage.transition_signature(
+    transition_plan = pipeline_render_stage.plan_transitions(
         tuple(semantic_scenes), timeline_spans, genre_key, transition_mode,
         {"insertions": insert_budget,
          "insert_style": cfg.visual_insert_style,
@@ -352,7 +352,7 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
          "visual_sfx": cfg.visual_sfx})
     legacy_audio_cache = not cfg.audio_enabled and not previous_audio
     transition_dirty = (
-        previous_meta.get("visual_transition_signature") != transition_sig
+        previous_meta.get("visual_transition_signature") != transition_plan.signature
         and not (legacy_audio_cache and transition_mode == "none"))
     transition_dirty = transition_dirty or (
         any(t.get("backgrounds") for t in visual_timeline) and
@@ -381,21 +381,20 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
     else:
         silent = paths.silent_mp4
         if force or transition_dirty or not os.path.isfile(silent):
-            transitions = pipeline_render_stage.genre_transitions(
-                tuple(semantic_scenes), genre_key, transition_mode)
-            kinds = pipeline_render_stage.genre_transition_kinds(
-                tuple(semantic_scenes), genre_key, transition_mode)
             if visual_timeline:
                 pipeline_render_stage.build_silent_visual(
                                      tuple(semantic_scenes), timeline_spans,
                                      visual_timeline, idea, paths,
-                                     cfg, silent, transitions=transitions,
-                                     kinds=kinds)
+                                     cfg, silent,
+                                     transitions=transition_plan.boundary_durations,
+                                     kinds=transition_plan.kinds)
             else:
                 pipeline_render_stage.build_silent(
                               tuple(semantic_scenes), timeline_spans,
                               media_render_plan, idea, paths,
-                              cfg, silent, transitions=transitions, kinds=kinds)
+                              cfg, silent,
+                              transitions=transition_plan.boundary_durations,
+                              kinds=transition_plan.kinds)
         narration_wav = paths.narration_wav
         sfx_path = (audio_composition.sfx_track(visual_timeline, total, paths)
                     if visual_timeline and cfg.visual_sfx else None)
@@ -459,15 +458,10 @@ def _run_pipeline(idea: str, cfg: CurioConfig, slug: str | None = None,
             "insert_gain_db": cfg.visual_insert_gain_db,
         } if max_images > 1 else None),
         "audio": new_audio_meta,
-        "visual_transition_signature": transition_sig,
+        "visual_transition_signature": transition_plan.signature,
         "visual_plan_signature": visual_plan_signature,
-        "visual_transitions": {
-            "genre": genre_key,
-            "mode": transition_mode,
-            "boundary_durations": pipeline_render_stage.genre_transitions(
-                tuple(semantic_scenes), genre_key, transition_mode),
-            "final_fade": audio_composition.final_audio_fade(genre_key, transition_mode),
-        },
+        "visual_transitions": transition_plan.to_dict(
+            audio_composition.final_audio_fade(genre_key, transition_mode)),
         "sources": {
             "claims": len(sources.claims),
             "media": len(sources.media),

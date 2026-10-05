@@ -67,6 +67,12 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
         insert_budget, cfg.visual_insert_style, cfg.visual_insert_gain_db,
         max_images > 1, metrics, project_artifacts.write_json)
     visual_timeline = timeline_result.entries
+    transition_plan = pipeline_render_stage.plan_transitions(
+        semantic_scenes, timeline_spans, genre_key, transition_mode,
+        {"insertions": insert_budget,
+         "insert_style": cfg.visual_insert_style,
+         "insert_gain_db": cfg.visual_insert_gain_db,
+         "visual_sfx": cfg.visual_sfx})
     audio_events = audio_composition.sfx_events(visual_timeline)
     try:
         previous_meta = project_artifacts.read_json(paths.metadata_json)
@@ -97,18 +103,16 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
         pipeline_render_stage.build_silent_visual(
                              semantic_scenes, timeline_spans,
                              visual_timeline, idea, paths, cfg,
-                             paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
-                                 semantic_scenes, genre_key, transition_mode),
-                             kinds=pipeline_render_stage.genre_transition_kinds(
-                                 semantic_scenes, genre_key, transition_mode))
+                             paths.silent_mp4,
+                             transitions=transition_plan.boundary_durations,
+                             kinds=transition_plan.kinds)
     else:
         pipeline_render_stage.build_silent(
                       semantic_scenes, timeline_spans, render_plan,
                       idea, paths, cfg,
-                      paths.silent_mp4, transitions=pipeline_render_stage.genre_transitions(
-                          semantic_scenes, genre_key, transition_mode),
-                      kinds=pipeline_render_stage.genre_transition_kinds(
-                          semantic_scenes, genre_key, transition_mode))
+                      paths.silent_mp4,
+                      transitions=transition_plan.boundary_durations,
+                      kinds=transition_plan.kinds)
     stage_times["silent"] = round(time.monotonic() - t0, 2)
     emit(5, "Montando silencioso", "OK")
 
@@ -134,18 +138,9 @@ def prepare_human_project(idea: str, slug: str, cfg: CurioConfig,
         "project_dir": os.path.relpath(paths.root, cfg.out_dir),
         "audio_request": audio_plan["metadata"],
         "sources": source_summary,
-        "visual_transition_signature": pipeline_render_stage.transition_signature(
-            semantic_scenes, timeline_spans, genre_key, transition_mode,
-            {"insertions": insert_budget,
-             "insert_style": cfg.visual_insert_style,
-             "insert_gain_db": cfg.visual_insert_gain_db,
-             "visual_sfx": cfg.visual_sfx}),
-        "visual_transitions": {
-            "genre": genre_key, "mode": transition_mode,
-            "boundary_durations": pipeline_render_stage.genre_transitions(
-                semantic_scenes, genre_key, transition_mode),
-            "final_fade": audio_composition.final_audio_fade(genre_key, transition_mode),
-        },
+        "visual_transition_signature": transition_plan.signature,
+        "visual_transitions": transition_plan.to_dict(
+            audio_composition.final_audio_fade(genre_key, transition_mode)),
         "genre_profile": genre_profile or editorial_stage.summary(None),
         "scene_context_enrichment": scene_context_enrichment or {},
         "typography": pipeline_metadata_stage.typography_report(cfg, genre_key),

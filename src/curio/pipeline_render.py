@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from math import isfinite
 
 from .config import CurioConfig
 from .media.selection_result import MediaStageResult
@@ -101,6 +102,44 @@ class SceneRenderPlan:
         if expected != actual:
             raise ValueError("render plan scenes do not match semantic scene order")
         return {scene.scene_id: scene.asset for scene in self.scenes}
+
+
+@dataclass(frozen=True)
+class RenderTransitionPlan:
+    """Validated transition choices shared by rendering and cache metadata."""
+
+    genre: str
+    mode: str
+    boundary_durations: tuple[float, ...]
+    kinds: tuple[str, ...]
+    signature: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.genre, str) or not isinstance(self.mode, str):
+            raise TypeError("transition genre and mode must be strings")
+        if (not self.signature or len(self.boundary_durations) != len(self.kinds)
+                or any(not isfinite(duration) or duration < 0
+                       for duration in self.boundary_durations)):
+            raise ValueError("transition plan is incomplete or inconsistent")
+        if any(not isinstance(kind, str) or not kind for kind in self.kinds):
+            raise ValueError("transition plan kinds must be non-empty strings")
+
+    def to_dict(self, final_fade: float) -> dict:
+        return {"genre": self.genre, "mode": self.mode,
+                "boundary_durations": list(self.boundary_durations),
+                "final_fade": final_fade}
+
+
+def plan_transitions(semantic_scenes: tuple[SemanticScene, ...],
+                     timeline_spans: tuple[TimelineSpan, ...], genre: str,
+                     mode: str, visual_identity: dict | None = None
+                     ) -> RenderTransitionPlan:
+    """Make one transition decision for a render input and its cache key."""
+    durations = tuple(genre_transitions(semantic_scenes, genre, mode))
+    kinds = tuple(genre_transition_kinds(semantic_scenes, genre, mode))
+    signature = transition_signature(semantic_scenes, timeline_spans, genre,
+                                     mode, visual_identity)
+    return RenderTransitionPlan(genre, mode, durations, kinds, signature)
 
 
 def title_fontfile(cfg: CurioConfig, genre_key: str = "") -> str | None:

@@ -264,6 +264,8 @@ LLM, reparos estruturais e fallback local produzem esse contrato diretamente;
 de timeline/render.
 Seleções de imagens manuais também registram `SelectionDecision`, incluindo
 quando um arquivo precisou ser reutilizado em rodízio.
+As durações, tipos e assinatura de transições são produzidos juntos em um
+`RenderTransitionPlan`, compartilhado por geração, preparação humana e finalize.
 O VisualPlanner não lê narração: representações locais são criadas no estágio
 de planejamento local de cenas, materializadas no contrato e então consumidas
 por VisualPlan/SearchPlan.
