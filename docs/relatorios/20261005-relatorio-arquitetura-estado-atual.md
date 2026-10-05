@@ -1,9 +1,11 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G69.
-**Estado:** em andamento; as fases abaixo não certificam a conclusão da
-refatoração integral.
+**Escopo:** auditoria documentada e migrações incrementais até G69, com registro
+separado do trabalho G70 interrompido e ainda sem validação.
+**Estado:** em andamento; este relatório não certifica a conclusão da
+refatoração integral. O worktree contém alterações G70 não commitadas; elas não
+fazem parte dos resultados validados abaixo.
 
 ## Arquitetura antes das migrações recentes
 
@@ -288,8 +290,9 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G69 passam os gates registrados. Auditoria integral, ownership único de
-todas as decisões e validação final permanecem objetivos abertos.
+G57–G69 passam os gates registrados. G70 está incompleta e não validada.
+Auditoria integral, ownership único de todas as decisões e validação final
+permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
 
@@ -539,3 +542,52 @@ A dívida adjacente permanece em `SelectionPool` e em `visual.py`: as listas de
 candidatos durante CLIP, aquisição de bytes, dedupe por hash e seleção são dicts
 editáveis que representam transições de estado. A próxima migração deve
 especificar esse lifecycle antes de substituir o formato. Commit: `1d1335f`.
+
+
+## G70 — shortlist tipada de seleção (interrompida; sem commit)
+
+O trabalho em andamento tentava fechar a dívida indicada por G69: `SelectionPool`
+recebia rows `dict` mesmo depois de avaliação, e `visual.py` alterava score e
+asset durante o passe opcional de CLIP antes de separar assets frescos e
+reutilizados. A proposta em edição introduz `RankedSelectionCandidate`, que
+agrupa `CandidateEvaluation`, `MediaAssetSnapshot` e score CLIP; o pool passa a
+receber esses valores tipados e o coordenador projeta para dict somente ao
+entrar no lifecycle legado de aquisição/seleção.
+
+As alterações locais observadas, ainda não commitadas, estão em:
+
+- `src/curio/stages/media_contracts.py`: método `CandidateEvaluation.with_clip_score()`
+  para atualizar score/evidência de CLIP por cópia;
+- `src/curio/stages/media_selection.py`: contrato `RankedSelectionCandidate`
+  e `SelectionPool` tipado;
+- `src/curio/stages/visual.py`: transporte tipado durante shortlist/CLIP/pool,
+  seguido de projeção para as rows consumidas pelo restante do estágio;
+- `tests/test_media_selection.py`: fixtures tipadas e uma regressão para score
+  CLIP e snapshot preparado.
+
+Este trabalho foi interrompido antes da validação. Não há commit G70, relatório
+de testes concluídos, `compileall` ou `git diff --check` registrados. Portanto,
+os resultados G57–G69 acima continuam sendo os últimos gates comprovados, e a
+alteração local G70 não deve ser descrita como fase concluída. Se for retomado,
+o próximo passo é revisar o diff e validar comportamento e compatibilidade do
+CLIP/download antes de decidir se o contrato fica ou é descartado. Nenhum ajuste
+de query, threshold, provider ou política editorial era o objetivo dessa
+tentativa.
+
+### Estado exato da etapa de mídia
+
+O objetivo arquitetural imediato era tirar `dict` editável da transição entre
+avaliação, CLIP opcional, separação de candidatos frescos/reutilizados e
+seleção, preservando a ordem e a fórmula de score existentes. Isso não era uma
+tentativa de corrigir os problemas anteriores de query semântica, falta de
+diversidade ou qualidade de assets; esses continuam como regressões/limitações
+que exigem validação própria. Até G69, busca/coleta, avaliação e decisões
+principais têm contratos tipados, mas `visual.py` ainda concentra coordenação e
+projeta candidatos em rows mutáveis para o lifecycle posterior de download,
+dedupe por conteúdo, fallback e persistência.
+
+No estado capturado, os quatro arquivos listados permanecem modificados no
+worktree. Como G70 não foi validada nem commitada, não há afirmação de que a
+shortlist tipada preserve todos os comportamentos de erro e ordenação do CLIP.
+A validação real de aquisição, inspeção visual e comparação antes/depois também
+não foi executada para G70.

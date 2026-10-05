@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Relatórios (o que foi feito e como)
 
+- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — relatório consolidado da refatoração: arquitetura antes/depois, commits G57–G69, contratos, arquivos, fases, validações, regressões e pendências; registra G70 como alteração local interrompida e ainda não validada.
 - `relatorios/20261005-visual-fallback-contract.md` — `VisualFallbackPlan`, renderer sem inferência, política duplicada removida e decisão/métricas alinhadas; G39/G40: 902 testes, G41: 903 testes.
 - `relatorios/20261003-122730_relatorio-falha-chain-llm-cenas.md` — elimina timeout ilimitado, respeita rate limit Groq e recupera cenas locais em ideia automática; suíte 780/780.
 - `relatorios/20261003-121500_relatorio-fallback-cenas-llm.md` — corrige espera NVIDIA sem timeout, limita 429 e preserva geração automática com fallback local; 779 testes passaram.
@@ -176,7 +177,6 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-selection-decision-invariants.md` — G55: estado, provider, fallback e justificativa de reuso coerentes.
 - `relatorios/20261005-visual-plan-single-source.md` — G56: `representations` é a única fonte de queries no `VisualPlan`; o JSON persistido segue compatível.
 - `relatorios/20261005-semantic-scene-single-source.md` — G57: uma fonte runtime para queries visuais, com serialização e projeção legadas derivadas.
-- `relatorios/20261005-relatorio-arquitetura-estado-atual.md` — relatório arquitetural completo: estado antes/depois, commits, contratos, fases, testes, regressões, pendências e etapa de mídia; atualizado até G64.
 - `relatorios/20261005-cross-scene-reuse-owner.md` — G58: política de reuso entre cenas movida do coordenador visual para `media_selection.py`.
 - `relatorios/20261005-media-stage-typed-output.md` — G59: aquisição visual retorna `MediaStageResult` validado e reuso transforma a saída tipada.
 - `relatorios/20261005-selection-contract-reuse-updates.md` — G60: `SceneMediaSelection` é owner das alterações de reuso e da projeção validada.
