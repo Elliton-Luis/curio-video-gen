@@ -178,6 +178,9 @@ G60 transfere atualizações de reuso e projeção compatível para o contrato
 `SceneMediaSelection`, que revalida a seleção alterada.
 G61 (`7a568aa`) agrupa a auditoria por query em `SearchQueryAudit` e centraliza
 sua projeção pela ordem de `SearchPlan`.
+G62 (`a51c06d`) move travessia de providers, dedupe e gates técnicos para
+`SceneCandidateCollector`; ranking, seleção e fallback continuam em seus
+owners.
 O relatório arquitetural completo — com estado antes/depois, commits,
 contratos, fases, testes, regressões, etapa de mídia e pendências — está em
 [docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md](docs/relatorios/20261005-relatorio-arquitetura-estado-atual.md).

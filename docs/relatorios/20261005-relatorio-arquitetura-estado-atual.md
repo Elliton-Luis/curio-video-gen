@@ -1,7 +1,7 @@
 # Relatório de arquitetura e estado de migração — Curio
 
 **Data:** 2026-10-05
-**Escopo:** auditoria documentada e migrações incrementais até G61.
+**Escopo:** auditoria documentada e migrações incrementais até G62.
 **Estado:** em andamento; as fases abaixo não certificam a conclusão da
 refatoração integral.
 
@@ -79,6 +79,7 @@ fase. Este relatório resume o estado das migrações, não substitui o inventá
 | `e652f64` | Fez `fetch_media_multi` retornar `MediaStageResult` e moveu a projeção de rows para a fronteira de persistência (G59). |
 | `a7cabe0` | Moveu atualizações de reuse e sua projeção compatível para métodos do contrato `SceneMediaSelection` (G60). |
 | `7a568aa` | Agrupou fatos da auditoria por query em `SearchQueryAudit` e centralizou a projeção ordenada por `SearchPlan` em `visual_audit.py` (G61). |
+| `a51c06d` | Extraiu coleta e gates técnicos de candidatos por cena para `SceneCandidateCollector` (G62). |
 
 Commits anteriores e detalhes de cada fase estão no histórico Git e nos
 relatórios listados em `docs/README.md`.
@@ -106,7 +107,7 @@ relatórios listados em `docs/README.md`.
 - **Métricas e estado:** owners e definições globais permanecem parciais; os
   relatórios live e backfill ainda requerem consolidação.
 
-## Arquivos alterados nas fases G57–G61
+## Arquivos alterados nas fases G57–G62
 
 Implementação G57: `src/curio/stages/scene_contract.py`, `scene_projection.py`,
 `scenes.py`, `visual_context.py`, `scoring.py`, `visual_timeline.py`,
@@ -128,6 +129,14 @@ substitui dicts/sets paralelos para fatos de auditoria por query por um registro
 `SearchPlan`. O coordenador ainda executa busca/aquisição; G61 não conclui sua
 extração.
 
+G62 (`a51c06d`): `src/curio/stages/scene_candidate_search.py`,
+`src/curio/stages/candidate_evaluation.py`, `src/curio/stages/visual.py` e
+`tests/test_scene_candidate_search.py`. `SceneCandidateCollector` consome
+`VisualPlan` e `SearchPlan`, executa queries por providers ordenados,
+deduplica, aplica gates técnicos e retorna `SceneCandidateCollection` com
+candidatos e rejeições tipados e auditoria por query. A avaliação adiciona
+evidência semântica às rejeições sem alterar os gates.
+
 Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 `test_visual_model.py`, `test_visual_context.py`, `test_visual_director.py`,
 `test_visual_asset_usage.py`, `test_visual_topic_anchor.py` e
@@ -136,11 +145,13 @@ Testes: `tests/test_scene_contract.py`, `test_visual_contracts.py`,
 `tests/test_media_selection.py`, `tests/test_pipeline_integration.py`,
 `tests/test_pipeline_visual.py` e `tests/test_standby_flow.py` (G59);
 `tests/test_media_selection.py` (G60); `tests/test_visual_audit.py` (G61,
-preservando os dois testes anteriores e adicionando três casos).
+preservando os dois testes anteriores e adicionando três casos);
+`tests/test_scene_candidate_search.py` (G62, cinco regressões de contrato).
 
 Documentação e navegação: `README.md`, `docs/README.md`, a auditoria
 `docs/analises/20261004-auditoria-arquitetura-pipeline-e-contratos.md`, este
-relatório e os relatórios G57–G60.
+relatório e os relatórios G57–G62.
+
 
 ## Estado das fases
 
@@ -153,7 +164,7 @@ relatório e os relatórios G57–G60.
 | D — candidate/evaluation/selection | D1–D4 concluídas; convergência G parcial. | Fazer fallbacks convergirem e seguir simplificando o coordenador. |
 | E — cache/artifact lifecycle | E1–E7 e E6 concluídas conforme auditoria; fase parcial. | Unificar lifecycle e remover boundary de seleção ainda em dicionários. |
 | F — métricas/estado | F1–F3 parciais. | Definições canônicas, unknown/null consistente e reconciliação seleção-render. |
-| G — simplificação do pipeline | G1, G3–G5 e G7–G61 commitadas; parcial. | `visual.py` ainda coordena execução de busca/aquisição; metadata e rows geométricas têm limites por concluir. |
+| G — simplificação do pipeline | G1, G3–G5 e G7–G62 commitadas; parcial. | `visual.py` ainda orquestra planejamento, avaliação, download/seleção, fallback e projeção; metadata e rows geométricas têm limites por concluir. |
 | H — performance | Pendente. | Medir planejamento, requests/retries, download, dedupe, scoring e fallback antes de otimizar. |
 | I — validação e limpeza | Parcial. | Aquisição nova em domínios distintos, pessoa/etimologia, no-LLM, falhas, cache, rerender e inspeção visual. |
 
@@ -177,6 +188,9 @@ G61: **132 testes focados passaram** e a suíte integral passou com **918
 testes em 180,48 s**. Após o commit, os 132 focados passaram novamente, junto
 com `python -m compileall -q src tests` e `git diff --check`. A suíte integral
 foi executada no mesmo conteúdo de implementação antes do commit.
+G62: **141 testes focados passaram**, e a suíte integral passou com **923
+testes em 184,66 s**. Depois das últimas validações do contrato, 16 testes
+focados passaram novamente; compileall e diff check também passaram.
 
 Gates anteriores registrados: G49 908; G50/G51 910; G52 912; G53 913; G54
 914; G55/G56 915. A mudança nos totais acompanha alterações do conjunto de
@@ -213,7 +227,7 @@ timeouts Wikimedia em execuções históricas.
 6. Remover compatibilidade interna morta somente após migrar consumidores;
    preservar formatos externos que continuam necessários.
 
-G57–G61 passam os gates registrados. Auditoria integral, ownership único de
+G57–G62 passam os gates registrados. Auditoria integral, ownership único de
 todas as decisões e validação final permanecem objetivos abertos.
 
 ## G61 — ownership da auditoria por query (`7a568aa`)
@@ -247,3 +261,29 @@ scoring, seleção, fallback nem comportamento editorial. A busca e aquisição
 continuam orquestradas em `visual.py`, portanto esse ownership ainda é
 incompleto. Não foi executada nova geração real nesta etapa. Commit:
 `7a568aa`.
+
+## G62 — coleta de candidatos por cena (`a51c06d`)
+
+Antes de G62, `_search_scene_with_shortcircuit()` mantinha o estado de queries,
+executava a travessia de providers, deduplicava resultados e aplicava gates
+técnicos antes de chamar os avaliadores. G62 move essa coleta para
+`SceneCandidateCollector` em `scene_candidate_search.py`. A entrada exige
+`VisualPlan` e `SearchPlan`; `SceneCandidateCollection` valida cobertura das
+queries auditadas, vínculo dos candidatos ao plano e identidade sem duplicatas.
+Uma instância mantém orçamento e dedupe entre consultas específicas e a fase
+genérica tardia.
+
+O coletor não gera queries, calcula ranking nem escolhe fallback. Ele emite
+`CandidateRejection` técnico. `candidate_evaluation.py` acrescenta evidência
+semântica apenas para auditoria, sem alterar a decisão do gate. A ordem dos
+providers, cache da execução, limites, métricas, reuso, downloads e seleção
+foram preservados.
+
+Arquivos do commit: `src/curio/stages/scene_candidate_search.py`,
+`src/curio/stages/candidate_evaluation.py`, `src/curio/stages/visual.py` e
+`tests/test_scene_candidate_search.py`. Os testes verificam dedupe entre
+queries, snapshot da auditoria, orçamento, query fora do plano e rejeição
+técnica tipada com evidência projetada. A suíte integral passou com 923 testes;
+não houve geração real nesta etapa. `visual.py` segue coordenando avaliação,
+downloads/seleção, fallback e montagem final da auditoria; G62 reduziu sua
+responsabilidade de aquisição, mas não conclui G.
