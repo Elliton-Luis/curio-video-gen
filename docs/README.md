@@ -168,3 +168,4 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 - `relatorios/20261005-pos-g48-validacao-arquitetural.md` — suíte, rerenders atuais e auditoria visual de projetos históricos e científicos após G48.
 - `relatorios/20261005-semantic-scene-query-invariant.md` — G49: representação canônica estrita, mirror de query validado e migração explícita de cache query-only legado.
 - `relatorios/20261005-visual-plan-contract.md` — G50: planejador visual recebe cena semântica validada; entradas improvisadas e mirrors divergentes são rejeitados.
+- `relatorios/20261005-shared-tokenization-owner.md` — G51: search planning e visual context usam `textnorm.tokens`, removendo dependência conceitual em scoring.

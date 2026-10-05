@@ -8,7 +8,6 @@ from dataclasses import replace
 
 from .. import textnorm
 from . import editorial
-from . import scoring
 from .scene_contract import Alias, SemanticScene, VideoContext, VisualRepresentation
 
 _HONORIFICS = {"sao", "santo", "santa", "saint"}
@@ -98,7 +97,7 @@ def attach_video_context(scenes, topic: str, target=None) -> tuple[SemanticScene
 
 
 def _identity_tokens(name):
-    return set(scoring._tokens(name)) - _HONORIFICS
+    return set(textnorm.tokens(name)) - _HONORIFICS
 
 
 def _language_alias(names, sources, timeout):
@@ -244,7 +243,7 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
                 r"\b(?:em|in)\s+([A-ZÀ-Þ][\wÀ-ÿ'-]+"
                 r"(?:\s+(?:de|da|do)\s+[A-ZÀ-Þ][\wÀ-ÿ'-]+)*)", scene.narration)
             for place in places:
-                tokens = set(scoring._tokens(place))
+                tokens = set(textnorm.tokens(place))
                 if tokens and not tokens.intersection(person_tokens):
                     subject, aliases = place, [place]
                     if len(tokens) == 1:

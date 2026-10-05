@@ -27,8 +27,6 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
                if alias.value.strip() and alias.verified]
     anchor_alias = next((alias for alias in aliases
                          if topic and alias.casefold() != topic.casefold()), topic)
-    from .scoring import _tokens
-
     def contextual(query: str) -> str:
         anchors = [topic, *aliases]
         if any(_contains_phrase(query, anchor) for anchor in anchors if anchor):
@@ -63,10 +61,12 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
     legacy_unanchored_queries = (
         bool(representations) and not topic and not aliases
         and all(rep.source == "legacy_scene_query" for rep in representations))
-    names = [set(_tokens(name)) for name in [plan.subject, *plan.subject_aliases]
-             if _tokens(name)]
+    names = [set(textnorm.tokens(name))
+             for name in [plan.subject, *plan.subject_aliases]
+             if textnorm.tokens(name)]
     same_subject = len(ai) >= 2 and all(
-        any(name.issubset(set(_tokens(query))) for name in names) for query in ai[:2])
+        any(name.issubset(set(textnorm.tokens(query))) for name in names)
+        for query in ai[:2])
 
     if not deterministic and not legacy_unanchored_queries:
         for rep in semantic_representations:
@@ -83,10 +83,11 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
 
     if deterministic and topic:
         topic_names = [topic, *aliases, *plan.primary_entities]
-        anchor_sets = [set(_tokens(name)) for name in topic_names if _tokens(name)]
+        anchor_sets = [set(textnorm.tokens(name)) for name in topic_names
+                       if textnorm.tokens(name)]
 
         def topic_representation(rep):
-            tokens = set(_tokens(rep.query))
+            tokens = set(textnorm.tokens(rep.query))
             return (any(tokens.issubset(anchor) for anchor in anchor_sets)
                     or rep.kind == "empire")
 
@@ -167,7 +168,8 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
 
     if ai and not deterministic:
         for term in ai:
-            if topic and not set(_tokens(topic)).issubset(set(_tokens(term))):
+            if topic and not set(textnorm.tokens(topic)).issubset(
+                    set(textnorm.tokens(term))):
                 add(f"{term} {anchor_alias}", source="scene_query_contextual",
                     representation=term, alias=anchor_alias, level=3)
             else:

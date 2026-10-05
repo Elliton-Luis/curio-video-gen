@@ -156,7 +156,9 @@ G42–G49 continuam a migração de fronteiras: projection, saída tipada de cen
 render, metadata, standby, normalização compartilhada e contrato estrito entre
 representações visuais e suas queries, e G50 torna a projeção visual consumidora
 estrita da cena canônica; ver auditoria arquitetural e relatórios recentes em
-`docs/README.md`.
+`docs/README.md`. G51 também removeu a dependência do planejador de busca e do
+contexto visual em helpers privados do scoring, mantendo tokenização em
+`textnorm`.
 consultou 40 queries lógicas (NASA e Wikimedia), mas obteve mídia real em 2/6
 cenas; 4 cenas permaneceram sintéticas e duas buscas terminaram incompletas
 por falhas de provider. Zero reusos e 6 IDs reais únicos foram registrados.

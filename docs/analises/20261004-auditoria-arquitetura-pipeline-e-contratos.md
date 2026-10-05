@@ -545,3 +545,13 @@ representações tipados e exige que suas queries sejam o espelho ordenado das
 representações. As regras derivadas de intenção permanecem no mesmo planner.
 Teste de regressão cobre entrada não contratada e espelho divergente. Ver
 `20261005-visual-plan-contract.md`.
+
+## G51 — tokenização compartilhada sem depender do scoring
+
+`search_planning` e `visual_context` importavam `scoring._tokens`, apesar de
+`scoring` apenas encaminhar essa chamada para `textnorm.tokens`. O acoplamento
+invertia a direção: planejamento de query e enriquecimento de contexto
+dependiam da avaliação de candidatos. Ambos agora consomem a função
+compartilhada em `textnorm`; a regra de tokenização e seu comportamento ficam
+inalterados. G51 tem validação focada e integral registrada em
+`20261005-shared-tokenization-owner.md`.
