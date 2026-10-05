@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from math import isfinite
 from typing import TYPE_CHECKING
 
+from ..media.selection_result import SelectedAsset
+from .media_contracts import CandidateEvaluation
 from .scene_contract import SemanticScene
 from .visual_contracts import SearchPlan, SearchQuery, VisualPlan
 
@@ -191,60 +193,69 @@ def search_query_audit_rows(
 
 
 def candidate_audit_rows(
-    evaluated_entries: list[dict],
+    evaluations: tuple[CandidateEvaluation, ...],
     rejected: list[dict],
-    picked: list[dict],
+    picked: tuple[SelectedAsset, ...],
     visual_plan: VisualPlan,
     min_score: float,
 ) -> list[dict]:
     """Project evaluation outcomes without changing selection or candidates."""
     if not isinstance(visual_plan, VisualPlan):
         raise TypeError("candidate audit requires a VisualPlan")
+    if not isinstance(evaluations, tuple) or any(
+            not isinstance(item, CandidateEvaluation) for item in evaluations):
+        raise TypeError("candidate audit requires CandidateEvaluation values")
+    if not isinstance(picked, tuple) or any(
+            not isinstance(item, SelectedAsset) for item in picked):
+        raise TypeError("candidate audit requires selected asset values")
+    if not isinstance(rejected, list) or any(
+            not isinstance(item, dict) for item in rejected):
+        raise TypeError("candidate audit technical rejections must be rows")
     representation_levels = {rep.query: rep.level
                              for rep in visual_plan.representations}
     rows = []
-    for entry in evaluated_entries:
-        detail = entry.get("score_detail", {})
-        asset_data = entry.get("asset") or {}
+    for evaluation in evaluations:
+        candidate = evaluation.candidate
+        asset = candidate.asset
+        detail = evaluation.evidence_dict()
         lifecycle_rejection = next((item for item in rejected
-            if entry.get("identity")
-            and item.get("identity") == entry.get("identity")), None)
+            if item.get("identity") == candidate.identity), None)
         selected_item = next((item for item in picked
-            if (item.get("asset", {}).get("provider"),
-                item.get("asset", {}).get("asset_id")) ==
-               (asset_data.get("provider"), asset_data.get("asset_id"))), None)
+            if (item.asset.provider, item.asset.asset_id) ==
+               (asset.provider, asset.asset_id)), None)
         was_selected = selected_item is not None
-        score = entry.get("score", 0)
+        score = evaluation.score
         semantic_rejection = detail.get("semantic_rejection")
-        is_rejected = bool(entry.get("rejection_reason") or semantic_rejection
+        is_rejected = bool(evaluation.rejection_reason or semantic_rejection
                            or lifecycle_rejection or score < min_score)
         if was_selected:
             reason = ("reused only after fresh searches and local visual exhausted"
-                      if selected_item.get("reuse_reason") else
+                      if selected_item.reuse_reason else
                       "selected by scene relevance, topic relevance, then quality")
             decision = "selected"
         else:
-            reason = (entry.get("rejection_reason") or semantic_rejection or
+            reason = (evaluation.rejection_reason or semantic_rejection or
                       ((lifecycle_rejection or {}).get("audit_reason")
                        or (lifecycle_rejection or {}).get("reason")) or
                       ("score below threshold" if score < min_score else
                        "passed gate; ranked below image limit"))
             decision = "rejected" if is_rejected else "not_selected"
         rows.append({
-            "title": str(asset_data.get("title", ""))[:160],
-            "provider": asset_data.get("provider", ""),
-            "query": entry.get("query", ""),
+            "title": asset.title[:160],
+            "provider": asset.provider,
+            "query": candidate.search_query.query,
             "query_level": representation_levels.get(
-                entry.get("query", ""), 5 if entry.get("generic") else 3),
+                candidate.search_query.query,
+                5 if candidate.search_query.generic else 3),
             "topic_relevance": detail.get("topic_relevance"),
             "scene_relevance": detail.get("scene_relevance"),
             "score": score,
             "bonus": detail.get("bonus", 0),
-            "clip_score": entry.get("clip_score"),
-            "creator": str(asset_data.get("author", ""))[:120],
-            "source_url": str(asset_data.get("source_url", ""))[:300],
-            "date_created": asset_data.get("date_created", ""),
-            "media_type": asset_data.get("media_type", "image"),
+            "clip_score": detail.get("clip"),
+            "creator": asset.author[:120],
+            "source_url": asset.source_url[:300],
+            "date_created": asset.date_created,
+            "media_type": asset.media_type or "image",
             "metadata_support": detail.get("metadata_support", 0.0),
             "topic_evidence": detail.get("topic_evidence", {}),
             "scene_evidence": detail.get("scene_evidence", {}),
@@ -274,7 +285,7 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
                                 scene: SemanticScene, visual_plan: VisualPlan,
                                 search_plan: SearchPlan,
                                 collection: "SceneCandidateCollection",
-                                evaluated_entries: list[dict],
+                                evaluations: tuple[CandidateEvaluation, ...],
                                 rejected: list[dict],
                                 picked: tuple["SelectedAsset", ...],
                                 min_score: float,
@@ -307,11 +318,12 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
     if (not isinstance(picked, tuple)
             or any(not isinstance(item, SelectedAsset) for item in picked)):
         raise TypeError("visual audit requires selected asset values")
-    if (not isinstance(evaluated_entries, list)
-            or any(not isinstance(item, dict) for item in evaluated_entries)
+    if (not isinstance(evaluations, tuple)
+            or any(not isinstance(item, CandidateEvaluation)
+                   for item in evaluations)
             or not isinstance(rejected, list)
             or any(not isinstance(item, dict) for item in rejected)):
-        raise TypeError("visual audit candidates and rejections must be rows")
+        raise TypeError("visual audit requires typed evaluations and rejection rows")
     if (isinstance(min_score, bool) or not isinstance(min_score, (int, float))
             or not isfinite(min_score) or not 0 <= min_score <= 100):
         raise ValueError("visual audit minimum score must be within 0..100")
@@ -328,9 +340,8 @@ def build_scene_visual_decision(*, selection: "SelectionDecision",
     if fallback_plan is not None and fallback_plan.scene_id != scene.id:
         raise ValueError("visual audit fallback plan belongs to another scene")
 
-    picked_rows = [entry.to_dict() for entry in picked]
     candidates = candidate_audit_rows(
-        evaluated_entries, rejected, picked_rows, visual_plan, min_score)
+        evaluations, rejected, picked, visual_plan, min_score)
     first = picked[0] if picked else None
     synthetic = bool(first and first.asset.provider == "synth")
     selected = next((item for item in candidates

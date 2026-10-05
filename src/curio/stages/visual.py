@@ -48,6 +48,7 @@ from .media_selection import (annotate_reuse, make_selection_decision,
                               describe_selection_provenance)
 from .media_selection import SelectionDecision
 from .visual_audit import build_scene_visual_decision
+from .media_contracts import CandidateEvaluation
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 from .scene_candidate_search import SceneCandidateCollector
@@ -200,9 +201,8 @@ def _search_scene_with_shortcircuit(
         metrics.media_selection_time += time.monotonic() - score_started
     specific_ranked = [RankedSelectionCandidate.from_evaluation(item)
                        for item in specific_result.accepted]
-    specific = [item.to_selection_entry() for item in specific_result.accepted]
-    low_specific = [item.to_selection_entry() for item in specific_result.rejected]
-    evaluated_entries = [*specific, *low_specific]
+    low_specific = specific_result.rejected
+    evaluations = [*specific_result.accepted, *specific_result.rejected]
     fresh_specific = [entry for entry in specific_ranked
                       if not asset_uses or not asset_uses.get(
                           _selection_asset_key(entry.asset.to_dict()), 0)]
@@ -223,10 +223,8 @@ def _search_scene_with_shortcircuit(
             metrics.media_selection_time += time.monotonic() - score_started
         ranked_candidates = [RankedSelectionCandidate.from_evaluation(item)
                              for item in generic_result.accepted]
-        generic_entries = [item.to_selection_entry()
-                           for item in generic_result.accepted]
-        low_generic = [item.to_selection_entry() for item in generic_result.rejected]
-        evaluated_entries.extend([*generic_entries, *low_generic])
+        low_generic = generic_result.rejected
+        evaluations.extend((*generic_result.accepted, *generic_result.rejected))
         low = low_specific + low_generic
         # Preserve qualified used results solely for the final fallback after
         # fresh contextual results and synthetic visuals have been tried.
@@ -236,20 +234,22 @@ def _search_scene_with_shortcircuit(
     ranked_candidates = apply_clip_layer(
         ranked_candidates, ch, cfg, metrics, max_images)
 
-    def append_low_rejections(entries):
-        for entry in entries:
+    def append_low_rejections(entries: tuple[CandidateEvaluation, ...]):
+        for evaluation in entries:
             # Score rejection differs from hard candidate gates and keeps its
             # evidence so an editor can see why an eligible result lost.
-            reason = (entry.get("rejection_reason")
-                      or entry.get("score_detail", {}).get("semantic_rejection")
-                      or f"nota {entry['score']:.0f} abaixo do mínimo {min_score:.0f}")
+            candidate = evaluation.candidate
+            reason = (evaluation.rejection_reason
+                      or evaluation.evidence.get("semantic_rejection")
+                      or f"nota {evaluation.score:.0f} abaixo do mínimo {min_score:.0f}")
             rejected.append({
-                "title": entry["asset"].get("title", ""),
-                "query": entry["query"],
+                "title": candidate.asset.title,
+                "query": candidate.search_query.query,
                 "reason": reason,
-                "provider": entry["asset"].get("provider", ""),
-                "score": entry["score"],
-                "score_detail": entry.get("score_detail", {}),
+                "provider": candidate.asset.provider,
+                "identity": candidate.identity,
+                "score": evaluation.score,
+                "score_detail": evaluation.evidence_dict(),
             })
             if metrics:
                 metrics.media_record_asset_rejected()
@@ -304,11 +304,8 @@ def _search_scene_with_shortcircuit(
                           for item in generic_result.accepted]
         generic_ranked = apply_clip_layer(
             generic_ranked, ch, cfg, metrics, max_images)
-        generic_low = [item.to_selection_entry()
-                       for item in generic_result.rejected]
-        generic_entries = [item.to_selection_entry()
-                           for item in generic_result.accepted]
-        evaluated_entries.extend([*generic_entries, *generic_low])
+        generic_low = generic_result.rejected
+        evaluations.extend((*generic_result.accepted, *generic_result.rejected))
         append_low_rejections(generic_low)
 
         previous_rejection_ids = {row.get("identity") for row in rejected}
@@ -329,11 +326,11 @@ def _search_scene_with_shortcircuit(
         for row in additional_technical_rejections:
             if row.get("identity") not in previous_rejection_ids and metrics:
                 metrics.media_record_rejection(row["reason"])
-        for row in generic_low:
+        for evaluation in generic_low:
             if metrics:
                 metrics.media_record_rejection(
-                    row.get("rejection_reason")
-                    or row.get("score_detail", {}).get("semantic_rejection")
+                    evaluation.rejection_reason
+                    or evaluation.evidence.get("semantic_rejection")
                     or "score threshold")
 
         if generic_fresh:
@@ -433,7 +430,7 @@ def _search_scene_with_shortcircuit(
     visual_decision = build_scene_visual_decision(
         selection=selection, selection_provenance=selection_provenance,
         scene=ch, visual_plan=visual_plan, search_plan=search_plan,
-        collection=collection, evaluated_entries=evaluated_entries,
+        collection=collection, evaluations=tuple(evaluations),
         rejected=rejected, picked=tuple(picked), min_score=min_score,
         fallback_plan=(fallback_plan
                        if synthetic and "fallback_plan" in locals() else None),

@@ -1,5 +1,8 @@
 import pytest
 
+from curio.media.asset_snapshot import MediaAssetSnapshot
+from curio.media.selection_result import SelectedAsset
+from curio.stages.media_contracts import Candidate, CandidateEvaluation
 from curio.stages.visual_audit import (
     QueryAuditAccumulator,
     SearchQueryAudit,
@@ -9,6 +12,14 @@ from curio.stages.visual_audit import (
 from curio.stages.scene_projection import Chapter
 from curio.stages.visual_contracts import SearchPlan, SearchQuery
 from curio.stages.visual_planning import build_visual_plan
+
+
+def _evaluation(query, score, asset_data, evidence, *, accepted, reason=""):
+    asset = MediaAssetSnapshot.from_dict(asset_data)
+    candidate = Candidate(
+        asset, SearchQuery(query, "scene_representation", query, "historical_art"),
+        asset.asset_id)
+    return CandidateEvaluation(candidate, score, evidence, accepted, reason)
 
 
 def _visual_plan(scene_id=1, representations=(), aliases=()):
@@ -25,21 +36,25 @@ def _visual_plan(scene_id=1, representations=(), aliases=()):
 
 
 def test_candidate_audit_projects_selected_reused_and_rejected_reasons():
-    evaluated = [
-        {"query": "Ottoman map", "score": 82,
-         "asset": {"provider": "wikimedia", "asset_id": "map-1",
-                   "title": "Ottoman map", "source_url": "https://example/map"},
-         "score_detail": {"topic_relevance": 100, "scene_relevance": 76,
-                          "topic_evidence": {"topic": ["Ottoman"]}}},
-        {"query": "Janissary portrait", "score": 20, "asset": {
-            "provider": "met", "asset_id": "portrait-1", "title": "Portrait"},
-         "score_detail": {"semantic_rejection": "scene evidence too weak"}},
-    ]
-    picked = [{"asset": evaluated[0]["asset"],
-               "reuse_reason": "fresh_search_and_synthetic_exhausted"}]
+    map_asset = {"provider": "wikimedia", "asset_id": "map-1",
+                 "title": "Ottoman map", "source_url": "https://example/map"}
+    portrait_asset = {"provider": "met", "asset_id": "portrait-1",
+                      "title": "Portrait"}
+    evaluated = (
+        _evaluation("Ottoman map", 82, map_asset,
+                    {"topic_relevance": 100, "scene_relevance": 76,
+                     "topic_evidence": {"topic": ["Ottoman"]}}, accepted=True),
+        _evaluation("Janissary portrait", 20, portrait_asset,
+                    {"semantic_rejection": "scene evidence too weak"},
+                    accepted=False, reason="scene evidence too weak"),
+    )
+    picked = (SelectedAsset.from_dict({
+        "asset": map_asset, "query": "Ottoman map", "reuse_reason":
+            "fresh_search_and_synthetic_exhausted"}, 0),)
 
     rows = candidate_audit_rows(
-        evaluated, [{"title": "Portrait", "reason": "technical gate"}],
+        evaluated, [{"title": "Portrait", "identity": "portrait-1",
+                     "reason": "technical gate"}],
         picked, _visual_plan(representations=(
             ("Ottoman map", "map", 2),)), min_score=50)
 
@@ -86,16 +101,14 @@ def test_scene_visual_decision_builder_owns_audit_projection():
     selection = make_selection_decision(1, [picked], "specific")
     provenance = SelectionProvenance(
         False, "new_asset_selected", "specific")
-    evaluation = {
-        "query": query.query, "score": 85,
-        "asset": picked.asset.to_dict(),
-        "score_detail": {"topic_relevance": 90, "scene_relevance": 85},
-    }
+    candidate = Candidate(picked.asset, query, "janissary-1")
+    evaluation = CandidateEvaluation(
+        candidate, 85, {"topic_relevance": 90, "scene_relevance": 85}, True)
 
     decision = build_scene_visual_decision(
         selection=selection, selection_provenance=provenance,
         scene=scene, visual_plan=visual_plan, search_plan=search_plan,
-        collection=collection, evaluated_entries=[evaluation], rejected=[],
+        collection=collection, evaluations=(evaluation,), rejected=[],
         picked=(picked,), min_score=40, fallback_plan=None, strategy="image")
     row = decision.to_dict()
 
@@ -109,8 +122,10 @@ def test_scene_visual_decision_builder_owns_audit_projection():
 
 def test_candidate_audit_marks_below_threshold_without_semantic_reason():
     rows = candidate_audit_rows(
-        [{"query": "Ottoman map", "score": 12, "asset": {"title": "Map"}}],
-        [], [], _visual_plan(), min_score=50)
+        (_evaluation("Ottoman map", 12,
+                     {"asset_id": "map", "title": "Map"}, {},
+                     accepted=False, reason="score below threshold"),),
+        [], (), _visual_plan(), min_score=50)
 
     assert rows == [{
         "title": "Map", "provider": "", "query": "Ottoman map", "query_level": 3,
@@ -120,6 +135,12 @@ def test_candidate_audit_marks_below_threshold_without_semantic_reason():
         "topic_evidence": {}, "scene_evidence": {}, "decision": "rejected",
         "reason": "score below threshold",
     }]
+
+
+def test_candidate_audit_rejects_untyped_evaluation_rows():
+    with pytest.raises(TypeError, match="CandidateEvaluation"):
+        candidate_audit_rows([{"query": "Ottoman map"}], [], (),
+                             _visual_plan(), min_score=50)
 
 
 def test_query_audit_projects_provider_results_and_search_provenance():

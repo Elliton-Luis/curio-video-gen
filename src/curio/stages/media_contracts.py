@@ -122,11 +122,15 @@ class CandidateEvaluation:
     def to_selection_entry(self) -> dict:
         entry = self.candidate.to_evaluation_input()
         entry["score"] = self.score
-        entry["score_detail"] = _json_value(self.evidence)
+        entry["score_detail"] = self.evidence_dict()
         entry["order"] = self.order
         if self.rejection_reason:
             entry["rejection_reason"] = self.rejection_reason
         return entry
+
+    def evidence_dict(self) -> dict:
+        """Return a mutable JSON projection of frozen score evidence."""
+        return _json_value(self.evidence)
 
     def with_clip_score(self, clip_score: float) -> "CandidateEvaluation":
         """Return the score/evidence adjustment from the optional CLIP layer."""
