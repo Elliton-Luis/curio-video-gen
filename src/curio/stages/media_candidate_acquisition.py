@@ -136,7 +136,8 @@ def acquire_ranked_candidates(
 
     def fill_download_window() -> None:
         nonlocal next_download
-        while len(download_futures) < download_window and next_download < len(ranked):
+        remaining = min(download_window, max_images - selected_count)
+        while len(download_futures) < remaining and next_download < len(ranked):
             index = next_download
             next_download += 1
             asset = MediaAsset.from_dict(ranked[index].asset.to_dict())
@@ -149,6 +150,7 @@ def acquire_ranked_candidates(
     for rank_index, candidate in enumerate(ranked):
         if selected_count >= max_images:
             break
+        fill_download_window()
         asset_data = candidate.asset.to_dict()
         if metrics:
             metrics.media_record_funnel("selected")
@@ -158,8 +160,6 @@ def acquire_ranked_candidates(
         future = (None if had_local_asset
                   else download_futures.pop(rank_index, None))
         attempt = _acquire_and_validate(candidate, cache_dir, metrics, future)
-        if not had_local_asset:
-            fill_download_window()
         asset = MediaAsset.from_dict(attempt.asset.to_dict())
         if attempt.disposition == "download_failed":
             outcome = CandidateAcquisitionOutcome(
@@ -258,10 +258,12 @@ def acquire_reuse_fallback(
         scene_id: int, candidates: list[RankedSelectionCandidate], cache_dir: str,
         metrics=None, asset_uses: dict | None = None
         ) -> CandidateAcquisitionOutcome | None:
-    """Acquire the first eligible reused asset after editorial fallback ran."""
+    """Acquire the least used eligible real asset after fresh searches."""
     if any(not isinstance(item, RankedSelectionCandidate) for item in candidates):
         raise TypeError("reuse acquisition requires ranked candidates")
-    for candidate in sorted(candidates, key=lambda item: -item.score):
+    for candidate in sorted(candidates, key=lambda item: (
+            (asset_uses or {}).get(asset_identity(item.asset.to_dict()), 0),
+            -item.score, item.order)):
         attempt = _acquire_and_validate(candidate, cache_dir, metrics)
         if attempt.disposition != "ready":
             continue
@@ -276,5 +278,5 @@ def acquire_reuse_fallback(
         return CandidateAcquisitionOutcome(
             candidate=candidate, asset=selected_asset, disposition="selected",
             origin=attempt.origin, content_identity=identity, selected_order=0,
-            reuse_reason="fresh_search_and_synthetic_exhausted")
+            reuse_reason="fresh_search_exhausted")
     return None

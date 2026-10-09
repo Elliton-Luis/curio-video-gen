@@ -1,0 +1,23 @@
+[
+  {
+    "slug": "platao",
+    "genre": "people",
+    "topic": "Platão",
+    "title": "Platão e sua Academia",
+    "script": "Platão foi um filósofo da Grécia Antiga, discípulo de Sócrates. Viveu em Atenas e escreveu diálogos filosóficos. Na Academia, reuniu estudantes para investigar conhecimento, matemática e política. A escola marcou a história da filosofia. Na República, Platão apresentou a alegoria da caverna. Prisioneiros confundem sombras com realidade. O diálogo pergunta como podemos distinguir aparência e conhecimento. Seus textos atravessaram séculos e continuam sendo estudados."
+  },
+  {
+    "slug": "mohacs",
+    "genre": "history",
+    "topic": "Batalha de Mohács 1526",
+    "title": "A Batalha de Mohács",
+    "script": "Em 1526, a Batalha de Mohács mudou a história da Hungria. O exército otomano, liderado por Solimão, enfrentou as tropas do rei Luís II. A batalha ocorreu perto de Mohács. A força otomana venceu, e Luís II morreu durante a retirada. Pinturas e mapas preservam a memória do confronto. A derrota abriu uma disputa pelo território húngaro e alterou o equilíbrio político da Europa central."
+  },
+  {
+    "slug": "tesla",
+    "genre": "science",
+    "topic": "Nikola Tesla corrente alternada",
+    "title": "Tesla e a corrente alternada",
+    "script": "Nikola Tesla desenvolveu sistemas elétricos de corrente alternada. Seus projetos ajudaram a transformar a distribuição de energia. O motor de indução utiliza um campo magnético girante. Esse princípio permite converter energia elétrica em movimento. Tesla também investigou altas frequências. A bobina de Tesla produz altas tensões e descargas visíveis. Fotografias de seu laboratório registram esses experimentos. Seus trabalhos marcaram a história da engenharia elétrica."
+  }
+]

@@ -146,7 +146,8 @@ def test_search_continues_after_topic_only_candidate(tmp_path, monkeypatch):
         event="Battle of Mohacs", primary_entity="Battle of Mohacs",
         visual_entities=["Battle of Mohacs"], global_visual_queries=["Ottoman Empire"],
         representations=[{"query": "Battle of Mohacs", "kind": "event", "level": 1}],
-        video_context={"topic": "Ottoman Empire", "aliases": ["Ottoman Empire"]})
+        video_context={"topic": "Ottoman Empire", "aliases": ["Ottoman Empire"],
+                       "events": ["Battle of Mohacs"]})
     result, _ = search_scene_rows(visual,
         chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),
         1, None, str(tmp_path))
@@ -197,7 +198,7 @@ def test_search_does_not_stop_before_download_and_dimension_validation(
         visual_entities=["Battle of Mohacs"],
         representations=[{"query": "Battle of Mohacs", "kind": "event",
                           "level": 1}],
-        video_context={"topic": "Ottoman Empire"})
+        video_context={"topic": "Ottoman Empire", "events": ["Battle of Mohacs"]})
 
     rows, _ = search_scene_rows(visual,
         chapter, [provider], SimpleNamespace(cache_dir=str(tmp_path), language="en-US"),

@@ -252,6 +252,13 @@ def _run_pipeline(pipeline_input: PipelineInput, cfg: CurioConfig,
 
     # [3/6] Mídia (manual > cache > provedores; zero imagens = standby)
     media_t0 = time.monotonic()
+    if getattr(cfg, "review_media", False):
+        from .media_review import REVIEW_CONFIG_FIELDS
+        project_artifacts.write_json(os.path.join(paths.root, "media_review", "resume_context.json"), {
+            "topic": pipeline_input.topic, "genre": genre_key, "narration": narration,
+            "max_images": max_images, "grounding": grounding,
+            "script_source": script_source, "title_source": title_source,
+            "review_config": {field: getattr(cfg, field) for field in REVIEW_CONFIG_FIELDS}})
     manual_dir = pipeline_media_stage.manual_media_dir(paths)
     emit(3, "Buscando mídia")
     media_result = pipeline_visual_stage.resolve_media(

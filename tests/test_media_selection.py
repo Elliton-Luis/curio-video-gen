@@ -22,7 +22,7 @@ from tests.media_test_support import with_selection
     ({"selected_count": 0, "requested_count": 2,
       "contextual_available": False, "contextual_searched": False,
       "synthetic_attempted": False, "reuse_available": True},
-     SelectionFallbackAction.SYNTHETIC),
+     SelectionFallbackAction.REUSE),
     ({"selected_count": 0, "requested_count": 2,
       "contextual_available": True, "contextual_searched": True,
       "synthetic_attempted": True, "reuse_available": True},
@@ -161,6 +161,28 @@ def test_fresh_candidates_are_separated_before_reuse_without_score_penalty():
     assert [entry.asset.asset_id for entry in pool.fresh] == ["asset-new"]
     assert [entry.asset.asset_id for entry in pool.reused] == ["asset-old"]
     assert ranked[0].score == 95
+
+
+def test_reuse_rotates_qualified_real_assets_instead_of_repeating_highest_score(monkeypatch, tmp_path):
+    from curio.media.providers import MediaAsset
+    from curio.media.identity import asset_identity
+    from curio.stages.media_contracts import Candidate, CandidateEvaluation
+    from curio.stages.visual_contracts import SearchQuery
+    from curio.stages import media_acquisition, media_candidate_acquisition
+    ranked = []
+    for key, score in (("portrait", 95), ("manuscript", 80)):
+        path = tmp_path / f"{key}.jpg"
+        path.write_bytes(key.encode())
+        asset = MediaAsset("fixture", key, title=key, local_path=str(path))
+        candidate = Candidate(asset, SearchQuery("approved concept", "scene_representation"), key)
+        ranked.append(RankedSelectionCandidate.from_evaluation(
+            CandidateEvaluation(candidate, score, {}, True)))
+    uses = {asset_identity(item.asset.to_dict()): 1 for item in ranked}
+    monkeypatch.setattr(media_acquisition, "downloaded_dimensions_valid", lambda *_: True)
+    chosen = [media_candidate_acquisition.acquire_reuse_fallback(
+        scene_id, ranked, str(tmp_path), asset_uses=uses).asset.asset_id
+              for scene_id in (3, 4, 5, 6)]
+    assert chosen == ["portrait", "manuscript", "portrait", "manuscript"]
 
 
 def test_ranked_selection_candidate_keeps_clip_and_prepared_asset_typed():
@@ -448,7 +470,8 @@ def test_reuse_candidate_requires_immutable_selected_asset():
                        topic_relevance=80, scene_relevance=60)
 
 
-def test_cross_scene_reuse_updates_the_selection_contract():
+@pytest.mark.parametrize("initial_synthetic", [False, True])
+def test_cross_scene_reuse_updates_the_selection_contract(initial_synthetic):
     from curio.media.selection_result import MediaStageResult
     from curio.stages.scene_contract import SemanticScene
     from curio.stages.media_selection import resolve_cross_scene_reuse
@@ -480,6 +503,10 @@ def test_cross_scene_reuse_updates_the_selection_contract():
              2, "none", fallback_level="exhausted",
              reason="no candidate").to_dict()}},
     ]
+    if initial_synthetic:
+        synthetic = {"asset_id": "fallback", "provider": "synth", "title": "Local fallback"}
+        media_scenes[1] = with_selection({"chapter_id": 2, "asset": synthetic,
+                                        "assets": [{"asset": synthetic}]})
 
     outcome = resolve_cross_scene_reuse(
         MediaStageResult.from_rows(media_scenes, "provider"), list(scenes))

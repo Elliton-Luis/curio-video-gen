@@ -62,6 +62,21 @@ def test_new_doppler_topic_needs_no_project_lexicon_entry():
     assert "doppler effect" not in PT_TOPIC_PHRASES
 
 
+@pytest.mark.parametrize("topic,concepts", [
+    ("Plato", ["Plato portrait", "Plato Academy Athens", "Plato cave allegory"]),
+    ("Doppler effect", ["Doppler sound waves", "Doppler frequency diagram", "Doppler radar"]),
+])
+def test_query_budget_covers_distinct_approved_concepts_before_media_variants(topic, concepts):
+    from curio.stages.scene_contract import SemanticScene, VisualRepresentation
+    scene = SemanticScene(1, topic, subject=topic, planning_mode="llm",
+                          video_context={"topic": topic},
+                          representations=tuple(VisualRepresentation(concept, "event")
+                                                for concept in concepts))
+    queries, _ = plan_queries(scene)
+    assert all(concept in query for concept, query in zip(concepts, queries))
+    assert len(queries) <= 8
+
+
 def test_used_contextual_asset_does_not_stop_scene_representation_search(
         monkeypatch, tmp_path):
     assets = {
@@ -112,7 +127,7 @@ def test_used_contextual_asset_does_not_stop_scene_representation_search(
     assert selected == ["event-a", "event-b"]
 
 
-def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_path):
+def test_qualified_real_reuse_precedes_synthetic(monkeypatch, tmp_path):
     asset = MediaAsset(provider="fixture", asset_id="only", title="Ottoman Empire map",
                        download_url="https://fixture.test/map.jpg", license="CC0",
                        width=2400, height=1800,
@@ -138,7 +153,7 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
     result, _ = search_scene_rows(visual,
         chapter, [Provider()], CurioConfig(), 1, None, str(tmp_path),
         asset_uses=uses)
-    assert result[0]["asset"]["provider"] == "synth"
+    assert result[0]["asset"]["provider"] == "fixture"
 
     monkeypatch.setattr("curio.stages.visuals.render_fallback_plan",
                         lambda *args: None)
@@ -147,7 +162,7 @@ def test_no_fresh_candidate_uses_local_synthetic_before_reuse(monkeypatch, tmp_p
         asset_uses=uses)
     assert result[0]["asset"]["asset_id"] == "only"
     assert result[0]["assets"][0]["reuse_reason"] == (
-        "fresh_search_and_synthetic_exhausted")
+        "fresh_search_exhausted")
 
 
 @pytest.mark.parametrize("topic,event,entity,representation,old_title", [
@@ -213,7 +228,7 @@ def test_provider_metadata_is_audited_but_creator_cannot_prove_scene():
     assert supported["source_url"].startswith("https://")
 
 
-def test_original_language_representation_accepts_correct_archive_title():
+def test_original_language_representation_requires_independent_identity_review():
     chapter = _chapter("French Revolution", "Storming of the Bastille",
                        "Bastille", "Storming of the Bastille 1789")
     chapter.representations.append(scenes.VisualRepresentation(
@@ -221,12 +236,13 @@ def test_original_language_representation_accepts_correct_archive_title():
         source="test_fixture"))
     info = scoring.base_score(
         {"title": "File:Prise de la Bastille clean.jpg"}, chapter)
-    assert info["topic_relevance"] == 100
+    assert info["topic_relevance"] == 0
     assert info["scene_relevance"] == 100
-    assert info["score"] >= scoring.threshold()
+    assert info["semantic_rejection"] == "no topic evidence"
+    assert info["score"] == 0
 
 
-def test_topic_description_alone_does_not_claim_exact_scene_depiction():
+def test_partial_metadata_needs_semantic_review_instead_of_word_count_guess():
     chapter = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
                        "Mercury planet surface map")
     chapter.representations.append(scenes.VisualRepresentation(
@@ -237,15 +253,14 @@ def test_topic_description_alone_does_not_claim_exact_scene_depiction():
                  "media_type": "image"}
     detail = scoring.semantic_relevance(candidate, chapter)
     assert detail["topic_relevance"] == 90
-    assert detail["scene_relevance"] == 35
-    assert detail["scene_matches"] == ["contextual representation:mission"]
+    assert detail["scene_relevance"] == 0
 
 
 def test_specific_mapping_ranks_above_mission_poster_fallback():
     chapter = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
                        "Mercury planet surface map")
     chapter.representations.append(scenes.VisualRepresentation(
-        "Mercury planet MESSENGER", kind="mission_artifact", level=2,
+        "Mercury MESSENGER", kind="mission_artifact", level=2,
         source="test_fixture"))
     mapping = scoring.semantic_relevance({
         "title": "Mapping Potassium (Mercury, MESSENGER)",
@@ -255,9 +270,38 @@ def test_specific_mapping_ranks_above_mission_poster_fallback():
         "title": "KSC-04pd1531",
         "description": "MESSENGER (Mercury Surface, Space Environment) mission",
     }, chapter)
-    assert mapping["scene_relevance"] == 50
-    assert mission_poster["scene_relevance"] == 35
+    assert mapping["scene_relevance"] == 100
+    assert mission_poster["scene_relevance"] == 90
     assert mapping["scene_relevance"] > mission_poster["scene_relevance"]
+
+
+@pytest.mark.parametrize("topic,event,representation,title,description", [
+    ("French Revolution", "Storming of the Bastille", "Bastille 1789 uprising",
+     "Prise de la Bastille", "French Revolution: Bastille uprising in Paris, 1789"),
+    ("Doppler effect", "frequency shift", "Doppler frequency shift",
+     "Frequency shift by Doppler", "Doppler effect in wave motion"),
+    ("Nikola Tesla", "alternating current", "Tesla alternating current",
+     "Alternating current system", "Nikola Tesla alternating current electrical engineering"),
+    ("M87 black hole", "Event Horizon Telescope", "M87 telescope observation",
+     "M87 telescope observation", "M87 black hole: Event Horizon Telescope image of galaxy"),
+])
+def test_provider_metadata_order_and_wording_variation_still_ground_scene(
+        topic, event, representation, title, description):
+    chapter = _chapter(topic, event, topic, representation)
+    detail = scoring.semantic_relevance(
+        {"title": title, "description": description}, chapter)
+    assert detail["topic_relevance"] >= 90
+    assert detail["scene_relevance"] >= 90
+    assert detail["scene_matches"]
+
+
+def test_single_shared_word_never_substitutes_for_planned_scene_evidence():
+    chapter = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
+                       "Mercury planet surface composition")
+    detail = scoring.semantic_relevance(
+        {"title": "Mercury automobile", "description": "vehicle surface"}, chapter)
+    assert detail["topic_relevance"] == 0
+    assert detail["scene_relevance"] == 0
 
 
 def test_topic_context_and_representation_survive_local_planner_fallback():
@@ -420,7 +464,7 @@ def test_post_download_resolution_failure_is_audited_and_falls_back_safely(
     ch = _chapter("Mercury planet", "Mercury surface", "Mercury planet",
                   "Mercury planet surface map")
     ch.representations.append(scenes.VisualRepresentation(
-        "Mercury planet MESSENGER", kind="mission_artifact", level=2,
+        "Mercury MESSENGER", kind="mission_artifact", level=2,
         source="test_fixture"))
     assets = [
         MediaAsset("nasa", "poster", title="KSC-04pd1531",

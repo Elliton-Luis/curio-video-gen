@@ -105,6 +105,22 @@ def _has_phrase(text: str, phrase: str) -> bool:
     return f" {phrase} " in f" {text} "
 
 
+def _matches_semantic_phrase(text: str, phrase: str) -> bool:
+    """Match a semantic phrase across provider word order and punctuation.
+
+    Multiword concepts may be indexed with reordered words or archive
+    metadata. Requiring every informative term and at least two terms
+    keeps a shared token such as ``Mercury`` from identifying a
+    different referent.
+    """
+    expected = set(_tokens(phrase))
+    observed = set(_tokens(text))
+    if len(expected) < 2:
+        return False
+    overlap = len(expected & observed)
+    return overlap >= 2 and expected.issubset(observed)
+
+
 def _is_deterministic_scene(scene) -> bool:
     """Use planning provenance, never editorial text sentinels."""
     return getattr(scene, "planning_mode", "unknown") == "deterministic"
@@ -118,13 +134,43 @@ def _has_semantic_representation(scene) -> bool:
     into a structured plan with stricter scoring semantics.
     """
     query_sources = {"declared_scene_query", "entity_context",
-                     "verified_entity_context"}
+                     "verified_entity_context", "canonical_entity_media"}
     return any(rep.source not in query_sources
                for rep in getattr(scene, "representations", []) or [])
 
 
+def identity_conflict(asset: dict, scene) -> str:
+    """Detect explicit temporal identity conflicts, not artwork creation dates.
+
+    A parenthesized year can disambiguate namesake events. Only use this
+    constraint for a single declared scene year and a known, distinct artwork
+    creation year. Undated or ambiguous records remain for semantic review.
+    """
+    import re
+    period = str(getattr(scene, "period", "") or
+                 getattr(scene, "video_context", {}).get("period", "")).strip()
+    if not re.fullmatch(r"\d{3,4}", period):
+        return ""
+    creation = set(re.findall(r"\b\d{3,4}\b", str(asset.get("date_created") or "")))
+    qualifiers = set(re.findall(r"\((\d{3,4})\)", str(asset.get("title") or "")))
+    if not creation or not qualifiers:
+        return ""
+    depicted = qualifiers - creation
+    metadata_years = set(re.findall(r"\b\d{3,4}\b", " ".join(
+        str(asset.get(field) or "") for field in ("title", "description", "categories"))))
+    if depicted and period not in metadata_years:
+        return "explicit identity year contradicts scene period"
+    return ""
+
+
 def semantic_relevance(asset: dict, ch) -> dict:
     """Independent topic/scene evidence from complete phrases in metadata."""
+    conflict = identity_conflict(asset, ch)
+    if conflict:
+        return {"topic_relevance": 0.0, "scene_relevance": 0.0,
+                "topic_matches": [], "scene_matches": [],
+                "topic_evidence": {}, "scene_evidence": {},
+                "metadata_support": 0.0, "semantic_rejection": conflict}
     context = dict(getattr(ch, "video_context", {}) or {})
     has_structured_scene = bool(
         _has_semantic_representation(ch)
@@ -151,6 +197,12 @@ def semantic_relevance(asset: dict, ch) -> dict:
         if len(textnorm.fold_phrase(alias).split()) == 1
     }
 
+    verified_single_aliases.update(
+        textnorm.fold_phrase(alias.value)
+        for alias in getattr(ch.video_context, "aliases", [])
+        if alias.verified and alias.evidence
+        and len(textnorm.fold_phrase(alias.value).split()) == 1)
+
     def evidence_for(phrases):
         evidence = {}
         for phrase in phrases:
@@ -160,6 +212,7 @@ def semantic_relevance(asset: dict, ch) -> dict:
             normalized_phrase = textnorm.fold_phrase(phrase)
             matching_fields = [name for name, content in fields.items()
                                if (_has_phrase(content, phrase)
+                                   or _matches_semantic_phrase(content, phrase)
                                    or normalized_phrase in verified_single_aliases
                                    and f" {normalized_phrase} " in f" {content} ")]
             if matching_fields:
@@ -167,8 +220,7 @@ def semantic_relevance(asset: dict, ch) -> dict:
         return evidence
 
     topic_phrases = [context.get("topic", "")]
-    for key in ("primary_entities", "secondary_entities", "events", "places",
-                "aliases", "period"):
+    for key in ("primary_entities", "events", "aliases"):
         values = context.get(key, []) or []
         topic_phrases.extend([values] if isinstance(values, str) else values)
     topic_phrases.extend(getattr(ch, "subject_aliases", []) or [])
@@ -196,49 +248,23 @@ def semantic_relevance(asset: dict, ch) -> dict:
             scene_phrases.extend(
                 str(getattr(item, "query", "")) for item in values
                 if getattr(item, "source", "") not in
-                {"entity_context", "verified_entity_context"})
+                {"entity_context", "verified_entity_context", "canonical_entity_media"})
         else:
             scene_phrases.extend(values)
     scene_evidence = evidence_for(scene_phrases)
     scene_matches = list(scene_evidence)
-    if not topic_matches and scene_matches:
-        # The structured representation is itself an explicit relation to
-        # this video topic. This supports one-word topics without allowing
-        # their bare ambiguous token to prove identity.
-        topic_matches = [f"representation:{scene_matches[0]}"]
+    # A local concept does not establish the identity of the video's entity.
+    # Translated/historical relations without literal topic evidence can be
+    # recovered by the metadata assessment, with quoted independent proof.
     evidence_strength = {"title": 100.0, "description": 90.0,
                          "categories": 75.0, "tags": 60.0,
-                         "date": 40.0, "media_type": 35.0,
-                         "title_contextual_representation": 50.0,
-                         "metadata_contextual_representation": 35.0}
+                         "date": 40.0, "media_type": 35.0}
     topic = max((evidence_strength.get(field, 0.0)
                  for values in topic_evidence.values() for field in values),
                 default=(100.0 if topic_matches and not topic_evidence else 0.0))
     scene = max((evidence_strength.get(field, 0.0)
                  for values in scene_evidence.values() for field in values),
                 default=(100.0 if scene_matches and not scene_evidence else 0.0))
-    if topic_matches and not scene_matches:
-        # Contextual portraits/maps/artifacts are valid fallback media. A
-        # bare homonym or product title is not. Type words are generic visual
-        # forms, not subject-specific blacklist rules.
-        contextual_forms = ("portrait", "bust", "statue", "painting", "engraving",
-                            "relief", "column", "sculpture", "monument", "coin",
-                            "map", "mapping", "document", "artifact", "artefact", "illustration",
-                            "manuscript", "photograph", "mission")
-        tokens = set(textnorm.tokens(text))
-        title_tokens = set(textnorm.tokens(fields.get("title", "")))
-        form = next((kind for kind in contextual_forms
-                     if kind in title_tokens), "")
-        direct_title_form = bool(form)
-        if not form:
-            form = next((kind for kind in contextual_forms
-                         if kind in tokens), "")
-        if form:
-            scene = 50.0 if direct_title_form else 35.0
-            scene_matches = [f"contextual representation:{form}"]
-            scene_evidence[scene_matches[0]] = [
-                "title_contextual_representation" if direct_title_form
-                else "metadata_contextual_representation"]
     provenance = {
         "provider": str(asset.get("provider", "") or ""),
         "creator": str(asset.get("author", "") or "")[:120],
@@ -378,6 +404,10 @@ def topic_anchor_matches(asset: dict, ch) -> bool:
     """
     if not _is_deterministic_scene(ch):
         return True
+    semantic = semantic_relevance(asset, ch)
+    if semantic["topic_relevance"] is not None:
+        return bool(semantic["topic_evidence"] and
+                    semantic["topic_relevance"] >= 65)
     anchors = list(getattr(ch, "global_visual_queries", []) or [])
     if not anchors:
         return True

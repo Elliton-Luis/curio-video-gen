@@ -22,14 +22,33 @@ def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
                   genre: str, metrics, force: bool, write_json) -> _MediaStageResult:
     """Choose a valid manual/cache selection or acquire and persist a new one."""
     warnings: list[str] = []
+    from .media_review import CandidateExporter, MediaReviewPending, load_reviewed_media
+    from pathlib import Path
+    review_summary = Path(paths.root) / "media_review/review_summary.json"
+    if getattr(cfg, "resume_media_review", False):
+        result = load_reviewed_media(paths.root, scenes, cfg)
+        write_json(paths.media_json, result.to_rows())
+        return _record_selection(result, metrics)
+    review_mode = getattr(cfg, "review_media", False)
+    dump_mode = getattr(cfg, "dump_media_candidates", False)
+    if (review_mode and review_summary.exists()
+            and json.loads(review_summary.read_text()).get('status') != 'collecting'):
+        raise MediaReviewPending(Path(paths.root).name, review_summary.parent, len(scenes))
+    exporter = CandidateExporter(paths.root, scenes, cfg, "review" if review_mode else "dump") if review_mode or dump_mode else None
     manual_dir = manual_media_dir(paths)
     manual = manual_media_scenes(scenes, manual_dir)
     available_providers = [provider.name for provider in get_providers(cfg)]
     signature = media_selection_signature(
         scenes, genre, max_images, available_providers,
         scoring_stage.threshold())
+    automatic_override = None
+    if dump_mode and not review_mode:
+        if manual is not None:
+            automatic_override = _MediaStageResult.from_rows(manual, "manual")
+        elif not force and os.path.isfile(paths.media_json):
+            automatic_override = _read_current_cache(scenes, paths, signature, max_images)
 
-    if manual is not None:
+    if manual is not None and exporter is None:
         result = _MediaStageResult.from_rows(manual, "manual", warnings)
         manual_paths = {entry.asset.local_path for scene in result.scenes
                         for entry in scene.assets if entry.asset.local_path}
@@ -43,15 +62,25 @@ def resolve_media(scenes: list[SemanticScene], cfg, paths, max_images: int,
         _write_selection(paths, result, signature, write_json)
         return _record_selection(result, metrics)
 
-    if not force and os.path.isfile(paths.media_json):
+    if exporter is None and not force and os.path.isfile(paths.media_json):
         cached = _read_current_cache(scenes, paths, signature, max_images)
         if cached is not None:
             run_event("cache", "Mídia reutilizada do cache",
                       operation="media", scenes=len(cached.scenes))
             return _record_selection(cached, metrics)
 
-    result = visual_stage.fetch_media_multi(
-        scenes, cfg, max_images, metrics, genre=genre)
+    cfg._media_review_exporter = exporter
+    try:
+        result = visual_stage.fetch_media_multi(
+            scenes, cfg, max_images, metrics, genre=genre)
+    finally:
+        cfg._media_review_exporter = None
+    if automatic_override is not None:
+        result = automatic_override
+    if exporter is not None:
+        exporter.finish(result)
+        if review_mode:
+            raise MediaReviewPending(Path(paths.root).name, exporter.root, len(scenes))
     if not isinstance(result, _MediaStageResult):
         raise TypeError("visual stage must return a MediaStageResult")
     if warnings:

@@ -363,7 +363,8 @@ def transition_signature(semantic_scenes: tuple[SemanticScene, ...],
     _validate_render_inputs(semantic_scenes, timeline_spans)
     transitions = genre_transitions(semantic_scenes, genre, mode)
     kinds = genre_transition_kinds(semantic_scenes, genre, mode)
-    payload = {"genre": genre, "mode": mode, "durations": transitions,
+    payload = {"render_transition_policy_version": 2,
+               "genre": genre, "mode": mode, "durations": transitions,
                "kinds": kinds, "visual_identity": visual_identity or {},
                "scenes": [(scene.id, scene.visual_type, scene.text_role,
                            span.start, span.end)

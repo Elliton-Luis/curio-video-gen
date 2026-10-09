@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 SCHEMA_VERSION = 1
-SELECTION_POLICY_VERSION = 2
+SELECTION_POLICY_VERSION = 8
 
 
 @dataclass(frozen=True)

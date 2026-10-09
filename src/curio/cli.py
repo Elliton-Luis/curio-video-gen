@@ -53,6 +53,10 @@ def _run_event(record: dict) -> None:
 
 def _standby_exit(exc: pipeline_media_stage.MediaStandby) -> int:
     """Projeto sem imagens: instruções de retomada (código 3, não é erro)."""
+    from .media_review import MediaReviewPending
+    if isinstance(exc, MediaReviewPending):
+        print(str(exc), file=sys.stderr)
+        return 3
     print(f"\nSTANDBY: {exc}", file=sys.stderr)
     print(f"  1) Coloque fotos (.jpg/.png/.webp) em:\n     {exc.manual_dir}",
           file=sys.stderr)
@@ -91,6 +95,71 @@ def _duration_suffix(meta: dict) -> str:
     if target <= 0:
         return "modo auto"
     return f"meta: {target:.0f}s"
+
+
+def cmd_media_review(args, cfg: CurioConfig) -> int:
+    """Export candidates from a project's actual saved scene plan."""
+    from pathlib import Path
+    from .stages.scene_contract import SemanticScene
+    from .pipeline_visual import resolve_media
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, args.slug)
+        plan = project_artifacts.read_json(paths.scene_plan_json)
+        scenes = [SemanticScene.from_dict(row) for row in plan["semantic_scenes"]]
+        genre = Path(paths.root).parent.name if Path(paths.root).parent != Path(cfg.out_dir) else ""
+        research = project_artifacts.read_json(paths.research_json)
+        context_path = Path(paths.root) / "media_review/resume_context.json"
+        if not context_path.exists():
+            project_artifacts.write_json(str(context_path), {
+                "topic": research["idea"], "genre": genre, "narration": "ai",
+                "max_images": cfg.visual_max_images, "grounding": {}})
+        cfg.review_media = not args.dump
+        cfg.dump_media_candidates = args.dump
+        resolve_media(scenes, cfg, paths, cfg.visual_max_images, genre, None, True,
+                      project_artifacts.write_json)
+        print(f"Dump: {Path(paths.root) / 'media_review'}")
+        return 0
+    except pipeline_media_stage.MediaStandby as exc:
+        return _standby_exit(exc)
+    except (OSError, ValueError, KeyError) as exc:
+        return _fail("revisão de mídia", exc)
+
+
+def cmd_resume_media_review(args, cfg: CurioConfig) -> int:
+    """Resume local editorial choices without researching or searching again."""
+    from pathlib import Path
+    from .stages.scene_contract import SemanticScene
+    from .pipeline_visual import resolve_media
+    from .media_review import record_review_render, REVIEW_CONFIG_FIELDS
+    try:
+        _, paths = _paths_for_slug(cfg.out_dir, args.slug)
+        context = project_artifacts.read_json(str(Path(paths.root) / 'media_review/resume_context.json'))
+        overrides = {'tts_provider': 'tts', 'tts_voice': 'voice', 'language': 'language',
+                     'music_mode': 'music_mode', 'music_file': 'music_file'}
+        for field in REVIEW_CONFIG_FIELDS:
+            if field in context.get('review_config', {}) and not getattr(args, overrides.get(field, ''), None):
+                setattr(cfg, field, context['review_config'][field])
+        cfg.resume_media_review, cfg.review_media, cfg.dump_media_candidates = True, False, False
+        cfg.auto_open = False
+        cfg.genre = context["genre"]
+        if Path(paths.narration_wav).is_file() and Path(paths.timeline_json).is_file():
+            plan = project_artifacts.read_json(paths.scene_plan_json)
+            scenes = [SemanticScene.from_dict(row) for row in plan["semantic_scenes"]]
+            resolve_media(scenes, cfg, paths, context["max_images"], cfg.genre, None, False,
+                          project_artifacts.write_json)
+            result = cmd_rerender(args, cfg)
+            if result:
+                return result
+        else:
+            run_pipeline(PipelineInput(context["topic"], Path(paths.script_txt).read_text(),
+                                       Path(paths.title_txt).read_text()), cfg,
+                slug=Path(paths.root).name, narration=context["narration"], genre=cfg.genre,
+                max_images=context["max_images"], on_progress=_progress, on_event=_run_event)
+        record_review_render(paths.root)
+        print(f"Revisão usada: {Path(paths.root) / 'media_review/review_summary.json'}")
+        return 0
+    except (OSError, ValueError, KeyError) as exc:
+        return _fail("retomada de revisão", exc)
 
 
 def cmd_generate(args, cfg: CurioConfig) -> int:
@@ -878,6 +947,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("idea", nargs="+", help="ideia textual entre aspas")
     g.add_argument("--slug", default=None, help="nome do diretório de saída")
     g.add_argument("--force", action="store_true", help="refazer todas as etapas")
+    g.add_argument("--media-review", action="store_true", help="exportar candidatos e pausar para revisão")
+    g.add_argument("--media-dump", action="store_true", help="exportar candidatos sem pausar")
     g.add_argument("--duration", default=None,
                    help="meta de duração (não corta): auto (padrão), 30, 45, "
                         "60, 90, 120, 180 ou segundos 5..600")
@@ -922,6 +993,8 @@ def build_parser() -> argparse.ArgumentParser:
     fs.add_argument("--topic", default=None,
                     help="assunto para pesquisa e contexto visual; por padrão usa o título")
     fs.add_argument("--force", action="store_true", help="refazer todas as etapas")
+    fs.add_argument("--media-review", action="store_true", help="exportar candidatos e pausar para revisão")
+    fs.add_argument("--media-dump", action="store_true", help="exportar candidatos sem pausar")
     fs.add_argument("--duration", default=None,
                     help="meta de duração (não corta): auto (padrão), 30, 45, "
                          "60, 90, 120, 180 ou segundos 5..600")
@@ -991,6 +1064,14 @@ def build_parser() -> argparse.ArgumentParser:
     rr.add_argument("--slug", required=True, help="nome do diretório do vídeo")
     rr.set_defaults(func=cmd_rerender)
 
+    mr = sub.add_parser("media-review", help="exportar candidatos de um projeto existente")
+    mr.add_argument("--slug", required=True)
+    mr.add_argument("--dump", action="store_true", help="exportar sem aguardar revisão")
+    mr.set_defaults(func=cmd_media_review)
+    resume = sub.add_parser("resume-media-review", help="renderizar usando os arquivos que restaram")
+    resume.add_argument("--slug", required=True)
+    resume.set_defaults(func=cmd_resume_media_review)
+
     met = sub.add_parser("metrics", help="gerar métricas de vídeos existentes")
     met.add_argument("--slug", default=None,
                      help="só este projeto (padrão: todos com metadata.json)")
@@ -1049,6 +1130,8 @@ def main(argv: list[str] | None = None) -> int:
         # Sem subcomando: abre a interface visual (TUI) — ex.: ./scripts/run.sh
         from .tui import run as run_tui
         return run_tui(cfg)
+    cfg.review_media = cfg.review_media or getattr(args, "media_review", False)
+    cfg.dump_media_candidates = cfg.dump_media_candidates or getattr(args, "media_dump", False)
     return args.func(args, cfg)
 
 

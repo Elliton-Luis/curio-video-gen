@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ..config import CurioConfig
@@ -49,7 +50,7 @@ from .media_selection import (annotate_reuse, make_selection_decision,
 from .media_selection import SelectionDecision
 from .visual_audit import (build_scene_visual_decision,
                            candidate_rejection_rows)
-from .media_contracts import CandidateEvaluation
+from .media_contracts import CandidateEvaluation, EvaluationBatch
 from .media_provider_policy import ordered_providers
 from .scene_contract import SemanticScene
 from .scene_candidate_search import SceneCandidateCollector
@@ -66,10 +67,10 @@ if TYPE_CHECKING:
 # próprio de 15 requisições (a cota demo dele é 50/hora e um vídeo estoura
 # isso em duas cenas).
 # Resultados de busca só vivem na memória da execução, nunca entre vídeos.
-# Quantos candidatos se coleta por consulta antes de escolher. O lineup
-# antigo aceitava 1 asset do primeiro provedor; recolher uma dúzia e
-# ordenar é o que permite escolher em vez de tomar o que veio.
+# Quantos candidatos tecnicamente elegíveis entram no batch por query antes
+# do scoring; candidatos semanticamente rejeitados não encerram a árvore.
 CANDIDATE_MULTIPLIER = 4
+# Teto do batch pendente sem scoring, não teto da busca inteira por cena.
 MAX_SCENE_CANDIDATES = 20
 # Rejeições que a folha de contato guarda por cena (o resto é ruído).
 REJECTED_KEPT = 8
@@ -131,7 +132,7 @@ def _search_scene_with_shortcircuit(
     # um navio-hospital. Não é um defeito do Threshold nem do filtro — é a
     # pergunta errada. A cena vai direto para o cartão, que é o visual
     # certo por construção.
-    if vtype == "typographic":
+    if vtype == "typographic" and not getattr(cfg, "review_media", False):
         from . import visuals
         from .visual_fallback_planning import build_visual_fallback_plan
         fallback_plan = build_visual_fallback_plan(
@@ -195,16 +196,69 @@ def _search_scene_with_shortcircuit(
         ch, visual_plan, search_plan, providers, cfg, metrics, blocked,
         genre=genre, shared_search_cache=shared_search_cache,
         max_candidates=MAX_SCENE_CANDIDATES)
-    collection = collector.collect(specific_queries, phase_budget)
-    candidates = list(collection.candidates)
-    score_started = time.monotonic()
-    specific_result = evaluate_specific(
-        [candidate for candidate in candidates
-         if not candidate.search_query.generic], ch, min_score)
-    if metrics:
-        metrics.media_selection_time += time.monotonic() - score_started
+
+    generic_cache = None
+    def collect_and_evaluate(query_batch, *, generic: bool):
+        nonlocal generic_cache
+        if generic and generic_cache is not None:
+            return generic_cache
+        accepted, rejected = [], []
+        candidate_count = 0
+        order_offset = 0
+        def evaluate_pending(pending):
+            nonlocal candidate_count, order_offset
+            candidate_count += len(pending)
+            score_started = time.monotonic()
+            if generic:
+                result = evaluate_generic(list(pending), ch, min_score)
+            else:
+                result = evaluate_specific(list(pending), ch, min_score)
+            if metrics:
+                metrics.media_selection_time += time.monotonic() - score_started
+            accepted.extend(replace(item, order=order_offset + item.order)
+                            for item in result.accepted)
+            rejected.extend(replace(item, order=order_offset + item.order)
+                            for item in result.rejected)
+            order_offset += len(pending)
+            collector.release_evaluated(pending)
+        for query in query_batch:
+            collector.collect([query], phase_budget, consume=evaluate_pending)
+        from .media_semantics import assess_candidates
+        result = EvaluationBatch(tuple(accepted), tuple(rejected))
+        if not getattr(cfg, "review_media", False):
+            result = assess_candidates(result, ch, cfg, min_score)
+        exporter = getattr(cfg, "_media_review_exporter", None)
+        if exporter is not None:
+            for item in (*result.accepted, *result.rejected):
+                exporter.record(ch.id, item.candidate, reason=item.rejection_reason,
+                                score=item.score, stage="semantic_selection")
+        if generic:
+            generic_cache = (result, candidate_count)
+        return result, candidate_count
+
+    specific_result, specific_candidate_count = collect_and_evaluate(
+        specific_queries, generic=False)
+    if getattr(cfg, "_media_review_exporter", None) is not None and generic_queries:
+        # Review exports the late contextual tier even when automatic selection
+        # already has enough images. Shared provider responses avoid repeat I/O.
+        collect_and_evaluate(generic_queries, generic=True)
+    if getattr(cfg, "review_media", False):
+        decision = SelectionDecision(scene_id=ch.id, status="none",
+            reason="awaiting manual review", fallback_level="manual_review_pending")
+        audit = VisualDecision.create(decision,
+            topic=visual_plan.topic,
+            queries=[{"query": query, **vars(state)} for query, state in collector.query_audit.items()],
+            providers_consulted=sorted(collector.providers_consulted),
+            selected={"reason": "candidates exported; selection awaits user review"})
+        return SceneMediaSelection.from_components(ch.id, (), audit,
+                    visual_type=vtype, strategy="manual_review"), warnings
+    candidates_count = specific_candidate_count
     specific_ranked = [RankedSelectionCandidate.from_evaluation(item)
                        for item in specific_result.accepted]
+    specific_ranked.sort(key=lambda item: (
+        -item.score,
+        -float(item.evaluation.evidence.get("scene_relevance") or 0),
+        item.order))
     low_specific = specific_result.rejected
     evaluations = [*specific_result.accepted, *specific_result.rejected]
     fresh_specific = [entry for entry in specific_ranked
@@ -216,17 +270,15 @@ def _search_scene_with_shortcircuit(
     if fresh_specific:
         ranked_candidates, low = specific_ranked, low_specific
     else:
-        collection = collector.collect(generic_queries, phase_budget)
+        generic_result, generic_candidate_count = collect_and_evaluate(
+            generic_queries, generic=True)
+        candidates_count += generic_candidate_count
         generic_collected = True
-        candidates = list(collection.candidates)
-        score_started = time.monotonic()
-        generic_result = evaluate_generic(
-            [candidate for candidate in candidates
-             if candidate.search_query.generic], ch, min_score)
-        if metrics:
-            metrics.media_selection_time += time.monotonic() - score_started
         ranked_candidates = [RankedSelectionCandidate.from_evaluation(item)
                              for item in generic_result.accepted]
+        ranked_candidates.sort(key=lambda item: (
+            -item.score, item.evaluation.candidate.search_query.query,
+            item.order))
         low_generic = generic_result.rejected
         evaluations.extend((*generic_result.accepted, *generic_result.rejected))
         low = low_specific + low_generic
@@ -253,7 +305,9 @@ def _search_scene_with_shortcircuit(
     ranked = list(selection_pool.fresh)
     reused_ranked = list(selection_pool.reused)
     if metrics:
-        metrics.media_record_selection(len(candidates), len(ranked))
+        metrics.media_record_selection(
+            generic_candidate_count if generic_collected else specific_candidate_count,
+            len(ranked))
         metrics.media_record_funnel("above_threshold", len(ranked))
     for rej in technical_rejections:
         if metrics:
@@ -278,6 +332,10 @@ def _search_scene_with_shortcircuit(
     picked: list[SelectedAsset] = [
         outcome.to_selected_asset() for outcome in acquisition_batch.selected]
     acquisition_rejections.extend(acquisition_batch.rejected)
+    reused_ranked.extend(RankedSelectionCandidate(item.candidate.evaluation,
+                                                 item.asset)
+                         for item in acquisition_batch.rejected
+                         if item.disposition == "duplicate_content")
     warnings.extend(acquisition_batch.warnings)
 
     # Generic/context representations are the next search tier, not an excuse
@@ -288,17 +346,15 @@ def _search_scene_with_shortcircuit(
         contextual_searched=generic_collected, synthetic_attempted=False,
         reuse_available=bool(reused_ranked))
     if fallback_action is SelectionFallbackAction.CONTEXTUAL_SEARCH:
-        collection = collector.collect(generic_queries, phase_budget)
+        generic_result, generic_candidate_count = collect_and_evaluate(
+            generic_queries, generic=True)
+        candidates_count += generic_candidate_count
         generic_collected = True
-        generic_candidates = [candidate for candidate in collection.candidates
-                              if candidate.search_query.generic]
-        score_started = time.monotonic()
-        generic_result = evaluate_generic(
-            generic_candidates, ch, min_score)
-        if metrics:
-            metrics.media_selection_time += time.monotonic() - score_started
         generic_ranked = [RankedSelectionCandidate.from_evaluation(item)
                           for item in generic_result.accepted]
+        generic_ranked.sort(key=lambda item: (
+            -item.score, item.evaluation.candidate.search_query.query,
+            item.order))
         generic_ranked = apply_clip_layer(
             generic_ranked, ch, cfg, metrics, max_images)
         generic_low = generic_result.rejected
@@ -320,14 +376,13 @@ def _search_scene_with_shortcircuit(
             item for item in additional_technical_rejections
             if item.candidate.identity not in previous_rejection_ids)
         technical_rejections = list(additional_technical_rejections)
-        candidates = list(collection.candidates)
-
         generic_pool = prepare_selection_pool(
             generic_ranked, asset_uses, _selection_asset_key)
         generic_fresh = list(generic_pool.fresh)
         reused_ranked.extend(generic_pool.reused)
         if metrics:
-            metrics.media_record_selection(len(generic_candidates), len(generic_fresh))
+            metrics.media_record_selection(generic_candidate_count,
+                                           len(generic_fresh))
             metrics.media_record_funnel("above_threshold", len(generic_fresh))
         for item in new_technical_rejections:
             if metrics:
@@ -346,15 +401,28 @@ def _search_scene_with_shortcircuit(
             picked.extend(outcome.to_selected_asset()
                           for outcome in generic_batch.selected)
             acquisition_rejections.extend(generic_batch.rejected)
+            reused_ranked.extend(RankedSelectionCandidate(item.candidate.evaluation,
+                                                         item.asset)
+                                 for item in generic_batch.rejected
+                                 if item.disposition == "duplicate_content")
             warnings.extend(generic_batch.warnings)
             ranked.extend(generic_fresh)
 
+    reused_ranked.sort(key=lambda item: (
+        (asset_uses or {}).get(_selection_asset_key(item.asset.to_dict()), 0),
+        -item.score, item.order))
     strategy_used = "image"
+    if not picked and reused_ranked:
+        from .media_candidate_acquisition import acquire_reuse_fallback
+        reuse_outcome = acquire_reuse_fallback(
+            ch.id, reused_ranked, cfg.cache_dir, metrics, asset_uses)
+        if reuse_outcome is not None:
+            picked.append(reuse_outcome.to_selected_asset())
     fallback_action = next_selection_fallback(
         selected_count=len(picked), requested_count=max_images,
         contextual_available=bool(generic_queries),
         contextual_searched=generic_collected, synthetic_attempted=False,
-        reuse_available=bool(reused_ranked))
+        reuse_available=False)
     if fallback_action is SelectionFallbackAction.SYNTHETIC:
         # Nenhuma fotografia serviu. A cena NÃO fica vazia e NÃO recebe
         # imagem genérica: ela troca de medium. Um diagrama ou um cartão
@@ -385,18 +453,6 @@ def _search_scene_with_shortcircuit(
             if not run_active():
                 print(f"cena {ch.id}: sem foto adequada — visual por código "
                       f"({strategy_used}): {synth.title[:60]}", file=sys.stderr)
-    # Reuse only after all specific/context searches and the local visual.
-    fallback_action = next_selection_fallback(
-        selected_count=len(picked), requested_count=max_images,
-        contextual_available=bool(generic_queries),
-        contextual_searched=generic_collected, synthetic_attempted=True,
-        reuse_available=bool(reused_ranked))
-    if fallback_action is SelectionFallbackAction.REUSE:
-        from .media_candidate_acquisition import acquire_reuse_fallback
-        reuse_outcome = acquire_reuse_fallback(
-            ch.id, reused_ranked, cfg.cache_dir, metrics, asset_uses)
-        if reuse_outcome is not None:
-            picked.append(reuse_outcome.to_selected_asset())
     if not picked:
         msg = (f"cena {ch.id}: sem imagem adequada "
                f"({', '.join(queries[:3]) or 'sem consultas'})"
@@ -419,13 +475,13 @@ def _search_scene_with_shortcircuit(
     downloads = metrics.media_downloads - downloads_before if metrics else 0
     cache_hits = metrics.media_cache_hits - cache_before if metrics else 0
     synthetic = bool(picked and picked[0].asset.provider == "synth")
-    message = (f"Cena {ch.id}: {returned} resultados; {len(candidates)} elegíveis; "
+    message = (f"Cena {ch.id}: {returned} resultados; {candidates_count} elegíveis; "
                f"{len(ranked)} acima do score; {len(picked)} selecionado(s); "
                f"{downloads} baixado(s), {cache_hits} cache hit(s)"
                + ("; card/diagrama" if synthetic else ""))
     run_event("fallback" if synthetic else "result", message,
               operation="media", scene=ch.id, returned=returned,
-              eligible=len(candidates), above_threshold=len(ranked),
+              eligible=candidates_count, above_threshold=len(ranked),
               selected=len(picked), downloaded=downloads,
               cache_hits=cache_hits, strategy=strategy_used)
 
@@ -482,6 +538,8 @@ def fetch_media_multi(semantic_scenes: list[SemanticScene], cfg: CurioConfig,
     # disk/query cache or network again.
     shared_search_cache: dict[str, dict[str, list[dict]]] = {}
 
+    from .entity_media import enrich_entity_media
+    semantic_scenes = enrich_entity_media(semantic_scenes, cfg)
     for scene in semantic_scenes:
         planning_started = time.monotonic()
         scene_plan = build_visual_plan(scene.semantic_scene()

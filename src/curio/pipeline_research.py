@@ -72,6 +72,24 @@ def run_research_stage(idea, cfg, paths, metrics, genre, warnings,
                        sources_registry, emit, write_json) -> ResearchStageResult:
     """Run research, persist provenance, and return grounding context."""
     started = time.monotonic()
+    if getattr(cfg, "resume_media_review", False):
+        import json
+        with open(paths.research_json, encoding="utf-8") as stream:
+            stored = json.load(stream)
+        from .stages.entity import TargetEntity
+        raw = stored.get("target_entity") or {}
+        target = TargetEntity(raw.get("target", ""), **{key: raw[key] for key in (
+            "aliases", "discriminants", "search_queries", "forbidden", "ambiguous",
+            "source", "is_entity", "topic_terms") if key in raw}) if raw else None
+        result = research_stage.ResearchResult(target, [ResearchSource.from_dict(row)
+            for row in stored.get("sources", [])], tried_queries=stored.get("queries", []), genre=genre)
+        if stored.get("etymology"):
+            from .stages.etymology import Etymology
+            result.etymology = Etymology.from_dict(stored["etymology"])
+        for key in ("facts", "complementary_queries", "unresolved_gaps"):
+            setattr(result, key, stored.get(key, []))
+        run_event("cache", "Pesquisa preservada para retomar revisão de mídia", operation="research")
+        return ResearchStageResult(result, "confirmed" if len(result.sources) >= 2 else "partial", "", 0)
     emit(0, "Pesquisando fontes")
     result = research_stage.research_topic(
         idea, cfg.language, max_sources=cfg.research_max_sources,

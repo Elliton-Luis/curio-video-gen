@@ -185,6 +185,34 @@ def test_cross_dissolve_preserves_full_scene_duration(tmp_path):
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
                     reason="FFmpeg/ffprobe ausentes")
+@pytest.mark.parametrize("fps", [10, 24, 30, 60])
+def test_subframe_transition_never_drops_later_scenes(tmp_path, fps):
+    cfg = CurioConfig(render_backend="cpu", width=96, height=96, fps=fps)
+    clips = []
+    for idx, color in enumerate(("red", "blue", "green")):
+        path = tmp_path / f"{idx}.mp4"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+                        f"color=c={color}:s=96x96:r={fps}:d=1", "-an", "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p", str(path)], check=True)
+        clips.append(str(path))
+    out = tmp_path / "joined.mp4"
+    R.concat_with_transitions(clips, str(out), cfg, [0.04, 0.2])
+    assert R.ff.probe_duration(str(out)) == pytest.approx(3.0, abs=0.15)
+
+
+def test_successful_ffmpeg_exit_with_truncated_transition_recovers_full_sequence(monkeypatch):
+    recovered = []
+    monkeypatch.setattr(R.ff, "require_tools", lambda: None)
+    monkeypatch.setattr(R.ff, "run", lambda cmd: subprocess.CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(R.ff, "probe_duration", lambda path: (
+        1.0 if path in {"a.mp4", "b.mp4"} else 2.0 if recovered else 0.5))
+    monkeypatch.setattr(R, "concat_copy", lambda paths, out, cfg: recovered.extend(paths))
+    R.concat_with_transitions(["a.mp4", "b.mp4"], "out.mp4", CurioConfig(render_backend="cpu"), [0.2])
+    assert recovered == ["a.mp4", "b.mp4"]
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg/ffprobe ausentes")
 def test_ducking_reduces_music_during_voice_and_returns_in_pause(tmp_path):
     video, voice, music = (tmp_path / "silent.mp4", tmp_path / "voice.wav",
                            tmp_path / "music.wav")

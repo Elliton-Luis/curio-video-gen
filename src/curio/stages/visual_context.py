@@ -195,8 +195,6 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
             (not scene.subject_aliases or (
                 _subject_matches_entity(scene.subject, names)
                 and not any(alias not in names for alias in scene.subject_aliases)))]
-    if not empty and not bare:
-        return scenes
     english = _language_alias(names, sources, timeout) if sources else ""
     if english and english not in names:
         names.append(english)
@@ -211,7 +209,11 @@ def fill_missing_context(scenes, target, genre: str = "", sources=(),
     perfil = editorial.get(genre)
     medium = perfil.visual_context_medium if perfil else ""
     replacements = {}
-    for scene in needs:
+    # Entity identity belongs to the video context of every scene. Previously
+    # only scenes needing subject repair received the verified language link.
+    for scene in scenes:
+        if scene not in needs and not scene.video_context.topic:
+            continue
         context = scene.video_context.to_dict()
         for key in ("primary_entities",):
             context[key] = list(dict.fromkeys(

@@ -39,8 +39,8 @@ def next_selection_fallback(*, selected_count: int, requested_count: int,
                             ) -> SelectionFallbackAction:
     """Choose the next tier without executing search, fallback or acquisition.
 
-    New contextual assets precede a local synthetic visual; reuse is considered
-    only after that visual attempt. Partial real coverage is retained as-is.
+    Fresh contextual assets precede qualified reuse and synthetic fallback.
+    Partial real coverage is retained as-is.
     """
     if (isinstance(selected_count, bool) or not isinstance(selected_count, int)
             or selected_count < 0):
@@ -54,10 +54,10 @@ def next_selection_fallback(*, selected_count: int, requested_count: int,
         return SelectionFallbackAction.CONTEXTUAL_SEARCH
     if selected_count:
         return SelectionFallbackAction.COMPLETE
-    if not synthetic_attempted:
-        return SelectionFallbackAction.SYNTHETIC
     if reuse_available:
         return SelectionFallbackAction.REUSE
+    if not synthetic_attempted:
+        return SelectionFallbackAction.SYNTHETIC
     return SelectionFallbackAction.NO_ASSET
 
 
@@ -505,7 +505,7 @@ def make_selection_decision(scene_id: int, picked: list["SelectedAsset"],
     if status == "synthetic":
         reason = "no eligible fresh real asset remained; semantic synthetic fallback selected"
     elif status == "reused":
-        reason = "all fresh searches and local visual fallbacks were exhausted before reuse"
+        reason = "fresh searches were exhausted; qualified least-used real asset reused"
     else:
         reason = "fresh candidate passed gates, ranked for the scene, and downloaded"
     return SelectionDecision(
@@ -557,41 +557,60 @@ def annotate_reuse(result: MediaStageResult) -> MediaStageResult:
 def resolve_cross_scene_reuse(
         result: MediaStageResult,
         semantic_scenes: list[SemanticScene]) -> MediaStageResult:
-    """Fill empty scenes only from a semantically qualified selected asset."""
+    """Recover missing visuals from qualified real assets discovered later.
+
+    A synthetic selection is provisional until all scenes have searched.
+    Intentional typography remains a deliberate rendering choice.
+    """
     from ..media.selection_result import MediaStageResult, SelectedAsset
 
     if not isinstance(result, MediaStageResult):
         raise TypeError("cross-scene reuse requires a MediaStageResult")
-    have = [scene for scene in result.scenes if scene.assets]
+    have = [scene for scene in result.scenes
+            if any(entry.asset.provider != "synth" for entry in scene.assets)]
     by_id = {scene.id: scene for scene in semantic_scenes}
     if not have or not by_id:
         return result
     from . import scoring
+    from ..media.identity import asset_identity
+    from collections import Counter
+    uses = Counter(asset_identity(entry.asset.to_dict())
+                   for donor in have for entry in donor.assets
+                   if entry.asset.provider != "synth")
 
     updated_scenes = []
     for scene_row in result.scenes:
-        if scene_row.assets:
+        if any(entry.asset.provider != "synth" for entry in scene_row.assets):
             updated_scenes.append(scene_row)
             continue
         scene_id = scene_row.scene_id
         scene = by_id.get(scene_id)
-        if scene is None:
+        if scene is None or scene.visual_type == "typographic":
             updated_scenes.append(scene_row)
             continue
         eligible: list[ReuseCandidate] = []
         for donor in have:
+            if donor.scene_id == scene_id:
+                continue
             donor_scene = by_id.get(donor.scene_id)
             if donor_scene is None:
                 continue
             for entry in donor.assets:
+                if entry.asset.provider == "synth":
+                    continue
                 asset = entry.asset.to_dict()
                 relevance = scoring.semantic_relevance(asset, scene)
-                if ((relevance.get("topic_relevance", 0) or 0) > 0
-                        and (relevance.get("scene_relevance", 0) or 0) >= 25):
+                if ((relevance.get("topic_relevance", 0) or 0) >= 65
+                        and (relevance.get("scene_relevance", 0) or 0) >= 65):
                     eligible.append(ReuseCandidate(
                         donor_scene_id=donor.scene_id, entry=entry,
                         topic_relevance=relevance["topic_relevance"],
                         scene_relevance=relevance["scene_relevance"]))
+        if eligible:
+            least_used = min(uses[asset_identity(item.entry.asset.to_dict())]
+                             for item in eligible)
+            eligible = [item for item in eligible
+                        if uses[asset_identity(item.entry.asset.to_dict())] == least_used]
         selected = select_reuse_candidate(eligible, scene_id)
         if selected is None:
             updated_scenes.append(scene_row)
@@ -608,7 +627,8 @@ def resolve_cross_scene_reuse(
         decision = replace(
             decision,
             reason=("validated topic and scene evidence; reused from scene "
-                    f"{donor_row.scene_id} after fresh and synthetic choices"))
+                    f"{donor_row.scene_id} after all scenes completed fresh searches"))
+        uses[asset_identity(reused_asset.asset.to_dict())] += 1
         updated_scenes.append(scene_row.with_cross_scene_reuse(
             reused_asset, donor_row.scene_id, decision,
             selected.topic_relevance, selected.scene_relevance))

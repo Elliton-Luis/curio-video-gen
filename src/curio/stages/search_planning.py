@@ -55,7 +55,7 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
         plan.representations,
         key=lambda item: (_representation_priority(item), item.level))
     query_only_sources = {"declared_scene_query", "entity_context",
-                          "verified_entity_context"}
+                          "verified_entity_context", "canonical_entity_media"}
     semantic_representations = [
         rep for rep in representations if rep.source not in query_only_sources]
     legacy_unanchored_queries = (
@@ -178,12 +178,37 @@ def build_search_plan(plan: VisualPlan, genre: str = "") -> SearchPlan:
             add(" ".join(ai[:2]) + " diagram", source="mechanism_visual_variant",
                 representation=" / ".join(ai[:2]), variant="diagram", level=4)
 
-    for term in _generic_queries(genre, plan):
-        add(term, source="genre_fallback", variant=term, level=5, generic=True)
+    if topic:
+        add(anchor_alias or topic, source="topic_contextual",
+            representation=topic, alias=anchor_alias, level=5, generic=True)
+    else:
+        for term in _generic_queries(genre, plan):
+            add(term, source="genre_fallback", variant=term, level=5, generic=True)
     if not planned and plan.space_topic:
         add("black hole", source="space_topic_fallback", representation="black hole",
             level=4)
-    return SearchPlan(plan.scene_id, tuple(planned[:8]))
+    # First cover each approved concept; only then expand media variants.
+    # Previously one concept's variants consumed all eight query slots.
+    primary = [query for query in planned if query.source in {
+        "scene_representation", "local_scene_representation", "scene_subject",
+        "subject_alias"}]
+    for rep in plan.representations:
+        if rep.source == "canonical_entity_media":
+            add(rep.query, source="canonical_entity_media", representation=rep.query,
+                level=9, generic=True)
+    contextual_queries = [query for query in planned if query.source in {
+        "topic_contextual", "canonical_entity_media"}]
+    reserved = contextual_queries[:2]
+    chosen = primary[:8 - len(reserved)] + reserved
+    groups = {}
+    for query in planned:
+        if query not in chosen:
+            groups.setdefault(query.representation or query.source, []).append(query)
+    while len(chosen) < 8 and any(groups.values()):
+        for group in groups.values():
+            if group and len(chosen) < 8:
+                chosen.append(group.pop(0))
+    return SearchPlan(plan.scene_id, tuple(chosen))
 
 
 def _media_variants(kind: str, visual_type: str, historical: bool) -> tuple[str, ...]:

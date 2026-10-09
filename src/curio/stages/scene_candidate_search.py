@@ -69,7 +69,8 @@ class SceneCandidateCollector:
 
     Query planning, semantic ranking, fallback, and final selection remain
     outside this collector. The same instance collects specific and late
-    generic query batches so identity and budget are scene-wide.
+    generic queries so identity and query audit remain scene-wide. The cap
+    bounds pending unscored candidates; evaluation releases that buffer.
     """
 
     def __init__(self, scene, visual_plan: VisualPlan, search_plan: SearchPlan,
@@ -105,7 +106,7 @@ class SceneCandidateCollector:
         self.search_query_by_text = {
             query.query: query for query in search_plan.queries}
 
-    def collect(self, query_list: list[str], limit: int
+    def collect(self, query_list: list[str], limit: int, consume=None
                 ) -> SceneCandidateCollection:
         """Collect a bounded query batch, keeping scene-wide identity state."""
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
@@ -162,18 +163,43 @@ class SceneCandidateCollector:
                                     len(response.assets) - result_index)
                             break
                         self._consider(asset, query)
+                        if consume is not None and len(self.candidates) >= min(limit, self.max_candidates):
+                            consume(tuple(self.candidates))
                     if (len(self.candidates) >= self.max_candidates
                             or len(self.candidates) - candidates_before_query
                             >= limit):
                         break
             finally:
                 response_stream.close()
+            if consume is not None and self.candidates:
+                consume(tuple(self.candidates))
             if (len(self.seen_ids) == identities_before
                     and self.query_audit[query].duplicates > duplicates_before):
                 self.query_audit[query].mark_duplicates_only()
                 if self.metrics:
                     self.metrics.media_duplicate_queries += 1
         return self.snapshot()
+
+    def release_evaluated(self, candidates: tuple[Candidate, ...]) -> None:
+        """Free the bounded pending buffer after editorial evaluation.
+
+        The caller owns the resulting CandidateEvaluation values and audit.
+        Identities remain in the scene-wide dedupe set, so a later query cannot
+        reintroduce the same content. This makes the cap a bound on unscored
+        candidates, not a reason to stop exploring after semantic rejects.
+        """
+        if not isinstance(candidates, tuple) or any(
+                not isinstance(candidate, Candidate) for candidate in candidates):
+            raise TypeError("release requires an evaluated Candidate tuple")
+        requested = [candidate.identity for candidate in candidates]
+        if len(requested) != len(set(requested)):
+            raise ValueError("released candidate identities must be unique")
+        pending = {candidate.identity for candidate in self.candidates}
+        if any(identity not in pending for identity in requested):
+            raise ValueError("only pending collected candidates can be released")
+        released = set(requested)
+        self.candidates = [candidate for candidate in self.candidates
+                           if candidate.identity not in released]
 
     def snapshot(self) -> SceneCandidateCollection:
         return SceneCandidateCollection(
@@ -202,6 +228,9 @@ class SceneCandidateCollector:
                 time.monotonic() - dedupe_started)
             self.metrics.media_record_funnel("unique_considered")
         reason = media_rules.asset_gate_reason(asset, self.blocked)
+        exporter = getattr(self.cfg, "_media_review_exporter", None)
+        if exporter is not None:
+            exporter.record(self.scene.id, candidate, reason=reason)
         if reason:
             self.query_audit[query].record_rejection()
             self.rejected.append(CandidateRejection(

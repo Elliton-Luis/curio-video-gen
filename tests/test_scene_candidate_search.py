@@ -109,6 +109,26 @@ def test_candidate_collection_marks_queries_skipped_by_scene_budget(monkeypatch)
     assert skipped.unexecuted_reason == "scene_candidate_budget"
 
 
+def test_streaming_evaluation_visits_later_provider_without_growing_pending_buffer(monkeypatch):
+    collector, plan = _collector(monkeypatch, max_candidates=1)
+    def asset(key):
+        return MediaAsset("fixture", key, title=key, license="CC0",
+                          download_url=f"https://example.test/{key}.jpg", width=1600, height=1200)
+    def search(query, *_args, **_kwargs):
+        yield ProviderSearchResult(query, "wikimedia", (asset("wrong-1"), asset("wrong-2")))
+        yield ProviderSearchResult(query, "museum", (asset("correct-historical-art"),))
+    monkeypatch.setattr("curio.stages.scene_candidate_search.media_search.search_providers", search)
+    visited = []
+    def evaluate(pending):
+        assert len(pending) <= 1
+        visited.extend(item.asset.asset_id for item in pending)
+        collector.release_evaluated(pending)
+    result = collector.collect([plan.queries[0].query], 1, consume=evaluate)
+    assert visited == ["wrong-1", "wrong-2", "correct-historical-art"]
+    assert result.candidates == ()
+    assert result.query_audit[plan.queries[0].query].eligible == 3
+
+
 def test_generic_query_audit_distinguishes_deferred_from_executed(monkeypatch):
     collector, plan = _collector(monkeypatch, include_generic=True)
     generic = plan.queries[-1]

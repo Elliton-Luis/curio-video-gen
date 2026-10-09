@@ -56,6 +56,14 @@ def run_script_stage(idea, cfg, paths, metrics, *, research_prompt,
                      force, provided_script=None, provided_title=None) -> ScriptStageResult:
     """Produce validated narration/title artifacts and verify grounding."""
     started = time.monotonic()
+    if getattr(cfg, "resume_media_review", False):
+        import json
+        from pathlib import Path
+        context = json.loads(Path(paths.root, "media_review/resume_context.json").read_text())
+        return ScriptStageResult(
+            script_stage.ScriptArtifact(_read(paths.script_txt), context.get("script_source", "cache")),
+            script_stage.TitleArtifact(_read(paths.title_txt), context.get("title_source", "cache")),
+            context.get("grounding", {}), False, False, (), 0)
     script_mode = provided_script is not None
     warnings: list[str] = []
     previous_manifest = read_manifest(paths.script_manifest_json)

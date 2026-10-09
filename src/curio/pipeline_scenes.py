@@ -80,6 +80,12 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
     """Plan/restore, enrich and persist one validated scene batch."""
     started = time.monotonic()
     scene_plan_path = getattr(paths, "scene_plan_json", "")
+    if getattr(cfg, "resume_media_review", False):
+        with open(scene_plan_path, encoding="utf-8") as stream:
+            plan = plan_from_dict(json.load(stream))
+        script_input_stage.validate_preserved(script_text, plan.semantic_scenes)
+        return SceneStageResult(plan.timeline_spans, "media_review_cache",
+            SceneEnrichmentResult(plan.semantic_scenes, "media_review_cache", ()), False, 0)
     has_scene_plan = bool(scene_plan_path and os.path.isfile(scene_plan_path))
     has_legacy_chapters = os.path.isfile(paths.chapters_json)
     input_signature = scene_plan_inputs_signature(
@@ -167,7 +173,7 @@ def run_scene_stage(script_text: str, cfg: CurioConfig, paths, *,
         topic=topic, target=target, source=source,
         planning_mode=planning_mode, genre=genre,
         research_sources=research_sources, research_timeout=research_timeout,
-        etymology=etymology)
+        etymology=etymology, cfg=cfg)
     semantic_scenes = enriched.semantic_scenes
     timings = {span.scene_id: span for span in timeline_spans}
     chapters = [Chapter.from_semantic_scene(

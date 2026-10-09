@@ -417,6 +417,10 @@ def concat_with_transitions(paths: list[str], out_path: str,
                      else 0.0)
         d = min(max(0.0, requested), durations[i - 1] - 0.04,
                 durations[i] - 0.04)
+        # xfade cannot interpolate a sub-frame overlap. Such transitions
+        # can silently end the entire filter chain after the first scene.
+        frames = round(d * cfg.fps)
+        d = frames / cfg.fps if frames >= 2 else 0.0
         if d <= 0:
             # O caller normalmente escolhe cut=0; uma duração impraticável
             # também degrada para corte, nunca falha o vídeo.
@@ -447,6 +451,14 @@ def concat_with_transitions(paths: list[str], out_path: str,
             "-an", "-r", str(cfg.fps)]
     cmd += vargs + ["-t", f"{sum(durations):.3f}", out_path]
     _check(ff.run(cmd), "concat-transitions")
+    expected = sum(durations)
+    tolerance = max(0.15, 2 * len(paths) / cfg.fps)
+    if abs(ff.probe_duration(out_path) - expected) > tolerance:
+        # A successful FFmpeg exit does not prove every scene survived.
+        # Preserve the complete visual sequence with cuts if xfade fails.
+        concat_copy(paths, out_path, cfg)
+        if abs(ff.probe_duration(out_path) - expected) > tolerance:
+            raise RenderError("concatenation lost scene duration")
     return out_path
 
 

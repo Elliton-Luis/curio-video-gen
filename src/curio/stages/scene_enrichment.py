@@ -30,7 +30,7 @@ def enrich_scenes(scenes, *, topic: str, target=None, source: str,
                   planning_mode: str = "unknown", genre: str = "",
                   research_sources=(),
                   research_timeout: int = 20, etymology=None,
-                  timeline_spans: tuple[TimelineSpan, ...] = ()
+                  timeline_spans: tuple[TimelineSpan, ...] = (), cfg=None
                   ) -> SceneEnrichmentResult:
     """Return complete scene context without mutating planner/cache objects.
 
@@ -76,6 +76,12 @@ def enrich_scenes(scenes, *, topic: str, target=None, source: str,
     if updated != enriched:
         applied.append("etymology_visual_context")
     enriched = updated
+    if cfg is not None:
+        from .media_semantics import enrich_catalog_vocabulary
+        updated = enrich_catalog_vocabulary(enriched, cfg)
+        if updated != enriched:
+            applied.append("catalog_vocabulary")
+        enriched = updated
     for scene in enriched:
         errors = scene.contract_errors()
         if errors:

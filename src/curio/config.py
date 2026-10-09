@@ -153,6 +153,10 @@ class CurioConfig:
     # (NVIDIA_API_KEY / NVIDIA_API_KEYS) via NvidiaCredentials,
     # para nunca vazarem em logs, erros ou metadata.
 
+    review_media: bool = False
+    dump_media_candidates: bool = False
+    resume_media_review: bool = False
+
     @classmethod
     def load(cls, path: str | None = None) -> "CurioConfig":
         data: dict = {}
@@ -163,6 +167,8 @@ class CurioConfig:
                     data = tomllib.load(fh)
                 break
         cfg = cls()
+        cfg.review_media = _as_bool(os.environ.get("REVIEW_MEDIA", data.get("review_media", False)))
+        cfg.dump_media_candidates = _as_bool(os.environ.get("DUMP_MEDIA_CANDIDATES", data.get("dump_media_candidates", False)))
         cfg.duration_target = parse_duration(
             data.get("duration_target", cfg.duration_target))
         cfg.out_dir = str(data.get("out_dir", cfg.out_dir))
