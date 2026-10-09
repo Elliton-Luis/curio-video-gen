@@ -13,6 +13,76 @@ from .. import ffmpeg as ff
 from ..stages import editorial
 
 
+_MUSIC_INTENT_SYSTEM = """You are a music supervisor for short educational videos.
+Infer a concise music brief from the video's subject, narrative, pacing and
+emotional arc. Do not infer mood from a genre label. Prefer instrumental music
+and describe qualities useful for finding a licensed music track. Return JSON:
+{"intent": string, "search_query": string, "mood_terms": [string],
+"instrumental": true}. Do not name copyrighted songs or artists."""
+
+
+def _music_intent_key(title: str, script: str, language: str) -> str:
+    payload = json.dumps([title, script, language], ensure_ascii=False,
+                         separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _local_music_intent(title: str, script: str) -> dict:
+    """Offline fallback keeps the actual subject and narrative in the query."""
+    narrative = " ".join((script or "").split())[:700]
+    subject = " ".join((title or "").split())[:180]
+    query = " ".join(x for x in
+                     ("instrumental music", subject, narrative) if x).strip()
+    return {"intent": "Contextual instrumental bed derived from the video text",
+            "search_query": query[:240], "mood_terms": [],
+            "instrumental": True, "source": "local"}
+
+
+def _music_intent(cfg, title: str, script: str, previous: dict,
+                  metrics=None) -> dict:
+    language = str(getattr(cfg, "language", "pt-BR") or "pt-BR")
+    key = _music_intent_key(title, script, language)
+    cached = previous.get("intent") if isinstance(previous, dict) else None
+    if isinstance(cached, dict) and cached.get("input_hash") == key:
+        result = dict(cached)
+        result["source"] = "cache"
+        return result
+    result = None
+    try:
+        from ..stages import nvidia
+        if nvidia.any_llm_available():
+            context = (f"Video title/topic: {title}\n"
+                       f"Narrative and emotional progression:\n{script[:6000]}")
+            data, label = nvidia.complete_json(
+                _MUSIC_INTENT_SYSTEM, context, cfg.nvidia_model,
+                cfg.nvidia_base_url, cfg.nvidia_timeout, metrics,
+                or_model=cfg.openrouter_model,
+                or_base_url=cfg.openrouter_base_url,
+                extra=cfg.llm_overrides())
+            if isinstance(data, dict):
+                query = " ".join(str(data.get("search_query", "") or "").split())
+                intent = " ".join(str(data.get("intent", "") or "").split())
+                terms = data.get("mood_terms", [])
+                if isinstance(terms, str):
+                    terms = [terms]
+                terms = list(dict.fromkeys(
+                    " ".join(str(term).split())[:60] for term in terms
+                    if str(term).strip()))[:8]
+                if query and intent:
+                    result = {"intent": intent[:500],
+                              "search_query": query[:240],
+                              "mood_terms": terms,
+                              "instrumental": bool(data.get("instrumental", True)),
+                              "source": label}
+    except Exception:
+        # Planning audio must not turn an otherwise complete render into an
+        # error; a content-derived local query remains available offline.
+        result = None
+    result = result or _local_music_intent(title, script)
+    result["input_hash"] = key
+    return result
+
+
 def _public(asset: dict | None) -> dict | None:
     if not asset:
         return None
@@ -41,10 +111,6 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     """
     requested_mode = str(getattr(cfg, "music_mode", "auto") or "auto").lower()
     genre = genre or "people"  # identidade de áudio neutra, sem mudar gênero editorial
-    adapter = editorial.get(genre) or editorial.get("people")
-    music_query = adapter.music_query
-    music_mood = adapter.music_mood
-    music_mood_terms = adapter.music_mood_terms
     enabled = bool(getattr(cfg, "audio_enabled", False)) or requested_mode != "auto"
     mode = requested_mode if enabled else "none"
     if mode not in ("auto", "none", "manual"):
@@ -58,6 +124,13 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
 
     old_music = previous.get("music") if isinstance(previous.get("music"), dict) else {}
     old_track = old_music.get("track") if isinstance(old_music.get("track"), dict) else {}
+    intent = (_music_intent(cfg, title, script, old_music)
+              if mode == "auto" else {
+                  "intent": "", "search_query": "", "mood_terms": [],
+                  "instrumental": True, "source": "not_applicable"})
+    music_query = str(intent.get("search_query") or "")
+    music_mood = str(intent.get("intent") or "")
+    music_mood_terms = intent.get("mood_terms") or []
     if mode == "manual":
         manual = os.path.abspath(os.path.expanduser(
             str(getattr(cfg, "music_file", "") or "")))
@@ -96,7 +169,9 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                     report = library.update(
                         "music", genre,
                         int(getattr(cfg, "music_target_per_genre", 6)),
-                        int(getattr(cfg, "music_max_per_genre", 10)))
+                        int(getattr(cfg, "music_max_per_genre", 10)),
+                        query=music_query, mood_terms=music_mood_terms,
+                        instrumental=bool(intent.get("instrumental", True)))
                     if report.get("rejected_license"):
                         warnings.append(
                             f"Freesound: {report['rejected_license']} asset(s) ignorados; "
@@ -109,7 +184,8 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
                         for err in report.get("errors", [])[:3])
                 except (AudioLibraryError, OSError) as exc:
                     warnings.append(f"biblioteca musical {genre}: autopreenchimento ignorado ({exc})")
-            hints = content_hints(genre, title, script, music_query, music_mood)
+            hints = content_hints(title, script, music_query, music_mood,
+                                  " ".join(music_mood_terms))
             music_asset = library.select(
                 "music", genre, seed, hints=hints,
                 required_mood_terms=music_mood_terms)
@@ -182,6 +258,7 @@ def resolve_audio(cfg, genre: str, seed: str, title: str, script: str,
     audio = {
         "music": {"mode": mode, "genre": genre, "track": _public(music_asset),
                   "query": music_query, "mood": music_mood,
+                  "intent": intent,
                   "gain_db": gain, "ducking": ducking},
         "sfx": {"mode": "library" if sfx_assets else
                 ("generated" if sfx_enabled and sfx_events else "none"),

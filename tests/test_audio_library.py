@@ -250,7 +250,8 @@ def test_genre_mood_rejects_calm_but_mismatched_music(tmp_path, monkeypatch):
     assert chosen["source_asset_id"] != haunting["source_asset_id"]
 
 
-def test_old_haunting_track_is_replaced_by_people_genre_match(tmp_path, monkeypatch):
+def test_music_selection_follows_contextual_intent_instead_of_genre(tmp_path,
+                                                                   monkeypatch):
     library = AudioLibrary(tmp_path / "lib")
     haunting = _register(library, tmp_path, monkeypatch, "Haunting Music 1")
     classical = _register(library, tmp_path, monkeypatch,
@@ -263,6 +264,13 @@ def test_old_haunting_track_is_replaced_by_people_genre_match(tmp_path, monkeypa
         path.write_text(json.dumps(record), encoding="utf-8")
     cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
                       music_auto_fill=False)
+    from curio.stages import nvidia
+    monkeypatch.setattr(nvidia, "any_llm_available", lambda: True)
+    monkeypatch.setattr(nvidia, "complete_json", lambda *args, **kwargs: (
+        {"intent": "Measured, reflective orchestral bed",
+         "search_query": "instrumental violin classical reflective",
+         "mood_terms": ["classical", "violin"], "instrumental": True},
+        "fixture:model"))
     previous = {"music": {"mode": "auto", "genre": "people",
                           "query": "calm ambient", "mood": "calm",
                           "gain_db": cfg.music_gain_db,
@@ -273,7 +281,8 @@ def test_old_haunting_track_is_replaced_by_people_genre_match(tmp_path, monkeypa
                          previous=previous)
 
     assert plan["music_asset"]["source_asset_id"] == classical["source_asset_id"]
-    assert any("preferência musical" in warning for warning in plan["warnings"])
+    assert plan["metadata"]["music"]["intent"]["source"] == "fixture:model"
+    assert plan["metadata"]["music"]["query"] == "instrumental violin classical reflective"
 
 
 def test_cached_noisy_music_is_replaced_by_calm_bed(tmp_path, monkeypatch):
@@ -313,6 +322,61 @@ def test_music_update_queries_calm_and_rejects_effect_like_titles(tmp_path,
 def test_audio_seed_is_stable_and_tracks_script_identity():
     assert audio_seed("p", "title", "script") == audio_seed("p", "title", "script")
     assert audio_seed("p", "title", "script") != audio_seed("p", "title", "changed")
+
+
+def test_music_intent_is_cached_by_video_content(tmp_path, monkeypatch):
+    from curio.stages import nvidia
+    calls = []
+    monkeypatch.setattr(nvidia, "any_llm_available", lambda: True)
+    def make_intent(*args, **kwargs):
+        calls.append(1)
+        return ({"intent": "A quiet, curious progression",
+                 "search_query": "instrumental curious piano",
+                 "mood_terms": ["curious", "piano"], "instrumental": True},
+                "fixture:model")
+    monkeypatch.setattr(nvidia, "complete_json", make_intent)
+    cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
+                      music_auto_fill=False)
+    first = resolve_audio(cfg, "science", "seed", "A new discovery",
+                          "The result changes our understanding.", [], {})
+    second = resolve_audio(cfg, "history", "seed", "A new discovery",
+                           "The result changes our understanding.", [],
+                           first["metadata"])
+    assert len(calls) == 1
+    assert first["metadata"]["music"]["query"] == "instrumental curious piano"
+    assert second["metadata"]["music"]["intent"]["source"] == "cache"
+
+
+def test_music_intent_has_content_derived_offline_fallback(tmp_path, monkeypatch):
+    from curio.stages import nvidia
+    monkeypatch.setattr(nvidia, "any_llm_available", lambda: False)
+    cfg = CurioConfig(audio_library_dir=str(tmp_path / "lib"),
+                      music_auto_fill=False)
+    plan = resolve_audio(cfg, "science", "seed", "Ocean currents",
+                         "Warm water rises and shifts global weather.", [], {})
+    intent = plan["metadata"]["music"]["intent"]
+    assert intent["source"] == "local"
+    assert "Ocean currents" in intent["search_query"]
+    assert "Warm water rises" in intent["search_query"]
+
+
+def test_external_music_search_uses_context_and_instrumental_preference(
+        tmp_path, monkeypatch):
+    library = AudioLibrary(tmp_path / "lib")
+    candidate = _item("reflective")
+    candidate["name"] = "Reflective Piano Bed"
+    candidate["tags"] = ["reflective", "instrumental", "piano"]
+    source = FakeSource([candidate])
+    monkeypatch.setattr("curio.audio.library.ff.probe_duration", lambda _p: 80.0)
+    report = library.update(
+        "music", "science", target=1, max_count=3, source=source,
+        query="reflective piano for ocean currents",
+        mood_terms=["reflective", "piano"], instrumental=True)
+    assert "reflective piano for ocean currents" in source.queries[0][0]
+    assert "instrumental" in source.queries[0][0]
+    assert report["added"] == 1
+    track = library.assets("music", "science")[0]
+    assert track["mood"] == candidate["tags"]
 
 
 def test_auto_uses_local_track_and_none_never_selects(tmp_path, monkeypatch):

@@ -59,11 +59,16 @@ def is_calm_music_asset(asset: dict) -> bool:
     return bool(words & _CALM_TITLE_HINTS)
 
 
-def matches_music_mood(asset: dict, mood_terms: tuple[str, ...] | list[str]) -> bool:
-    """Require genre mood evidence in file tags or title.
+def is_disruptive_music_asset(asset: dict) -> bool:
+    title = str(asset.get("title") or "").lower()
+    return any(term in title for term in _DISRUPTIVE_TITLE_HINTS)
 
-    Calmness alone is not genre fit: the Marco Aurelius project selected
-    "Haunting Music" tagged `contemplative` for a classical-biography bed.
+
+def matches_music_mood(asset: dict, mood_terms: tuple[str, ...] | list[str]) -> bool:
+    """Match requested mood/instrument descriptors against tags or title.
+
+    This evaluates a video-specific intent when available; no genre profile
+    is used as a proxy for the video's emotional direction.
     """
     required = {str(term).strip().lower() for term in mood_terms if str(term).strip()}
     if not required:
@@ -171,7 +176,7 @@ class FreesoundAudioSource:
         params = urllib.parse.urlencode({
             "query": query,
             "page_size": max(1, min(int(limit), 50)),
-            "fields": "id,name,username,url,license,duration,previews",
+            "fields": "id,name,username,url,license,duration,previews,tags",
             "sort": "downloads_desc",
         })
         result = self._json(f"{API_ROOT}/search/?{params}")
@@ -287,9 +292,15 @@ class AudioLibrary:
                required_mood_terms: tuple[str, ...] | list[str] = ()) -> dict | None:
         eligible = self.assets(kind, genre, category)
         if kind == "music":
-            eligible = [asset for asset in eligible if is_calm_music_asset(asset)]
             eligible = [asset for asset in eligible
-                        if matches_music_mood(asset, required_mood_terms)]
+                        if not is_disruptive_music_asset(asset)
+                        and (is_calm_music_asset(asset)
+                             or matches_music_mood(asset, required_mood_terms))]
+            if required_mood_terms:
+                matched = [asset for asset in eligible
+                           if matches_music_mood(asset, required_mood_terms)]
+                if matched:
+                    eligible = matched
         if not eligible:
             return None
         if kind == "music" and hints:
@@ -357,6 +368,8 @@ class AudioLibrary:
             "downloaded_at": str(source_asset.get("downloaded_at") or _now()),
             "genres": [genre],
             "mood": list(source_asset.get("mood") or []),
+            "instrumental_preference": source_asset.get(
+                "instrumental_preference"),
             "category": category or "",
             "duration": round(duration, 3),
             "sha256": digest,
@@ -368,7 +381,9 @@ class AudioLibrary:
         return {**metadata, "path": str(dest)}
 
     def update(self, kind: str, genre: str, target: int, max_count: int,
-               category: str | None = None, source=None) -> dict:
+               category: str | None = None, source=None, *, query: str = "",
+               mood_terms: tuple[str, ...] | list[str] = (),
+               instrumental: bool = True) -> dict:
         limit = max(0, min(int(target), int(max_count)))
         existing = self.assets(kind, genre, category)
         before = len(existing)
@@ -386,7 +401,8 @@ class AudioLibrary:
             source = FreesoundAudioSource()
         if kind == "music":
             adapter = editorial.get(genre) or editorial.get("history")
-            query, mood = adapter.music_query, adapter.music_mood
+            query = query or adapter.music_query
+            mood = adapter.music_mood
             min_duration, max_duration = 20.0, 900.0
         else:
             if category not in SFX_QUERIES:
@@ -397,7 +413,11 @@ class AudioLibrary:
         seen_ids = {str(a.get("source_asset_id")) for a in existing}
         # Uma busca limitada por update: só candidatos necessários + margem de
         # licenças/duplicatas; não varre páginas nem baixa uma coleção inteira.
-        candidates = source.search(query, limit=min(50, max(12, missing * 4)))
+        search_query = query
+        if kind == "music" and instrumental and "instrumental" not in search_query.lower():
+            search_query = f"{search_query} instrumental".strip()
+        candidates = source.search(search_query,
+                                   limit=min(50, max(12, missing * 4)))
         folder = self.directory(kind, genre, category)
         for item in candidates:
             if report["added"] >= missing:
@@ -407,10 +427,17 @@ class AudioLibrary:
                 report["duplicates"] += 1
                 continue
             seen_ids.add(source_id)
-            if kind == "music" and not is_calm_music_asset({
-                    "title": item.get("name"), "mood": [mood]}):
-                report["rejected_quality"] += 1
-                continue
+            tags = item.get("tags") or []
+            if isinstance(tags, str):
+                tags = tags.split()
+            if kind == "music":
+                candidate_metadata = {"title": item.get("name"), "mood": tags}
+                if (is_disruptive_music_asset(candidate_metadata)
+                        or not (is_calm_music_asset(candidate_metadata)
+                                or matches_music_mood(candidate_metadata,
+                                                      mood_terms))):
+                    report["rejected_quality"] += 1
+                    continue
             raw_license = str(item.get("license") or "")
             lic = _license_kind(raw_license)
             if not lic:
@@ -450,7 +477,8 @@ class AudioLibrary:
                     "license": lic,
                     "license_url": _license_url(raw_license, lic),
                     "downloaded_at": _now(),
-                    "mood": [mood],
+                    "mood": [str(tag) for tag in tags],
+                    "instrumental_preference": bool(instrumental),
                     "downloaded_path": str(candidate_path),
                 }
                 added = self.register(kind, genre, metadata, category,
