@@ -3,8 +3,30 @@
 > Conteúdo curto que respeita a inteligência do espectador.
 
 Ferramenta local (Linux, CLI + TUI) que transforma **uma ideia textual** em um
-**vídeo vertical de ~45 s** com roteiro, narração em PT-BR, legendas queimadas
-e MP4 final — tudo com **custo próximo de zero** (TTS local + FFmpeg).
+**vídeo vertical** com roteiro, narração, legendas queimadas e MP4 final.
+A duração acompanha o conteúdo; idioma, voz e duração-alvo são configuráveis.
+FFmpeg executa localmente. Custos dependem dos serviços e agentes escolhidos.
+
+## Produzir com um agente
+
+Se o agente tem acesso ao terminal e aos arquivos do projeto, peça no próprio chat:
+
+> Produza um vídeo sobre “Como buracos negros distorcem o tempo”, usando agent-flow, slug buracos-negros, gênero science. Execute o fluxo e revise cada render até aprovação fundamentada.
+
+O agente executa os comandos. Um chat sem acesso ao terminal exige que você os execute em um terminal separado. O Curio não conecta chats ao terminal nem inicia agentes automaticamente.
+
+Para iniciar manualmente, na raiz do projeto:
+
+```bash
+./scripts/run.sh agent-flow init --slug buracos-negros \
+  --topic "Como buracos negros distorcem o tempo" --genre science
+```
+
+`--topic` escolhe o assunto; `--slug` nomeia a pasta. `init` prepara o contrato e pausa com código **3**, sem gerar o vídeo sozinho. O agente lê `output/science/buracos-negros/agent_flow/AGENT.md` e `request.json`, fornece planejamento, escolhe mídia e revisa o render. Veja [fluxo completo, retomada e aprovação](docs/agent-flow.md).
+
+Outras opções: [revisão manual de imagens](docs/media-review.md), [trilhas contextuais](docs/audio-contextual.md) e geração automática com `generate`/`from-script`.
+
+## Arquitetura e validações históricas
 
 O mapa do fluxo executado, contratos atuais, fontes de verdade e plano de
 migração arquitetural estão em
@@ -1077,8 +1099,9 @@ assets/library/sfx/<genre>/<category>/
 
 O render consulta somente esse acervo local. Quando abaixo do mínimo,
 `auto_fill` pode preenchê-lo até o alvo; com a configuração de exemplo, o
-primeiro uso pode bootstrapar o acervo. Depois de atingir o mínimo, vídeos não
-pesquisam nem baixam. Limites padrão: música 3/6/10 por gênero (mínimo/alvo/
+primeiro uso pode preencher o acervo. Depois de atingir o mínimo, a geração não
+autopreenche a biblioteca; o planejamento de intenção musical ainda pode consultar
+o LLM quando não há intenção em cache. Limites padrão: música 3/6/10 por gênero (mínimo/alvo/
 máximo); SFX 2/5/8 por categoria. O autopreenchimento pode ser desligado para
 exigir atualização manual.
 
@@ -1105,8 +1128,10 @@ manuais são marcados como fornecidos pelo usuário, com licença não verificad
 ```
 
 A TUI expõe Automática, Nenhuma, arquivo manual e atualização da biblioteca em
-Configurações → Áudio. A seleção automática busca camas calmas/ambientais,
-rejeita títulos que indiquem efeitos/ruído e revalida faixas em cache. Se não
+Configurações → Áudio. A seleção automática usa título, roteiro, ritmo e emoção
+para planejar intenção musical, com cache por conteúdo e fallback local. Quando
+há autopreenchimento, a consulta externa usa essa intenção. A seleção considera
+tags, título e uso anterior, rejeita efeitos/ruído e revalida faixas em cache. Se não
 houver faixa compatível, o vídeo sai sem música em vez de usar áudio confuso.
 Entre as faixas aprovadas, favorece assets menos usados e desempata com seed
 estável do projeto. A música usa ganho padrão de −3 dB (configurável entre
@@ -1118,9 +1143,10 @@ efeito por gênero (dissolve, fade a preto, deslizamento), duração ajustada
 por gênero/papel da cena, cortes secos em mudanças dramáticas e fade final.
 `[audio].transitions = "none"` desliga a camada de transição. O `metadata.json`
 registra faixa/licença/atribuição, SFX, volume, ducking e identidade de cache
-do áudio efetivamente renderizado. Sem foto específica, a cena tenta o
-genérico do gênero (igreja, biblioteca, manuscrito) antes do cartão; cartão
-sem assunto mostra a primeira frase da narração, nunca tela vazia.
+do áudio efetivamente renderizado. Sem foto específica, a seleção automática tenta
+imagens contextuais pertinentes e reuso qualificado antes do fallback sintético.
+Na revisão manual, uma cena vazia recebe fallback explícito; no `agent-flow`,
+essa escolha exige justificativa do agente. Consulte [trilhas contextuais](docs/audio-contextual.md).
 
 ## Roadmap
 
@@ -1137,3 +1163,11 @@ Padrão [Conventional Commits](https://www.conventionalcommits.org/): `feat:`,
 ## Licença
 
 MIT — ver `LICENSE`.
+
+## Revisão manual de imagens
+
+Use `--media-review` em `generate`/`from-script`, apague candidatos irrelevantes das pastas por cena e retome com `video-gen resume-media-review --slug <slug>`. `--media-dump` exporta sem pausar. Veja [comandos e comportamento](docs/media-review.md).
+
+### Produção com agente editorial
+
+`video-gen agent-flow init --slug meu-video --topic "Tema"` inicia um fluxo opcional operado por qualquer agente via JSON e CLI. O agente fornece pesquisa, roteiro, cenas e trilha, escolhe imagens e revisa cada render. Correções voltam obrigatoriamente à revisão; aprovação exige evidências e fica vinculada aos arquivos renderizados. Veja [contrato e comandos](docs/agent-flow.md).

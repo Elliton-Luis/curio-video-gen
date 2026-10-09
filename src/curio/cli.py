@@ -218,6 +218,37 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
     return 0
 
 
+def cmd_agent_flow(args, cfg: CurioConfig) -> int:
+    """Operate a provider-neutral editorial job through a versioned file contract."""
+    from . import agent_flow
+    from pathlib import Path
+    from copy import deepcopy
+    cfg = deepcopy(cfg)
+    cfg.auto_open = False
+    try:
+        if args.action == 'init':
+            paths = agent_flow.initialize(cfg, args.slug, args.topic or '', args.genre or '')
+        else:
+            _, paths = _paths_for_slug(cfg.out_dir, args.slug)
+        folder = Path(paths.root) / 'agent_flow'
+        if args.action == 'advance':
+            args.dump = False
+            result = agent_flow.advance(paths, cfg,
+                lambda: cmd_media_review(args, cfg),
+                lambda: cmd_resume_media_review(args, cfg))
+        elif args.action in ('revise', 'replan'):
+            agent_flow.revise(paths, args.action == 'replan')
+            result = 3
+        else:
+            state = agent_flow.current_state(paths)
+            result = 0 if state['status'] == 'approved' else 3
+        print(f"Contrato: {folder / 'request.json'}")
+        print(f"Estado: {agent_flow.current_state(paths)['status']}")
+        return result
+    except (OSError, ValueError, KeyError, TypeError, ff.FFMpegError) as exc:
+        return _fail('produção assistida', exc)
+
+
 def _print_sources(meta: dict) -> None:
     research = meta.get("research") or {}
     n = int(research.get("sources") or 0)
@@ -521,6 +552,11 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         cfg.sfx_library_enabled = False
     cfg.music_auto_fill = False
     cfg.sfx_auto_fill = False
+    if getattr(cfg, '_agent_audio_request', None):
+        request = cfg._agent_audio_request
+        cfg.music_mode = request['mode']
+        cfg.music_file = request.get('file', '')
+        cfg.audio_enabled = request['mode'] != 'none'
     project_genre = str(old_meta.get("genre") or cfg.genre or "")
     audio_duration = ff.probe_duration(paths.narration_wav)
 
@@ -942,6 +978,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")
     ap.add_argument("--queues-dir", default=None, help="pasta padrão das filas de ideias")
     sub = ap.add_subparsers(dest="cmd", required=False)
+
+    agent = sub.add_parser('agent-flow', help='produção editorial por qualquer agente, com revisão obrigatória')
+    agent.add_argument('action', choices=('init', 'advance', 'status', 'revise', 'replan'))
+    agent.add_argument('--slug', required=True)
+    agent.add_argument('--topic', default=None, help='tema para iniciar um projeto novo')
+    agent.add_argument('--genre', default=None)
+    agent.set_defaults(func=cmd_agent_flow)
 
     g = sub.add_parser("generate", help="gerar vídeo a partir de uma ideia")
     g.add_argument("idea", nargs="+", help="ideia textual entre aspas")

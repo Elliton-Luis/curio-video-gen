@@ -5,6 +5,20 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 (tipos: `relatorio`, `analise`, `melhoria`). Processo completo em
 `_modelos/MODELO.md`.
 
+## Guias de operação atuais
+
+- [Produção com qualquer agente](agent-flow.md): escolher tema, acesso ao terminal, contrato JSON, revisão obrigatória, correções e aprovação.
+- [Revisão manual de imagens](media-review.md): exportar candidatos, apagar imagens, retomar e auditar sem pausa.
+- [Trilhas contextuais](audio-contextual.md): intenção musical, cache, biblioteca local, consultas externas e limites da validação.
+
+## Validações de mídia e produção editorial
+
+- [Seleção de imagens: causas e evidências](analises/20261008-selecao-imagens-causa-raiz-e-evidencias.md).
+- [Revisão manual de Aristóteles](analises/20261008-revisao-manual-aristoteles.md).
+- [Fluxo editorial modular](analises/20261009-fluxo-editorial-modular.md): duas renderizações reais, rejeição documentada e revisão ainda pendente.
+
+Os relatórios abaixo registram etapas históricas. Artefatos em `output/`, `cache/` e `assets/library/` são locais e não acompanham o clone do repositório.
+
 ## Relatórios (o que foi feito e como)
 
 - `relatorios/20261005-compact-identifier-source-gate.md` — G96: causa e correção da aceitação de homônimos M87, validação real pós-correção, proveniência por cena e falha visual ainda aberta (1020 testes).
