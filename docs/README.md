@@ -7,6 +7,7 @@ Convenção de nomes: `AAAAMMDD-HHMMSS_<tipo>_<slug>.md`
 
 ## Guias de operação atuais
 
+- [Entrada simplificada para agentes](../VIDEO-AGENTE.md): o agente lê, espera tema e duração opcional e conduz a produção.
 - [Produção com qualquer agente](agent-flow.md): escolher tema, acesso ao terminal, contrato JSON, revisão obrigatória, correções e aprovação.
 - [Revisão manual de imagens](media-review.md): exportar candidatos, apagar imagens, retomar e auditar sem pausa.
 - [Trilhas contextuais](audio-contextual.md): intenção musical, cache, biblioteca local, consultas externas e limites da validação.

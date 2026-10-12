@@ -262,3 +262,26 @@ def test_ducking_reduces_music_during_voice_and_returns_in_pause(tmp_path):
     assert ducked_active < ducked_pause * 0.8
     assert open_active == pytest.approx(open_pause, rel=0.15)
     assert voice_active > ducked_active
+
+
+def test_final_delivery_copy_uses_three_title_words(tmp_path):
+    from curio.stages.render import _delivery_copy
+
+    project = tmp_path / "project"
+    render = project / "render"
+    render.mkdir(parents=True)
+    source = render / "final.mp4"
+    source.write_bytes(b"rendered-video")
+
+    delivery = _delivery_copy(str(source), "Por que cortar cebola faz chorar?")
+
+    assert delivery == str(project / "cortar-cebola-faz.mp4")
+    assert (project / "cortar-cebola-faz.mp4").read_bytes() == b"rendered-video"
+
+
+def test_final_delivery_copy_skips_non_final_renders(tmp_path):
+    from curio.stages.render import _delivery_copy
+
+    source = tmp_path / "teleprompter.mp4"
+    source.write_bytes(b"teleprompter")
+    assert _delivery_copy(str(source), "A title") is None

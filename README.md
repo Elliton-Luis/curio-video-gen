@@ -9,6 +9,8 @@ FFmpeg executa localmente. Custos dependem dos serviços e agentes escolhidos.
 
 ## Produzir com um agente
 
+Para começar sem memorizar comandos, abra um agente com acesso a este projeto e diga **“Curio pronto”**. O agente fica pronto para receber o tema; ou você pode enviar tudo de uma vez, como **“Curio pronto: Aristóteles e sua filosofia, 120s”**. Sem duração informada, usa automático. O atalho segue as instruções do [VIDEO-AGENTE.md](VIDEO-AGENTE.md), que explica pesquisa, curadoria, render, revisão e retomada.
+
 Se o agente tem acesso ao terminal e aos arquivos do projeto, peça no próprio chat:
 
 > Produza um vídeo sobre “Como buracos negros distorcem o tempo”, usando agent-flow, slug buracos-negros, gênero science. Execute o fluxo e revise cada render até aprovação fundamentada.
@@ -602,8 +604,11 @@ Progresso esperado:
 [5/6] Sincronizando legendas... OK
 [6/6] Montando vídeo... OK
 
-Output: output/salario/render/final.mp4
+Output: output/salario/palavra-salario.mp4
 ```
+
+O MP4 de entrega recebe um nome curto, com até três palavras principais do
+título. `render/final.mp4` permanece como artefato interno de montagem.
 
 ## Gêneros editoriais
 

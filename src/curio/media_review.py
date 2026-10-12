@@ -31,7 +31,24 @@ def _write(path, value):
 
 
 def scenes_signature(scenes):
-    return hashlib.sha256(json.dumps([s.to_dict() for s in scenes],
+    """Sign only visual semantics so narration edits can reuse reviewed media."""
+    rows = []
+    for scene in scenes:
+        row = scene.to_dict()
+        row.pop('narration', None)
+        # Evidence often quotes narration. Queries and representation types are
+        # the visual contract; a wording change alone must not invalidate it.
+        row['representations'] = [
+            {key: value for key, value in item.items() if key != 'evidence'}
+            for item in (row.get('representations') or [])]
+        rows.append(row)
+    return hashlib.sha256(json.dumps(rows,
+        sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def legacy_scenes_signature(scenes):
+    """Hash used before signatures were narrowed to visual semantics."""
+    return hashlib.sha256(json.dumps([scene.to_dict() for scene in scenes],
         sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -45,7 +62,11 @@ class CandidateExporter:
         if previous.exists():
             stored = json.loads(previous.read_text())
             if stored['scene_signature'] != self.summary['scene_signature']:
-                raise ValueError('As cenas mudaram desde a exportação de mídia.')
+                if stored['scene_signature'] == legacy_scenes_signature(scenes):
+                    stored['scene_signature'] = self.summary['scene_signature']
+                    _write(previous, stored)
+                else:
+                    raise ValueError('As cenas mudaram desde a exportação de mídia.')
             if stored['mode'] != mode:
                 raise ValueError('A pasta já pertence a outro modo de revisão/dump.')
             self.summary = stored
@@ -131,6 +152,9 @@ def load_reviewed_media(root, scenes, config):
         raise ValueError('Esta pasta é um dump de auditoria, não uma revisão editorial.')
     if summary['status'] == 'collecting':
         raise ValueError('A exportação foi interrompida. Rode media-review novamente para completá-la.')
+    if summary['scene_signature'] == legacy_scenes_signature(scenes):
+        summary['scene_signature'] = scenes_signature(scenes)
+        _write(folder / 'review_summary.json', summary)
     if summary['scene_signature'] != scenes_signature(scenes):
         raise ValueError('As cenas mudaram desde a revisão. Exporte uma nova revisão em outro projeto.')
     rows = []

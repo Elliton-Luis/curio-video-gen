@@ -8,7 +8,10 @@ Intel Arc (VA-API/AV1 no nó Intel) > QSV > libx264 (auto-detect).
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import sys
+import unicodedata
 
 from .. import ffmpeg as ff
 from ..config import CurioConfig
@@ -16,6 +19,27 @@ from ..config import CurioConfig
 
 class RenderError(RuntimeError):
     pass
+
+
+_TITLE_FILLER_WORDS = {
+    "a", "as", "ao", "aos", "com", "da", "das", "de", "do", "dos",
+    "e", "em", "for", "how", "is", "na", "nas", "no", "nos", "o",
+    "os", "para", "por", "que", "the", "to", "um", "uma", "why",
+}
+
+
+def _delivery_copy(out_path: str, title: str | None) -> str | None:
+    if not title or os.path.basename(out_path) != "final.mp4":
+        return None
+    folded = unicodedata.normalize("NFKD", title.lower())
+    ascii_text = "".join(c for c in folded if not unicodedata.combining(c))
+    words = re.findall(r"[a-z0-9]+", ascii_text)
+    words = [word for word in words if word not in _TITLE_FILLER_WORDS] or words
+    stem = "-".join(words[:3]) or "video"
+    project_root = os.path.dirname(os.path.dirname(out_path))
+    delivery_path = os.path.join(project_root, f"{stem}.mp4")
+    shutil.copy2(out_path, delivery_path)
+    return delivery_path
 
 
 def _wrap_title(idea: str, width: int = 26) -> list[str]:
@@ -713,5 +737,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
     cmd += ["-movflags", "+faststart", out_path]
     _check(ff.run(cmd), encoder)
     actual = ff.probe_duration(out_path)
+    delivery_path = _delivery_copy(out_path, title)
     return {"backend": backend, "encoder": encoder,
-            "duration": actual, "path": out_path}
+            "duration": actual, "path": out_path,
+            **({"delivery_path": delivery_path} if delivery_path else {})}

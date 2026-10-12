@@ -533,6 +533,9 @@ def run_render_stage(request: RenderStageInput) -> RenderStageResult:
         duration = ff.probe_duration(paths.final_mp4)
         render_info = {"backend": "cache", "encoder": "cache",
                        "duration": duration, "path": paths.final_mp4}
+        delivery_path = render_stage._delivery_copy(paths.final_mp4, title)
+        if delivery_path:
+            render_info["delivery_path"] = delivery_path
         sfx_path = (previous_meta.get("artifacts") or {}).get("sfx")
         visual_usage = None
     else:

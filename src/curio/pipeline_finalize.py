@@ -267,7 +267,8 @@ def run_finalize(slug: str, audio_src: str, cfg: CurioConfig,
         "processing_time_seconds": round(time.monotonic() - started, 2),
         "execution_log": current_log_path(),
     })
-    meta.setdefault("artifacts", {})["video"] = paths.final_mp4
+    meta.setdefault("artifacts", {})["video"] = render_info.get(
+        "delivery_path", paths.final_mp4)
     meta["artifacts"]["human_audio"] = paths.human_wav
     meta["artifacts"]["transcription"] = paths.transcription_json
     if sfx_path:

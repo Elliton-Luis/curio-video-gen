@@ -1,3 +1,19 @@
+## Linguagem e qualidade de todos os vídeos
+
+Escreva para quem está rolando o feed, tem curiosidade e não conhece o assunto. Comece com uma situação concreta e interessante; explique uma ideia por vez com palavras simples e exemplos familiares. Evite jargões, tom de aula e referências que pressuponham conhecimento prévio. Quando um termo técnico for indispensável, explique-o na primeira menção. Preserve causas, limites, incertezas e distinções sustentados pelas fontes: simplifique a explicação, não o conteúdo. Mantenha a qualidade e o formato audiovisual atuais, incluindo imagens reais pertinentes e variadas, legendas, narração, trilha e ducking, gancho inicial e pergunta com convite para compartilhar no fim.
+
+Na revisão editorial, confira se um espectador sem conhecimento prévio consegue acompanhar cada ideia na primeira passagem. Reescreva trechos que dependam de jargão ou contexto não explicado, preservando a precisão das fontes.
+
+## Regra editorial de abertura e encerramento
+
+Todo vídeo do Curio deve abrir com um gancho concreto, surpreendente e fiel às fontes, que apresente a descoberta, consequência ou imagem mais intrigante do tema. Não comece com biografia cronológica, definição, saudação ou introdução genérica. Exemplo: para Eratóstenes, prefira “O homem que calculou o tamanho da Terra usando a sombra do Sol” a “Ele era um grego que viveu há 2.000 anos”.
+
+Todo vídeo também deve terminar com uma pergunta curta ligada ao assunto e à vida cotidiana, seguida de um convite natural para compartilhar com alguém que se interessaria pelo tema. A pergunta e o convite devem aparecer na narração da última cena e nas legendas finais. Adapte ambos ao conteúdo; não use CTA genérico nem invente fatos para produzir impacto.
+
+## Atalho para produzir vídeo
+
+Quando o usuário disser **“Curio pronto”** (sem diferenciar maiúsculas/minúsculas), siga `VIDEO-AGENTE.md`. Se vier sozinho, leia o guia e responda que está pronto para receber tema e duração. Se a mesma mensagem já trouxer o tema, inicie a produção imediatamente seguindo o guia; duração omitida significa automática. Exemplos: “Curio pronto” e “Curio pronto: Aristóteles e sua filosofia, 120s”.
+
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
 

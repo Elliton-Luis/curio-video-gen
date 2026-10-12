@@ -86,10 +86,17 @@ def initialize(cfg, slug, topic='', genre=''):
         'Qualquer agente pode operar este projeto por arquivos JSON e CLI.\n'
         'Não há SDK, modelo, credencial ou provedor de agente obrigatório.\n'
         'Preencha plan.json com pesquisa, roteiro preservado pelas cenas e intenção musical.\n'
+        'Escreva para pessoas curiosas rolando o feed, sem conhecimento prévio do assunto.\n'
+        'Abra com uma situação concreta e interessante; explique uma ideia por vez com palavras simples e exemplos familiares.\n'
+        'Evite jargões e tom de aula; explique termos indispensáveis na primeira menção.\n'
+        'Simplifique a explicação preservando causas, limites, incertezas e distinções das fontes.\n'
+        'Preserve o formato audiovisual, o gancho inicial e a pergunta cotidiana com convite para compartilhar no fim.\n'
+        'Na revisão, registre clareza para leigos e precisão em factual_accuracy e pacing; revise trechos que exijam conhecimento prévio.\n'
         'Use advance até a próxima pausa. Leia request.json em cada pausa.\n'
         'Na mídia, inspecione os arquivos e preencha media-feedback.json com um arquivo por cena,\n'
         'justificativa semântica e direitos. Busque alternativas se necessário.\n'
         'No render, examine o vídeo, frames, legendas e áudio; preencha feedback.json.\n'
+        'Ao mudar só a narração, use replan: mídia revisada e segmentos visuais compatíveis são reutilizados.\n'
         'Use revise para corrigir mídia e renderizar novamente; use replan para mudar roteiro/cenas.\n'
         'Nunca aprove somente porque o render terminou. Não invente evidências de inspeção.\n', encoding='utf-8')
     return paths
@@ -138,7 +145,7 @@ def validate_plan(plan):
     return scenes
 
 
-def _persist_plan(paths, plan, cfg):
+def _persist_plan(paths, plan, cfg, preserve_review=False):
     scenes = validate_plan(plan)
     expected_genre = Path(paths.root).parent.name if Path(paths.root).parent != Path(cfg.out_dir) else ''
     if plan.get('genre') != expected_genre:
@@ -150,7 +157,9 @@ def _persist_plan(paths, plan, cfg):
         index = 1
         while (archive / str(index)).exists():
             index += 1
-        _archive(paths, archive / str(index))
+        _archive(paths, archive / str(index),
+                 names=('script',) if preserve_review else None,
+                 include_metadata=not preserve_review)
     for path, text in ((paths.script_txt, plan['script']), (paths.title_txt, plan['title'])):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text, encoding='utf-8')
@@ -161,10 +170,17 @@ def _persist_plan(paths, plan, cfg):
     from .media_review import REVIEW_CONFIG_FIELDS
     cfg.music_mode, cfg.music_file = plan['music']['mode'], plan['music'].get('file', '')
     cfg.music_auto_fill = cfg.sfx_auto_fill = False
-    write(Path(paths.root) / 'media_review/resume_context.json', {
+    context_path = Path(paths.root) / 'media_review/resume_context.json'
+    old_context = read(context_path) if preserve_review and context_path.exists() else {}
+    review_config = dict(old_context.get('review_config') or {})
+    if preserve_review:
+        review_config.update(music_mode=cfg.music_mode, music_file=cfg.music_file)
+    else:
+        review_config.update({name: getattr(cfg, name) for name in REVIEW_CONFIG_FIELDS})
+    write(context_path, {
         'topic': plan['topic'], 'genre': plan['genre'], 'narration': 'ai', 'max_images': 1,
         'grounding': {}, 'script_source': 'external_agent', 'title_source': 'external_agent',
-        'review_config': {name: getattr(cfg, name) for name in REVIEW_CONFIG_FIELDS}})
+        'review_config': review_config})
 
 
 def _media_template(paths, plan):
@@ -250,7 +266,7 @@ def _render_review(paths, state, cfg):
         'frames': frames, 'technical_passed': report.success,
         'technical_checks': [vars(check) for check in report.checks],
         'media': read(paths.media_json), 'music': read(folder / 'plan.json')['music'],
-        'instruction': 'Inspecione vídeo, frames e áudio. Preencha feedback.json. Aprovar ou revisar.'}
+        'instruction': 'Inspecione vídeo, frames e áudio. Confira linguagem para leigos: abertura concreta, uma ideia por vez, palavras simples, exemplos familiares e precisão preservada. Registre evidências em factual_accuracy e pacing. Preencha feedback.json. Aprovar ou revisar.'}
     write(evidence / 'request.json', request)
     write(evidence / 'fingerprint.json', snapshot)
     write(folder / 'feedback.json', {'schema_version': VERSION, 'render_id': render_id,
@@ -310,7 +326,20 @@ def advance(paths, cfg, export, render):
         raise ValueError('Versão do estado não suportada')
     status = state['status']
     if status == 'awaiting_plan':
-        _persist_plan(paths, plan, cfg)
+        reuse_reviewed_media = state.pop('reuse_reviewed_media', False)
+        _persist_plan(paths, plan, cfg, preserve_review=reuse_reviewed_media)
+        if reuse_reviewed_media:
+            # Reuse the reviewed files and the render stage's existing
+            # per-scene segment cache. Only script-derived artifacts are rebuilt.
+            cfg.resume_media_review = True
+            result = render()
+            if result:
+                raise ValueError('Atualização incremental falhou; mídia aprovada foi preservada')
+            _record_music(paths, plan)
+            state['plan_digest'] = digest(folder / 'plan.json')
+            write(folder / f"accepted-plan-{state['iteration']}.json", plan)
+            _render_review(paths, state, cfg)
+            return 3
         result = export()
         if result != 3:
             raise ValueError('Exportação não terminou na pausa editorial; tente novamente')
@@ -368,6 +397,49 @@ def advance(paths, cfg, export, render):
     return 3
 
 
+def _reuse_reviewed_media(paths, plan):
+    """Allow script-only replans to retain scene media and segment caches."""
+    from .media_review import legacy_scenes_signature, scenes_signature
+    summary_path = Path(paths.root) / 'media_review/review_summary.json'
+    if not summary_path.is_file() or not Path(paths.scene_plan_json).is_file():
+        return False
+    try:
+        summary = read(summary_path)
+        old_plan = read(paths.scene_plan_json)
+        old_scenes = [SemanticScene.from_dict(row)
+                      for row in old_plan['semantic_scenes']]
+        new_scenes = [SemanticScene.from_dict(row)
+                      for row in plan['scene_plan']['semantic_scenes']]
+        if (summary.get('mode') != 'review'
+                or summary.get('status') not in ('rendered', 'awaiting_review')
+                or len(old_scenes) != len(new_scenes)
+                or scenes_signature(old_scenes) != scenes_signature(new_scenes)):
+            return False
+        # Existing projects have the original full-scene digest. Accept it only
+        # when it matches the on-disk scene plan, then migrate to visual-only.
+        accepted_signatures = {scenes_signature(old_scenes),
+                               legacy_scenes_signature(old_scenes)}
+        if summary.get('scene_signature') not in accepted_signatures:
+            return False
+        old_research = dict(read(paths.research_json))
+        old_topic = old_research.pop('idea', None)
+        if (old_topic != plan.get('topic')
+                or Path(paths.root).parent.name != plan.get('genre')
+                or old_research != plan['research']
+                or not Path(paths.title_txt).is_file()
+                or Path(paths.title_txt).read_text() != plan['title']):
+            return False
+        for scene in old_scenes:
+            retained = summary.get('scenes', {}).get(str(scene.id), {}).get('retained_files', [])
+            if not retained or not any(Path(filename).is_file() for filename in retained):
+                return False
+        summary['scene_signature'] = scenes_signature(new_scenes)
+        write(summary_path, summary)
+        return True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
 def revise(paths, replan=False):
     folder = Path(paths.root) / 'agent_flow'
     state = read(folder / 'state.json')
@@ -377,24 +449,41 @@ def revise(paths, replan=False):
         write(Path(state['evidence_dir']) / 'feedback.json', read(folder / 'feedback.json'))
     state['iteration'] += 1
     if replan:
-        validate_plan(read(folder / 'plan.json'))
+        plan = read(folder / 'plan.json')
+        validate_plan(plan)
+        reuse_media = _reuse_reviewed_media(paths, plan)
         archive = folder / 'previous' / str(state['iteration'])
-        _archive(paths, archive)
-        _save(folder, state, 'awaiting_plan', 'Plano alterado; advance importa e exporta nova mídia.')
+        suffix = 1
+        while archive.exists():
+            archive = folder / 'previous' / f"{state['iteration']}-{suffix}"
+            suffix += 1
+        if reuse_media:
+            _archive(paths, archive, names=('audio', 'timeline', 'subtitles'),
+                     include_metadata=True)
+            state['reuse_reviewed_media'] = True
+            instruction = ('As imagens revisadas não mudaram. advance reutiliza mídia e segmentos; '
+                           'atualiza narração, legendas e render sem repetir buscas.')
+        else:
+            state.pop('reuse_reviewed_media', None)
+            _archive(paths, archive)
+            instruction = 'Plano alterado; advance importa e exporta nova mídia.'
+        _save(folder, state, 'awaiting_plan', instruction)
     else:
         if digest(folder / 'plan.json') != state.get('plan_digest'):
             raise ValueError('Plano mudou; execute replan')
         _save(folder, state, 'awaiting_media', 'Corrija media-feedback.json; advance renderiza e exige nova revisão.')
 
 
-def _archive(paths, archive):
+def _archive(paths, archive, names=None, include_metadata=True):
     """Preserve derived artifacts before editorial changes invalidate their caches."""
-    for name in ('script', 'sources', 'media_review', 'media', 'audio', 'timeline', 'render', 'subtitles'):
+    names = names or ('script', 'sources', 'media_review', 'media', 'audio',
+                      'timeline', 'render', 'subtitles')
+    for name in names:
         source = Path(paths.root) / name
         if source.exists():
             archive.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(archive / name))
     metadata = Path(paths.metadata_json)
-    if metadata.exists():
+    if include_metadata and metadata.exists():
         archive.mkdir(parents=True, exist_ok=True)
         shutil.move(str(metadata), str(archive / metadata.name))

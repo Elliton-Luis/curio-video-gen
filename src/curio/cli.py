@@ -635,7 +635,8 @@ def cmd_rerender(args, cfg: CurioConfig) -> int:
         "boundary_durations": transitions,
         "final_fade": audio_composition.final_audio_fade(project_genre, transition_mode),
     }
-    old_meta.setdefault("artifacts", {})["video"] = paths.final_mp4
+    old_meta.setdefault("artifacts", {})["video"] = info.get(
+        "delivery_path", paths.final_mp4)
     if sfx_path:
         old_meta["artifacts"]["sfx"] = sfx_path
     if music_asset:

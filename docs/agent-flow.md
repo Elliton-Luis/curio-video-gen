@@ -65,7 +65,7 @@ Use caminhos de arquivo absolutos para trilhas externas. Volume, ducking, transi
 video-gen agent-flow advance --slug meu-video
 ```
 
-Esse comando importa o plano, exporta candidatos e retorna à revisão de mídia. Não escreve um roteiro novo. Mudanças no roteiro ou nas cenas invalidam áudio e timeline antigos; os arquivos são arquivados.
+Esse comando importa o plano, exporta candidatos e retorna à revisão de mídia. Não escreve um roteiro novo. Mudanças no roteiro invalidam áudio e timeline antigos. Quando tema, título, fontes e semântica visual continuam iguais, `replan` preserva mídia e segmentos compatíveis, sem buscar imagens de novo.
 
 ### Seleção de mídia
 
@@ -96,6 +96,10 @@ Curio utiliza somente as escolhas locais, reaproveita narração válida e rende
 
 ### Revisão do vídeo e correções
 
+Escreva para quem está rolando o feed, tem curiosidade e não conhece o assunto. Comece com uma situação concreta e interessante; explique uma ideia por vez com palavras simples e exemplos familiares. Evite jargões, tom de aula e referências que pressuponham conhecimento prévio. Quando um termo técnico for indispensável, explique-o na primeira menção. Preserve causas, limites, incertezas e distinções sustentados pelas fontes: simplifique a explicação, não o conteúdo. Mantenha a qualidade e o formato audiovisual atuais, incluindo imagens reais pertinentes e variadas, legendas, narração, trilha e ducking, gancho inicial e pergunta com convite para compartilhar no fim.
+
+Registre evidências de clareza para leigos e precisão nos critérios existentes `factual_accuracy` e `pacing`. Trechos que exijam conhecimento prévio, usem jargão sem explicação ou soem como aula devem ser reescritos antes da aprovação.
+
 Inspecione vídeo, frames, legendas e áudio. Em `feedback.json`, preserve `render_id`, identifique `reviewer` e informe `decision: approve` ou `revise`.
 
 Aprovação exige:
@@ -120,7 +124,7 @@ video-gen agent-flow replan --slug meu-video
 video-gen agent-flow advance --slug meu-video
 ```
 
-`replan` arquiva artefatos derivados e volta ao planejamento. Para revisar apenas mídia, use `revise`; imagens anteriores permanecem em `discarded/` e podem ser copiadas de volta.
+`replan` volta ao planejamento. Se o tema, o título, as fontes e a semântica visual das cenas não mudaram, o Curio mantém os arquivos de mídia revisados e o cache dos segmentos, atualizando narração, legendas e render sem repetir buscas. Se esses elementos mudarem, o Curio invalida a mídia e volta à curadoria completa. Para revisar apenas mídia, use `revise`; imagens anteriores permanecem em `discarded/` e podem ser copiadas de volta.
 
 ## Automação e códigos de saída
 

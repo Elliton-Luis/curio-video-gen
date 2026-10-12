@@ -41,7 +41,7 @@ class VideoPaths:
 
 def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
     root = project_dir(out_dir, genre, slug)
-    return VideoPaths(
+    paths = VideoPaths(
         root=root,
         script_txt=os.path.join(root, "script", "script.txt"),
         script_manifest_json=os.path.join(root, "script", "artifacts.json"),
@@ -71,6 +71,7 @@ def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
         final_mp4=os.path.join(root, "render", "final.mp4"),
         metadata_json=os.path.join(root, "metadata.json"),
     )
+    return paths
 
 
 def paths_for_slug(out_dir: str, slug: str) -> tuple[str, VideoPaths]:

@@ -195,7 +195,8 @@ def build_assisted_run_metadata(*, idea: str, slug: str, cfg,
             "subtitles": paths.subs_srt,
             "subtitles_ass": paths.subs_ass,
             "silent": paths.silent_mp4,
-            "video": paths.final_mp4,
+            "video": render_result.render_info.get(
+                "delivery_path", paths.final_mp4),
         },
     })
     return metadata
