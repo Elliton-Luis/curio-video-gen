@@ -194,7 +194,7 @@ def cmd_generate(args, cfg: CurioConfig) -> int:
                                  "sem chave, o gerador local é usado; "
                                  "com roteiro em cache, rode de novo para reaproveitá-lo.")
     except tts_stage.TTSError as exc:
-        return _fail("narração", exc, "verifique espeak-ng (`video-gen doctor`).")
+        return _fail("narração", exc, "verifique a conexão com os provedores de voz neural (`video-gen doctor`).")
     except ff.FFMpegError as exc:
         return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
     except Exception as exc:  # noqa: BLE001 — CLI deve exibir erro amigável
@@ -298,7 +298,7 @@ def cmd_from_script(args, cfg: CurioConfig) -> int:
                                  "verifique chaves/modelos (`video-gen doctor`); "
                                  "sem chave, a divisão local é usada.")
     except tts_stage.TTSError as exc:
-        return _fail("narração", exc, "verifique espeak-ng (`video-gen doctor`).")
+        return _fail("narração", exc, "verifique a conexão com os provedores de voz neural (`video-gen doctor`).")
     except ff.FFMpegError as exc:
         return _fail("montagem", exc, "verifique ffmpeg/VA-API (`video-gen doctor`).")
     except Exception as exc:  # noqa: BLE001 — CLI deve exibir erro amigável
@@ -771,11 +771,14 @@ def cmd_doctor(_args, cfg: CurioConfig) -> int:
     check("python >= 3.11", sys.version_info >= (3, 11), sys.version.split()[0])
     check("ffmpeg", shutil.which("ffmpeg") is not None)
     check("ffprobe", shutil.which("ffprobe") is not None)
-    check("espeak-ng (TTS local, fallback)", shutil.which("espeak-ng") is not None)
+    check("espeak-ng (pré-avaliação opcional)", True,
+          "disponível" if shutil.which("espeak-ng") else "ausente; sem impacto na produção")
     import importlib.util
     has_edge = importlib.util.find_spec("edge_tts") is not None
-    check("edge-tts (voz neural PT-BR masculina)", has_edge,
-          "pt-BR-AntonioNeural" if has_edge else "pip install edge-tts (ou use espeak-ng)")
+    check("Edge TTS (provedor neural preferencial)", True,
+          "instalado" if has_edge else "ausente; será usado Piper neural remoto (tts.ai)")
+    check("Piper neural remoto (fallback de produção)", True,
+          "requer conexão com a internet")
     check("filtro libass (legendas queimadas)",
           "libass" in (ff.run(["ffmpeg", "-hide_banner", "-h", "filter=subtitles"])
                        .stdout.lower()))
@@ -973,7 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     ap.add_argument("--config", default=None, help="caminho do config.toml")
     ap.add_argument("--out-dir", default=None, help="sobrescreve diretório de saída")
-    ap.add_argument("--tts", default=None, help="provedor TTS (ex.: espeak-ng)")
+    ap.add_argument("--tts", default=None, help="provedor TTS (ex.: edge-tts ou tts.ai; espeak-ng só em pré-avaliação)")
     ap.add_argument("--voice", default=None, help="voz TTS (ex.: pt-br)")
     ap.add_argument("--backend", default=None, help="arc|auto|vaapi|qsv|cpu")
     ap.add_argument("--language", default=None, help="idioma do vídeo: pt-BR ou en-US")

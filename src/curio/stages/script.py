@@ -186,7 +186,7 @@ def generate_script(idea: str, cfg: CurioConfig, metrics=None,
                           "template")
 
 
-TITLE_MAX_CHARS = 90  # limite duro de validação (prompt pede ≤55)
+TITLE_MAX_CHARS = 55
 
 
 def _first_sentence(text: str) -> str:
@@ -196,63 +196,25 @@ def _first_sentence(text: str) -> str:
 
 
 def _validate_title(title: str, script_text: str) -> str:
-    """Título precisa ser pergunta curta, própria (não cópia da 1ª frase)."""
-    from . import scenes as scenes_stage
+    """Short title must also be the first spoken sentence."""
     t = (title or "").strip().replace("\n", " ")
     t = t.strip("`'\" ")
-    if not (12 <= len(t) <= TITLE_MAX_CHARS):
-        raise ValueError(f"título fora do tamanho (12–90): {t!r}")
-    if not t.endswith("?"):
-        raise ValueError(f"título sem '?': {t!r}")
+    if not (3 <= len(t) <= TITLE_MAX_CHARS) or len(t.split()) > 8:
+        raise ValueError(f"título deve ser curto: máximo 55 caracteres e 8 palavras: {t!r}")
     if any(c in t for c in "*#[]{}"):
         raise ValueError(f"título com formatação: {t!r}")
-    if scenes_stage._norm(t) == scenes_stage._norm(_first_sentence(script_text)):
-        raise ValueError("título cópia da primeira frase do roteiro")
+    if t != _first_sentence(script_text):
+        raise ValueError("título deve ser literalmente a primeira frase da narração")
     return t
 
 
 def _fallback_title(script_text: str, idea: str) -> str:
-    """Sem LLM: a ideia se já for pergunta; senão a ideia verbatim.
-
-    Melhor esforço documentado (source 'fallback'): nunca inventa pergunta
-    nova nem reescreve — só reaproveita o que o usuário já escreveu.
-    """
-    guess = (idea or "").strip()
-    if guess.endswith("?") and 12 <= len(guess) <= TITLE_MAX_CHARS:
-        return guess
-    return guess[:TITLE_MAX_CHARS] or _first_sentence(script_text)[:TITLE_MAX_CHARS]
+    """Reuse the spoken opening without inventing a separate title."""
+    return _validate_title(_first_sentence(script_text), script_text)
 
 
 def generate_title(script_text: str, idea: str, cfg: CurioConfig,
                    metrics=None) -> TitleArtifact:
-    """Gera o título-pergunta do vídeo a partir do roteiro (não da ideia).
-
-    Retorna (título, fonte): 'nvidia:...' | 'openrouter:...' | 'gemini:...' |
-    'groq:...' | 'fallback'. O título nunca entra na narração nem nas
-    legendas — só metadados e abertura do vídeo.
-    """
-    if nvidia_stage.any_llm_available():
-        try:
-            english = str(cfg.language or "").lower().startswith("en")
-            system_prompt = (TITLE_SYSTEM_PROMPT_EN if english
-                             else TITLE_SYSTEM_PROMPT)
-            user_prompt = (f"Create the title for this script:\n\n{script_text}"
-                           if english else
-                           f"Crie o título para este roteiro:\n\n{script_text}")
-            data, label = nvidia_stage.complete_json(
-                system_prompt, user_prompt,
-                cfg.nvidia_model, cfg.nvidia_base_url, cfg.nvidia_timeout,
-                metrics, or_model=cfg.openrouter_model,
-                or_base_url=cfg.openrouter_base_url,
-                extra=cfg.llm_overrides())
-            return TitleArtifact(
-                _validate_title(str(data.get("title", "")), script_text), label)
-        except (nvidia_stage.NvidiaError, ValueError) as exc:
-            from ..runlog import event as run_event
-            logged = run_event("fallback", f"Título IA inválido: {exc}; usando ideia",
-                               operation="title", fallback="idea",
-                               error=str(exc))
-            if not logged:
-                print(f"AVISO: título IA inválido ({exc}) — usando fallback.",
-                      file=sys.stderr)
-    return TitleArtifact(_fallback_title(script_text, idea), "fallback")
+    """Use the spoken opening as title; never generate a competing hook."""
+    return TitleArtifact(_validate_title(_first_sentence(script_text), script_text),
+                         "script_opening")

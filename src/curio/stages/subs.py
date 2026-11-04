@@ -298,7 +298,29 @@ def cues_to_srt(cues: list[tuple[float, float, str]]) -> str:
 
 
 def _ends_sentence(text: str) -> bool:
-    return text.rstrip().endswith((".", "!", "?", "…", "..."))
+    return text.rstrip().rstrip('\"\'”’»)]}').endswith((".", "!", "?", "…", ",", ";", ":"))
+
+
+def _restore_word_punctuation(text: str, words: list[dict]) -> list[dict]:
+    """Restore script punctuation only when every spoken token matches.
+
+    Keep provider words and timestamps; never guess alignment for transcripts
+    that differ from the script.
+    """
+    tokens = _words(strip_list_markers(text))
+    lexical = lambda token: re.sub(r"[^\w]", "", token).casefold()
+    if (len(tokens) != len(words)
+            or any(not lexical(token) or lexical(token) != lexical(str(word["text"]))
+                   for token, word in zip(tokens, words))):
+        return words
+    restored = []
+    for token, word in zip(tokens, words):
+        suffix = re.search(r"[.!?…,;:]+[\"'”’»\)\]\}]*$", token)
+        spoken = str(word["text"])
+        if suffix and not _ends_sentence(spoken):
+            spoken += suffix.group()
+        restored.append({**word, "text": spoken})
+    return restored
 
 
 # Token isolado que é só marcador de lista ("0)", "1.", "(2)") — vem do
@@ -315,8 +337,8 @@ def cues_from_words(words: list[dict], max_words: int = 5,
                     active_word: bool = False) -> list[tuple[float, float, str]]:
     """Agrupa WordBoundary reais em blocos legíveis.
 
-    Quebra em fim de frase quando o bloco já tem corpo (≥3 palavras ou
-    ≥20 chars); limites duros de palavras/chars/duração evitam estouro.
+    Quebra sempre em fim de frase ou pausa marcada por pontuação;
+    limites duros de palavras/chars/duração evitam estouro.
     Sem offset artificial: o primeiro bloco começa no primeiro boundary real.
     Aplica formatação: maiúsculas + destaque em 1 palavra por cue, que
     `highlight="none"` desliga. Tokens que são só marcadores de lista
@@ -355,16 +377,18 @@ def cues_from_words(words: list[dict], max_words: int = 5,
                         events.append((end, following, " ".join(display)))
         return events
     cues, cur = [], []
-    for w in clean:
+    for index, w in enumerate(clean):
         cur.append(w)
         nwords = len(cur)
         nchars = sum(len(str(x["text"])) + 1 for x in cur)
         dur = float(cur[-1]["end"]) - float(cur[0]["start"])
-        boundary = _ends_sentence(str(w["text"])) and (nwords >= 3 or nchars >= 20)
+        boundary = _ends_sentence(str(w["text"]))
         hard = nwords >= max_words or nchars > max_chars or dur >= max_dur
         if boundary or hard:
             start = float(cur[0]["start"])
             end = max(float(cur[-1]["end"]), start + min_dur)
+            if index + 1 < len(clean):
+                end = min(end, float(clean[index + 1]["start"]))
             # Preserva caixa quando caixa alta prejudicar nomes/siglas.
             cue_words = [str(x["text"]) for x in cur]
             if upper:
@@ -499,6 +523,8 @@ def write_subtitles(text: str, total_duration: float, srt_path: str,
     font_size = max(20, round(base_font_size * height / 1920))
     if not karaoke:
         highlight = "none"
+    if words:
+        words = _restore_word_punctuation(text, words)
     cues = (cues_from_words(words, max_words=max_words, highlight=highlight,
                             upper=upper)
             if words else build_cues(text, total_duration,

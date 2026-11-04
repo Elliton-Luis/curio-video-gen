@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from .slug import find_project_root, project_dir
+from .slug import find_project_root, legacy_project_dir, project_dir
 
 
 @dataclass(frozen=True)
@@ -39,8 +39,9 @@ class VideoPaths:
     metadata_json: str
 
 
-def video_paths(out_dir: str, slug: str, genre: str = "") -> VideoPaths:
-    root = project_dir(out_dir, genre, slug)
+def video_paths(out_dir: str, slug: str, genre: str = "",
+                root_override: str | None = None) -> VideoPaths:
+    root = root_override or project_dir(out_dir, genre, slug)
     paths = VideoPaths(
         root=root,
         script_txt=os.path.join(root, "script", "script.txt"),
@@ -79,18 +80,16 @@ def paths_for_slug(out_dir: str, slug: str) -> tuple[str, VideoPaths]:
     root = None
     if "/" in slug:
         genre_part, _, slug = slug.partition("/")
-        candidate = project_dir(out_dir, genre_part, slug)
+        candidate = legacy_project_dir(out_dir, genre_part, slug)
         if os.path.isdir(candidate):
             root = candidate
-    else:
+    if root is None:
         root = find_project_root(out_dir, slug)
     if root is None:
         raise FileNotFoundError(
-            f"projeto '{slug}' não encontrado em {out_dir}/ "
-            f"(nem em {out_dir}/<genero>/{slug}).")
-    genre = os.path.basename(os.path.dirname(root)) if \
-        os.path.dirname(root) != out_dir else ""
-    return slug, video_paths(out_dir, slug, genre)
+            f"projeto '{slug}' não encontrado em {out_dir}/projetos/ "
+            f"nem nos caminhos legados.")
+    return slug, video_paths(out_dir, slug, root_override=root)
 
 
 def iter_projects(out_dir: str) -> list[tuple[str, str]]:
@@ -106,6 +105,17 @@ def iter_projects(out_dir: str) -> list[tuple[str, str]]:
             continue
         if os.path.isfile(os.path.join(full, "metadata.json")):
             found.append((entry, full))
+            continue
+        if entry == "projetos":
+            try:
+                subs = sorted(os.listdir(full))
+            except OSError:
+                continue
+            for sub in subs:
+                sub_full = os.path.join(full, sub)
+                if os.path.isdir(sub_full) and os.path.isfile(
+                        os.path.join(sub_full, "metadata.json")):
+                    found.append((sub, sub_full))
             continue
         try:
             subs = sorted(os.listdir(full))

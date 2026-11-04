@@ -10,14 +10,13 @@ MISSING=0
 need python3 "python3.11+"
 need ffmpeg "renderização (PRD §11)"
 need ffprobe "vem com o ffmpeg"
-need espeak-ng "TTS local pt-br (PRD §8)"
 
 if [ "${MISSING:-0}" -ne 0 ]; then
   echo ""
   echo "Instale o que falta. Exemplos:"
-  echo "  Fedora/RHEL: sudo dnf install -y ffmpeg espeak-ng"
-  echo "  Ubuntu/Debian: sudo apt install -y ffmpeg espeak-ng"
-  echo "  Arch: sudo pacman -S --needed ffmpeg espeak-ng"
+  echo "  Fedora/RHEL: sudo dnf install -y ffmpeg"
+  echo "  Ubuntu/Debian: sudo apt install -y ffmpeg"
+  echo "  Arch: sudo pacman -S --needed ffmpeg"
   exit 1
 fi
 
@@ -30,8 +29,14 @@ fi
 
 python3 -c "import edge_tts" 2>/dev/null && echo "edge-tts: pacote Python OK (voz neural)" || {
   echo "edge-tts: instalando pacote Python (voz neural gratuita, sem login)..."
-  python3 -m pip install --user edge-tts || echo "edge-tts: falhou (sem rede?) — TTS usará espeak-ng local."
+  python3 -m pip install --user edge-tts || echo "edge-tts: falhou (sem rede?) — a narração tentará Piper remoto; produção falha se nenhuma voz neural responder."
 }
+
+if command -v espeak-ng >/dev/null 2>&1; then
+  echo "espeak-ng: disponível somente para pré-avaliação"
+else
+  echo "espeak-ng: opcional, ausente (TTS de produção usa vozes neurais)"
+fi
 
 python3 -c "import faster_whisper" 2>/dev/null && echo "faster-whisper: OK (transcrição local)" || {
   echo "faster-whisper: instalando (transcrição local p/ narração humana)..."

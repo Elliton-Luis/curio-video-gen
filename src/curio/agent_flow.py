@@ -86,6 +86,9 @@ def initialize(cfg, slug, topic='', genre=''):
         'Qualquer agente pode operar este projeto por arquivos JSON e CLI.\n'
         'Não há SDK, modelo, credencial ou provedor de agente obrigatório.\n'
         'Preencha plan.json com pesquisa, roteiro preservado pelas cenas e intenção musical.\n'
+        'Primeiros 3 segundos: maior impacto, título curto e memorável sobre imagem real pertinente.\n'
+        'O título deve ser literalmente a primeira frase narrada; prefira 3 a 7 palavras, máximo 55 caracteres.\n'
+        'Mantenha atenção com novas descobertas e exemplos concretos; confira destaque por palavra no áudio.\n'
         'Escreva para pessoas curiosas rolando o feed, sem conhecimento prévio do assunto.\n'
         'Abra com uma situação concreta e interessante; explique uma ideia por vez com palavras simples e exemplos familiares.\n'
         'Evite jargões e tom de aula; explique termos indispensáveis na primeira menção.\n'
@@ -118,6 +121,8 @@ def validate_plan(plan):
         _text(plan.get(field), field)
     scenes = plan_from_dict(plan['scene_plan'])
     validate_preserved(plan['script'], scenes.semantic_scenes)
+    from .stages.script import _validate_title
+    _validate_title(plan['title'], plan['script'])
     sources = plan['research'].get('sources', [])
     if not sources:
         raise ValueError('Pesquisa deve conter fontes verificáveis')

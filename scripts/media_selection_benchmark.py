@@ -39,6 +39,7 @@ def main() -> None:
         config = CurioConfig.load("config.toml")
         config.out_dir = str(args.out_dir.resolve())
         config.tts_provider, config.tts_voice = "espeak-ng", "pt-br"
+        config.tts_preview = True
         config.render_backend = "cpu"
         config.width, config.height, config.fps = 480, 854, 24
         config.sub_font_size, config.sub_margin_v = 40, 70

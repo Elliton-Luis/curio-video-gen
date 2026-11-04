@@ -24,24 +24,26 @@ def slugify_with_timestamp(text: str, max_len: int = 40) -> str:
 
 
 def project_dir(out_dir: str, genre: str, slug: str) -> str:
-    """Pasta do projeto: output/<genero>/<slug>, ou output/<slug> sem gênero.
+    """Pasta plana do projeto; gênero é metadado, não parte do caminho."""
+    return os.path.join(out_dir, "projetos", slug)
 
-    Com gênero escolhido, o vídeo sempre cai na pasta do gênero (uma
-    pasta por gênero); sem gênero, mantém o layout plano legado.
-    """
+
+def legacy_project_dir(out_dir: str, genre: str, slug: str) -> str:
+    """Caminho histórico, mantido para abrir projetos já existentes."""
     genre = (genre or "").strip().lower()
-    if genre:
-        return os.path.join(out_dir, genre, slug)
-    return os.path.join(out_dir, slug)
+    return os.path.join(out_dir, genre, slug) if genre else os.path.join(out_dir, slug)
 
 
 def find_project_root(out_dir: str, slug: str) -> str | None:
     """Localiza a pasta de um projeto pelo slug (novo e legado).
 
-    Procura primeiro no layout plano (`output/<slug>`, projetos antigos)
-    e depois em `output/<genero>/<slug>` (ordem alfabética de gênero).
+    Procura primeiro em `output/projetos/<slug>` e depois nos layouts
+    históricos `output/<slug>` e `output/<genero>/<slug>`.
     Devolve o caminho ou None.
     """
+    current = project_dir(out_dir, "", slug)
+    if os.path.isdir(current):
+        return current
     flat = os.path.join(out_dir, slug)
     if os.path.isdir(flat):
         return flat
@@ -64,7 +66,14 @@ def unique_slug(out_dir: str, genre: str, slug: str, idea: str = "") -> str:
     """
     import json as _json
     root = project_dir(out_dir, genre, slug)
-    if not os.path.isdir(root):
+    existing = find_project_root(out_dir, slug)
+    if existing is None:
+        return slug
+    if existing != root:
+        for n in range(2, 100):
+            cand = f"{slug}-{n}"
+            if find_project_root(out_dir, cand) is None:
+                return cand
         return slug
     try:
         with open(os.path.join(root, "metadata.json"),
@@ -76,6 +85,6 @@ def unique_slug(out_dir: str, genre: str, slug: str, idea: str = "") -> str:
         pass
     for n in range(2, 100):
         cand = f"{slug}-{n}"
-        if not os.path.isdir(project_dir(out_dir, genre, cand)):
+        if find_project_root(out_dir, cand) is None:
             return cand
     return slug

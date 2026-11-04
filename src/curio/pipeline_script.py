@@ -19,7 +19,7 @@ from .stages import prompts as prompts_stage
 from .stages.subs import strip_list_markers
 
 SCRIPT_POLICY_REVISION = 1
-TITLE_POLICY_REVISION = 1
+TITLE_POLICY_REVISION = 2
 TEMPLATE_POLICY_REVISION = 1
 
 

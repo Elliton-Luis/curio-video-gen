@@ -51,10 +51,11 @@ STAGES_HUMAN = ["roteiro", "cenas", "mídia", "timeline", "silencioso",
 def _resolve_paths(out_dir: str, slug: str | None, topic: str,
                     genre_key: str, force: bool = False,
                     ) -> tuple[str, project_paths.VideoPaths]:
-    """Slug final + caminhos, com pasta de gênero e anti-colisão.
+    """Slug final + caminho central de projeto e anti-colisão.
 
-    Sem slug explícito, gera `AAAAMMDD_titulo`; com gênero, a pasta é
-    `output/<genero>/<slug>`. Em rerun (`force` ou mesma ideia) reutiliza;
+    Sem slug explícito, gera `AAAAMMDD_titulo`. Todos os temas usam
+    `output/projetos/<slug>`; o gênero segue apenas nos metadados editoriais.
+    Em rerun (`force` ou mesma ideia) reutiliza;
     em colisão com outra ideia, sufixa `-2`, `-3`…
     """
     final = slug or slugify_with_timestamp(topic)

@@ -15,7 +15,8 @@ def test_local_script_and_title_share_typed_artifact_contract(monkeypatch):
     assert generated.source == "template"
     assert isinstance(title, script.TitleArtifact)
     assert title.text.strip()
-    assert title.source == "fallback"
+    assert title.source == "script_opening"
+    assert generated.text.startswith(title.text)
 
 
 @pytest.mark.parametrize("factory", [script.ScriptArtifact, script.TitleArtifact])

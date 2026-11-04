@@ -143,8 +143,7 @@ def build_assisted_run_metadata(*, idea: str, slug: str, cfg,
         "duration_actual": round(render_result.duration, 2),
         "audio_duration": round(audio_result.audio_duration, 2),
         "subtitle_cues": audio_result.cue_count,
-        "subtitle_source": ("wordboundary" if audio_result.words and
-                            tts_info["provider"] == "edge-tts"
+        "subtitle_source": ("wordboundary" if audio_result.words
                             else "proporcional"),
         "tts_provider": tts_info["provider"],
         "tts_voice": tts_info["voice"],

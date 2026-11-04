@@ -28,7 +28,8 @@ _TITLE_FILLER_WORDS = {
 }
 
 
-def _delivery_copy(out_path: str, title: str | None) -> str | None:
+def _delivery_copy(out_path: str, title: str | None,
+                   output_dir: str | None = None) -> str | None:
     if not title or os.path.basename(out_path) != "final.mp4":
         return None
     folded = unicodedata.normalize("NFKD", title.lower())
@@ -37,7 +38,13 @@ def _delivery_copy(out_path: str, title: str | None) -> str | None:
     words = [word for word in words if word not in _TITLE_FILLER_WORDS] or words
     stem = "-".join(words[:3]) or "video"
     project_root = os.path.dirname(os.path.dirname(out_path))
-    delivery_path = os.path.join(project_root, f"{stem}.mp4")
+    if output_dir:
+        delivery_dir = os.path.join(output_dir, "para_postar")
+        os.makedirs(delivery_dir, exist_ok=True)
+        project_slug = os.path.basename(project_root)
+        delivery_path = os.path.join(delivery_dir, f"{project_slug}.mp4")
+    else:
+        delivery_path = os.path.join(project_root, f"{stem}.mp4")
     shutil.copy2(out_path, delivery_path)
     return delivery_path
 
@@ -643,12 +650,13 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                title: str | None = None,
                title_fontfile: str | None = None,
                music_path: str | None = None,
-                music_gain_db: float = -3.0,
+               music_gain_db: float = -3.0,
                music_ducking: bool = True,
-               final_fade: float = 0.0) -> dict:
+               final_fade: float = 0.0,
+               output_dir: str | None = None) -> dict:
     """silent + legendas queimadas + áudio → MP4 final (um encode só).
 
-    Com `title`, queima a pergunta de abertura nos primeiros 5 s (caixa
+    Com `title`, queima o título de abertura nos primeiros 3 s (caixa
     preta própria, topo fora da zona das legendas). Sem título, idêntico
     ao comportamento anterior.
     """
@@ -680,7 +688,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
                     f"borderw=3:bordercolor=black:"
                     f"shadowcolor=black@0.9:shadowx=4:shadowy=4:"
                     f"x=(w-text_w)/2:y={y0 + i * 84}:"
-                    f"enable='between(t,0,5)'")
+                    f"enable='between(t,0,3)'")
     fade = max(0.0, min(2.0, float(final_fade or 0.0)))
     if fade and total > fade:
         vf.append(f"fade=t=out:st={max(0.0, total - fade):.3f}:d={fade:.3f}")
@@ -737,7 +745,7 @@ def burn_final(silent_path: str, subs_ass: str | None, wav_path: str | None,
     cmd += ["-movflags", "+faststart", out_path]
     _check(ff.run(cmd), encoder)
     actual = ff.probe_duration(out_path)
-    delivery_path = _delivery_copy(out_path, title)
+    delivery_path = _delivery_copy(out_path, title, output_dir)
     return {"backend": backend, "encoder": encoder,
             "duration": actual, "path": out_path,
             **({"delivery_path": delivery_path} if delivery_path else {})}

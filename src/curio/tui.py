@@ -23,7 +23,8 @@ from .pipeline import run_pipeline
 from .pipeline_input import PipelineInput
 from .project_paths import iter_projects, paths_for_slug as _paths_for_slug
 from .pipeline_media import MediaStandby
-from .slug import find_project_root, project_dir, slugify_with_timestamp
+from .slug import (find_project_root, legacy_project_dir, project_dir,
+                   slugify_with_timestamp)
 from .tui_terminal import (TUIExit as _TUIExit, ask as _ask,
                           banner as _banner, browse_path, clear as _clear,
                           colors as _colors, pause as _pause, select_option)
@@ -130,7 +131,7 @@ def _project_status(cfg: CurioConfig, slug: str) -> tuple[str, dict]:
     genre_part, sep, rest = slug.partition("/")
     root = None
     if sep:
-        cand = project_dir(cfg.out_dir, genre_part, rest)
+        cand = legacy_project_dir(cfg.out_dir, genre_part, rest)
         if os.path.isdir(cand):
             root = cand
     else:

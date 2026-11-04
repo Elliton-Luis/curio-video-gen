@@ -1,17 +1,21 @@
 """Narração via TTS com provedores intercambiáveis (PRD §8).
 
-Padrão: edge-tts (voz neural gratuita, sem login — PT-BR masculina).
-Fallback: espeak-ng local (offline). O fallback avisa em voz alta no stderr,
-nunca silencioso; sem ele o pipeline quebraria sem rede.
+Produção usa vozes neurais: Edge TTS e, como fallback, Piper hospedado pelo
+TTS.ai. eSpeak só pode ser selecionado em pré-avaliação explícita.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 from .. import ffmpeg as ff
@@ -55,6 +59,7 @@ def available_providers() -> list[str]:
         found.append("edge-tts")
     except ImportError:
         pass
+    found.append("tts.ai")
     return found
 
 
@@ -174,64 +179,184 @@ def _synth_espeak(text: str, wav_path: str, voice: str, speed: int,
 def synthesize(text: str, wav_path: str, provider: str, voice: str,
                speed: int, target_duration: float,
                words_path: str | None = None, metrics=None,
-               language: str = "pt-BR") -> TTSResult:
-    if provider not in ("edge-tts", "espeak-ng", "auto"):
+               language: str = "pt-BR", preview: bool = False) -> TTSResult:
+    if provider not in ("edge-tts", "espeak-ng", "auto", "tts.ai"):
         raise TTSError(
             f"provedor TTS {provider!r} desconhecido "
             f"(disponíveis: {available_providers() or ['nenhum']})."
         )
     ff.require_tools()
-    want_edge = provider in ("edge-tts", "auto")
+    if provider == "espeak-ng":
+        if not preview:
+            raise TTSError(
+                "eSpeak é permitido apenas em pré-avaliação. "
+                "Defina CURIO_TTS_PREVIEW=1 para usá-lo explicitamente."
+            )
+        return _synthesize_espeak(
+            text, wav_path, "en-us" if language.startswith("en") else "pt-br",
+            speed, target_duration, metrics)
 
-    # Seleciona voz baseada no idioma se não especificada explicitamente
-    if voice in ("pt-br", "pt-BR", "en-us", "en-US", ""):
-        if language.startswith("en"):
-            voice = "en-US-GuyNeural" if want_edge else "en-us"
-        else:
-            voice = "pt-BR-AntonioNeural" if want_edge else "pt-br"
+    if provider == "tts.ai":
+        order = ("tts.ai", "edge-tts")
+    else:
+        order = ("edge-tts", "tts.ai")
+    if not language.lower().startswith("pt"):
+        order = tuple(name for name in order if name != "tts.ai")
 
-    if want_edge:
+    errors: list[str] = []
+    for index, name in enumerate(order):
         try:
-            last_err: Exception | None = None
-            for attempt in range(1, TTS_EDGE_ATTEMPTS + 1):
-                try:
-                    return _synthesize_edge(text, wav_path, voice,
-                                            target_duration, words_path,
-                                            metrics)
-                except TTSError as exc:
-                    last_err = exc
-                    if attempt < TTS_EDGE_ATTEMPTS:
-                        from ..runlog import event as run_event
-                        logged = run_event(
-                            "retry", f"Edge TTS: tentativa {attempt}/"
-                            f"{TTS_EDGE_ATTEMPTS}; {exc}", operation="tts",
-                            provider="edge-tts", attempt=attempt,
-                            attempts=TTS_EDGE_ATTEMPTS, error=str(exc))
-                        if not logged:
-                            print(f"AVISO: {exc} "
-                                  f"Tentativa {attempt}/{TTS_EDGE_ATTEMPTS}…",
-                                  file=sys.stderr)
-                        time.sleep(2 * attempt)
-            assert last_err is not None
-            raise last_err
+            if name == "edge-tts":
+                edge_voice = voice
+                if edge_voice in ("pt-br", "pt-BR", "en-us", "en-US", ""):
+                    edge_voice = ("en-US-GuyNeural" if language.startswith("en")
+                                  else DEFAULT_EDGE_VOICE)
+                elif "_" in edge_voice or edge_voice.endswith(("-low", "-medium", "-high")):
+                    # A Piper voice identifier is not an Edge voice name.
+                    edge_voice = ("en-US-GuyNeural" if language.startswith("en")
+                                  else DEFAULT_EDGE_VOICE)
+                last_error: TTSError | None = None
+                for attempt in range(1, TTS_EDGE_ATTEMPTS + 1):
+                    try:
+                        return _synthesize_edge(text, wav_path, edge_voice,
+                                                target_duration, words_path,
+                                                metrics)
+                    except TTSError as exc:
+                        last_error = exc
+                        if attempt < TTS_EDGE_ATTEMPTS:
+                            from ..runlog import event as run_event
+                            run_event(
+                                "retry", f"Edge TTS: tentativa {attempt}/"
+                                f"{TTS_EDGE_ATTEMPTS}; {exc}", operation="tts",
+                                provider="edge-tts", attempt=attempt,
+                                attempts=TTS_EDGE_ATTEMPTS, error=str(exc))
+                            time.sleep(2 * attempt)
+                assert last_error is not None
+                raise last_error
+
+            piper_voice = voice
+            if piper_voice in ("pt-br", "pt-BR", "en-us", "en-US", "") \
+                    or piper_voice.lower().endswith("neural"):
+                piper_voice = "pt_BR-faber-medium"
+            return _synthesize_ttsai(text, wav_path, piper_voice, speed, metrics)
         except TTSError as exc:
-            if shutil.which("espeak-ng") is None:
+            errors.append(f"{name}: {exc}")
+            if index < len(order) - 1:
+                from ..runlog import event as run_event
+                run_event("fallback", f"{name} indisponível; tentando {order[index + 1]}",
+                          operation="tts", fallback=order[index + 1],
+                          provider=name, error=str(exc))
+
+    if preview and shutil.which("espeak-ng"):
+        from ..runlog import event as run_event
+        run_event("fallback", "Provedores neurais indisponíveis; eSpeak em pré-avaliação",
+                  operation="tts", fallback="espeak-ng", preview=True)
+        return _synthesize_espeak(
+            text, wav_path, "en-us" if language.startswith("en") else "pt-br",
+            speed, target_duration, metrics)
+    detail = " | ".join(errors) or "nenhum provedor neural disponível"
+    suffix = " eSpeak não será usado em um render final." if not preview else ""
+    raise TTSError(f"Falharam os provedores de voz neural: {detail}.{suffix}")
+
+
+def _synthesize_ttsai(text: str, wav_path: str, voice: str, speed: int,
+                      metrics=None) -> TTSResult:
+    """Anonymous hosted TTS.ai API; never falls back to local synthesis."""
+    voice = voice if voice not in ("pt-br", "pt-BR", "") else "pt_BR-faber-medium"
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        while len(sentence) > 480:
+            cut = sentence.rfind(" ", 0, 480)
+            if cut < 1:
+                cut = 480
+            part, sentence = sentence[:cut].strip(), sentence[cut:].strip()
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(part)
+        if sentence and len(current) + len(sentence) + bool(current) <= 480:
+            current = f"{current} {sentence}".strip()
+        elif sentence:
+            if current:
+                chunks.append(current)
+            current = sentence
+    if current:
+        chunks.append(current)
+    if not chunks:
+        raise TTSError("tts.ai recebeu texto vazio.")
+
+    def request(url: str, payload: dict | None = None) -> dict:
+        data = json.dumps(payload).encode() if payload is not None else None
+        headers = {"Content-Type": "application/json", "User-Agent": "Curio/1.0"}
+        api_key = os.environ.get("TTS_AI_API_KEY", "").strip()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        req = urllib.request.Request(url, data=data,
+                                    headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=45) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                reset = exc.headers.get("X-RateLimit-Reset", "")
+                suffix = f"; limite reinicia em {reset}" if reset else ""
                 raise TTSError(
-                    f"{exc} E espeak-ng não está instalado — sem fallback. "
-                    "Rode `scripts/install.sh`."
-                ) from exc
-            from ..runlog import event as run_event
-            logged = run_event("fallback", f"Edge TTS: {exc}; usando espeak-ng",
-                               operation="tts", fallback="espeak-ng",
-                               provider="edge-tts", error=str(exc))
-            if not logged:
-                print(f"AVISO: {exc} Usando espeak-ng local como fallback.",
-                      file=sys.stderr)
-            voice, speed = ("en-us", 170) if language.startswith("en") else ("pt-br", 170)
-    if shutil.which("espeak-ng") is None:
-        raise TTSError("espeak-ng não encontrado. Rode `scripts/install.sh`.")
-    return _synthesize_espeak(text, wav_path, voice, speed, target_duration,
-                              metrics)
+                    "tts.ai atingiu o limite de uso; configure TTS_AI_API_KEY "
+                    f"para ampliar a cota{suffix}.") from exc
+            raise TTSError(f"tts.ai API falhou: {exc}") from exc
+        except Exception as exc:
+            raise TTSError(f"tts.ai API falhou: {exc}") from exc
+
+    with tempfile.TemporaryDirectory(prefix="curio-ttsai-") as temp:
+        wav_parts = []
+        for index, chunk in enumerate(chunks):
+            result = request("https://api.tts.ai/v1/tts/", {
+                "model": "piper", "text": chunk, "voice": voice,
+                "language": "pt", "format": "mp3",
+                "speed": max(0.75, min(1.25, speed / 170)),
+            })
+            job = result.get("uuid") or result.get("id")
+            if not job:
+                raise TTSError("tts.ai não retornou identificador do áudio.")
+            audio_url = None
+            for _ in range(60):
+                status = request(f"https://api.tts.ai/v1/speech/results/?uuid={job}")
+                if status.get("status") in ("completed", "success", "done"):
+                    audio_url = status.get("url") or status.get("audio_url") or status.get("result")
+                    break
+                if status.get("status") in ("failed", "error"):
+                    raise TTSError(f"tts.ai falhou na parte {index + 1}.")
+                time.sleep(2)
+            if not isinstance(audio_url, str) or not audio_url.startswith("https://"):
+                raise TTSError("tts.ai não concluiu a geração do áudio.")
+            mp3 = os.path.join(temp, f"part-{index:03}.mp3")
+            wav = os.path.join(temp, f"part-{index:03}.wav")
+            try:
+                urllib.request.urlretrieve(audio_url, mp3)
+            except Exception as exc:
+                raise TTSError(f"download tts.ai falhou: {exc}") from exc
+            proc = ff.run([ff.FFMPEG, "-y", "-v", "error", "-i", mp3,
+                           "-ar", "48000", "-ac", "2", wav])
+            if proc.returncode:
+                raise TTSError("áudio retornado por tts.ai é inválido.")
+            wav_parts.append(wav)
+        concat = os.path.join(temp, "concat.txt")
+        with open(concat, "w", encoding="utf-8") as fh:
+            for wav in wav_parts:
+                fh.write(f"file '{wav}'\n")
+        proc = ff.run([ff.FFMPEG, "-y", "-v", "error", "-f", "concat",
+                       "-safe", "0", "-i", concat, "-ar", "48000", "-ac", "2", wav_path])
+        if proc.returncode:
+            raise TTSError("não foi possível unir áudios gerados por tts.ai.")
+    duration = ff.probe_duration(wav_path)
+    if duration <= 0:
+        raise TTSError("tts.ai gerou áudio vazio.")
+    if metrics is not None:
+        metrics.tts("tts.ai", len(text))
+    return TTSResult(wav_path, duration, "tts.ai", voice,
+                     _estimate_wpm(text, duration), None)
 
 
 def _synthesize_edge(text: str, wav_path: str, voice: str,

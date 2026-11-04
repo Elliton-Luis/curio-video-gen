@@ -21,9 +21,11 @@ language = "pt-BR"  # pt-BR ou en-US (100% em inglês: roteiro, título, voz e l
 genre = ""
 
 [tts]
-provider = "edge-tts"   # edge-tts (neural, grátis, sem login) | espeak-ng (local offline)
-voice = "pt-BR-AntonioNeural"  # masculina PT-BR; espeak-ng usa "pt-br"
-speed = 170              # palavras por minuto (só espeak-ng)
+provider = "edge-tts"   # Neural; fallback automático para Piper via TTS.ai
+voice = "pt-BR-AntonioNeural"  # Edge primário; fallback pt_BR-faber-medium
+speed = 170              # só afeta pré-avaliação e fallback remoto
+# Opcional: exporte TTS_AI_API_KEY para ampliar a cota do fallback hospedado.
+# eSpeak só funciona explicitamente em pré-avaliação: CURIO_TTS_PREVIEW=1
 
 [render]
 backend = "arc"          # arc (Intel B580 primeiro, ex.: AV1 VA-API) | auto | vaapi | qsv | cpu

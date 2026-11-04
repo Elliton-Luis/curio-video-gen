@@ -15,7 +15,7 @@ def job(tmp_path):
     paths = flow.initialize(cfg, 'job', 'Tema')
     folder = Path(paths.root) / 'agent_flow'
     plan = flow.read(folder / 'plan.json')
-    plan.update(script='Texto factual.', title='Título', research={'sources': [
+    plan.update(script='Texto factual.', title='Texto factual.', research={'sources': [
         {'title': 'Fonte', 'url': 'https://example.org/source', 'snippet': 'Evidência.'}]},
         scene_plan=plan_to_dict(ScenePlanResult((SemanticScene(1, 'Texto factual.', subject='Tema'),),
                     (TimelineSpan(1, 2),), 'external_agent')))
@@ -154,6 +154,7 @@ def test_replan_archives_audio_and_searches_for_new_scene_plan(tmp_path, monkeyp
     Path(paths.narration_wav).parent.mkdir(exist_ok=True)
     Path(paths.narration_wav).write_bytes(b'old audio')
     plan['script'] = 'Texto novo.'
+    plan['title'] = 'Texto novo.'
     plan['scene_plan']['semantic_scenes'][0]['narration'] = 'Texto novo.'
     flow.write(folder / 'plan.json', plan)
     flow.revise(paths, True)
@@ -189,7 +190,7 @@ def test_fresh_job_real_render_skips_internal_research_planning_and_llm(tmp_path
     from tests.test_pipeline_integration import _fake_tts
     cfg, paths, folder, plan = job(tmp_path)
     cfg.width, cfg.height, cfg.fps, cfg.render_backend = 180, 320, 12, 'cpu'
-    text = 'Este roteiro factual usa imagem real escolhida por agente externo e revisão obrigatória.'
+    text = 'Texto factual. Este roteiro usa imagem real escolhida por agente externo e revisão obrigatória.'
     plan['script'] = text
     plan['scene_plan']['semantic_scenes'][0]['narration'] = text
     flow.write(folder / 'plan.json', plan)

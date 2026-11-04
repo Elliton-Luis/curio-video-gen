@@ -6,7 +6,7 @@ import os
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 
 from . import ffmpeg as ff
@@ -16,6 +16,7 @@ from .audio.artifacts import (TTSCacheManifest, legacy_words_match_text,
                               words_signature, write_tts_manifest)
 from .stages import subs as subs_stage
 from .stages import tts as tts_stage
+from .stages import transcribe as transcribe_stage
 from .stages.scene_contract import SemanticScene, TimelineSpan
 from .stages.scene_projection import Chapter
 from .stages.timing import align_word_boundaries, proportional_spans
@@ -118,7 +119,8 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
         result = tts_stage.synthesize(
             script_text, paths.narration_wav, cfg.tts_provider, cfg.tts_voice,
             cfg.tts_speed, cfg.duration_target, words_path=paths.words_json,
-            metrics=metrics, language=cfg.language)
+            metrics=metrics, language=cfg.language,
+            preview=cfg.tts_preview)
         if not isinstance(result, tts_stage.TTSResult):
             raise TypeError("synthesize must return TTSResult")
         audio_duration = result.duration
@@ -145,9 +147,27 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
         "tts", round(time.monotonic() - start_time, 2))
     emit(4, "Gerando narração", "OK")
 
+    # Hosted TTS without boundaries still needs audio-derived word timing.
+    # Reuse narration; only extract and cache the missing timestamps.
+    if words is None and tts_info["provider"] == "tts.ai":
+        words = transcribe_stage.transcribe(
+            paths.narration_wav, cfg.whisper_model,
+            language="en" if cfg.language.lower().startswith("en") else "pt",
+            metrics=metrics)
+        if not tts_stage.tts_coverage_ok(words, script_text):
+            raise tts_stage.TTSError("transcrição não cobre a narração completa")
+        words = transcribe_stage.align_to_script(script_text, words)
+        _write_words(paths.words_json, words)
+        _write_manifest(paths.tts_manifest_json, tts_signature,
+                        tts_info, audio_duration, words)
+
     try:
         aligned_spans = align_word_boundaries(
             semantic_scenes, timeline_spans, words or [])
+        # Word timing stops before the audio tail; keep the full narration.
+        if aligned_spans and aligned_spans[-1].end < audio_duration:
+            aligned_spans = (*aligned_spans[:-1],
+                             replace(aligned_spans[-1], end=audio_duration))
         timed_source = "wordboundary"
     except (ValueError, IndexError) as exc:
         print(f"AVISO: {exc} — timeline proporcional.", file=sys.stderr)
@@ -171,7 +191,7 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
         script_text, audio_duration, paths.subs_srt, paths.subs_ass,
         cfg.width, cfg.height, cfg.sub_font_size,
         subs_stage.safe_subtitle_margin(cfg.height, cfg.sub_margin_v),
-        words=words if tts_info["provider"] == "edge-tts" else None,
+        words=words,
         cache_dir=cfg.cache_dir,
         max_words=min(5, pacing.caption_max_words if pacing is not None else 5),
         highlight="word", upper=False, karaoke=True,
@@ -188,9 +208,9 @@ def run_audio_stages(script_text: str, semantic_scenes: tuple[SemanticScene, ...
         "subs", round(time.monotonic() - start_time, 2))
     from .runlog import event as run_event
     run_event("result", f"Legendas: {cue_count} cue(s); "
-              f"{'WordBoundary' if words and tts_info['provider'] == 'edge-tts' else 'proporcional'}",
+              f"{'WordBoundary' if words else 'proporcional'}",
               operation="subtitles", cues=cue_count,
-              timing=("wordboundary" if words and tts_info["provider"] == "edge-tts"
+              timing=("wordboundary" if words
                       else "proporcional"))
     emit(5, "Sincronizando legendas", "OK")
     return AudioStageResult(aligned_spans, words, audio_duration, tts_info,
@@ -219,6 +239,22 @@ def _cache_result(manifest, words, signature, script_text, paths, cfg):
     if manifest is not None:
         if manifest.input_signature != signature:
             return None
+        # The signature describes the requested provider, but synthesis may
+        # have fallen back to another provider. A fallback is reusable only
+        # when it is still neural; eSpeak must never leak from an old preview
+        # cache into a production render.
+        if manifest.provider == "espeak-ng" and not cfg.tts_preview:
+            return None
+        allowed = {
+            "edge-tts": {"edge-tts", "tts.ai"},
+            "auto": {"edge-tts", "tts.ai"},
+            "tts.ai": {"tts.ai", "edge-tts"},
+            "espeak-ng": {"espeak-ng"} if cfg.tts_preview else set(),
+        }.get(cfg.tts_provider, set())
+        if cfg.tts_preview:
+            allowed = allowed | {"espeak-ng"}
+        if manifest.provider not in allowed:
+            return None
         if manifest.has_word_boundaries:
             if words is None or words_signature(words) != manifest.words_signature:
                 return None
@@ -241,12 +277,22 @@ def _cache_result(manifest, words, signature, script_text, paths, cfg):
             or not _legacy_voice_matches(previous.get("tts_voice"), cfg)):
         return None
     provider = previous.get("tts_provider")
-    if provider not in ("edge-tts", "espeak-ng"):
+    if provider not in ("edge-tts", "tts.ai", "espeak-ng"):
+        return None
+    if provider == "espeak-ng" and not cfg.tts_preview:
         return None
     saved_speed = previous.get("tts_speed")
     if isinstance(saved_speed, bool) or not isinstance(saved_speed, int):
         return None
-    if cfg.tts_provider != provider:
+    allowed = {
+        "edge-tts": {"edge-tts", "tts.ai"},
+        "auto": {"edge-tts", "tts.ai"},
+        "tts.ai": {"tts.ai", "edge-tts"},
+        "espeak-ng": {"espeak-ng"} if cfg.tts_preview else set(),
+    }.get(cfg.tts_provider, set())
+    if cfg.tts_preview:
+        allowed = allowed | {"espeak-ng"}
+    if provider not in allowed:
         return None
     if provider == "espeak-ng" and saved_speed != cfg.tts_speed:
         return None

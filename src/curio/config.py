@@ -70,9 +70,10 @@ def parse_duration(raw) -> float:
 class CurioConfig:
     duration_target: float = DURATION_AUTO  # 0 = Automático/Ilimitado (padrão)
     out_dir: str = "output"
-    tts_provider: str = "edge-tts"  # edge-tts (neural, grátis) | espeak-ng (local)
-    tts_voice: str = "pt-BR-AntonioNeural"  # masculina PT-BR (edge); espeak: "pt-br"
+    tts_provider: str = "edge-tts"  # Edge neural, com fallback Piper via TTS.ai
+    tts_voice: str = "pt-BR-AntonioNeural"  # voz Edge; fallback pt_BR-faber-medium
     tts_speed: int = 170
+    tts_preview: bool = False  # libera eSpeak somente para pré-avaliação
     render_backend: str = "arc"  # arc (Intel B580 primeiro) | auto | vaapi | qsv | cpu
     width: int = 1080
     height: int = 1920
@@ -214,6 +215,7 @@ class CurioConfig:
         cfg.out_dir = os.environ.get("CURIO_OUT_DIR", cfg.out_dir)
         cfg.tts_provider = os.environ.get("CURIO_TTS", cfg.tts_provider)
         cfg.tts_voice = os.environ.get("CURIO_VOICE", cfg.tts_voice)
+        cfg.tts_preview = _as_bool(os.environ.get("CURIO_TTS_PREVIEW", False))
         if os.environ.get("CURIO_SPEED"):
             cfg.tts_speed = int(os.environ["CURIO_SPEED"])
         cfg.render_backend = os.environ.get("CURIO_BACKEND", cfg.render_backend)

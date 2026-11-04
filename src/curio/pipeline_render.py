@@ -533,7 +533,8 @@ def run_render_stage(request: RenderStageInput) -> RenderStageResult:
         duration = ff.probe_duration(paths.final_mp4)
         render_info = {"backend": "cache", "encoder": "cache",
                        "duration": duration, "path": paths.final_mp4}
-        delivery_path = render_stage._delivery_copy(paths.final_mp4, title)
+        delivery_path = render_stage._delivery_copy(
+            paths.final_mp4, title, cfg.out_dir)
         if delivery_path:
             render_info["delivery_path"] = delivery_path
         sfx_path = (previous_meta.get("artifacts") or {}).get("sfx")
@@ -567,7 +568,8 @@ def run_render_stage(request: RenderStageInput) -> RenderStageResult:
             cfg, total, title=title,
             title_fontfile=title_fontfile(cfg, genre),
             music_path=music_path, music_gain_db=cfg.music_gain_db,
-            music_ducking=cfg.music_ducking, final_fade=final_fade)
+            music_ducking=cfg.music_ducking, final_fade=final_fade,
+            output_dir=cfg.out_dir)
         duration = render_info["duration"]
         audio_composition.mark_audio_used(cfg, audio_plan)
     return RenderStageResult(

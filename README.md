@@ -527,8 +527,11 @@ IDEIA → ROTEIRO → CENAS → MÍDIA → SILENCIOSO + TELEPROMPTER
 
 - Linux, Python 3.11+
 - `ffmpeg` + `ffprobe` (renderização)
-- `espeak-ng` com voz `pt-br` (fallback local offline)
-- Internet (só para a voz neural padrão; sem rede, usa espeak-ng)
+- `espeak-ng` somente para pré-avaliação local
+- Internet para Edge TTS e para a voz neural Piper de fallback. O uso anônimo
+  do TTS.ai tem cota diária; defina `TTS_AI_API_KEY` para usar uma conta com
+  cota ampliada. Se os provedores neurais falharem, o render para em erro em vez
+  de produzir uma narração robótica.
 - Opcional: GPU Intel com VA-API (ex.: Arc B580) — sem ela, usa CPU (libx264)
 
 ## Instalação
@@ -939,7 +942,7 @@ mostra disponibilidade e device.
 ## Estrutura de saída
 
 ```text
-output/[<genero>/]<AAAAMMDD-titulo>/
+output/projetos/<AAAAMMDD-titulo>/
 ├── script/script.txt + title.txt + artifacts.json + scene-plan.json
 │   └── scene-plan-manifest.json + chapters.json (projeção compatível)
 ├── media/media.json (+ cache/media/ global com licenças)
@@ -955,9 +958,10 @@ output/[<genero>/]<AAAAMMDD-titulo>/
 └── metadata.json (capítulos, assets, licenças, tempos, visual_report)
 ```
 
-Com gênero escolhido, o projeto cai em `output/<genero>/` (uma pasta por
-gênero: `people/`, `history`, …); sem gênero, fica direto em `output/`.
-O nome da pasta é `AAAAMMDD_titulo` (só a data de hoje + título); se dois
+Todos os projetos novos ficam juntos em `output/projetos/`, sem pastas por
+tema. Os MP4 finais ficam juntos em `output/para_postar/`; projetos antigos
+em pastas temáticas continuam acessíveis. O nome da pasta é
+`AAAAMMDD_titulo` (só a data de hoje + título); se dois
 vídeos do mesmo dia tiverem o mesmo título, o segundo ganha `-2`, `-3`…
 Projetos antigos em `output/<slug>` continuam abrindo normal nos comandos
 `review`, `swap`, `rerender`, `verify`, `sources` e `finalize`.
@@ -1030,7 +1034,7 @@ Para múltiplas chaves NVIDIA futuras existe `NVIDIA_API_KEYS="key1,key2"`
 | Cenas | divisão semântica via LLM do chain (JSON) ou local; HTTP 429 tem até 2 tentativas curtas por provider; falha do chain usa divisão local que preserva roteiro e tópico |
 | Mídia | consulta vários provedores, filtra com motivo, pontua por relevância sobre o assunto e corta abaixo do mínimo; sem foto boa a cena vira diagrama ou cartão, nunca imagem genérica |
 | Fontes | registro persistente de claims factuais (status de evidência) + procedência de mídia por obra; CLI `sources`; `FONTES.md` com fontes, imagens e créditos prontos; URLs exatas da pesquisa |
-| Narração | edge-tts neural `pt-BR-AntonioNeural` (masculina, grátis, sem login); fallback espeak-ng offline — ou sua voz via teleprompter |
+| Narração | Edge neural `pt-BR-AntonioNeural`; fallback neural Piper (`tts.ai`, voz `pt_BR-faber-medium`); eSpeak é apenas pré-avaliação — ou sua voz via teleprompter |
 | Legendas | timestamps reais (Edge WordBoundary / Whisper); blocos curtos na base, Archivo Black com caixa preta sólida |
 | Título | pergunta curta gerada pela IA a partir do roteiro (metadados `video_title`), queimada nos primeiros 5 s |
 | Render | segmentos por cena concatenados; VA-API → QSV → libx264; 1080×1920, 30 fps |

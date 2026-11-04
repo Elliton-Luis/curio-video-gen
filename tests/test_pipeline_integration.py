@@ -147,7 +147,7 @@ def _run(tmp_path, narration="ai", scene_error=None, **over):
 
 
 def _fake_tts(text, wav_path, provider, voice, speed, duration_target,
-              words_path=None, metrics=None, language="pt-BR"):
+              words_path=None, metrics=None, language="pt-BR", preview=False):
     """TTS stub: um 'word' por palavra, com tempo linear (0.5 s/palavra)."""
     import wave
     words, t = [], 0.0

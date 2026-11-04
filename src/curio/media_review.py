@@ -13,7 +13,7 @@ from . import textnorm
 
 REVIEW_CONFIG_FIELDS = ('audio_enabled', 'music_mode', 'music_file', 'music_gain_db',
     'music_ducking', 'music_transitions', 'tts_provider', 'tts_voice', 'tts_speed',
-    'language', 'width', 'height', 'fps', 'sub_font_size', 'sub_margin_v')
+    'tts_preview', 'language', 'width', 'height', 'fps', 'sub_font_size', 'sub_margin_v')
 
 
 class MediaReviewPending(MediaStandby):
